@@ -357,6 +357,9 @@ R7 又抓到我把**平台内部实现当公开 API**、把**best-effort 投递�
 
 > **注**：下面正文里出现的 `Dn` 编号来自**已删除**的早期审计文档（docs/07，2026-09-30 按用户要求删除）；
 > 另：附录里的**评审者与模型名**（provider·model）按用户 2026-09-30 的决定**保留原样**，不做匿名；插件名同理。
+> **档位**：评审用 `openai/gpt-5.6-terra` 的**中档**（该模型有 `low`/`medium`/`high` 三档，取 **`reasoningEffort: medium`**）。
+> ⚠️ 档位由**会话 / 默认模型**层设定（环境里的 `agent-default-model.config.reasoningEffort`，或会话内的模型选择）；
+> **评审调用本身只能指定 provider/model、不能指定 effort** —— 所以「用中档」这件事必须在该层落地，本文档只记录目标档位。
 > 此处保留原文以便追溯，其事实已并入 `docs/01`。
 
 #### R1 处置明细（`verdict = accept-with-fixes`）
