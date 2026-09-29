@@ -1,0 +1,9 @@
+node_modules/
+lib/
+*.tsbuildinfo
+*.tgz
+.playwright-cli/
+.dsh-code-index/
+coverage/
+.DS_Store
+*.log

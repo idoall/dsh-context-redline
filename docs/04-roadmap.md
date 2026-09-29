@@ -1,0 +1,162 @@
+# 04 · 路线图
+
+> 规则：**一个阶段一停**。上一阶段的验收证据没拿到，不进下一阶段。
+> "验收人"一栏写清**谁能验**：`自验`（我能机械证明）/ `人工门禁`（必须在浏览器里由人看）/ `用户授权`（会写会话或建会话，必须你当场点头）。
+
+---
+
+## M0 · 文档集（**本阶段**）
+
+| 项 | 内容 |
+|---|---|
+| 产物 | 本文件集（`docs/00`–`docs/08` + `AGENTS.md` + `README*` + `UPSTREAM.md`/`NOTICE`/`LICENSE*`） |
+| 依赖 | 无 |
+| 测试 | 无（文档）；但每条"平台事实"都必须可追溯到 `docs/01` 的出处 |
+| 验收人 | **你 + 其他模型评审** |
+| 授权点 | 无 |
+| 完成标志 | 评审意见回收 → 改文档 → 你确认"按这份做" |
+
+## M1 · 骨架与身份（复制上游 + 命名空间化）
+
+| 项 | 内容 |
+|---|---|
+| 产物 | 新仓库骨架（`package.json`/`tsconfig`/`tsdown`/`vitest` lane/`scripts`/lint/**CI**）；从 tag `v0.59.2` 复制的 `src/`；**命名空间化改造**（`docs/01` F1–F4）；安全的依赖安装顺序（F14/F15）；**配置来源表**；`dsh --profile web --dump-config` 的挂载确认（F23、V1、V2） |
+| 依赖 | M0 确认（**且 `docs/08` Q1/Q2/Q11 已拍板**） |
+| 测试 | `tsc --noEmit` exit 0；`vitest run --project edit --project channel` 可跑；**`namespace-contract` 检查绿**；`--dump-config` 无路由/投影 key 冲突 |
+| 验收人 | **自验**（机械可验）+ 你的 `dump-config` 抽看 |
+| 授权点 | 安装依赖（本地，不需授权）；**装进 web profile 需你单独授权** |
+| 风险 | 上游 `src/` 有 ~60 个文件，命名空间化漏一处就**静默降级**（同 key 投影会被顶掉）→ 因此不能只靠人眼 grep |
+
+**M1 的完成定义（DoD）**
+
+1. **`namespace-contract` 检查绿**（**机器可执行**，脚本或测试，不是 grep 靠人看）。它必须逐项断言下面这些**全部是 redline 值、且旧值零出现**：
+
+   | # | 面 | 检查方式 |
+   |---|---|---|
+   | 1 | 包名 = 客户端 bundle 注册 id | 读 `package.json` 的 `name` 与 `tsdown` 产物里的 `load({ id })`，两者相等 |
+   | 2 | **所有** `ctx.connection.fetch.register` 的 `path` | 解析 `src/host/**` 里的 `fetch.register` 调用点（含 `src/host/redline-channel.ts`） |
+   | 3 | **所有** `ctx.sessionProjections.register` 的 `key` | 解析 `key:` 字面量 |
+   | 4 | `conversation.view` 的 slot id | 解析 `ctx.slots.register` 的 `id` |
+   | 5 | locale 命名空间 | 解析 `ctx.locale.register` / `bind` 的 `ns` |
+   | 6 | `MessageSourceMap` 的 kind | grep `declare module` 的 kind 字面量 |
+   | 7 | 数据目录常量 | 解析 `dataDir`/`DSH_HOME` 拼接处 |
+   | 8 | 上游旧值残留 | 对 `dsh-context`（无尾斜杠也算）、`contextTimeline`/`contextHeaders`/`contextActivity`、slot `context`、locale `dsh-context` 逐个断言**零命中** |
+
+   > grep（`grep -rn "dsh-context/" src/`）只能当**线索**，它抓不到无尾斜杠的写法、双引号/模板串、URL 分段、以及 `context` 这种短名。
+2. `tsc --noEmit` exit 0；`vitest run --project edit --project channel` 可跑。
+3. **`.github/workflows/ci.yml` 已提交**且内容明确：`push` + `pull_request` 触发；固定 Node（与 `engines` 一致）与 pnpm 版本；**安全安装顺序**（`rm -f node_modules/@deepseek-ai` → `pnpm install --ignore-scripts` → `node scripts/link-dsh-runtime.mjs`）；必跑 `tsc --noEmit`、`tsdown`、`vitest --project edit --project channel`、`namespace-contract`；**`host`/`client` lane 明确不作为 required check**（环境缺口，`docs/05` §1）。
+4. **配置来源表**已写入 `UPSTREAM.md`：`package.json` / `tsconfig.json` / `tsdown.config.ts` / `vitest.config.ts` 各自**来自哪个 tag 的哪个路径**、哪些字段保留、哪些必须改成 redline 值、以及各自的验证命令。
+5. `dsh --profile web --dump-config` 输出里没有路由/投影 key 冲突。
+
+## M2 · 编辑面（TDD，先红后绿）
+
+| 项 | 内容 |
+|---|---|
+| 产物 | `src/edit/`：草稿存储、`node.read`（**全文**）、`apply`（**`user/message` 与 `tool/result`** 的 surface replace，校验照 `docs/01` F6/F7 写死；**`assistant/message` 一律拒绝**并给稳定原因码）、`rollback`（版本历史 + 恢复）、`annotate`（+ 作废范围）、不变量（逐字/版本/workspace/漂移检查/显式重注入）、sqlite（含 `schema_version` 与**幂等迁移**）；`src/shared/redline-route.ts`（两半共用）；`src/host/redline-channel.ts` |
+| 依赖 | M1 |
+| 测试 | 自有 lane：纯逻辑（资格判定 / 行投影 / 漂移逐字判定 / 范围校验 / 快照序列化）；**真实路由级端到端**（捕获宿主注册的精确路由 → 按真实 RPC 信封调用 → 读回 SQLite/草稿文件断言） |
+| 验收人 | **代码级自验**（fake ctx + detached 会话）→ 我；**平台语义**（真机会话上的 replace/回滚/历史正文读取）→ **留给 M4.5 复验**，不由 M2 下定论 |
+| 授权点 | 测试里**只允许**用假会话/临时数据目录；任何对**真实会话**的写入必须你单独授权 |
+| 口径 | 本阶段的"通过"= **代码与不变量成立**；凡依赖 V7/V8/V9 的条目一律标 **`conditional`**，不得当作平台事实的结论 |
+
+**M2 的 DoD（逐条可断言；带 `conditional` 的等待 M4.5）**
+1. `node.read` 返回的正文 == 事件里的**完整正文**，且**不等于** 80 字预览（封死 `docs/07` §3 的缺陷）。
+2. 轮次未闭合 → apply/annotate 均被拒（有测试）。
+3. 已被遮蔽的节点 → apply 被拒（有测试）+ 资格判定给出 `canRewrite:false` 与原因码。
+4. 无草稿 / 无实质改动 → 被拒（有测试）。
+5. `annotate` 只给一端或 `from>to` → 被拒（有测试）。
+6. 草稿写入**不产生任何会话事件**（有测试）。
+7. workspace 级固定块在**另一个 sessionId** 下可见（有测试）。
+8. 逐字判定：改一个字即算漂移（有测试）。
+9. 迁移：拿归档 v2 的 `history.sqlite` 副本灌进新 schema，固定块**不丢**；迁移**幂等**（重跑结果不变）；**迁移前有备份**；故障注入后原库仍可打开（有测试）。
+10. **替换体可再替换**：连续两次改写后，`deriveMessages()` 逐字等于第二次的内容（有测试）。`conditional`：依赖 V7 的**真机会话**复验。
+11. **回滚**：连续两次改写后回滚到原始版本，`deriveMessages()` **逐字等于**最初原文；版本历史链每一步的 seq 都能指认（有测试）。`conditional`：正文来自全量日志这一条依赖 **V8**；V8 未通过时按 `history-unavailable` 降级路径实现（有测试），不得用 80 字预览冒充。
+12. **`assistant/message` 一律拒绝**：能力判定返回 `canRewrite:false` + 稳定原因码；即使强行调用写入口也返回**可读错误**而非平台异常（有测试，反向验证：把原因码去掉必须红）。
+
+## M3 · 右侧可编辑界面
+
+| 项 | 内容 |
+|---|---|
+| 产物 | 动作条（5 类含用户消息）、行下内联编辑器（kind-aware）、`#seq`、遮蔽原因、`原 #N → 新 #M`、未生效计数吸顶、危险动作二次确认、顶部状态说明条、键盘与失败就地报错 |
+| 依赖 | M2 |
+| 测试 | **客户端半无法 TDD** → 先在**静态 demo**（一个能自报测量值的 HTML）里做出来并用浏览器量过，再搬进插件；搬运后走 `docs/03` §7 的人工门禁 |
+| 验收人 | **人工门禁（你）** |
+| 授权点 | 客户端 bundle 构建后需**硬刷新**；把插件装进 profile 需你授权、重启由你本人执行 |
+| 反模式 | 直接改插件等于"拿用户当验证器"（归档 v1/v2 为此白改过七八轮） |
+
+## M4 · 轮次联动
+
+| 项 | 内容 |
+|---|---|
+| 产物 | 轮次 → 末步的联动（**独立于 `pinSeq` 的新语义**）、左侧每轮「用户消息 N / 注入内容 N」、窄屏只留注入数、「改这一轮的用户消息」快捷入口 |
+| 依赖 | M3 |
+| 测试 | 交叉比对：轮次入口与下拉步级入口对同一目标必须**逐项一致**（写进人工门禁脚本清单） |
+| 验收人 | **人工门禁（你）** |
+| 授权点 | 无（纯只读联动） |
+
+## M4.5 · 平台能力验证（**独立阶段**，M5 的硬前置）
+
+**为什么单列一阶段**：M5 全部核心动作都依赖"平台到底给不给"（`docs/01` §6 的 V1–V3、V7–V9）。
+把它们塞进 M5 会让"M5 才发现跑不通"，也会让 M3/M4 的界面投入无法独立验收。
+
+| 项 | 内容 |
+|---|---|
+| 产物 | 一份**逐项**的平台能力验证记录（命令 + 原始输出 + 结论），写回 `docs/01` §6（把"待验证"改成"实测"或"不存在"） |
+| 要验的项 | ① `ctx.sessionQuery` 是否挂载 ② `ctx.agents.get(sessionId)` 是否可得 ③ `subagents.getProvider('fork')` 是否存在 ④ `ctx.compaction` 是否挂载 ⑤ **真机会话**上的替换/回滚（V7）⑥ 被遮蔽原文能否读回（V8）⑦ 跨压缩 checkpoint 的区间替换（V9）⑧ 命令/服务注册入口可用 |
+| **两个授权包（避免"授权-依赖死锁"）** | **包 A（只读探测，风险为零）**：①–④ + V8 的**读取**部分，可先在**专用测试会话**上跑，随 M1 之后即可进行；<br>**包 B（破坏性验证，需你逐次授权）**：V7/V9 —— 需要**创建并只破坏一个专用的一次性会话**，事前列出精确的 append/replace 范围与"留痕/清理"策略。<br>**包 B 未授权时**：M4.5 不得判 pass；按 §"能力开关"取 `capability=false` 的保守配置**关闭对应按钮**，让其余 M5 子集仍可验收（不许停摆） |
+| 能力开关（代码形态） | M4.5 的结论不是"文档里写一句"，而是**一组可读的能力标志**（例如 `capabilities = { sessionQuery, agents, fork, compaction, rollbackHistory }`），由它**驱动**：① 界面上哪些按钮存在 ② `docs/00` 的 S 条适用哪一档 ③ 哪些测试条件被跳过。**界面上不允许出现"能力为 false 但按钮还在"的组合** |
+| 同步变更表（**M4.5 的 DoD 要求逐项提交 diff**） | 每验完一项，必须同步改这三处并提交 diff：<br>· **V1 失败** → `docs/00` S1/S2/S8 加"冷会话只读"限定；`docs/03` 版本历史/编辑按 live-only 收口<br>· **④ compaction 缺失** → `docs/03` R5.3 只保留"引导 /compact"，**不显示执行按钮**<br>· **② agents 不可得** → `docs/03` R5.1 移除 `派活`/`开子会话`/`打断`；`docs/00` S5 整条改写为"引导用原生工具"，`docs/03` §7 的 19/23 条改为"不存在"<br>· **③ fork provider 缺失** → 同上一档（M5 整块不做，`plan.next` 只留"提交草稿/固定不变量"）<br>· **⑥ V8 失败** → `docs/03` R4.5 全表按"不可预览/不可恢复"；§7 第 15 条改为只验第 16 条的关闭态<br>· **⑦ V9 失败/未验** → 界面上不出现区间替换入口 |
+| 测试 | 包 A 写成脚本（只读）；包 B 在你在场时跑，并留**原始输出**（命令 + 日志片段） |
+| 验收人 | **自验**（包 A）+ **你**（包 B，逐次授权） |
+| 退出条件 | 每项都有结论（实测 / 不存在）；**每一处"能力为 false"都已在 `docs/00` 的 S 条、`docs/03` 的按钮集合与 `docs/05` 的测试前置里落成真实口径**（三处 diff 已提交）；不存在"文档说降级、按钮还在"的状态 |
+
+## M5 · 快照 → 子会话 → 压缩 → 指挥
+
+| 项 | 内容 |
+|---|---|
+| 产物 | `src/orchestrate/`：冻结记录；**建子会话（A′ 对接官方）**——**优先** `ctx.agentTeams.spawnTeammate(lead, { context:'fork', provider:<forkProvider>, … })`（进 roster 的正式成员，种子=父会话已完成轮次），**兜底** `ctx.subagents.startContinuable({provider:'fork'})`（裸子会话，界面如实标注）；**官方对接**：`team.tasks`/`team.members` 读投影、`createTask`/`updateTask` 写官方任务板、`sendMessage` **经官方**派活、`interrupt`（团队成员）／`interruptByParent`（裸子会话）；`ctx.compaction.compactNow(...)` + 失败码映射；**结果回流可见性**（读父会话 `subagent-settled`）；`plan.next` 判定与面板。**可选注入** `agentTeams`（团队未启用时对接点全部消失） |
+| 依赖 | **M4.5 已逐项给出结论**，且 **V12/V13 必须通过**（服务层调用可用、`spawnTeammate(context:'fork')` 能建出成员） |
+| 测试 | 纯逻辑（`plan.next` 的判定次序与"是否需要授权"）可自验；**真机每一步都要证据**：新成员在**官方 roster**里可见、种子=父会话已完成轮次、父会话新轮次**不进去**、压缩后出现 `compaction/*`、`createTask` 后**官方任务板能看到**、`sendMessage` 返回 `accepted/queued` |
+| 验收人 | **你在场，逐动作授权** |
+| 授权点（**逐个**） | ① `child.create`（建成员/裸子会话）② `child.compact`（不可逆）③ `派活`（**经官方** `sendMessage`，写成员邮箱）④ `team.task.create`/`update`（写官方任务板）⑤ `invariant.inject`（写会话）⑥ `apply`/`annotate`（写会话） |
+| 降级路径 | 若 V2 失败（压缩后端缺失）→ 压缩改为"引导你在子会话里执行 `/compact`"，插件只做体检与记录 |
+| 不做什么 | 不自动开子会话、不自动压缩、不自动重注入（`docs/00` N2） |
+
+**M5 的 DoD（端到端，缺一不可）**
+1. **草稿门槛**：有未提交草稿时「冻结」「开子会话」被阻止并逐条给出处置；清零后放行。
+2. **冻结不写会话**：冻结前后会话事件数不变。
+3. **「允许创建」确认框**（S5.3）：取消 → `child.list` 无新会话；确认 → 新会话存在。
+4. **种子正确**：子会话能看到父会话的**已完成轮次**；父会话**其后**再跑一轮，子会话日志**无变化**（两条都要原始比对）。
+5. **压缩如实报**（S5.4）：执行前列出将被替代的区间与条目数 + 不可逆提示；执行后显示实际范围；`busy` 能被复现并显示人话。
+6. **派活闭环**（S5.5）：人写任务 → 子会话 idle→running 并留下**可核对的任务执行事件** → 主会话显示状态 → **打断**后状态可见。
+7. **不膨胀可观测**（S9）：记录派活前后的父会话**事件数**与**字节增量**，并逐条说明增量来源；若用 token 则说明口径，若不可靠就只用事件数/字节。
+8. **每步单独授权**的痕迹：`docs/06` §4 的清单在界面上逐次出现，且事后可从日志核对。
+
+## M6 · 入口与发布准备
+
+| 项 | 内容 |
+|---|---|
+| 产物 | 主机斜杠命令 `/redline`（`snapshot`/`children`/`compact`/`invariants`/`drift`）、内部服务导出、README 双语、peer/engines 声明到 `0.2.0-rc.1`（上界 `<0.3.0`）、发布链路（沿用你既有插件的 CI/发版习惯） |
+| 依赖 | M5 |
+| 测试 | 命令的真实路由级测试（复用 M2 的模式）；`dsh --profile web --dump-config` 再确认一次 |
+| 验收人 | 你 |
+| 授权点 | 发布/push/开 PR **必须单独授权**（你的既有规则） |
+
+## M7+ · 待确认的后续（**现在不做**）
+
+| 项 | 内容 | 前置 |
+|---|---|---|
+| M7a | 图 2 的"上下文装配"（块库 / 模板 / extends 组装 / 一致性合并） | 需要单独的数据模型设计（见 `docs/00` §4） |
+| M7b | 给正在运行的会话注入"新能力描述"（`ctx.systemPrompt.section` / `agent.inject`） | 需要先定"这段文字由谁写"（与"不许 AI 生成内容"冲突，见 `docs/08` Q5） |
+| M7c | model-facing tool 入口 | 见 `docs/08` Q3 |
+| M7d | **父会话不在进程时的冷恢复与恢复体验**（注意：`startContinuable` 本身**是 M5 的默认主线**，不在这里） | 需要先有 M5；见 `docs/08` Q6 的影响面 |
+
+---
+
+## 阶段间的硬门禁（谁都不许跳）
+
+1. **想写会话？先列清单**：改哪一条、改成什么、影响范围、理由 → 等用户点头。
+2. **没有红过的测试不算证据**：护栏测试必须反向验证会真红。
+3. **客户端改动先 demo 后搬运**。
+4. **重启一律由用户本人执行**；助手只做重启前的准备与重启后的复验。
+5. **范围不扩大**：只动本仓库；不碰 DSH 安装目录与 `~/.dsh` 的配置/脚本。

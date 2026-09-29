@@ -1,0 +1,43 @@
+MIT License
+
+Copyright (c) 2026 DSH Context Redline contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+This project also contains code derived from `dsh-context`
+(https://github.com/bowenliang123/dsh-context), which is licensed under the
+Apache License, Version 2.0. The full text of that license is kept verbatim in
+`LICENSE-Apache-2.0`, and the exact upstream revision plus the list of our
+modifications is recorded in `UPSTREAM.md`.
+
+Licensing here is **per portion**, not a dual license over every file:
+
+- Original contributions of this project: MIT (the text above).
+- Anything copied from, or derived from, `dsh-context`: Apache-2.0, with the
+  upstream notices preserved (`NOTICE`, `UPSTREAM.md`).
+
+As of the M0 documentation stage **no upstream source code has been copied into
+this repository yet**, so there is currently no Apache-2.0-licensed portion
+here; `LICENSE-Apache-2.0` / `NOTICE` / `UPSTREAM.md` exist so that provenance
+and notices are in place before the upstream source is brought in (M1). Once
+such a portion exists, the combined distribution is conventionally described as
+`MIT AND Apache-2.0` in `package.json`; that string describes the combination,
+not a second license on our own files.
