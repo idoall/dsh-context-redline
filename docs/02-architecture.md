@@ -229,7 +229,7 @@ tests/
 $DSH_HOME/dsh-context-redline/
 ├─ redline-drafts-<safeSessionId>.json   草稿（每会话一文件；原子写 .tmp + rename）
 └─ history.sqlite
-   ├─ schema_version(version)            我们的格式版本（迁移用）
+   ├─ schema_version(version)            我们的格式版本（**只备将来升级用**；首启即空库，无旧数据可迁，见 `docs/08` Q8）
    ├─ invariants(id, session_id, version, created_at, label, text, retired_at, scope)
    ├─ history(id, ts, kind, session_id, category, action, payload)
    ├─ snapshots(id, session_id, created_at, cut_seq, label, note, digest, counts, invariants_json)
