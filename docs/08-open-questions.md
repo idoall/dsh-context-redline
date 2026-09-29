@@ -476,3 +476,18 @@ assistant 不可改写、连续编辑/回滚、30 项 UI 清单及 14 项缺陷�
 
 **除这 4 项外全部自验**：纯逻辑单测 · 真实路由级测试 · `tsc --noEmit` · `tsdown` · `namespace-contract` ·
 `dsh --profile web --dump-config` · 界面尺寸/主题/console（浏览器工具）· **只读**探测（M4.5 包 A）。
+
+### §9.1 授权包 ① 的交接协议（**重启只能由用户做**）
+
+**分工铁律**：`dsh web` 承载用户**当前正在用的会话** → **助手永不重启**（连试都不试）；助手只做重启**前**的准备与重启**后**的复验。
+
+| 阶段 | 谁做 | 具体动作 | 证据 |
+|---|---|---|---|
+| **准备** | 我 | ① 备份 `$DSH_HOME/profiles/web/{package.json, cordis.patch.yml}`（带时间戳）② `rm -f node_modules/@deepseek-ai` → `pnpm install --ignore-scripts` → `node scripts/link-dsh-runtime.mjs` ③ `tsc --noEmit` + `tsdown`（构建产物就位）④ 把本仓库装配进 profile ⑤ **`dsh --profile web --dump-config`**（只合成、不 boot） | 每一步的原始输出 |
+| **交接** | 我 | **停下来**，明确告诉用户：**"可以重启了"**，并给出用户自己要跑的命令与预期 | 一条交接消息 |
+| **重启** | **用户本人** | 自己重启 `dsh web` | — |
+| **复验** | 我 | ① 插件数据目录的 `plugin.log` 出现 `host loaded (/api/dsh-context-redline)` ② 浏览器**硬刷新**后：本插件面板与参考插件 `dsh-context` 面板**都在**，console 无 `already registered` / `loaded without registering` ③ 跑 `namespace-contract` 检查 | 日志片段 + console 全量片段 + 截图 |
+| **回退**（任一步失败） | 我 | 卸掉本插件 + 还原那两份备份 → **再请用户重启一次**回到原状 | 回退后的 `dump-config` 输出 |
+
+**为什么必须先 `dump-config` 再请用户重启**：它只合成、不 boot，能在**不打扰用户**的前提下抓出最致命的命名空间冲突
+（路由同路径重复注册、投影 key 撞车）。等重启后才发现冲突，等于白让用户重启一次。
