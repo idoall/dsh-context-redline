@@ -356,11 +356,16 @@ R7 又抓到我把**平台内部实现当公开 API**、把**best-effort 投递�
 累计 **48 条意见全部采纳**，其中两轮（R2/R3）直接改掉了设计本身的错误（回滚被误判为不可行、助手消息被误判为可改写）。
 
 > **注**：下面正文里出现的 `Dn` 编号来自**已删除**的早期审计文档（docs/07，2026-09-30 按用户要求删除）；
+> 此处保留原文以便追溯，其事实已并入 `docs/01`。
 > 另：附录里的**评审者与模型名**（provider·model）按用户 2026-09-30 的决定**保留原样**，不做匿名；插件名同理。
 > **档位**：评审用 `openai/gpt-5.6-terra` 的**中档**（该模型有 `low`/`medium`/`high` 三档，取 **`reasoningEffort: medium`**）。
 > ⚠️ 档位由**会话 / 默认模型**层设定（环境里的 `agent-default-model.config.reasoningEffort`，或会话内的模型选择）；
 > **评审调用本身只能指定 provider/model、不能指定 effort** —— 所以「用中档」这件事必须在该层落地，本文档只记录目标档位。
-> 此处保留原文以便追溯，其事实已并入 `docs/01`。
+> **机制（实测）**：评审子 agent 由 `ctx.subagents.start(<workflow provider>, { parent, agentOptions })` 建立，
+> 而工作流只把 **provider / model** 放进 `agentOptions`、**不带 effort**（`dsh-workflow-ptc/lib/index.js:328-340`）；
+> provider 会把 `agentOptions` **合并到父 Agent 的选项之上** ⟹ **档位始终继承当前会话**。
+> **因此落地的干净做法**：① 会话模型切到 `openai / gpt-5.6-terra` 并选**中档**；② **评审调用不传 provider/model 覆盖**（完全继承会话）。
+> （备选：改全局 `agent-default-model.config.reasoningEffort` —— 影响所有会话且需用户重启，不推荐。）
 
 #### R1 处置明细（`verdict = accept-with-fixes`）
 
