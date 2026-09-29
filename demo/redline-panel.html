@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>上下文批改台 · 交互原型（demo）</title>
+<link rel="icon" href="data:," />
+<link rel="stylesheet" href="./demo.css?v=1" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <b>上下文批改台</b><span class="tag">交互原型 v1</span>
+    <a class="link" href="./README.md">说明</a>
+  </div>
+  <div class="switches" id="switches" aria-label="状态开关"></div>
+  <div class="top-actions">
+    <button class="btn" id="btnExplain" data-explain="ui.explain">讲解模式</button>
+    <button class="btn" id="btnTheme" data-explain="ui.theme">深色 / 浅色</button>
+    <button class="btn" id="btnSelfcheck" data-explain="ui.selfcheck">自测面板</button>
+    <button class="btn ghost" id="btnReset" data-explain="ui.reset">重置原型</button>
+  </div>
+</header>
+
+<!-- 常驻状态说明条（docs/03 R4.4） -->
+<div class="noticebar" id="noticeBar" hidden></div>
+
+<main class="cols">
+  <section class="col col-left">
+    <div class="card" id="cardStats"></div>
+    <div class="card" id="cardTrend"></div>
+    <div class="card" id="cardStep"></div>
+    <div class="card" id="cardEvents"></div>
+  </section>
+
+  <section class="col col-right">
+    <!-- 吸顶：还有 N 条未生效（docs/03 R4.1） -->
+    <div class="sticky-drafts" id="stickyDrafts" hidden></div>
+    <div class="card" id="cardBrowser"></div>
+    <div class="card" id="cardOrch"></div>
+  </section>
+</main>
+
+<!-- 讲解抽屉（Axure 式「点这个按钮是做什么的」） -->
+<aside class="drawer" id="drawer" hidden>
+  <div class="drawer-head">
+    <b id="drawerTitle">讲解</b>
+    <button class="btn ghost" id="drawerClose">关闭</button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>
+
+<!-- 确认框（短警示 + 本次清单，docs/03 R4.3） -->
+<div class="modal-wrap" id="modalWrap" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-head"><b id="modalTitle">请确认</b></div>
+    <div class="modal-body">
+      <p class="warn" id="modalWarn"></p>
+      <div id="modalList"></div>
+      <label class="modal-reason" id="modalReasonWrap" hidden>
+        <span>理由（会写进记录）</span>
+        <input type="text" id="modalReason" placeholder="一句话说明为什么这样改" />
+      </label>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" id="modalCancel">取消</button>
+      <button class="btn danger" id="modalOk">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- 右下角自测面板：报状态组合 / 该出现的按钮 / 盒子测量 -->
+<div class="selfcheck" id="selfcheck" hidden></div>
+
+<!-- 一次性回执提示（任何动作都要有回执） -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script src="./demo.js?v=1"></script>
+</body>
+</html>
