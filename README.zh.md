@@ -66,6 +66,9 @@
 | [`docs/06-orchestration.md`](docs/06-orchestration.md) | 快照/fork/压缩/派活的语义、授权清单、失败码、明确不做 |
 | [`docs/08-open-questions.md`](docs/08-open-questions.md) | **待拍板问题**（含推荐与理由）+ **外部模型评审记录**（逐条采纳/不采纳） |
 | [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **需求追溯矩阵**：你的原话与图 2/3/4 每一项 → 落在哪条目标 → 做/不做/降级 |
+
+> **编号说明**：`docs/07` 曾是"早期那次尝试"的审计文档，已于 2026-09-30 按用户要求删除；**该编号不复用**，以免与历史引用混淆。
+
 | [`AGENTS.md`](AGENTS.md) | 工作约定（唯一必读入口）：硬约束、平台坑、测试纪律 |
 | [`UPSTREAM.md`](UPSTREAM.md) / [`NOTICE`](NOTICE) | 上游来源、许可合规、我们的修改清单 |
 
