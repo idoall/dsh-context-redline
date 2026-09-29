@@ -10,8 +10,8 @@
 | 仓库 | `https://github.com/bowenliang123/dsh-context` |
 | 许可 | **Apache-2.0**（`LICENSE-Apache-2.0` 原样保留） |
 | 我们复制的版本 | **tag `v0.59.2`**，commit `fc44fff9548d404da3c4935525d01b5e4fb62517` |
-| 选择它的理由 | 该版本**正在本机 DSH `0.2.0-rc.1` 上实际运行**（用户侧的参考插件就是它），是本机唯一"在这个运行时上被真实证明可用"的版本。对比：归档的 v2 分支基于 `v0.59.0`（`addccdd4aa95b4e01b054d1d7f7e6ff9b468d2d4`），而它的验证运行时是 `0.1.7-rc.2` |
-| 本机 clone（只读参考） | `/Volumes/SSD/Home/lionm4/my_project/_dsh/dsh-context`（带完整 history 与 tag，`git show v0.59.2:<path>` 即可取原文） |
+| 选择它的理由 | 该版本**正在本机 DSH `0.2.0-rc.1` 上实际运行**（用户侧的参考插件就是它），是本机唯一"在这个运行时上被真实证明可用"的版本。对比：早期的 v2 分支基于 `v0.59.0`（`addccdd4aa95b4e01b054d1d7f7e6ff9b468d2d4`），而它的验证运行时是 `0.1.7-rc.2` |
+| 本机 clone（只读参考） | `<upstream-clone>`（带完整 history 与 tag，`git show v0.59.2:<path>` 即可取原文） |
 | 上游**未发布**的更新 | 该 clone 的 `main` HEAD = `67787685fefc70d978d736e95680c7055ea9ff9b`（2026-09-29），**在 v0.59.2 之后**；我们**不**跟随，按需 cherry-pick |
 | npm 包内容 | 只有编译产物（`files` = `lib/*` + `locale/*.json` + `icon.svg` + `cordis.patch.yml` + README + LICENSE），**没有源码**——所以"改"只能从 git 源码来 |
 
@@ -60,7 +60,7 @@ v2 相对上游 `v0.59.0` 的**全部**改动只有 12 个路径、其中对上�
 
 ### 3.4 明确**不**复用上游/归档代码的部分
 
-- 归档 v2 里**不应带走**的东西：`simulator.editMessage`（无 importer 的重复编辑器）、`message-types.ts`、forge 前缀路由（详见 `docs/07-v2-archive.md` **§5**「明确不复用」，逐条带 D 编号）。
+- 早期那次尝试 里**不应带走**的东西：`simulator.editMessage`（无 importer 的重复编辑器）、`message-types.ts`、forge 前缀路由（这些都属于**早期那次尝试**，本仓库**不复用**；教训见 `docs/01`）。
 - 上游的告警/遥测类入口：如"检查新版本""社交预览"等与本地编辑无关的部分，M1 复制时按需裁掉。
 
 ## 4. 骨架配置文件来源（**M1 必须补全此表**）
@@ -71,7 +71,7 @@ M0 阶段工作区里已有的骨架文件，以及它们该怎么处理：
 |---|---|---|
 | `.gitignore` | 我们自己维护（含 `.dsh-code-index/`、`coverage/` 等） | 保留 |
 | `.npmrc` | 沿用归档线的 `auto-install-peers=false` | 保留并写进 M1 的配置来源表 |
-| `.oxlintrc.json` | **来自归档 v2**（12KB，其规则按当时的目录结构写） | 按新目录裁剪；确认与本仓库实际文件集合匹配后再启用 |
+| `.oxlintrc.json` | **来自早期那次尝试**（12KB，其规则按当时的目录结构写） | 按新目录裁剪；确认与本仓库实际文件集合匹配后再启用 |
 | `.github/workflows/**` | ⚠️ **已删除**（原本是上游/归档线带来的 `ci.yml` + `publish.yml`，前者会跑当前不存在的 `pnpm run verify`，后者直通 npm 发布流程） | **自建**：按 `docs/04` M1 的 DoD 第 3 条写，**不继承**上游的 workflow |
 | `package.json` / `tsconfig.json` / `tsdown.config.ts` / `vitest.config.ts` | M0 尚无（M1 才建） | 按 M1 的"配置来源表"逐项记录：来自哪个 tag 的哪个路径、保留什么、改成什么 redline 值、怎么验证 |
 
@@ -82,8 +82,8 @@ M0 阶段工作区里已有的骨架文件，以及它们该怎么处理：
 
 ```bash
 # 上游原文随时可取（本机 clone）
-git -C /Volumes/SSD/Home/lionm4/my_project/_dsh/dsh-context show v0.59.2:src/client/components/browser.tsx
+git -C <upstream-clone> show v0.59.2:src/client/components/browser.tsx
 
 # 我们的改动面（M1 之后）
-diff -rq <(git -C /Volumes/SSD/Home/lionm4/my_project/_dsh/dsh-context archive v0.59.2 | tar -xO 2>/dev/null) src/   # 逐文件人工核对
+diff -rq <(git -C <upstream-clone> archive v0.59.2 | tar -xO 2>/dev/null) src/   # 逐文件人工核对
 ```

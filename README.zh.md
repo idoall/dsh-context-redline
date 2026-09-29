@@ -64,7 +64,6 @@
 | [`docs/04-roadmap.md`](docs/04-roadmap.md) | M0–M7 阶段表（产物 / 测试 / **谁能验收** / **授权点**） |
 | [`docs/05-test-plan.md`](docs/05-test-plan.md) | 测试 lane、真实路由级测试模式、人工门禁清单、失败模式用例 |
 | [`docs/06-orchestration.md`](docs/06-orchestration.md) | 快照/fork/压缩/派活的语义、授权清单、失败码、明确不做 |
-| [`docs/07-v2-archive.md`](docs/07-v2-archive.md) | 归档 v2 的审计：**缺陷账本**（14 条）+ 可复用清单 + 不复用清单 |
 | [`docs/08-open-questions.md`](docs/08-open-questions.md) | **待拍板问题**（含推荐与理由）+ **外部模型评审记录**（逐条采纳/不采纳） |
 | [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **需求追溯矩阵**：你的原话与图 2/3/4 每一项 → 落在哪条目标 → 做/不做/降级 |
 | [`AGENTS.md`](AGENTS.md) | 工作约定（唯一必读入口）：硬约束、平台坑、测试纪律 |
@@ -88,8 +87,7 @@
 （原文见 [`LICENSE-Apache-2.0`](LICENSE-Apache-2.0)，来源与修改清单见 [`UPSTREAM.md`](UPSTREAM.md)）。
 本插件是独立 fork，**与上游作者无隶属关系**，也不代表其背书。
 
-## 归档
+## 关于早期那次尝试
 
-本仓库的 git 历史里保留了一条更早的、基于上游 `v0.59.0` 的实现线（分支 `v2-upstream-base`，
-tag `v2-archive-20260928`）。新线以 tag `v0.59.2` 为基线重新复制，理由与审计见
-[`docs/07-v2-archive.md`](docs/07-v2-archive.md)。
+本仓库曾有一条基于上游 `v0.59.0` 的实现线（2026-09 期间），**其目录与 git 历史已丢失**，审计文档也已按用户要求删除。
+本线以 tag `v0.59.2` 为基线重新复制；**只保留"别重犯"的结论**，写在 [`docs/01`](docs/01-platform-facts.md) 与 [`AGENTS.md`](AGENTS.md) §2。

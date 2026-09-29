@@ -142,7 +142,7 @@ tests/
 ```
 
 **纪律**：客户端 bundle **不得** import `src/edit`/`src/orchestrate`/`src/host`（上游有 bundle purity 检查）。
-两半只能通过 `shared/` 的类型与常量交流（归档 v2 的 `tests/redline/route-pairing.spec.ts` 就是守这条的）。
+两半只能通过 `shared/` 的类型与常量交流（早期那次尝试 的 `tests/redline/route-pairing.spec.ts` 就是守这条的）。
 `src/edit/rows.ts` 这类"纯投影"可以放在能被客户端 `import type` 的位置（编译后无运行时依赖）。
 
 ---
@@ -241,8 +241,8 @@ $DSH_HOME/dsh-context-redline/
 > 我们的 `snapshot_links` **只记平台不知道的那一件事**："这个子会话是从哪条冻结快照开出来的"（+ 人写备注）。
 > ⟹ **不要复制一份 children 表**去和平台对账——那必然会漂移（`docs/01` F13.1）。
 
-- **不写** `~/.dsh/profiles/*`、不写 DSH 安装目录、不写会话日志（除非用户点了写入类动作）。
-- `schema_version` 存在的理由：要**继承**归档 v2 时期已经存在的 `invariants` 表（用户已有的固定块不该丢）。
+- **不写** `$DSH_HOME/profiles/*`、不写 DSH 安装目录、不写会话日志（除非用户点了写入类动作）。
+- `schema_version` 存在的理由：要**继承**早期那次尝试 时期已经存在的 `invariants` 表（用户已有的固定块不该丢）。
 - 机密性：这里存的是**用户自己的上下文正文**（可能含私密内容），与 DSH 会话日志同等敏感；不做任何外发。
 
 ---

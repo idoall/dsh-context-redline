@@ -4,11 +4,11 @@
 > **纪律**：每条都标 `实测` / `推断`，并给出可复核的位置。凡未核实的，一律写"待验证"，不许当依据。
 >
 > **路径约定**（本机）：
-> - `$DSH_PKG` = `/Users/lionm4/.nvm/versions/node/v24.15.0/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai`
+> - `$DSH_PKG` = `$DSH_PKG`
 >   （**当前真正在跑的构建**，版本 **0.2.0-rc.1**，每个包独立，`lib/types/*.d.ts` 是权威签名）
 > - `$DSH_PROFILE` = `$DSH_HOME/profiles/node_modules/@deepseek-ai`（profile 层依赖树）
-> - `$DSH_SRC` = `/Volumes/SSD/Home/lionm4/my_project/_dsh/deepseek-harness`（源码 monorepo，**版本 0.1.6-alpha.1，落后于运行时**，只用于看实现细节，**签名一律以 `$DSH_PKG` 为准**）
-> - `$UPSTREAM` = `/Volumes/SSD/Home/lionm4/my_project/_dsh/dsh-context`（参考插件 clone，带 tag）
+> - `$DSH_SRC` = `<dsh-workdir>/deepseek-harness`（源码 monorepo，**版本 0.1.6-alpha.1，落后于运行时**，只用于看实现细节，**签名一律以 `$DSH_PKG` 为准**）
+> - `$UPSTREAM` = `<upstream-clone>`（参考插件 clone，带 tag）
 
 ---
 
@@ -20,7 +20,7 @@
 | Node | v24.15.0 | 当前进程 |
 | 参考插件 | `dsh-context@0.59.2` **已装并在跑** | `$DSH_HOME/profiles/web/package.json` 的 dependencies + 用户界面截图 |
 | 我们的插件 | 目录 symlink 在 `$DSH_HOME/profiles/web/node_modules/dsh-context-redline`，但**不在** `dsh.profile.bundles` 里 → **当前未启用** | 同上 |
-| 归档 v2 的验证运行时 | `0.1.7-rc.2`（不是现在这个） | `git show v2-archive-20260928:AGENTS.md` |
+| 早期那次尝试 的验证运行时 | `0.1.7-rc.2`（不是现在这个） | `git show v2-archive-20260928:AGENTS.md` |
 
 > **含义**：任何"v2 里验证过"的结论，都必须在 0.2.0-rc.1 上**重新验证**。这也是我们把基线换成 `v0.59.2` 的原因。
 
@@ -64,10 +64,10 @@ else {
   否则：stateVersion 撞上 → 我们的 fold 被参考插件的定义顶掉（面板数字看着"对"，其实不是我们的口径）；
   stateVersion 不同 → 插件直接抛错。**两种失败都不会给出清晰提示。**
 
-### F3 · 客户端 bundle 注册 id 必须等于包名（实测，归档 v2 踩过）
+### F3 · 客户端 bundle 注册 id 必须等于包名（实测，早期那次尝试 踩过）
 
 DSH 的 `dsh-client-modules` 按**包名**校验客户端模块注册 id，不一致会抛
-`loaded without registering "<id>"`。归档 v2 里为此专门提交过一次修正
+`loaded without registering "<id>"`。早期那次尝试 里为此专门提交过一次修正
 （`ec57ea8 fix(v2): 插件身份 id/name 与包名对齐 —— 否则被上游 dsh-context 顶掉`）。
 
 - 我们的 tsdown 配置从上游继承，注册 id 由 `pkg.name` 自动生成 → **改包名会自动同步**，但 slot id / locale 命名空间/投影 key / 路由**不会**自动改，必须人工逐个对齐。
@@ -108,7 +108,7 @@ ownEvents(): readonly SessionEvent[];
 | `readEvent`/`traceEvent`/`traceSession` | 见文件 | 替换关系溯源（`start` 事件 → 被遮蔽节点） |
 
 > **设计含义**：我们把**读**全部放在 `sessionQuery` 上（异步、冷会话也能读、且一次能拿到**全文**），
-> 把**写**放在 live `Session.append` 上。归档 v2 的致命缺陷（`docs/07` §3）正是因为它的"读"取的是宿主投影里的 80 字预览。
+> 把**写**放在 live `Session.append` 上。早期那次尝试 的致命缺陷（`docs/07` §3）正是因为它的"读"取的是宿主投影里的 80 字预览。
 
 ### F6 · 写入：`encodeSurfaceOp` 的三个硬校验（实测）
 
@@ -130,7 +130,7 @@ SurfaceOp = 'append' | { op: 'replace'; startSeq: SessionSeq; endSeq: SessionSeq
 配套（`types.d.ts`）：
 - `assistant/message` **禁止** `sourceEventSeqs`（`SurfaceIntent<T>` 的条件类型）
 - 辅助函数：`isAppendSurfaceEvent` / `isReplacementSurfaceEvent` / `foldSurface(events, projections?)`
-- **`inPlaceSurface` 这个 API 不存在**（`实测`：在 `$DSH_PKG`、`$DSH_SRC`、归档 v2 里都搜不到）——"遮蔽"就是 `surfaceOp: replace`
+- **`inPlaceSurface` 这个 API 不存在**（`实测`：在 `$DSH_PKG`、`$DSH_SRC`、早期那次尝试 里都搜不到）——"遮蔽"就是 `surfaceOp: replace`
 
 ### F7 · replace 的**目标必须是"当前可见的节点"**——这条决定"能不能改第二次/能不能回滚"
 
@@ -139,7 +139,7 @@ SurfaceOp = 'append' | { op: 'replace'; startSeq: SessionSeq; endSeq: SessionSeq
 ③ `assertSourceEventReferences`：`sourceEventSeqs` 必须包含**全部被遮蔽节点**，且非空、无重复、都更早；
 ④ `assertToolResultRewrite`（仅 tool/result）：**只能改 `message.content`**；⑤ `assertSystemHeadRewrite`：node 0 的 system 受保护。
 
-**注意：校验里没有"目标必须是 append-origin"这一条。** 归档 v2 里的 `isAppendSurfaceEvent(original)` 拒绝是**它自己加的策略**，不是平台约束。
+**注意：校验里没有"目标必须是 append-origin"这一条。** 早期那次尝试 里的 `isAppendSurfaceEvent(original)` 拒绝是**它自己加的策略**，不是平台约束。
 
 由此得到两条**必须区分**的事实（本机 `dsh-session` 直接实测，见 §3.1）：
 
@@ -150,12 +150,12 @@ SurfaceOp = 'append' | { op: 'replace'; startSeq: SessionSeq; endSeq: SessionSeq
 
 **结论（与本文档早期版本相反，已按实测更正）**：
 - 「编辑」**不是一次性的**。对同一条消息可以：改 → 再改 → 回滚（把目标换成当前可见的那个替换体即可）。
-- 归档 v2 把"原始节点不可再作目标"误读成"编辑只能做一次"，于是**丢掉了用户明确要求的"能回滚"**（图 2 ④）。
-  这是 `docs/07` 缺陷账本 D14。
+- 早期那次尝试 把"原始节点不可再作目标"误读成"编辑只能做一次"，于是**丢掉了用户明确要求的"能回滚"**（图 2 ④）。
+  这是**早期那次尝试**的教训（结论见本文件 F7/F7.1）。
 
 ### F7.1 · 直接实测记录（本机 `dsh-session`，2026-09-30）
 
-探针脚本在 `/tmp/redline-probe/`（不进仓库，只读性质：`Session.create()` 造 detached 会话 + `append`）：
+探针脚本在 `（临时探针目录）/`（不进仓库，只读性质：`Session.create()` 造 detached 会话 + `append`）：
 
 ```
 PASS | replace 原始节点（第一次编辑）        | {"seq":1,"nodes":[1]}
@@ -182,19 +182,19 @@ FAIL | replace assistant（带 sourceEventSeqs）  | assistant/message embeds it
 ⟹ **产品结论（必须落到 UI）**：
 - **助手消息在 v1 不可改写**，界面上**不给「编辑」按钮**（给了必然点下去报错）。
 - 助手消息的修正路径只有：**批注**（追加更正）、或**遮蔽整段**（用多节点区间替换把 user+assistant 一起换成一条人工消息，见 F7.1 最后一行 PASS）、或**快照 + 子会话**。
-- 归档 v2 的 `applyEdit` 里有完整的 assistant 分支，**但那条路径从未真机跑过**（M3 界面未验收），必然抛错 —— `docs/07` D13。
+- 早期那次尝试 的 `applyEdit` 里有完整的 assistant 分支，**但那条路径从未真机跑过**（M3 界面未验收），必然抛错 —— 早期那次尝试就栽在这里。
 
 ### F8 · turn 边界是**策略**而非核心校验（实测）
 
 `Session.append` 本身**不检查**轮次是否闭合；turn-closed 是插件（上游）自己守的：
 扫描 `turn/start` … `turn/end` 得到 `hasOpenTurn`。
-（归档 v2：`src/redline/turn-state.ts:13-27`，在 `write.ts:103,242` 调用。）
+（早期那次尝试：`src/redline/turn-state.ts:13-27`，在 `write.ts:103,242` 调用。）
 
 **为什么必须守**：模型可能**已经读过**旧内容，改动必须发生在"没有请求在飞"的间隙，否则上下文在模型看不见的时刻变化。
 
 ### F9 · 会话必须 live 才能写（实测）
 
-`ctx.sessions.get(sessionId)` 拿不到 → 不能 apply/annotate（归档 v2 抛
+`ctx.sessions.get(sessionId)` 拿不到 → 不能 apply/annotate（早期那次尝试 抛
 `session "…" is not live in this process`）。因此"冷会话 / 别人的会话"只能**只读**，
 `turnState` 也要用 `known:false` 表达"判不了"，UI 必须**默认禁用并说明原因**，而不是让用户点了才报错。
 
@@ -463,22 +463,30 @@ SpawnTeammateRequest = {
 
 > **我们面板里显示官方 roster/任务板时，显示的就是这一份数据**——不复制、不缓存、不自己算就绪状态。
 
+### F35 · ⚠️ 上游投影里的 `text` 是 **80 字空白折叠预览**，不是正文
+
+上游 fold 用 `firstText(blocks)` 生成节点摘要：`b.text.replace(/\s+/g,' ').trim().slice(0,80)`
+（上游 `src/host/pricing.ts`，在 `src/host/fold.ts` 赋给 `node.text`）。
+⟹ **它既截断又压掉换行**，只能当"列表行的预览"，**绝不能**当"编辑器预填/提交"的正文。
+**规则**：编辑器的读写一律走 `node.read`（宿主全文）；`docs/05` 的 **A4** 用"返回正文 ≠ 80 字预览"把它锁死。
+（早期那次尝试正是把预览当正文，点一次「编辑+应用」就把整条消息截成 80 字 —— 数据破坏级缺陷。）
+
 ---
 
 ## 5. 其它已核实事实
 
 | # | 事实 | 位置 / 依据 |
 |---|---|---|
-| F14 | `pnpm install` 会**写穿** profile 符号链接（把悬空 symlink 写进共享 profile，曾真实发生并恢复） | 归档 v2 `AGENTS.md` §2.3（`scripts/link-dsh-runtime.mjs` 自身安全；危险的是 `pnpm install`） |
+| F14 | `pnpm install` 会**写穿** profile 符号链接（把悬空 symlink 写进共享 profile，曾真实发生并恢复） | 早期那次尝试 `AGENTS.md` §2.3（`scripts/link-dsh-runtime.mjs` 自身安全；危险的是 `pnpm install`） |
 | F15 | 安全安装顺序：`rm -f node_modules/@deepseek-ai` → `pnpm install --ignore-scripts` → `node scripts/link-dsh-runtime.mjs` | 同上 |
-| F16 | 客户端 bundle 由宿主**按需从磁盘读**并送到浏览器 → `tsc && tsdown` 之后**硬刷新即可**，不必重启 `dsh web` | 归档 v2 §2.5 的实测更正（2026-09-27） |
-| F17 | 深色主题的选择器是 **`body[data-ds-dark-theme]`**（不是 media query，也不在 `html` 上）→ 不写配置也能实测深色 | 归档 v2 §2.5（实测值：`--dsw-alias-bg-layer-1` 浅 `#fff` / 深 `#232324`；`bg-layer-2` 浅 `#fff` / 深 `#2c2c2e`） |
-| F18 | 两个 `@deepseek-ai` 依赖树**都不完整**：profile 层缺内部包、安装层缺 `react`/`react-dom`/`shiki`/`clsx` | 归档 v2 §2.5（2026-09-28 实测；`scripts/link-dsh-runtime.mjs` 默认链 profile 层） |
+| F16 | 客户端 bundle 由宿主**按需从磁盘读**并送到浏览器 → `tsc && tsdown` 之后**硬刷新即可**，不必重启 `dsh web` | 早期那次尝试 §2.5 的实测更正（2026-09-27） |
+| F17 | 深色主题的选择器是 **`body[data-ds-dark-theme]`**（不是 media query，也不在 `html` 上）→ 不写配置也能实测深色 | 早期那次尝试 §2.5（实测值：`--dsw-alias-bg-layer-1` 浅 `#fff` / 深 `#232324`；`bg-layer-2` 浅 `#fff` / 深 `#2c2c2e`） |
+| F18 | 两个 `@deepseek-ai` 依赖树**都不完整**：profile 层缺内部包、安装层缺 `react`/`react-dom`/`shiki`/`clsx` | 早期那次尝试 §2.5（2026-09-28 实测；`scripts/link-dsh-runtime.mjs` 默认链 profile 层） |
 | F19 | `ctx.sessionProjections` 是**注册表**，不是数据源；`stateOf(session,key)` / `snapshot(session,keys?)` 返回值 | `$DSH_PKG/dsh-session-projection/lib/types/index.d.ts` |
 | F20 | 宿主**没有**任何现成的"每请求上下文构成"投影；上游是靠自己的 fold 单元算出来并 `wire.view` 下发的 | 逐个枚举 0.2.0-rc.1 的 `SessionProjectionStateMap` 合并点：`turnOutline`/`contextBreakdown`/`tokenUsage`/`contextPressure`/`subagentCatalog`/`todos`/`goal`/`plan`… 无一是"每请求上下文清单" |
 | F21 | 斜杠命令：`ctx.commands.register({name (小写无斜杠), description, handler(invocation)})`，`invocation = {commandId, agent, rawInput, attachments, signal}` | `$DSH_PKG/dsh-commands/lib/types/index.d.ts`；`/compact` 是完整范例（`$DSH_SRC packages/compaction/command-compact/src/index.ts:104-118`） |
 | F22 | 系统提示词可按 Agent 作用域注入：`ctx.systemPrompt.section/context`（每 **preStep** 重新 assemble），一次性可用 `agent.inject(msg)` | `$DSH_SRC packages/core/agent-loop/src/agent.ts:246`、`runtime-context.ts:14-70`。**M7+** 才用 |
-| F23 | `dsh --profile web --dump-config` 可**静态合成插件树而不 boot** → 用来确认插件挂载与我们的命名空间是否冲突 | 归档 v2 §2.5 |
+| F23 | `dsh --profile web --dump-config` 可**静态合成插件树而不 boot** → 用来确认插件挂载与我们的命名空间是否冲突 | 早期那次尝试 §2.5 |
 | F24 | 子会话的目录/状态/身份**已有平台投影**：父会话 `subagentCatalog`、子会话 `subagentTiming` + `subagent` | `$DSH_PKG/dsh-subagent/lib/types/{catalog,projection-types}.d.ts`；见 §F13.1 |
 | F25 | **子会话不进左侧会话列表**；导航入口是**父会话页头的血缘面包屑 + 后代数量触发器**；官方 UI 包 `dsh-client-ui-subagent`（5 个槽位，含右侧 Sidebar 打开子会话对话） | `$DSH_PKG/dsh-client-ui-subagent/README.zh.md`（原文见 §F13.1） |
 | F26 | **fork 子会话可以可续接**：fork provider 实现了 `prepareContinuable`（方法存在即能力）→ `startContinuable({provider:'fork'})` 可用 | `$DSH_PKG/dsh-subagent-fork-in-process/lib/index.js` 全文；`dsh-subagent/lib/types/types.d.ts:360-375`；见 §F13.2 |

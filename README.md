@@ -66,7 +66,6 @@ The shell comes **entirely from upstream [`dsh-context`](https://github.com/bowe
 | [`docs/04-roadmap.md`](docs/04-roadmap.md) | Stages M0–M7 (deliverables / tests / **who accepts** / **authorization gates**) |
 | [`docs/05-test-plan.md`](docs/05-test-plan.md) | Test lanes, real-route test pattern, human-gate checklist, failure-mode cases |
 | [`docs/06-orchestration.md`](docs/06-orchestration.md) | Snapshot / fork / compaction / dispatch semantics, authorization list, error-code mapping |
-| [`docs/07-v2-archive.md`](docs/07-v2-archive.md) | Audit of the archived line: **14-item defect ledger**, what to reuse, what never to reuse |
 | [`docs/08-open-questions.md`](docs/08-open-questions.md) | **Questions to settle** (each with a recommendation) + the external-model review log |
 | [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **Requirement traceability**: every original request and every capability from the WeChat screenshots → which goal → done / not done / downgraded |
 | [`AGENTS.md`](AGENTS.md) | Working agreement: hard constraints, platform pitfalls, testing discipline |
@@ -94,8 +93,9 @@ This project is **MIT** ([`LICENSE`](LICENSE)); the portions copied from upstrea
 [`UPSTREAM.md`](UPSTREAM.md)). This is an independent fork, **not affiliated with or endorsed by** the
 upstream author.
 
-## Archive
+## About the earlier attempt
 
-The git history keeps an earlier line built on upstream `v0.59.0` (branch `v2-upstream-base`,
-tag `v2-archive-20260928`). The new line re-forks from tag `v0.59.2`; the audit and rationale are in
-[`docs/07-v2-archive.md`](docs/07-v2-archive.md).
+This repository previously carried an earlier line built on upstream `v0.59.0` (during 2026-09). **Its directory and git
+history are gone**, and the audit document was deleted at the user's request. This line re-forks from tag `v0.59.2`;
+**only the "don't repeat these" conclusions survive**, kept in [`docs/01`](docs/01-platform-facts.md) and
+[`AGENTS.md`](AGENTS.md) §2.
