@@ -115,9 +115,15 @@ dsh --profile web --dump-config                                      # 静态确
 1. **先写测试，确认它红。** 一条从来没红过的测试不构成证据；护栏测试要**反向验证会真红**（改坏实现 → 看它红 → 改回）。
 2. **不得先写实现再补测试。**
 3. **客户端半（React/浏览器）无法 TDD** → 必须过**人工门禁**（`docs/03` §7 的 30 条清单，按 R 编号覆盖）。
-   ⚠️ **本机已彻底删除 browser-skill / `bsk`（用户要求）→ 助手没有浏览器工具**：界面验证改为
-   ① `node demo/check-static.mjs`（id/class/讲解词契约）② `node demo/check-runtime.mjs`（最小 DOM 桩跑真渲染与切换）
-   ③ demo 页面内**自测面板**自报测量值 ④ **用户本人在手机与桌面上看**（主观判断只有他能给）。
+   ⚠️ **浏览器工具的现状（2026-09-30）**：
+   · `browser-skill`/`bsk` 已按用户要求**彻底删除**；
+   · **官方 `browser-use`（Playwright MCP，headless）已按用户选 B 恢复**：两个包装进 `web` profile（版本 `0.2.0-rc.1`，
+     与运行时一致；`@playwright/mcp@0.0.80` 解析通过；chromium/headless-shell rev 1243 已在本地缓存，无需下载），
+     patch 里那段 `insert` 已取消注释，`dsh --profile web --dump-config` exit 0 且两行都在合成树里。
+     **生效范围＝新建会话**；**已活动的会话（含本会话）不受影响**。要用来验证界面，**开一个新会话**再叫助手。
+   · 会话里没有该工具时，界面验证仍走：① `node demo/check-static.mjs`（id/class/讲解词契约）
+     ② `node demo/check-runtime.mjs`（最小 DOM 桩跑真渲染与切换）③ demo 页面内**自测面板**自报测量值
+     ④ **用户本人在手机与桌面上看**（主观判断只有他能给）。
 4. **布局/交互类改动：先在静态 demo 里做出来、用浏览器量过，再搬进插件。**
    仓库内已有 **`demo/`（M0.5 交互门禁）**：界面改动先在它里面改，**用户逐条确认后**再搬进插件（客户端半无法 TDD，且每次改插件都要用户重启）。
    demo 要能自报测量值（元素尺寸、命中坐标、是否溢出），因为 agent 侧没有 `evaluate`。
@@ -144,7 +150,7 @@ dsh --profile web --dump-config                                      # 静态确
 ## 5. 当前状态
 
 > **进度看板（唯一状态源）**：[`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) —— **细粒度任务表**
-> （ID / 子任务 / 状态 / **文件动作（范围冻结）**），当前 **DONE 42 / 共 174**，需要用户的步骤标 `WAIT🙋`。
+> （ID / 子任务 / 状态 / **文件动作（范围冻结）**），当前 **DONE 43 / 共 175**，需要用户的步骤标 `WAIT🙋`。
 > **每次收尾必须回来同步它**（含 §11 进度总览），否则就会出现第二个"真相"。
 
 | 阶段 | 状态 |
