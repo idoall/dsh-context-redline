@@ -45,7 +45,7 @@ const window = { __trendSeries: [] };
 /* ---------------- 执行 demo.js，并取出内部状态 ---------------- */
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
-  trendTipRows, showTrendTip, hideTrendTip,
+  trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter,
   nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement };`;
 
 const run = new Function('document', 'window', 'requestAnimationFrame', 'setTimeout', 'console',
@@ -129,6 +129,35 @@ check('行身份链跨替换体：#1287 → #1301', JSON.stringify(api.familyOf(
   check('trendTip 在 trendScroll 之前（即不在滚动容器里）',
     trendHtml.indexOf('id="trendTip"') < trendHtml.indexOf('id="trendScroll"'), '顺序检查');
   check('柱子不再用原生 title（避免延迟与手机无提示）', !/class="tbar[^>]*title=/.test(trendHtml));
+}
+
+/* ---------------- ✂ 标记语义（用户问"三个剪刀是啥意思" → 这里锁死正确行为） ---------------- */
+{
+  const S = api.S();
+  S.trendGran = 'step';
+  api.render();   // 改完粒度必须先重渲染，否则读到的是上一次的 HTML（这里踩过一次）
+  const marked = api.REQUESTS.filter((r) => api.markersOfReq(r).length > 0).map((r) => r.seq);
+  check('按步骤：每个事件只标一根柱 → 2 个事件 = 2 根柱', marked.length === 2, `marked=${JSON.stringify(marked)}`);
+  check('被标的正是「事件之后的第一个请求」',
+    api.EVENTS.every((ev) => marked.includes(api.firstReqAtOrAfter(ev.seq))), `firstAfter=${api.EVENTS.map((e) => api.firstReqAtOrAfter(e.seq)).join(',')}`);
+  const flat = api.REQUESTS.flatMap((r) => api.markersOfReq(r));
+  check('同一个事件不会被标两次（之前这里多出一个重复的剪刀）',
+    flat.length === new Set(flat.map((e) => e.seq)).size, `flat=${flat.length} unique=${new Set(flat.map((e) => e.seq)).size}`);
+
+  const stepHtml = registry.get('cardTrend').innerHTML;
+  check('按步骤渲染出 2 个 ✂ 标记', (stepHtml.match(/class="mark"/g) || []).length === 2, `marks=${(stepHtml.match(/class="mark"/g) || []).length}`);
+
+  S.trendGran = 'turn'; api.render();
+  check('按轮次：含 2 个事件的那一轮合并成 ✂×2', api.markersOfBar({ turn: 28 }).length === 2, `n=${api.markersOfBar({ turn: 28 }).length}`);
+  check('按轮次：没有事件的那一轮不带标记', api.markersOfBar({ turn: 5 }).length === 0);
+  const turnHtml = registry.get('cardTrend').innerHTML;
+  check('按轮次渲染出 1 个 ✂×2', (turnHtml.match(/class="mark"/g) || []).length === 1 && turnHtml.includes('✂×2'), 'turn 模式标记');
+
+  S.trendGran = 'step';
+  const firstMarked = api.REQUESTS.find((r) => api.markersOfReq(r).length > 0);
+  const rows = api.trendTipRows(firstMarked, api.REQUESTS.indexOf(firstMarked), api.trendItems().series);
+  check('✂ 的提示行写明事件类型与内容', rows.some((r) => r.startsWith('✂ 压缩：')), rows.filter((r) => r.startsWith('✂')).join(' / ') || '(无)');
+  check('讲解词典里有 trend.mark', api.trendTipRows !== undefined && registry.get('cardTrend').innerHTML.includes('data-explain="trend.mark"'), 'mark 可点开讲解');
 }
 
 /* 走一遍动作：草稿 → 应用 → 回滚链 */

@@ -26,6 +26,7 @@ const EXPLAIN = {
   'trend.cat': { t: '聚焦某一类', what: '点右侧分类树里的某一类，趋势图只画那一类的量（纵轴重新缩放）。', effect: '再点一次"全部"恢复。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.6', '参考插件 trendChart: focusCat'] },
   'trend.jump': { t: '回到当前', what: '把趋势条滚回最右端（最新一次请求）。', effect: '只滚动视图。', rev: '不需要', confirm: '不需要', refs: ['docs/03 R1.7'] },
   'trend.pick': { t: '点一根柱子', what: '按轮次模式：选中这一轮（右侧切到该轮**末步**）；按步骤模式：选中那一步。', effect: '右侧浏览器的分类树、条数、token 全部跟着变。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.1 / R1.2'] },
+  'trend.mark': { t: '✂ 压缩 / 剪枝标记', what: '表示这一刻上下文被压过：压缩（历史被摘要替换）或剪枝（工具输出被丢弃）。', effect: '每个事件只标在它之后的第一个请求上；按轮次时标在包含它的那一轮，一轮里有多个事件就显示 ✂×N。鼠标移上去看详情，点它可以跳到那一次。', rev: '只读', confirm: '不需要', refs: ['docs/03 R1.12', '参考插件 attachMarkers'] },
   'trend.strip': { t: '轮次分组条', what: '按步骤模式下，柱子下面按轮分组的刻度带（每格标轮号，宽度 = 该轮步数）。', effect: '点一格 = 选中该轮末步。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.8'] },
 
   'turn.pick': { t: '选择某一轮', what: '点轮次条 = 让右侧浏览器切到该轮最后一步。', effect: '右侧标题变成"第 T 轮（共 N 步，显示末步）"，分类条数/token/占比跟着变。', rev: '随时可切别的轮', confirm: '不需要', refs: ['docs/03 R1.1'] },
@@ -144,16 +145,31 @@ const REQUESTS = [
   { seq: 1310, turn: RICH_TURN, step: 3, time: '12:10', surface: [1, 2, 3, 1240, 1241, 1243, 1287, 1290, 1293, 1295, 1297, 1299, 1301, 1303], gone: { 1287: 1301 } }
 ];
 
-/** ✂ 压缩/裁剪事件：挂在它之后的第一个请求上（参考插件 attachMarkers 的做法） */
+/** ✂ 压缩 / 剪枝（prune）事件。语义照参考插件的 attachMarkers：
+ *  **每个事件只标在「它之后的第一个请求」那一根柱子上**（一个事件 = 一根柱，绝不重复标）。 */
 const EVENTS = [
-  { seq: 1200, kind: 'compaction', label: '压缩 checkpoint（早期历史被摘要取代）' },
-  { seq: 1296, kind: 'prune', label: '裁剪：部分工具输出被丢弃' }
+  { seq: 1200, kind: 'compaction', label: '压缩上下文（摘要替换 12 条消息）' },
+  { seq: 1296, kind: 'prune', label: '剪枝工具输出' }
 ];
-function markerOf(req) {
-  let m = null;
-  for (const ev of EVENTS) if (req.seq >= ev.seq) m = ev;
-  return m;
+const KIND_LABEL = { compaction: '压缩', prune: '剪枝' };
+/** 该事件之后出现的第一个请求 */
+function firstReqAtOrAfter(seq) {
+  const r = REQUESTS.find((x) => x.seq >= seq);
+  return r ? r.seq : null;
 }
+/** 这一根柱子（按步骤模式）上挂着的事件；正常 0 或 1 条 */
+function markersOfReq(req) {
+  return EVENTS.filter((ev) => firstReqAtOrAfter(ev.seq) === req.seq);
+}
+/** 这一根柱子（两种粒度通用）上挂着的事件：
+ *  按轮次时该轮各步的标记会合并（因为一轮只有一根柱，不能把事件吞掉）。 */
+function markersOfBar(item) {
+  if (S.trendGran !== 'turn') return markersOfReq(item);
+  const seen = new Set();
+  return reqsOfTurn(item.turn).flatMap((r) => markersOfReq(r)).filter((ev) => (seen.has(ev.seq) ? false : seen.add(ev.seq)));
+}
+/** 兼容旧调用：取第一（通常也是唯一）个 */
+function markerOf(req) { return markersOfReq(req)[0] || null; }
 
 const initial = () => ({
   theme: 'dark', explain: false, selfcheck: false,
@@ -365,8 +381,8 @@ function trendTipRows(req, i, series) {
     ? `Δ ${v > 0 ? '+' : ''}${fmt(v)}`
     : (S.trendCat ? `${catLabel(S.trendCat)} ≈ ${fmt(Math.abs(v))}` : `合计 ≈ ${fmt(Math.abs(v))}`);
   const rows = [head, metric];
-  const m = markerOf(req);
-  if (m) rows.push(`✂ ${m.label}`);
+  // 事件行：按步骤时该柱最多一条；按轮次时该轮可能含多条，逐条列出（用户就是靠这行知道 ✂ 是什么）
+  for (const ev of markersOfBar(req)) rows.push(`✂ ${KIND_LABEL[ev.kind] || ev.kind}：${ev.label}`);
   return rows;
 }
 /** 把 tip 贴到该柱子的**可见切片**上（夹在滚动容器可视范围内，绝不越界） */
@@ -396,8 +412,7 @@ function renderTrend() {
   const maxAll = Math.max(1, ...series.map((v) => Math.abs(v)));
   const selIdx = list.findIndex((r) => r.seq === S.selSeq);
   const granLabel = S.trendGran === 'turn' ? `按轮次（共 ${REQUESTS[REQUESTS.length - 1].turn} 轮）` : `按步骤（共 ${REQUESTS.length} 次请求）`;
-  let markerIdx = -1;
-  const markers = list.map((r, i) => { const m = markerOf(r); if (m && i > markerIdx) markerIdx = i; return m; });
+  const markers = list.map((r) => markersOfBar(r));
 
   $('cardTrend').innerHTML = `
     <div class="card-title">上下文趋势
@@ -421,7 +436,9 @@ function renderTrend() {
       <div class="chart-tip" id="trendTip" hidden></div>
       <div class="trendscroll" id="trendScroll">
         <div class="trendinner" style="width:${list.length * (BAR_W + BAR_GAP)}px">
-          <div class="markers">${markers.map((m, i) => (m ? `<span class="mark" style="left:${i * (BAR_W + BAR_GAP)}px;width:${BAR_W}px" title="${esc(m.label)}">✂</span>` : '')).join('')}</div>
+          <div class="markers">${markers.map((evs, i) => (evs.length
+            ? `<span class="mark" data-marki="${i}" data-explain="trend.mark" style="left:${i * (BAR_W + BAR_GAP)}px;width:${BAR_W}px">✂${evs.length > 1 ? '×' + evs.length : ''}</span>`
+            : '')).join('')}</div>
           <div class="bars">
             ${list.map((r, i) => {
               const v = series[i] || 0;
@@ -479,6 +496,12 @@ function renderTrend() {
       showTrendTip(i, r, series);   // 触屏没有 hover：点一下就常显，直到滑开或换一根
     };
   });
+  // ✂ 标记自己也要能 hover 出提示（用户就是因为它没有任何说明才来问的）
+  c.querySelectorAll('.mark').forEach((mk) => {
+    const i = Number(mk.dataset.marki);
+    mk.onmouseenter = () => showTrendTip(i, list[i], series);
+    mk.onclick = () => { const r = list[i]; if (r) selectReq(r, `已跳到 ✂ 所在的那一次：第 ${r.turn} 轮 · 第 ${r.step} 步`); };
+  });
   const wrap = c.querySelector('.trendpos');
   if (wrap) { wrap.onmouseleave = () => hideTrendTip(); }
   c.querySelectorAll('.tcell').forEach((b) => {
@@ -534,7 +557,8 @@ function renderStep() {
 function renderEvents() {
   $('cardEvents').innerHTML = `
     <div class="card-title">上下文事件 <span class="hint">（压缩 / 裁剪，会标在趋势图上）</span></div>
-    ${EVENTS.map((e) => `<div class="cap">#${e.seq} · ${e.kind === 'compaction' ? '压缩' : '裁剪'} · ${esc(e.label)}</div>`).join('')}
+    <div class="cap" style="margin-bottom:4px"><b>✂ = 上下文被压缩 / 剪枝的位置</b>；每个事件只标在它之后的<b>第一个请求</b>上（鼠标移到 ✂ 上看详情，点它可跳到那一次）。</div>
+    ${EVENTS.map((e) => `<div class="cap">#${e.seq} · ✂ ${KIND_LABEL[e.kind]} · ${esc(e.label)} → 标在第 ${(REQUESTS.find((r) => r.seq >= e.seq) || {}).turn} 轮 · 第 ${(REQUESTS.find((r) => r.seq >= e.seq) || {}).step} 步</div>`).join('')}
     <div class="cap" style="margin-top:4px">共 ${TOTAL_TURNS} 轮 / ${REQUESTS.length} 次请求 —— 把趋势条拉宽就能看到全部。</div>`;
 }
 
