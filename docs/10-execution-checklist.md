@@ -31,6 +31,7 @@
 | X-03 | 每个阶段收尾时回写本表的 `状态` 与 `→ 证据` | DOING | 本文件 |
 | X-04 | 新发现的平台事实回写 `docs/01`；未核实的进"待验证"，不得当依据 | DOING | `docs/01-platform-facts.md` |
 | X-05 | 每阶段收尾同步 §11 进度总览（防止出现第二个"真相"） | DOING | 本文件 §11 |
+| X-08 | 维护 `docs/11-session-handoff.md`：每次收尾更新"最新提交/进度/卡点/demo 服务/浏览器工具状态"与那段可复制交接文本（换会话时用户直接粘贴） | DOING（本次已建） | `docs/11-session-handoff.md` |
 | X-07 | **恢复官方浏览器控制**（用户选 B）：装 `@deepseek-ai/dsh-browser-use@0.2.0-rc.1` + `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.2.0-rc.1`（peer 钉在运行时 0.2.0-rc.1；`@playwright/mcp@0.0.80` 经 `require.resolve` 验证可解析；chromium / headless-shell rev 1243 已在 `~/Library/Caches/ms-playwright`）→ 取消 patch 里那段 `insert` 注释 → `dump-config` exit 0 且两行在合成树里；`package.json` 差异仅预期两行、其它插件完好。**回退**：还原 `cordis.patch.yml.before-browser-use-restore-20260930-184704` + `dsh plugin --profile web remove` 那两包 + 重启。**生效范围＝新建会话**（本会话不受影响） | DONE（**待你在新会话验证工具是否出现**） | `$DSH_HOME/profiles/web/{cordis.patch.yml,package.json,pnpm-lock.yaml}`（已各备份一份） |
 | X-06 | 🙋 push（最后单独授权）：`git push -u origin main` | WAIT🙋 | 远端 `origin` |
 
@@ -276,7 +277,7 @@
 
 | 阶段 | 项数 | DONE | DOING | TODO | WAIT🙋 |
 |---|---|---|---|---|---|
-| X 横切 | 7 | **2** | 3 | 1 | 1 |
+| X 横切 | 8 | **2** | 4 | 1 | 1 |
 | M0 文档集 | 20 | **20** | 0 | 0 | 0 |
 | M0.5 交互 demo | 22 | **21** | 0 | 0 | 1 |
 | M1 骨架与身份 | 14 | 0 | 0 | 13 | 1 |
@@ -287,7 +288,7 @@
 | M5 编排 | 26 | 0 | 0 | 25 | 1 |
 | M6 入口与发布 | 10 | 0 | 0 | 10 | 0 |
 | M7+ 后续 | 4 | 0 | 0 | 4 | 0 |
-| **合计** | **175** | **43** | **3** | **121** | **8** |
+| **合计** | **176** | **43** | **4** | **121** | **8** |
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
 > 当前卡点：**M05-15 交互定稿（等你）**；其后 **M1-01 授权包①（等你重启）**。

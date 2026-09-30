@@ -1,0 +1,320 @@
+- generic [active] [ref=f1e1]:
+  - banner [ref=f1e2]:
+    - generic [ref=f1e3]:
+      - generic [ref=f1e4]: 上下文批改台
+      - generic [ref=f1e5]: 交互原型 v1
+      - link "说明" [ref=f1e6] [cursor=pointer]:
+        - /url: ./README.md
+    - generic "状态开关" [ref=f1e7]:
+      - button "轮次未结束" [ref=f1e8] [cursor=pointer]
+      - button "会话在本进程" [pressed] [ref=f1e10] [cursor=pointer]
+      - button "官方团队可用" [pressed] [ref=f1e12] [cursor=pointer]
+      - button "子会话正忙（压缩会 busy）" [ref=f1e14] [cursor=pointer]
+      - button "草稿 0 条" [ref=f1e16] [cursor=pointer]
+      - button "回流未确认" [ref=f1e18] [cursor=pointer]
+    - generic [ref=f1e20]:
+      - button "讲解模式" [ref=f1e21] [cursor=pointer]
+      - button "深色 / 浅色" [ref=f1e22] [cursor=pointer]
+      - button "自测面板" [ref=f1e23] [cursor=pointer]
+      - button "重置原型" [ref=f1e24] [cursor=pointer]
+  - main [ref=f1e25]:
+    - generic [ref=f1e26]:
+      - generic [ref=f1e27]:
+        - generic [ref=f1e28]:
+          - text: 上下文统计
+          - generic [ref=f1e29]: （当前视图：第 28 轮 · 第 3 步 · 当前）
+        - generic [ref=f1e30]:
+          - generic [ref=f1e31]:
+            - generic [ref=f1e32]: "13"
+            - text: 模型可见条目（另 1 条被遮蔽）
+          - generic [ref=f1e33]:
+            - generic [ref=f1e34]: "3"
+            - text: 用户消息
+          - generic [ref=f1e35]:
+            - generic [ref=f1e36]: "4"
+            - text: 注入内容
+          - generic [ref=f1e37]:
+            - generic [ref=f1e38]: "0"
+            - text: 未生效改动
+      - generic [ref=f1e39]:
+        - generic [ref=f1e40]:
+          - text: 上下文趋势
+          - generic [ref=f1e41]: 按轮次（共 28 轮）
+          - button "按轮次" [pressed] [ref=f1e42] [cursor=pointer]
+          - button "按步骤" [ref=f1e43] [cursor=pointer]
+          - button "总计" [pressed] [ref=f1e44] [cursor=pointer]
+          - button "增量" [ref=f1e45] [cursor=pointer]
+          - button "自适应" [pressed] [ref=f1e46] [cursor=pointer]
+          - button "回到当前" [ref=f1e47] [cursor=pointer]
+        - generic [ref=f1e48]: 聚焦：全部类别 —— 点分类树左边的色块可只画某一类 · 柱高 = 该次请求的上下文量 · 刻度上限 按可见范围自适应 = 7.3k
+        - generic [ref=f1e49]:
+          - generic [ref=f1e50]:
+            - generic [ref=f1e51]: 7.3k
+            - generic [ref=f1e52]: 3.6k
+            - generic [ref=f1e53]: "0"
+          - generic [ref=f1e56]:
+            - generic [ref=f1e57]: ✂×2
+            - generic [ref=f1e59]:
+              - button "第 1 轮 · 共 2 步 · ≈4.5k" [ref=f1e60] [cursor=pointer]
+              - button "第 2 轮 · 共 3 步 · ≈4.6k" [ref=f1e61] [cursor=pointer]
+              - button "第 3 轮 · 共 4 步 · ≈5.7k" [ref=f1e62] [cursor=pointer]
+              - button "第 4 轮 · 共 1 步 · ≈4.4k" [ref=f1e63] [cursor=pointer]
+              - button "第 5 轮 · 共 2 步 · ≈4.6k" [ref=f1e64] [cursor=pointer]
+              - button "第 6 轮 · 共 3 步 · ≈5.6k" [ref=f1e65] [cursor=pointer]
+              - button "第 7 轮 · 共 4 步 · ≈5.1k" [ref=f1e66] [cursor=pointer]
+              - button "第 8 轮 · 共 1 步 · ≈4.5k" [ref=f1e67] [cursor=pointer]
+              - button "第 9 轮 · 共 2 步 · ≈5.7k" [ref=f1e68] [cursor=pointer]
+              - button "第 10 轮 · 共 3 步 · ≈4.9k" [ref=f1e69] [cursor=pointer]
+              - button "第 11 轮 · 共 4 步 · ≈5.3k" [ref=f1e70] [cursor=pointer]
+              - button "第 12 轮 · 共 1 步 · ≈5.5k" [ref=f1e71] [cursor=pointer]
+              - button "第 13 轮 · 共 2 步 · ≈4.8k" [ref=f1e72] [cursor=pointer]
+              - button "第 14 轮 · 共 3 步 · ≈4.8k" [ref=f1e73] [cursor=pointer]
+              - button "第 15 轮 · 共 4 步 · ≈6.0k" [ref=f1e74] [cursor=pointer]
+              - button "第 16 轮 · 共 1 步 · ≈4.3k" [ref=f1e75] [cursor=pointer]
+              - button "第 17 轮 · 共 2 步 · ≈4.5k" [ref=f1e76] [cursor=pointer]
+              - button "第 18 轮 · 共 3 步 · ≈5.5k" [ref=f1e77] [cursor=pointer]
+              - button "第 19 轮 · 共 4 步 · ≈4.9k" [ref=f1e78] [cursor=pointer]
+              - button "第 20 轮 · 共 1 步 · ≈4.4k" [ref=f1e79] [cursor=pointer]
+              - button "第 21 轮 · 共 2 步 · ≈5.6k" [ref=f1e80] [cursor=pointer]
+              - button "第 22 轮 · 共 3 步 · ≈4.8k" [ref=f1e81] [cursor=pointer]
+              - button "第 23 轮 · 共 4 步 · ≈5.1k" [ref=f1e82] [cursor=pointer]
+              - button "第 24 轮 · 共 1 步 · ≈5.4k" [ref=f1e83] [cursor=pointer]
+              - button "第 25 轮 · 共 2 步 · ≈4.8k" [ref=f1e84] [cursor=pointer]
+              - button "第 26 轮 · 共 3 步 · ≈4.9k" [ref=f1e85] [cursor=pointer]
+              - button "第 27 轮 · 共 4 步 · ≈6.1k" [ref=f1e86] [cursor=pointer]
+              - button "第 28 轮 · 共 3 步 · ≈7.3k" [ref=f1e87] [cursor=pointer]
+            - generic [ref=f1e88]:
+              - button "1" [ref=f1e89] [cursor=pointer]
+              - button "2" [ref=f1e90] [cursor=pointer]
+              - button "3" [ref=f1e91] [cursor=pointer]
+              - button "4" [ref=f1e92] [cursor=pointer]
+              - button "5" [ref=f1e93] [cursor=pointer]
+              - button "6" [ref=f1e94] [cursor=pointer]
+              - button "7" [ref=f1e95] [cursor=pointer]
+              - button "8" [ref=f1e96] [cursor=pointer]
+              - button "9" [ref=f1e97] [cursor=pointer]
+              - button "10" [ref=f1e98] [cursor=pointer]
+              - button "11" [ref=f1e99] [cursor=pointer]
+              - button "12" [ref=f1e100] [cursor=pointer]
+              - button "13" [ref=f1e101] [cursor=pointer]
+              - button "14" [ref=f1e102] [cursor=pointer]
+              - button "15" [ref=f1e103] [cursor=pointer]
+              - button "16" [ref=f1e104] [cursor=pointer]
+              - button "17" [ref=f1e105] [cursor=pointer]
+              - button "18" [ref=f1e106] [cursor=pointer]
+              - button "19" [ref=f1e107] [cursor=pointer]
+              - button "20" [ref=f1e108] [cursor=pointer]
+              - button "21" [ref=f1e109] [cursor=pointer]
+              - button "22" [ref=f1e110] [cursor=pointer]
+              - button "23" [ref=f1e111] [cursor=pointer]
+              - button "24" [ref=f1e112] [cursor=pointer]
+              - button "25" [ref=f1e113] [cursor=pointer]
+              - button "26" [ref=f1e114] [cursor=pointer]
+              - button "27" [ref=f1e115] [cursor=pointer]
+              - button "28" [ref=f1e116] [cursor=pointer]
+        - generic [ref=f1e117]:
+          - generic [ref=f1e118]: 第 28 轮：
+          - button "第 1 步" [ref=f1e119] [cursor=pointer]
+          - button "第 2 步" [ref=f1e120] [cursor=pointer]
+          - button "第 3 步" [ref=f1e121] [cursor=pointer]
+          - button "当前（下一次请求）" [ref=f1e122] [cursor=pointer]
+          - button "◀ 上一轮" [ref=f1e123] [cursor=pointer]
+          - button "下一轮 ▶" [disabled] [ref=f1e124]
+          - button "◀ 上一步" [ref=f1e125] [cursor=pointer]
+          - button "下一步 ▶" [disabled] [ref=f1e126]
+      - generic [ref=f1e127]:
+        - generic [ref=f1e128]:
+          - text: 第 28 轮 · 第 3 步（共 3 步）
+          - generic [ref=f1e129]: 12:10 · 当前（下一次请求）
+        - generic [ref=f1e130]: 这一屏的条数：用户消息 3 · 注入内容 4 · ✂ 剪枝工具输出
+        - generic [ref=f1e131]:
+          - button "改这一轮的用户消息" [ref=f1e132] [cursor=pointer]
+          - button "回到当前" [ref=f1e133] [cursor=pointer]
+      - generic [ref=f1e134]:
+        - generic [ref=f1e135]:
+          - text: 上下文事件
+          - generic [ref=f1e136]: （压缩 / 裁剪，会标在趋势图上）
+        - generic [ref=f1e137]: ✂ = 上下文被压缩 / 剪枝的位置；每个事件只标在它之后的第一个请求上（鼠标移到 ✂ 上看详情，点它可跳到那一次）。
+        - generic [ref=f1e138]: "#1200 · ✂ 压缩 · 压缩上下文（摘要替换 12 条消息） → 标在第 28 轮 · 第 1 步"
+        - generic [ref=f1e139]: "#1296 · ✂ 剪枝 · 剪枝工具输出 → 标在第 28 轮 · 第 3 步"
+        - generic [ref=f1e140]: 共 28 轮 / 72 次请求 —— 把趋势条拉宽就能看到全部。
+    - generic [ref=f1e141]:
+      - generic [ref=f1e142]:
+        - generic [ref=f1e143]:
+          - text: 上下文浏览器
+          - generic [ref=f1e144]: DNA 模式
+          - combobox "选轮次" [ref=f1e145] [cursor=pointer]:
+            - option "第 1 轮（共 2 步）"
+            - option "第 2 轮（共 3 步）"
+            - option "第 3 轮（共 4 步）"
+            - option "第 4 轮（共 1 步）"
+            - option "第 5 轮（共 2 步）"
+            - option "第 6 轮（共 3 步）"
+            - option "第 7 轮（共 4 步）"
+            - option "第 8 轮（共 1 步）"
+            - option "第 9 轮（共 2 步）"
+            - option "第 10 轮（共 3 步）"
+            - option "第 11 轮（共 4 步）"
+            - option "第 12 轮（共 1 步）"
+            - option "第 13 轮（共 2 步）"
+            - option "第 14 轮（共 3 步）"
+            - option "第 15 轮（共 4 步）"
+            - option "第 16 轮（共 1 步）"
+            - option "第 17 轮（共 2 步）"
+            - option "第 18 轮（共 3 步）"
+            - option "第 19 轮（共 4 步）"
+            - option "第 20 轮（共 1 步）"
+            - option "第 21 轮（共 2 步）"
+            - option "第 22 轮（共 3 步）"
+            - option "第 23 轮（共 4 步）"
+            - option "第 24 轮（共 1 步）"
+            - option "第 25 轮（共 2 步）"
+            - option "第 26 轮（共 3 步）"
+            - option "第 27 轮（共 4 步）"
+            - option "第 28 轮（共 3 步）" [selected]
+          - combobox "选步骤" [ref=f1e146] [cursor=pointer]:
+            - option "第 1 步（共 3 步） · 12:05"
+            - option "第 2 步（共 3 步） · 12:07"
+            - option "第 3 步（共 3 步） · 12:10"
+            - option "当前（下一次请求）" [selected]
+        - generic [ref=f1e147]: 当前 · 下一次请求 · 估算合计 ≈ 7.3k tokens · ✂ 剪枝工具输出
+        - generic [ref=f1e148]:
+          - button "点色块 = 趋势图只画这一类 系统提示词 1 项 ≈2.3k 32%" [ref=f1e150] [cursor=pointer]:
+            - generic "点色块 = 趋势图只画这一类" [ref=f1e152]
+            - generic [ref=f1e153]: 系统提示词
+            - generic [ref=f1e154]: 1 项
+            - generic [ref=f1e155]: ≈2.3k
+            - generic [ref=f1e156]: 32%
+          - button "点色块 = 趋势图只画这一类 工具定义 0 项 ≈0 0%" [ref=f1e158] [cursor=pointer]:
+            - generic "点色块 = 趋势图只画这一类" [ref=f1e160]
+            - generic [ref=f1e161]: 工具定义
+            - generic [ref=f1e162]: 0 项
+            - generic [ref=f1e163]: ≈0
+            - generic [ref=f1e164]: 0%
+          - generic [ref=f1e165]:
+            - button "点色块 = 趋势图只画这一类 用户消息 3 项（+1 被遮蔽） ≈270 4%" [expanded] [ref=f1e166] [cursor=pointer]:
+              - generic "点色块 = 趋势图只画这一类" [ref=f1e168]
+              - generic [ref=f1e169]: 用户消息
+              - generic [ref=f1e170]: 3 项（+1 被遮蔽）
+              - generic [ref=f1e171]: ≈270
+              - generic [ref=f1e172]: 4%
+            - generic [ref=f1e173]:
+              - generic [ref=f1e174]:
+                - button "点色块 = 趋势图聚焦这一类 用户消息 这条消息我后来发现写错了：我说的是\"只改用户消息\"，其实要把注入内容也一起管。请以后都按这个来。 ≈120" [ref=f1e175] [cursor=pointer]:
+                  - generic "点色块 = 趋势图聚焦这一类" [ref=f1e176]
+                  - generic [ref=f1e177]: 用户消息
+                  - generic [ref=f1e178]: 这条消息我后来发现写错了：我说的是"只改用户消息"，其实要把注入内容也一起管。请以后都按这个来。
+                  - generic [ref=f1e179]: ≈120
+                - generic [ref=f1e180]:
+                  - generic [ref=f1e181]: "#1240"
+                  - button "编辑" [ref=f1e182] [cursor=pointer]
+                  - button "批注" [ref=f1e183] [cursor=pointer]
+              - generic [ref=f1e184]:
+                - 'button "点色块 = 趋势图聚焦这一类 用户消息 （原始版本 #1287）请把「上下文」面板的默认档位设成\"注入的内容\"，我要一眼看到模型这轮收到了什么。 ≈96" [ref=f1e185] [cursor=pointer]':
+                  - generic "点色块 = 趋势图聚焦这一类" [ref=f1e186]
+                  - generic [ref=f1e187]: 用户消息
+                  - generic [ref=f1e188]: "（原始版本 #1287）请把「上下文」面板的默认档位设成\"注入的内容\"，我要一眼看到模型这轮收到了什么。"
+                  - generic [ref=f1e189]: ≈96
+                - generic [ref=f1e190]:
+                  - generic [ref=f1e191]: "#1287"
+                  - generic [ref=f1e192]: "已被 #1301 接替"
+                  - 'generic "这一条已被 #1301 接替，已不在模型可见内容里" [ref=f1e193]': "这一条已被 #1301 接替…"
+                  - button "批注" [ref=f1e194] [cursor=pointer]
+                  - button "版本历史" [ref=f1e195] [cursor=pointer]
+              - generic [ref=f1e196]:
+                - 'button "点色块 = 趋势图聚焦这一类 用户消息 （来自被压缩掉的早期历史 #1290）这句在压缩时被摘要取代了 —— 改写够不到它，只能批注。 ≈40" [ref=f1e197] [cursor=pointer]':
+                  - generic "点色块 = 趋势图聚焦这一类" [ref=f1e198]
+                  - generic [ref=f1e199]: 用户消息
+                  - generic [ref=f1e200]: "（来自被压缩掉的早期历史 #1290）这句在压缩时被摘要取代了 —— 改写够不到它，只能批注。"
+                  - generic [ref=f1e201]: ≈40
+                - generic [ref=f1e202]:
+                  - generic [ref=f1e203]: "#1290"
+                  - generic "这一条被压缩埋掉了，改写够不到它，只能批注" [ref=f1e204]: 这一条被压缩埋掉了，改写够不…
+                  - button "批注" [ref=f1e205] [cursor=pointer]
+              - generic [ref=f1e206]:
+                - 'button "点色块 = 趋势图聚焦这一类 用户消息 （当前可见的替换体 #1301）请把「上下文」面板的默认档位设成\"注入的内容\"，并且给我逐条的 #seq。 ≈110" [ref=f1e207] [cursor=pointer]':
+                  - generic "点色块 = 趋势图聚焦这一类" [ref=f1e208]
+                  - generic [ref=f1e209]: 用户消息
+                  - generic [ref=f1e210]: "（当前可见的替换体 #1301）请把「上下文」面板的默认档位设成\"注入的内容\"，并且给我逐条的 #seq。"
+                  - generic [ref=f1e211]: ≈110
+                - generic [ref=f1e212]:
+                  - generic [ref=f1e213]: "#1301"
+                  - button "编辑" [ref=f1e214] [cursor=pointer]
+                  - button "批注" [ref=f1e215] [cursor=pointer]
+                  - button "版本历史" [ref=f1e216] [cursor=pointer]
+          - button "点色块 = 趋势图只画这一类 注入内容 4 项 ≈2.9k 40%" [ref=f1e218] [cursor=pointer]:
+            - generic "点色块 = 趋势图只画这一类" [ref=f1e220]
+            - generic [ref=f1e221]: 注入内容
+            - generic [ref=f1e222]: 4 项
+            - generic [ref=f1e223]: ≈2.9k
+            - generic [ref=f1e224]: 40%
+          - button "点色块 = 趋势图只画这一类 技能注入 1 项 ≈900 12%" [ref=f1e226] [cursor=pointer]:
+            - generic "点色块 = 趋势图只画这一类" [ref=f1e228]
+            - generic [ref=f1e229]: 技能注入
+            - generic [ref=f1e230]: 1 项
+            - generic [ref=f1e231]: ≈900
+            - generic [ref=f1e232]: 12%
+          - button "点色块 = 趋势图只画这一类 助手消息 2 项 ≈510 7%" [ref=f1e234] [cursor=pointer]:
+            - generic "点色块 = 趋势图只画这一类" [ref=f1e236]
+            - generic [ref=f1e237]: 助手消息
+            - generic [ref=f1e238]: 2 项
+            - generic [ref=f1e239]: ≈510
+            - generic [ref=f1e240]: 7%
+          - button "点色块 = 趋势图只画这一类 工具结果 2 项 ≈410 6%" [ref=f1e242] [cursor=pointer]:
+            - generic "点色块 = 趋势图只画这一类" [ref=f1e244]
+            - generic [ref=f1e245]: 工具结果
+            - generic [ref=f1e246]: 2 项
+            - generic [ref=f1e247]: ≈410
+            - generic [ref=f1e248]: 6%
+      - generic [ref=f1e249]:
+        - generic [ref=f1e250]:
+          - text: 快照与子会话
+          - generic [ref=f1e251]: （A′：只做快照化子会话 + 对接官方；不自己造协作层）
+        - generic [ref=f1e252]:
+          - textbox "人写备注（插件不生成摘要）" [ref=f1e253] [cursor=pointer]
+          - button "冻结当前位置" [ref=f1e254] [cursor=pointer]
+          - button "开子会话（人写首条任务）" [ref=f1e255] [cursor=pointer]
+        - generic [ref=f1e256]: 冻结记录
+        - generic [ref=f1e257]:
+          - generic [ref=f1e258]: snap-20260930-120412
+          - generic [ref=f1e259]: 第 27 轮末 · 41 条 · 12:04 · 备注：改完注入漂移，准备开子会话
+        - generic [ref=f1e260]: 子会话 / 成员索引 活跃 2 / 8（官方 teammate 也占同一份额度）
+        - generic [ref=f1e261]:
+          - generic [ref=f1e262]: 004c37a5
+          - generic [ref=f1e263]: 本项目发起
+          - generic [ref=f1e264]: 运行中
+          - generic [ref=f1e265]: 把 README 双语改完并跑测试 · 来自快照 snap-20260930-120412
+          - button "打开" [ref=f1e266] [cursor=pointer]
+          - button "派活" [ref=f1e267] [cursor=pointer]
+          - button "建成官方任务" [ref=f1e268] [cursor=pointer]
+          - button "压缩" [ref=f1e269] [cursor=pointer]
+          - button "打断" [ref=f1e270] [cursor=pointer]
+        - generic [ref=f1e271]:
+          - generic [ref=f1e272]: 00a1b2c3
+          - generic [ref=f1e273]: 来自 Agent Teams
+          - generic [ref=f1e274]: 空闲
+          - generic [ref=f1e275]: reviewer（官方 teammate）
+          - button "打开" [ref=f1e276] [cursor=pointer]
+          - generic [ref=f1e277]: 请在官方团队面板管理
+        - generic [ref=f1e278]: 待处理的结果 （点这里有说明）
+        - generic [ref=f1e279]:
+          - text: "✅ 已收到平台结算通知：子会话 #004c37a5 已结束：「改完了 3 处，测试全绿」。"
+          - link "标记已查看" [ref=f1e280] [cursor=pointer]:
+            - /url: "#"
+        - generic [ref=f1e281]: 官方团队（只读，显示的就是官方那份数据）
+        - generic [ref=f1e282]:
+          - text: roster：
+          - generic [ref=f1e283]: lead（当前会话）
+          - generic [ref=f1e285]: reviewer
+          - generic [ref=f1e287]: tester
+        - generic [ref=f1e289]: 任务板：
+        - generic [ref=f1e290]:
+          - text: 改 README 双语
+          - generic [ref=f1e292]: · reviewer
+        - generic [ref=f1e293]:
+          - text: 跑全量测试
+          - generic [ref=f1e295]: · 未认领 · 被依赖阻塞
+        - generic [ref=f1e296]:
+          - text: 出发布说明
+          - generic [ref=f1e298]: · tester
+        - generic [ref=f1e299]: 去官方面板（成员导航复用官方）
