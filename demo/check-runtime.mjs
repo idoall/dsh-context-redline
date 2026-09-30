@@ -15,7 +15,10 @@ function makeEl(tag = 'div') {
     tagName: tag, children: [], style: {}, dataset: {}, value: '',
     hidden: false, innerHTML: '', textContent: '', scrollLeft: 0,
     scrollWidth: 2400, clientWidth: 800, scrollHeight: 400, clientHeight: 200, offsetLeft: 40,
-    classList: { add() {}, remove() {}, toggle() {}, contains: () => false },
+    classList: (() => { const set = new Set(); return {
+      add: (c) => set.add(c), remove: (c) => set.delete(c), toggle: (c, on) => (on ? set.add(c) : set.delete(c)),
+      contains: (c) => set.has(c), _all: () => [...set]
+    }; })(),
     appendChild(c) { this.children.push(c); return c; },
     removeChild(c) { return c; }, remove() {},
     setAttribute() {}, getAttribute: () => null, removeAttribute() {},
@@ -40,12 +43,13 @@ const document = {
   querySelectorAll: () => [],
   addEventListener() {}, removeEventListener() {}
 };
-const window = { __trendSeries: [] };
+registry.set('__body', document.body);   // 便于断言 body 上的推挤类
+const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s*899px/.test(q) ? false : false, media: q }) };
 
 /* ---------------- 执行 demo.js，并取出内部状态 ---------------- */
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
-  trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter,
+  trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
   nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement };`;
 
 const run = new Function('document', 'window', 'requestAnimationFrame', 'setTimeout', 'console',
@@ -158,6 +162,18 @@ check('行身份链跨替换体：#1287 → #1301', JSON.stringify(api.familyOf(
   const rows = api.trendTipRows(firstMarked, api.REQUESTS.indexOf(firstMarked), api.trendItems().series);
   check('✂ 的提示行写明事件类型与内容', rows.some((r) => r.startsWith('✂ 压缩：')), rows.filter((r) => r.startsWith('✂')).join(' / ') || '(无)');
   check('讲解词典里有 trend.mark', api.trendTipRows !== undefined && registry.get('cardTrend').innerHTML.includes('data-explain="trend.mark"'), 'mark 可点开讲解');
+}
+
+/* ---------------- 讲解面板：推挤式，不是遮罩（用户要求像 DSH 右侧栏那样"推"出来） ---------------- */
+{
+  const body = registry.get('__body') || document.body;
+  api.openDrawer('act.edit');
+  check('打开讲解面板：面板可见', registry.get('drawer').hidden === false);
+  check('打开讲解面板：body 带 drawer-open（推挤式，内容让位而不是被盖住）', body.classList.contains('drawer-open'), JSON.stringify(body.classList._all()));
+  check('面板内容写明"它是做什么的"', /它是做什么的/.test(registry.get('drawerBody').innerHTML));
+  api.closeDrawer();
+  check('关闭后面板隐藏', registry.get('drawer').hidden === true);
+  check('关闭后 body 收回推挤空间', !body.classList.contains('drawer-open'));
 }
 
 /* 走一遍动作：草稿 → 应用 → 回滚链 */

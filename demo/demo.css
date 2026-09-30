@@ -297,11 +297,24 @@ body {
 }
 
 /* ---------- 抽屉 / 弹窗 / 回执 ---------- */
+/* 讲解面板：像 DSH 右侧栏一样**推**出来 —— 内容被挤窄，而不是被盖住。
+ * 做法：面板还是 fixed 贴右边，但打开时给 body 加 padding-right（腾出同宽的空间），
+ * 于是所有内容重新排版到左侧、右侧不再被遮住，也就不用"先关掉才能看"。
+ * 窄屏放不下 420px 的推挤 → 回退成遮罩式（真侧栏在手机上也这么做）。 */
 .drawer {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); z-index: 60;
   background: var(--dsw-alias-bg-layer-2); border-left: 1px solid var(--dsw-alias-border-l2);
   box-shadow: var(--ds-shadow); display: flex; flex-direction: column;
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: drawer-in .16s ease-out;
+}
+@keyframes drawer-in { from { transform: translateX(12px); opacity: .6; } to { transform: none; opacity: 1; } }
+body.drawer-open { padding-right: min(420px, 100vw); }
+body { transition: padding-right .18s ease-out; }
+/* 窄屏/手机：推不开（一共才那么点宽）→ 退回遮罩式，这时才需要"点外面关掉" */
+@media (max-width: 899px) {
+  body.drawer-open { padding-right: 0; }
+  body.drawer-open::before { content: ''; position: fixed; inset: 0; z-index: 55; background: rgba(0,0,0,.35); }
 }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--dsw-alias-border-l1); }
 .drawer-body { padding: 10px 12px; overflow: auto; -webkit-overflow-scrolling: touch; }

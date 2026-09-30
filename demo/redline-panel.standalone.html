@@ -305,11 +305,24 @@ body {
 }
 
 /* ---------- 抽屉 / 弹窗 / 回执 ---------- */
+/* 讲解面板：像 DSH 右侧栏一样**推**出来 —— 内容被挤窄，而不是被盖住。
+ * 做法：面板还是 fixed 贴右边，但打开时给 body 加 padding-right（腾出同宽的空间），
+ * 于是所有内容重新排版到左侧、右侧不再被遮住，也就不用"先关掉才能看"。
+ * 窄屏放不下 420px 的推挤 → 回退成遮罩式（真侧栏在手机上也这么做）。 */
 .drawer {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); z-index: 60;
   background: var(--dsw-alias-bg-layer-2); border-left: 1px solid var(--dsw-alias-border-l2);
   box-shadow: var(--ds-shadow); display: flex; flex-direction: column;
   padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: drawer-in .16s ease-out;
+}
+@keyframes drawer-in { from { transform: translateX(12px); opacity: .6; } to { transform: none; opacity: 1; } }
+body.drawer-open { padding-right: min(420px, 100vw); }
+body { transition: padding-right .18s ease-out; }
+/* 窄屏/手机：推不开（一共才那么点宽）→ 退回遮罩式，这时才需要"点外面关掉" */
+@media (max-width: 899px) {
+  body.drawer-open { padding-right: 0; }
+  body.drawer-open::before { content: ''; position: fixed; inset: 0; z-index: 55; background: rgba(0,0,0,.35); }
 }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--dsw-alias-border-l1); }
 .drawer-body { padding: 10px 12px; overflow: auto; -webkit-overflow-scrolling: touch; }
@@ -697,9 +710,13 @@ function toast(msg, kind) {
   $('toastWrap').appendChild(d);
   setTimeout(() => d.remove(), 2600);
 }
+/** 打开讲解面板：**推**出右侧栏（body 加 drawer-open → 内容被挤窄、不被遮住） */
 function openDrawer(key) {
   const e = EXPLAIN[key];
   if (!e) return;
+  document.body.classList.add('drawer-open');   // 关键：推挤而不是覆盖
+  const body = $('drawerBody');
+  if (body) body.scrollTop = 0;
   $('drawerTitle').textContent = e.t;
   $('drawerBody').innerHTML = `
     <div class="kv"><b>它是做什么的</b><div>${esc(e.what)}</div></div>
@@ -708,6 +725,11 @@ function openDrawer(key) {
     <div class="kv"><b>要不要确认</b><div>${esc(e.confirm)}</div></div>
     <div class="kv"><b>对应规格</b><div>${(e.refs || []).map(esc).join(' · ')}</div></div>`;
   $('drawer').hidden = false;
+}
+/** 关掉讲解面板（同时收回被推挤的空间） */
+function closeDrawer() {
+  document.body.classList.remove('drawer-open');
+  $('drawer').hidden = true;
 }
 function confirmModal(o) {
   $('modalTitle').textContent = o.title;
@@ -1409,17 +1431,23 @@ function render() {
 }
 
 $('btnTheme').onclick = () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; render(); };
-$('btnExplain').onclick = () => { S.explain = !S.explain; $('btnExplain').setAttribute('aria-pressed', String(S.explain)); render(); toast(S.explain ? '讲解模式：点任一高亮元素看说明' : '讲解模式已关'); };
+$('btnExplain').onclick = () => { S.explain = !S.explain; if (!S.explain) closeDrawer(); $('btnExplain').setAttribute('aria-pressed', String(S.explain)); render(); toast(S.explain ? '讲解模式：点任一高亮元素看说明' : '讲解模式已关'); };
 $('btnSelfcheck').onclick = () => { S.selfcheck = !S.selfcheck; render(); };
 $('btnReset').onclick = () => { S = initial(); render(); toast('原型已重置'); };
-$('drawerClose').onclick = () => { $('drawer').hidden = true; };
+$('drawerClose').onclick = () => closeDrawer();
 $('modalCancel').onclick = () => { $('modalWrap').hidden = true; };
 document.addEventListener('click', (e) => {
   const el = e.target.closest && e.target.closest('[data-explain]');
-  if (S.explain && el) { e.preventDefault(); e.stopPropagation(); openDrawer(el.dataset.explain); }
+  if (S.explain && el) { e.preventDefault(); e.stopPropagation(); openDrawer(el.dataset.explain); return; }
+  // 只有"窄屏遮罩式"才需要点外面关闭；宽屏是推挤式，点别处应保持面板开着（继续对照着看）
+  const drawer = $('drawer');
+  if (!drawer || drawer.hidden) return;
+  const narrow = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 899px)').matches : false;
+  const insideDrawer = !!(e.target.closest && e.target.closest('.drawer'));
+  if (narrow && !insideDrawer) closeDrawer();
 }, true);
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { S.editor = null; $('modalWrap').hidden = true; $('drawer').hidden = true; render(); }
+  if (e.key === 'Escape') { S.editor = null; $('modalWrap').hidden = true; closeDrawer(); render(); }
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && S.editor) submitEditor();
   if (!S.editor && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     const list = reqsOfTurn(S.selTurn), i = list.findIndex((r) => r.seq === S.selSeq);

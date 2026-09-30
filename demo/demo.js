@@ -239,9 +239,13 @@ function toast(msg, kind) {
   $('toastWrap').appendChild(d);
   setTimeout(() => d.remove(), 2600);
 }
+/** 打开讲解面板：**推**出右侧栏（body 加 drawer-open → 内容被挤窄、不被遮住） */
 function openDrawer(key) {
   const e = EXPLAIN[key];
   if (!e) return;
+  document.body.classList.add('drawer-open');   // 关键：推挤而不是覆盖
+  const body = $('drawerBody');
+  if (body) body.scrollTop = 0;
   $('drawerTitle').textContent = e.t;
   $('drawerBody').innerHTML = `
     <div class="kv"><b>它是做什么的</b><div>${esc(e.what)}</div></div>
@@ -250,6 +254,11 @@ function openDrawer(key) {
     <div class="kv"><b>要不要确认</b><div>${esc(e.confirm)}</div></div>
     <div class="kv"><b>对应规格</b><div>${(e.refs || []).map(esc).join(' · ')}</div></div>`;
   $('drawer').hidden = false;
+}
+/** 关掉讲解面板（同时收回被推挤的空间） */
+function closeDrawer() {
+  document.body.classList.remove('drawer-open');
+  $('drawer').hidden = true;
 }
 function confirmModal(o) {
   $('modalTitle').textContent = o.title;
@@ -951,17 +960,23 @@ function render() {
 }
 
 $('btnTheme').onclick = () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; render(); };
-$('btnExplain').onclick = () => { S.explain = !S.explain; $('btnExplain').setAttribute('aria-pressed', String(S.explain)); render(); toast(S.explain ? '讲解模式：点任一高亮元素看说明' : '讲解模式已关'); };
+$('btnExplain').onclick = () => { S.explain = !S.explain; if (!S.explain) closeDrawer(); $('btnExplain').setAttribute('aria-pressed', String(S.explain)); render(); toast(S.explain ? '讲解模式：点任一高亮元素看说明' : '讲解模式已关'); };
 $('btnSelfcheck').onclick = () => { S.selfcheck = !S.selfcheck; render(); };
 $('btnReset').onclick = () => { S = initial(); render(); toast('原型已重置'); };
-$('drawerClose').onclick = () => { $('drawer').hidden = true; };
+$('drawerClose').onclick = () => closeDrawer();
 $('modalCancel').onclick = () => { $('modalWrap').hidden = true; };
 document.addEventListener('click', (e) => {
   const el = e.target.closest && e.target.closest('[data-explain]');
-  if (S.explain && el) { e.preventDefault(); e.stopPropagation(); openDrawer(el.dataset.explain); }
+  if (S.explain && el) { e.preventDefault(); e.stopPropagation(); openDrawer(el.dataset.explain); return; }
+  // 只有"窄屏遮罩式"才需要点外面关闭；宽屏是推挤式，点别处应保持面板开着（继续对照着看）
+  const drawer = $('drawer');
+  if (!drawer || drawer.hidden) return;
+  const narrow = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 899px)').matches : false;
+  const insideDrawer = !!(e.target.closest && e.target.closest('.drawer'));
+  if (narrow && !insideDrawer) closeDrawer();
 }, true);
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { S.editor = null; $('modalWrap').hidden = true; $('drawer').hidden = true; render(); }
+  if (e.key === 'Escape') { S.editor = null; $('modalWrap').hidden = true; closeDrawer(); render(); }
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && S.editor) submitEditor();
   if (!S.editor && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
     const list = reqsOfTurn(S.selTurn), i = list.findIndex((r) => r.seq === S.selSeq);
