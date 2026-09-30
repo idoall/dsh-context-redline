@@ -350,6 +350,46 @@ function applyTrendScale() {
   });
   sc.dataset.max = String(max);
 }
+/* ---------- 趋势图的 hover 提示（照参考插件的 2 行式自绘 tooltip）----------
+ * 文案照抄参考插件 i18n：
+ *   按步骤：第 {t} 轮 · 第 {s} 步 (共 {n} 步) ／ 按轮次：第 {t} 轮 · 共 {n} 步
+ *   第二行：合计 ≈ {n} ／ {类} ≈ {n}（聚焦时）／ Δ {n}（增量模式）
+ * 关键：tip 挂在**滚动容器外面**，用 transform 夹在可视区内；pointer-events:none。 */
+function trendTipRows(req, i, series) {
+  const n = turnSteps(req.turn);
+  const head = S.trendGran === 'turn'
+    ? (n > 1 ? `第 ${req.turn} 轮 · 共 ${n} 步` : `第 ${req.turn} 轮 · 共 1 步`)
+    : `第 ${req.turn} 轮 · 第 ${req.step} 步 (共 ${n} 步)`;
+  const v = series[i] || 0;
+  const metric = S.trendMode === 'delta'
+    ? `Δ ${v > 0 ? '+' : ''}${fmt(v)}`
+    : (S.trendCat ? `${catLabel(S.trendCat)} ≈ ${fmt(Math.abs(v))}` : `合计 ≈ ${fmt(Math.abs(v))}`);
+  const rows = [head, metric];
+  const m = markerOf(req);
+  if (m) rows.push(`✂ ${m.label}`);
+  return rows;
+}
+/** 把 tip 贴到该柱子的**可见切片**上（夹在滚动容器可视范围内，绝不越界） */
+function syncTrendTip() {
+  const sc = $('trendScroll'), tip = $('trendTip');
+  if (!sc || !tip || tip.hidden) return;
+  const lw = tip.offsetWidth || 120, cw = sc.clientWidth || 300;
+  const half = Math.min(lw / 2, cw / 2);
+  const col = (Number(tip.dataset.col) || 0) + (BAR_W / 2);
+  const cx = Math.min(Math.max(col - sc.scrollLeft, half), cw - half);
+  tip.style.transform = `translate(${Math.round(cx - lw / 2)}px, 0)`;
+}
+function showTrendTip(i, req, series) {
+  const tip = $('trendTip');
+  if (!tip) return;
+  const rows = trendTipRows(req, i, series);
+  tip.innerHTML = rows.map((r, k) => `<span class="${k === 2 ? 'tipmark' : ''}">${esc(r)}</span>`).join('');
+  tip.dataset.col = String(i * (BAR_W + BAR_GAP));
+  tip.hidden = false;
+  syncTrendTip();
+}
+function hideTrendTip() { const tip = $('trendTip'); if (tip) tip.hidden = true; }
+
 function renderTrend() {
   const { list, series } = trendItems();
   window.__trendSeries = series;
@@ -377,6 +417,8 @@ function renderTrend() {
       · 刻度上限 ${S.trendAdaptive ? '按可见范围自适应' : '按整段历史'} = <b id="trendAxisTopInline">${fmt(maxAll)}</b></div>
     <div class="trendwrap">
       <div class="axis"><span id="trendAxisTop">${fmt(maxAll)}</span><span id="trendAxisMid">${fmt(maxAll / 2)}</span><span>0</span></div>
+      <div class="trendpos">
+      <div class="chart-tip" id="trendTip" hidden></div>
       <div class="trendscroll" id="trendScroll">
         <div class="trendinner" style="width:${list.length * (BAR_W + BAR_GAP)}px">
           <div class="markers">${markers.map((m, i) => (m ? `<span class="mark" style="left:${i * (BAR_W + BAR_GAP)}px;width:${BAR_W}px" title="${esc(m.label)}">✂</span>` : '')).join('')}</div>
@@ -386,8 +428,8 @@ function renderTrend() {
               const sel = r.seq === S.selSeq;
               const label = S.trendGran === 'turn' ? `第 ${r.turn} 轮 · 共 ${r.stepCount || turnSteps(r.turn)} 步 · ≈${fmt(Math.abs(v))}` : `第 ${r.turn} 轮 · 第 ${r.step} 步 · ≈${fmt(Math.abs(v))}`;
               return `<button class="tbar${sel ? ' sel' : ''}" data-i="${i}" data-seq="${r.seq}" data-explain="trend.pick"
-                        style="width:${BAR_W}px;height:${Math.max(2, Math.round((Math.abs(v) / maxAll) * CHART_H))}px"
-                        title="${esc(label)}"></button>`;
+                        aria-label="${esc(label)}"
+                        style="width:${BAR_W}px;height:${Math.max(2, Math.round((Math.abs(v) / maxAll) * CHART_H))}px"></button>`;
             }).join('')}
           </div>
           <div class="strip">${S.trendGran === 'step'
@@ -398,6 +440,8 @@ function renderTrend() {
             : list.map((r) => `<button class="tcell" data-seq="${r.seq}" style="width:${BAR_W + BAR_GAP}px" title="第 ${r.turn} 轮 · 共 ${r.stepCount} 步">${r.turn}</button>`).join('')}
           </div>
         </div>
+      </div>
+      </div>
       </div>
     </div>
     <div class="stepchips">
@@ -422,12 +466,21 @@ function renderTrend() {
     };
   });
   c.querySelectorAll('.tbar').forEach((b) => {
+    const i = Number(b.dataset.i);
+    const req = () => REQUESTS.find((r) => r.seq === Number(b.dataset.seq)) || list[i];
+    // hover / 键盘聚焦：立刻显示（原生 title 有延迟，所以自绘 —— 参考插件的原话）
+    b.onmouseenter = () => showTrendTip(i, req(), series);
+    b.onfocus = () => showTrendTip(i, req(), series);
+    b.onblur = () => hideTrendTip();
     b.onclick = () => {
-      const req = REQUESTS.find((r) => r.seq === Number(b.dataset.seq));
-      const label = S.trendGran === 'turn' ? `已选第 ${req.turn} 轮（切到该轮末步）` : `已选第 ${req.turn} 轮 · 第 ${req.step} 步`;
-      selectReq(req, label);
+      const r = req();
+      const label = S.trendGran === 'turn' ? `已选第 ${r.turn} 轮（切到该轮末步）` : `已选第 ${r.turn} 轮 · 第 ${r.step} 步`;
+      selectReq(r, label);
+      showTrendTip(i, r, series);   // 触屏没有 hover：点一下就常显，直到滑开或换一根
     };
   });
+  const wrap = c.querySelector('.trendpos');
+  if (wrap) { wrap.onmouseleave = () => hideTrendTip(); }
   c.querySelectorAll('.tcell').forEach((b) => {
     b.onclick = () => {
       if (b.dataset.seq) { selectReq(REQUESTS.find((r) => r.seq === Number(b.dataset.seq)), null); return; }
@@ -455,7 +508,7 @@ function renderTrend() {
     };
   });
   const sc = $('trendScroll');
-  sc.onscroll = () => { if (S.trendAdaptive) applyTrendScale(); };
+  sc.onscroll = () => { if (S.trendAdaptive) applyTrendScale(); syncTrendTip(); };
   containHorizontalOverscroll(sc);   // 滑到头不把整页带走（移动端尤其重要）
   requestAnimationFrame(() => {
     applyTrendScale();

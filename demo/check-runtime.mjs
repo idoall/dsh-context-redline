@@ -45,6 +45,7 @@ const window = { __trendSeries: [] };
 /* ---------------- 执行 demo.js，并取出内部状态 ---------------- */
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
+  trendTipRows, showTrendTip, hideTrendTip,
   nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement };`;
 
 const run = new Function('document', 'window', 'requestAnimationFrame', 'setTimeout', 'console',
@@ -83,6 +84,52 @@ check('能力判定：被压缩埋掉的不可改写', api.ability(api.NODES.fin
 check('压缩标记挂在它之后的请求上', api.markerOf(api.lastOfTurn(28)) !== null);
 
 check('行身份链跨替换体：#1287 → #1301', JSON.stringify(api.familyOf(1301)) === JSON.stringify([1287, 1301]), JSON.stringify(api.familyOf(1301)));
+
+/* ---------------- 趋势图 hover 提示（用户点名的三件事） ---------------- */
+{
+  const S = api.S();
+  const rich = api.lastOfTurn(28);
+  const richIdx = 27;
+  S.trendGran = 'step'; S.trendMode = 'total'; S.trendCat = null;
+  let series = api.trendItems().series;
+  let rows = api.trendTipRows(rich, richIdx, series);
+  check('按步骤提示：第 28 轮 · 第 3 步 (共 3 步)', rows[0] === '第 28 轮 · 第 3 步 (共 3 步)', rows[0]);
+  check('按步骤提示第二行：合计 ≈ …', /^合计 ≈ /.test(rows[1]), rows[1]);
+
+  S.trendGran = 'turn';
+  series = api.trendItems().series;
+  rows = api.trendTipRows(rich, 27, series);
+  check('按轮次提示：第 28 轮 · 共 3 步', rows[0] === '第 28 轮 · 共 3 步', rows[0]);
+
+  const oneStep = api.REQUESTS.find((r) => api.turnSteps(r.turn) === 1);
+  S.trendGran = 'turn';
+  const idx1 = api.trendItems().list.findIndex((r) => r.turn === oneStep.turn);
+  rows = api.trendTipRows(oneStep, idx1, api.trendItems().series);
+  check('单步轮次提示：共 1 步', rows[0] === `第 ${oneStep.turn} 轮 · 共 1 步`, rows[0]);
+
+  S.trendMode = 'delta';
+  series = api.trendItems().series;
+  rows = api.trendTipRows(rich, 27, series);
+  check('增量模式提示：Δ …（带符号）', /^Δ [+-]/.test(rows[1]), rows[1]);
+
+  S.trendMode = 'total'; S.trendCat = 'inject';
+  series = api.trendItems().series;
+  rows = api.trendTipRows(rich, 27, series);
+  check('聚焦时第二行写类别名', /^注入内容 ≈ /.test(rows[1]), rows[1]);
+  S.trendCat = null;
+
+  rows = api.trendTipRows(rich, 27, api.trendItems().series);
+  check('有压缩标记的柱子多一行 ✂', rows[2] && rows[2].startsWith('✂'), rows[2] || '(无)');
+}
+
+/* tip 必须渲染在滚动容器**外面**（否则会撑大 scrollWidth、滚动条乱跳） */
+{
+  const trendHtml = registry.get('cardTrend').innerHTML;
+  check('trendTip 已渲染', trendHtml.includes('id="trendTip"'));
+  check('trendTip 在 trendScroll 之前（即不在滚动容器里）',
+    trendHtml.indexOf('id="trendTip"') < trendHtml.indexOf('id="trendScroll"'), '顺序检查');
+  check('柱子不再用原生 title（避免延迟与手机无提示）', !/class="tbar[^>]*title=/.test(trendHtml));
+}
 
 /* 走一遍动作：草稿 → 应用 → 回滚链 */
 (() => {

@@ -153,6 +153,20 @@ body {
 .axis span:nth-child(1) { top: 13px; }
 .axis span:nth-child(2) { top: 69px; }
 .axis span:nth-child(3) { top: 125px; }
+/* 定位上下文：tooltip 必须挂在**滚动容器外面**——放里面会撑大 scrollWidth，
+   让横向滚动条在每次 hover 时开合、整张卡片跟着跳（参考插件原话）。 */
+.trendpos { position: relative; flex: 1; min-width: 0; }
+.chart-tip {
+  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 6;
+  display: flex; flex-direction: column; gap: 2px;
+  max-width: 100%; box-sizing: border-box; overflow-wrap: anywhere;
+  background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: 6px; padding: 4px 9px; font-size: 12px; line-height: 17px;
+  color: var(--dsw-alias-label-primary); box-shadow: 0 2px 8px rgba(0,0,0,.18);
+  pointer-events: none;                     /* 不许挡住下面的柱子，否则 hover 会闪 */
+}
+.chart-tip span + span { color: var(--dsw-alias-label-secondary); }
+.chart-tip .tipmark { color: var(--ds-color-amber); }
 .trendscroll {
   flex: 1; min-width: 0; overflow-x: auto; overflow-y: hidden;
   overscroll-behavior-x: contain;              /* 滑到头不链到浏览器的返回/前进 */
