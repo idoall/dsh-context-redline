@@ -15,7 +15,9 @@ fi
 IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo '')"
 echo "本机：      http://127.0.0.1:$PORT/redline-panel.html"
 [ -n "$IP" ] && echo "同一局域网： http://$IP:$PORT/redline-panel.html"
-echo "单文件版（不需要服务）： demo/redline-panel.standalone.html"
+[ -n "$IP" ] && echo "单文件版：   http://$IP:$PORT/redline-panel.standalone.html"
+echo "单文件版（连服务都不用）： demo/redline-panel.standalone.html"
 echo
-echo "$PORT" >/dev/null
-exec python3 -m http.server "$PORT" --bind 0.0.0.0 --directory "$HERE"
+# 不用 `python3 -m http.server`：它不发 Cache-Control，页面会被浏览器缓存 → 看到旧版还以为是新版
+# （2026-09-30 实际发生过）。serve.py 统一发 no-store；只读、不写盘。
+exec python3 "$HERE/serve.py"

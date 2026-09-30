@@ -37,12 +37,16 @@
   chromium rev 1243 已在 ~/Library/Caches/ms-playwright 缓存）。
   ⚠️ 两条限制：① 只是本机 headless，不是用户的手机/Chrome；② **无触屏** →
   `(pointer: coarse)` 不命中，44px 触控目标只能把 CSS 规则搬出来模拟验证。
-- demo 本地服务：http://127.0.0.1:5180/redline-panel.html （资源版本 ?v=5，改过就要硬刷新）
-  （起：bash demo/serve.sh；停：bash demo/serve.sh stop；单文件版 demo/redline-panel.standalone.html 不需要服务）
+- demo 本地服务：**给用户看一律用局域网地址** http://10.0.0.30:5180/redline-panel.html （本机自测才用 127.0.0.1）
+  （起：bash demo/serve.sh；停：bash demo/serve.sh stop）
+  多文件版资源版本 ?v=5（改过 css/js 要升）；
+  **单文件版** demo/redline-panel.standalone.html（连服务都不用、可 file:// / AirDrop 到手机）
+  页头标签带**打包指纹** `单文件版 <7 位>`：用户报这个指纹就能确认他手上是哪一版。
+  服务由 demo/serve.py 提供并统一发 Cache-Control: no-store（刷新即最新版）。
 - demo 自检（不需要浏览器）：
-  node demo/check-static.mjs   # id/class/讲解词契约
+  node demo/check-static.mjs   # id/class/讲解词契约 + **单文件版指纹是否最新**
   node demo/check-runtime.mjs  # 最小 DOM 桩真跑渲染与切换（58 项）
-  node demo/build-standalone.mjs  # 改完 css/js 必须重打包单文件版
+  node demo/build-standalone.mjs  # 改完 css/js 必须重打包单文件版（会打印新指纹）
 
 【第一件事】
 浏览器实测已经做过了（不用重做）。先问用户：是按 R 编号提交互意见，还是说"开始"进 M1。
@@ -63,9 +67,9 @@
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | `git log -1`：`demo(M0.5)+docs: 浏览器实测（1440/880/879/390）+ 修自测面板 undefined`（哈希不写死，避免"改完文件哈希就变"的自指） |
-| 进度 | `docs/10`：**DONE 45 / 共 178** |
+| 进度 | `docs/10`：**DONE 46 / 共 179** |
 | 当前卡点 | **M05-15 交互定稿（等用户按 R 编号提意见）**；其后 `M1-01 授权包①（等用户重启）` |
-| demo 服务 | `http://127.0.0.1:5180/redline-panel.html`（`bash demo/serve.sh` 起）；**资源版本 `?v=5`，改过必须硬刷新** |
+| demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store） |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 6 张截图） |
 | 浏览器工具 | 已恢复且**本会话已实测跑通**（`navigate/resize/screenshot/evaluate/console_messages`）；限制：headless、无触屏（`pointer:coarse` 不命中） |
 | 回退（浏览器控制） | 还原 `$DSH_HOME/profiles/web/cordis.patch.yml.before-browser-use-restore-20260930-184704` + `dsh plugin --profile web remove` 两个包 + 用户重启 |

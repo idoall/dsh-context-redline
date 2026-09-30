@@ -135,6 +135,9 @@ dsh --profile web --dump-config                                      # 静态确
    仓库内已有 **`demo/`（M0.5 交互门禁）**：界面改动先在它里面改，**用户逐条确认后**再搬进插件（客户端半无法 TDD，且每次改插件都要用户重启）。
    demo 仍要能自报测量值（元素尺寸、命中坐标、是否溢出）——那是给用户在真机上看读数用的；原始实测数据见
    [`demo/screenshots/measure-log.md`](demo/screenshots/measure-log.md)。
+   ⚠️ 改完 `demo.css`/`demo.js` **必须** `node demo/build-standalone.mjs` 重打包单文件版（页头会带新的打包指纹）；
+   忘了跑会被 `check-static.mjs` 抓成红的。给用户看的地址**一律用局域网 IP**（`http://10.0.0.30:5180/…`），
+   单文件版页头的指纹可以用来核对"用户手上是哪一版"。
 5. **改 UI / 写对接代码前先读官方参考实现**：**最新源码在 `$DSH_SRC`**
    （**0.2.0-rc.2**，含全部 TypeScript 源码与 `packages/experimental/{agent-team,tool-agent-team,client-ui-agent-team,agent-team-profile}`）；
    旧的 `<old-dsh-src>` 是 **0.1.6-alpha.1**，只当历史参考。
@@ -158,7 +161,7 @@ dsh --profile web --dump-config                                      # 静态确
 ## 5. 当前状态
 
 > **进度看板（唯一状态源）**：[`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) —— **细粒度任务表**
-> （ID / 子任务 / 状态 / **文件动作（范围冻结）**），当前 **DONE 45 / 共 178**，需要用户的步骤标 `WAIT🙋`。
+> （ID / 子任务 / 状态 / **文件动作（范围冻结）**），当前 **DONE 46 / 共 179**，需要用户的步骤标 `WAIT🙋`。
 > **每次收尾必须回来同步它**（含 §11 进度总览），否则就会出现第二个"真相"。
 
 | 阶段 | 状态 |

@@ -7,11 +7,23 @@
 
 ```bash
 # 仓库根目录执行（已在本机起好服务时不用再跑）
-python3 -m http.server 5180 --bind 0.0.0.0 --directory demo
+bash demo/serve.sh              # 起服务（bash demo/serve.sh stop 停）
 ```
 
 - 本机：<http://127.0.0.1:5180/redline-panel.html>
 - 局域网（手机/其它设备，若防火墙允许）：<http://10.0.0.30:5180/redline-panel.html>
+- 单文件独立版（内联 css/js，**连服务都不用**、可 file:// 双击 / AirDrop 到手机）：
+  [`redline-panel.standalone.html`](redline-panel.standalone.html) 或
+  <http://10.0.0.30:5180/redline-panel.standalone.html>
+
+> **怎么确认你看到的是最新版**：页头那颗标签写着 **`交互原型 v1 · 单文件版 <指纹>`**（7 位）
+> —— 那是 `demo.css + demo.js` 的 sha256 前 7 位。改完 css/js 必须跑
+> `node demo/build-standalone.mjs` 才会同步；**忘了跑会被 `check-static.mjs` 抓成红的**。
+> 把那个指纹告诉我，我就能确认你手上是哪一版。
+>
+> 服务由 [`serve.py`](serve.py) 提供，统一发 `Cache-Control: no-store`（照旧是只读、不写盘）——
+> 刷新就是最新版。之前用 `python3 -m http.server` 时不发这个头，浏览器会把**没有查询串**的
+> 单文件版缓存起来，让人以为改动没生效（2026-09-30 实际发生过一次）。
 
 ## 先点这四个（30 秒上手）
 

@@ -6,6 +6,7 @@
 //   2) demo.js 里写出的 class，必须在 demo.css 里有对应规则（防止样式漏写、看起来"没生效"）
 //   3) 每个 data-explain="key" 必须在 EXPLAIN 里有条目（否则讲解模式点开是空的）
 import { readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 const dir = new URL('./', import.meta.url);
 const rd = (f) => readFileSync(new URL(f, dir), 'utf8');
@@ -50,9 +51,16 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   problems.push('讲解模式的点击拦截又回来了：必须只让序号节点触发讲解，不能拦按钮本身');
 }
 
-/* 附加：单文件版是否与外链版同步（比较内联前的字节数是否合理） */
-if (!standalone.includes('<style>') || !standalone.includes('TOTAL_TURNS')) {
-  problems.push('单文件独立版看起来没重新打包：请跑 node demo/build-standalone.mjs');
+/* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
+ * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
+ * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */
+{
+  const fp = createHash('sha256').update(css + '\u0000' + js).digest('hex').slice(0, 7);
+  if (!standalone.includes('<style>') || !standalone.includes('TOTAL_TURNS')) {
+    problems.push('单文件独立版看起来没重新打包：请跑 node demo/build-standalone.mjs');
+  } else if (!standalone.includes(`单文件版 ${fp}`)) {
+    problems.push(`单文件独立版不是最新的（指纹对不上，当前应为 ${fp}）：请跑 node demo/build-standalone.mjs`);
+  }
 }
 
 /* 打印结论 */
