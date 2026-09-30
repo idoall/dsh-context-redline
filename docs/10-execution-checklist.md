@@ -62,7 +62,7 @@
 
 ---
 
-## 2. M0.5 · 交互 demo（**24 / 25 DONE**，剩定稿）
+## 2. M0.5 · 交互 demo（**25 / 26 DONE**，剩定稿）
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
@@ -90,6 +90,7 @@
 | M05-23 | 浏览器实测（新会话有官方 Playwright MCP 后第一次跑）：1440 宽屏、880/879 断点、390 手机视口各截图 + 量布局（列宽、卡片高、趋势内容宽/可视宽、整页横向溢出、动作按钮高、console 条数）；原始数据落 `demo/screenshots/measure-log.md` | DONE → 1440 两列各 700 / 溢出 0px；880 仍两列、879 折单列（断点=880）；390 单列 362、趋势 `557>336` 内部滚动、整页溢出 **0px**、console **0 条**；截图 6 张 | `demo/screenshots/**`、`docs/03-ui-spec.md` §7 引言 |
 | M05-24 | 实测抓出的真 bug：自测面板把刻度上限显示成 `undefined`（`renderTrend()` 把刻度计算排进 rAF，`render()` 紧接着渲染面板 → 读到刚重建、没算过的节点）→ 修（末尾同步先算一次 + 刻度变化时刷新面板）；**先写红护栏**：把冒烟测试的 rAF 桩改成**后置队列**（同步 rAF 看不见这类时序 bug），新增 4 条断言，先在旧代码上跑出 4 红、修完 4 绿 | DONE → 修前 **4 红**（`❌ 刻度上限有值…→ undefined` 等）、修后 **58/58 绿**；浏览器复验 `当前刻度上限 7270`（与 `data-max` 一致）、无 `undefined` | `demo/demo.js`、`demo/check-runtime.mjs`、`demo/redline-panel.html`(?v=5)、`demo/redline-panel.standalone.html` |
 | M05-25 | 用户问"10.0.0.30:5180 上看到的是最新 demo 吗"暴露的两个坑：① 单文件版是生成物、**没有 `?v=N`**，改完 css/js 忘了重打包时外观完全看不出 → 打包时把 `sha256(demo.css+demo.js)` 前 7 位写进页头标签（`单文件版 <指纹>`，内容是哈希所以**重打包幂等**），并让 `check-static.mjs` 比对指纹；② `python3 -m http.server` 不发 `Cache-Control` → 浏览器把单文件版缓存住（实测：普通刷新拿到的仍是旧页头）→ 换成 `demo/serve.py`（只读、统一 `no-store, must-revalidate`） | DONE → **先红**：加指纹检查后立刻跑 `check-static` → `❌ 单文件独立版不是最新的（指纹对不上，当前应为 2f0ecb0）` exit=1；重打包后 ✅ exit=0、连打两次 md5 不变；curl 核对服务端与本地同一份；浏览器**普通刷新**（无 `?t=`）页头即 `交互原型 v1 · 单文件版 2f0ecb0`、console 0 条 | `demo/build-standalone.mjs`、`demo/check-static.mjs`、`demo/serve.py`（新增）、`demo/serve.sh`、`demo/README.md` |
+| M05-26 | 用户报"又打不开了" → 根因：demo 服务原本是**用 shell 后台任务**起的，寿命跟着父进程走，父进程一收工服务就没了（实测：端口 5180 无监听、`pgrep` 无 python 进程、`job_list` 空）。改成**守护进程**：`serve.py --daemon` 双 fork + setsid（PPID=1、无控制终端）；**先绑定端口成功才写 pidfile**（pidfile 存在 ⇒ 真的起来了，失败不误报成功）；日志 `/tmp/redline-demo-5180.log`；`serve.sh` 支持 `start/fg/status/stop`，`stop` 按 pidfile 并回退按端口查（修好以前失效的 stop）。**注意**：`--daemon` 的父进程用 `os._exit` 退出 → 报状态那行必须 `flush=True`，否则什么都看不到（已踩） | DONE → `ps`：`PID 98728 PPID 1 TTY ??`；**跨两次独立 shell 调用**仍 `在跑 (pid 98728)`；`curl 127.0.0.1 → 200`、`curl 10.0.0.30 → 200`、`Cache-Control: no-store`；浏览器走局域网地址：页头 `单文件版 2f0ecb0`、84 热区、溢出 0px、console **0 条** | `demo/serve.py`、`demo/serve.sh`、`demo/README.md` |
 | M05-15 | 🙋 **交互定稿**：你逐条按 R 编号确认 → 结论回写 `docs/03` | WAIT🙋 | `docs/03-ui-spec.md`（只改对应 R 各条） |
 
 ---
@@ -282,7 +283,7 @@
 |---|---|---|---|---|---|
 | X 横切 | 8 | **2** | 4 | 1 | 1 |
 | M0 文档集 | 20 | **20** | 0 | 0 | 0 |
-| M0.5 交互 demo | 25 | **24** | 0 | 0 | 1 |
+| M0.5 交互 demo | 26 | **25** | 0 | 0 | 1 |
 | M1 骨架与身份 | 14 | 0 | 0 | 13 | 1 |
 | M2 编辑面 | 28 | 0 | 0 | 28 | 0 |
 | M3 右侧界面 | 22 | 0 | 0 | 21 | 1 |
@@ -291,7 +292,7 @@
 | M5 编排 | 26 | 0 | 0 | 25 | 1 |
 | M6 入口与发布 | 10 | 0 | 0 | 10 | 0 |
 | M7+ 后续 | 4 | 0 | 0 | 4 | 0 |
-| **合计** | **179** | **46** | **4** | **121** | **8** |
+| **合计** | **180** | **47** | **4** | **121** | **8** |
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
 > 当前卡点：**M05-15 交互定稿（等你）**；其后 **M1-01 授权包①（等你重启）**。

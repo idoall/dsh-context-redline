@@ -7,7 +7,10 @@
 
 ```bash
 # 仓库根目录执行（已在本机起好服务时不用再跑）
-bash demo/serve.sh              # 起服务（bash demo/serve.sh stop 停）
+bash demo/serve.sh status       # 是否在跑
+bash demo/serve.sh              # 起服务（**后台常驻**，跟这个终端退不退出无关）
+bash demo/serve.sh stop         # 停
+bash demo/serve.sh fg           # 要前台跑、Ctrl-C 停，用这个
 ```
 
 - 本机：<http://127.0.0.1:5180/redline-panel.html>
@@ -24,6 +27,11 @@ bash demo/serve.sh              # 起服务（bash demo/serve.sh stop 停）
 > 服务由 [`serve.py`](serve.py) 提供，统一发 `Cache-Control: no-store`（照旧是只读、不写盘）——
 > 刷新就是最新版。之前用 `python3 -m http.server` 时不发这个头，浏览器会把**没有查询串**的
 > 单文件版缓存起来，让人以为改动没生效（2026-09-30 实际发生过一次）。
+>
+> **它是守护进程，不是 shell 后台任务**：以前用 `nohup … &` / 终端后台任务起，父进程一收工服务就没了
+> —— 表现就是"刚才还能开，现在打不开了"（2026-09-30 发生过）。现在 `serve.py --daemon` 用双 fork + setsid
+> 脱离会话（`ps` 里 PPID=1、无控制终端），pidfile 在**端口绑定成功之后**才写，日志在
+> `/tmp/redline-demo-5180.log`。**重启电脑后需要重新 `bash demo/serve.sh` 一次**。
 
 ## 先点这四个（30 秒上手）
 

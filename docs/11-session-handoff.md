@@ -38,7 +38,8 @@
   ⚠️ 两条限制：① 只是本机 headless，不是用户的手机/Chrome；② **无触屏** →
   `(pointer: coarse)` 不命中，44px 触控目标只能把 CSS 规则搬出来模拟验证。
 - demo 本地服务：**给用户看一律用局域网地址** http://10.0.0.30:5180/redline-panel.html （本机自测才用 127.0.0.1）
-  （起：bash demo/serve.sh；停：bash demo/serve.sh stop）
+  （bash demo/serve.sh 起 = **守护进程**、bash demo/serve.sh status 看、bash demo/serve.sh stop 停、
+  bash demo/serve.sh fg 前台；**电脑重启后要再跑一次**）
   多文件版资源版本 ?v=5（改过 css/js 要升）；
   **单文件版** demo/redline-panel.standalone.html（连服务都不用、可 file:// / AirDrop 到手机）
   页头标签带**打包指纹** `单文件版 <7 位>`：用户报这个指纹就能确认他手上是哪一版。
@@ -67,7 +68,7 @@
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | `git log -1`：`demo(M0.5)+docs: 浏览器实测（1440/880/879/390）+ 修自测面板 undefined`（哈希不写死，避免"改完文件哈希就变"的自指） |
-| 进度 | `docs/10`：**DONE 46 / 共 179** |
+| 进度 | `docs/10`：**DONE 47 / 共 180** |
 | 当前卡点 | **M05-15 交互定稿（等用户按 R 编号提意见）**；其后 `M1-01 授权包①（等用户重启）` |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store） |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 6 张截图） |
