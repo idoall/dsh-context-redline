@@ -10,10 +10,11 @@ let html = rd('redline-panel.html');
 const css = rd('demo.css');
 const js = rd('demo.js');
 
-html = html.replace('<link rel="stylesheet" href="./demo.css?v=1" />', `<style>\n${css}\n</style>`);
-html = html.replace('<script src="./demo.js?v=1"></script>', `<script>\n${js}\n</script>`);
+// 用正则替换，这样 HTML 里把 ?v=N 升到 v=3、v=4 也不用改本脚本
+html = html.replace(/<link rel="stylesheet" href="\.\/demo\.css[^"]*"\s*\/?>/, `<style>\n${css}\n</style>`);
+html = html.replace(/<script src="\.\/demo\.js[^"]*"><\/script>/, `<script>\n${js}\n</script>`);
 
-// 只查「外链标签」是否还在：JS 注释里出现 demo.js 是正常的，别误判（这里踩过一次）
+// 只查「外链标签」是否还在（JS 注释里出现 demo.js 是正常的，别误判 —— 这里踩过一次）
 if (html.includes('href="./demo.css') || html.includes('src="./demo.js')) {
   console.error('内联失败：仍有外链标签');
   process.exit(1);

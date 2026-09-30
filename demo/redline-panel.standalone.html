@@ -9,7 +9,14 @@
 /* ============================================================================
  * 上下文批改台 · 交互原型样式
  * 规则（docs/03 §6）：颜色一律走"主题令牌"，深浅两套自动跟随；不写死十六进制。
- * 这里的令牌名沿用 DSH 的 --dsw-alias-* 命名，便于实现时 1:1 换成宿主令牌。
+ *
+ * 移动端适配（参照参考插件 dsh-context 的做法：**设计进去，不是断点堆出来**）：
+ *   · 主布局用 flex-wrap 流式列（`flex: 1 1 min(420px, 100%)`）→ 窄屏自动单列，**不需要 @media**
+ *   · 卡片内部用 **@container 容器查询**（卡片自身 `container-type: inline-size`）
+ *   · 横向滚动条统一 `overscroll-behavior-x: contain`（左右滑到头不再触发浏览器返回/前进）
+ *     ＋ demo.js 里的 containHorizontalOverscroll（WebKit 会忽略该属性，只能靠取消 wheel 兜住）
+ *   · `pointer: coarse`（真触屏）才放大到 44px 触控目标 —— 桌面窄窗口不算触屏
+ *   · 安全区：env(safe-area-inset-*) 让底部按钮不被 iPhone 手势条盖住
  * ==========================================================================*/
 
 :root {
@@ -33,7 +40,8 @@
   --ds-color-indigo: #4f46e5;
   --ds-shadow: 0 8px 24px rgba(0, 0, 0, .10);
   --ds-radius: 10px;
-  --ds-touch: 32px;
+  --ds-touch: 30px;
+  --dsh-scrollbar-width: 8px;
 }
 
 html[data-theme="dark"] {
@@ -59,38 +67,37 @@ html[data-theme="dark"] {
 }
 
 * { box-sizing: border-box; }
-/* ⚠️ 必须显式声明：下面的 .modal-wrap/.drawer 等用了 display:flex，
-   会盖掉 UA 对 [hidden] 的 display:none —— 必须用 !important 压回来。 */
+/* ⚠️ 必须显式声明：下面 .modal-wrap/.drawer 用了 display:flex，会盖掉 UA 对 [hidden] 的 display:none */
 [hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
 html, body { margin: 0; padding: 0; }
 body {
   background: var(--dsw-alias-bg-layer-3);
   color: var(--dsw-alias-label-primary);
   font: 14px/22px -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-  padding-bottom: 110px;
+  padding-bottom: calc(110px + env(safe-area-inset-bottom, 0px));
+  overflow-x: hidden;               /* 页面本身绝不横向滚：横向滚动只发生在卡片内部的滚动条里 */
 }
 
-/* ---------- 顶栏 + 状态开关 ---------- */
+/* ---------- 顶栏 + 状态开关（窄屏自动换行，不横向溢出） ---------- */
 .topbar {
   position: sticky; top: 0; z-index: 40;
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  padding: 10px 16px; background: var(--dsw-alias-bg-layer-1);
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px;
+  background: var(--dsw-alias-bg-layer-1);
   border-bottom: 1px solid var(--dsw-alias-border-l1);
 }
-.brand { display: flex; align-items: center; gap: 8px; }
-.brand .tag {
-  font-size: 12px; color: var(--dsw-alias-label-caption);
-  border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; padding: 1px 8px;
-}
+.brand { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.brand .tag { font-size: 12px; color: var(--dsw-alias-label-caption); border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; padding: 1px 8px; }
 .brand .link { color: var(--dsw-alias-brand); text-decoration: none; font-size: 12px; }
 .switches { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
-.top-actions { display: flex; align-items: center; gap: 6px; }
+.top-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
 .sw {
   display: inline-flex; align-items: center; gap: 6px;
   border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px;
   padding: 4px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary);
-  background: transparent; cursor: pointer; min-height: var(--ds-touch);
+  background: transparent; cursor: pointer; min-height: var(--ds-touch); white-space: nowrap;
 }
 .sw[aria-pressed="true"] { border-color: var(--dsw-alias-brand); color: var(--dsw-alias-label-primary); }
 .sw i { width: 8px; height: 8px; border-radius: 999px; background: var(--dsw-alias-label-caption); }
@@ -107,49 +114,89 @@ body {
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 .btn.sm { min-height: 26px; padding: 2px 8px; font-size: 12px; }
 
+/* 分段开关（按轮次/按步骤 · 总计/增量 · 自适应）：参照参考插件的 .lc-seg */
+.seg {
+  min-height: var(--ds-touch); padding: 3px 9px; font-size: 12px; cursor: pointer;
+  border: 1px solid var(--dsw-alias-border-l2); background: transparent;
+  color: var(--dsw-alias-label-secondary); border-radius: 7px; white-space: nowrap;
+}
+.seg + .seg { margin-left: -1px; }
+.seg:first-of-type { border-radius: 7px 0 0 7px; }
+.seg[aria-pressed="true"] { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-brand); font-weight: 600; }
+.seg:disabled { opacity: .45; cursor: not-allowed; }
+.segsep { width: 8px; }
+
 /* ---------- 说明条 ---------- */
 .noticebar {
-  margin: 12px 16px 0; padding: 8px 12px; border-radius: var(--ds-radius);
+  margin: 12px 14px 0; padding: 8px 12px; border-radius: var(--ds-radius);
   background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1);
-  color: var(--dsw-alias-label-secondary); display: flex; gap: 10px; align-items: center;
+  color: var(--dsw-alias-label-secondary); display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
 }
 
-/* ---------- 两列布局 ---------- */
-.cols { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(420px, 1.25fr); gap: 12px; padding: 12px 16px; align-items: start; }
-@media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
-.col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* ---------- 主布局：**流式列**（无 @media：窄屏自动单列） ---------- */
+.cols { display: flex; flex-wrap: wrap; gap: 12px; padding: 12px 14px; align-items: flex-start; }
+.col { flex: 1 1 min(420px, 100%); min-width: min(420px, 100%); display: flex; flex-direction: column; gap: 12px; }
 
 .card {
   background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1);
   border-radius: var(--ds-radius); padding: 10px 12px; min-width: 0;
+  container-type: inline-size;         /* ← 卡片内部用容器查询自适应（参照参考插件的 @container 写法） */
 }
 .card-title {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;
   font-weight: 600; font-size: 13px; color: var(--dsw-alias-label-primary);
 }
 .card-title .hint { font-weight: 400; font-size: 12px; color: var(--dsw-alias-label-caption); }
 
 /* ---------- 状态数字卡 ---------- */
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
-.stat { border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; padding: 8px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr)); gap: 8px; }
+.stat { border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; padding: 8px; min-width: 0; }
 .stat b { display: block; font-size: 18px; line-height: 24px; }
 .stat span { font-size: 12px; color: var(--dsw-alias-label-caption); }
 
-/* ---------- 轮次条 ---------- */
-.trend { display: flex; align-items: flex-end; gap: 4px; overflow-x: auto; padding-bottom: 4px; }
-.turnbar {
-  min-width: 54px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px;
-  padding: 4px 6px; cursor: pointer; text-align: left; background: transparent;
-  color: var(--dsw-alias-label-secondary);
+/* ---------- 趋势图（参照参考插件 trendChart：固定柱宽 + 横向滚动 + 吸附边界的 overscroll） ---------- */
+.trendwrap { display: flex; gap: 6px; align-items: stretch; }
+.axis { position: relative; width: 40px; height: 150px; padding-top: 18px; color: var(--dsw-alias-label-secondary); font-size: 11px; flex: none; }
+.axis span { position: absolute; right: 0; line-height: 1; }
+.axis span:nth-child(1) { top: 13px; }
+.axis span:nth-child(2) { top: 69px; }
+.axis span:nth-child(3) { top: 125px; }
+.trendscroll {
+  flex: 1; min-width: 0; overflow-x: auto; overflow-y: hidden;
+  overscroll-behavior-x: contain;              /* 滑到头不链到浏览器的返回/前进 */
+  scrollbar-gutter: stable;                    /* 有无滚动条都不跳版 */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  padding-bottom: var(--dsh-scrollbar-width, 8px);
 }
-.turnbar:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.turnbar[aria-current="true"] { border-color: var(--dsw-alias-brand); color: var(--dsw-alias-label-primary); }
-.turnbar .t { font-size: 12px; font-weight: 600; }
-.turnbar .c { display: flex; gap: 6px; font-size: 11px; margin-top: 2px; }
-.dot-user, .dot-inject { display: inline-flex; align-items: center; gap: 3px; }
-.dot-user i, .dot-inject i { width: 6px; height: 6px; border-radius: 999px; }
-.dot-user i { background: var(--ds-color-green); }
-.dot-inject i { background: var(--ds-color-purple); }
+.trendinner { width: max-content; min-width: 100%; }
+.markers { position: relative; height: 14px; }
+.mark { position: absolute; top: 0; font-size: 11px; color: var(--ds-color-amber); text-align: center; }
+.bars { display: flex; align-items: flex-end; gap: 3px; height: 112px; }
+.tbar {
+  flex: none; padding: 0; border: 0; border-radius: 2px 2px 0 0; cursor: pointer;
+  background: linear-gradient(to top, var(--dsw-alias-brand), color-mix(in srgb, var(--dsw-alias-brand) 55%, transparent));
+  outline: 1px dashed transparent; outline-offset: 1px;
+}
+.tbar.neg { background: linear-gradient(to bottom, var(--ds-color-red), color-mix(in srgb, var(--ds-color-red) 55%, transparent)); }
+.tbar:hover { outline-color: var(--dsw-alias-brand); }
+.tbar.sel { outline: 2px solid var(--dsw-alias-label-primary); }
+.strip { display: flex; align-items: stretch; gap: 3px; margin-top: 2px; }
+.tcell {
+  flex: none; height: 22px; padding: 0; cursor: pointer; overflow: hidden; white-space: nowrap;
+  border: 1px solid var(--dsw-alias-border-l1); border-radius: 4px; font-size: 11px;
+  background: transparent; color: var(--dsw-alias-label-caption);
+}
+.tcell:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+/* 步级快捷片 */
+.stepchips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.chipstep {
+  min-height: var(--ds-touch); padding: 3px 10px; border-radius: 999px; cursor: pointer; font-size: 12px;
+  border: 1px solid var(--dsw-alias-border-l2); background: transparent; color: var(--dsw-alias-label-secondary);
+}
+.chipstep.sel { border-color: var(--dsw-alias-brand); color: var(--dsw-alias-label-primary); font-weight: 600; }
+.chipstep.live { border-style: dashed; }
 
 /* ---------- 分类树 ---------- */
 .catrow {
@@ -158,13 +205,15 @@ body {
   color: var(--dsw-alias-label-primary); cursor: pointer; min-height: var(--ds-touch);
 }
 .catrow:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.catrow .chev { width: 8px; height: 8px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); opacity: .6; }
+.catrow .chev { width: 8px; height: 8px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); opacity: .6; flex: none; }
 .catrow[aria-expanded="true"] .chev { transform: rotate(45deg); }
-.catrow .swatch { width: 9px; height: 9px; border-radius: 2px; }
+.catrow .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; cursor: pointer; }
+.catrow .swatch.focused { box-shadow: 0 0 0 2px var(--dsw-alias-label-primary); }
 .catrow .label { flex: 0 1 auto; }
 .catrow .grow { flex: 1 1 auto; }
-.catrow .count, .catrow .tokens, .catrow .pct { font-size: 12px; color: var(--dsw-alias-label-caption); margin-left: 6px; }
-.catbody { padding: 2px 0 6px 22px; }
+.catrow .count, .catrow .tokens, .catrow .pct { font-size: 12px; color: var(--dsw-alias-label-caption); margin-left: 6px; white-space: nowrap; }
+.catbody { padding: 2px 0 6px 20px; }
+.catsq { width: 12px; height: 12px; border-radius: 3px; flex: none; cursor: pointer; }
 
 /* ---------- 元素行 ---------- */
 .row { border-top: 1px dashed var(--dsw-alias-border-l1); }
@@ -175,29 +224,24 @@ body {
   cursor: pointer; min-height: var(--ds-touch);
 }
 .row-main:hover { background: var(--dsw-alias-interactive-bg-hover); border-radius: 6px; }
-/* 已被遮蔽的原文：仍列出，但灰显（docs/03 R4.6） */
+.row-main .tagchip { font-size: 11px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); white-space: nowrap; }
+.row-main .preview { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-secondary); }
+.row-main .tok { font-size: 11px; color: var(--dsw-alias-label-caption); white-space: nowrap; }
+.row-body { padding: 6px 8px 10px 22px; color: var(--dsw-alias-label-secondary); white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+.row-body .meta { color: var(--dsw-alias-label-caption); font-size: 12px; margin-bottom: 4px; }
 .row.shadowed { opacity: .55; }
 .row.shadowed .preview { text-decoration: line-through; }
-.row-main .tagchip {
-  font-size: 11px; padding: 0 6px; border-radius: 999px;
-  border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary);
-}
-.row-main .preview { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-secondary); }
-.row-main .time, .row-main .tok { font-size: 11px; color: var(--dsw-alias-label-caption); }
-.row-body { padding: 6px 8px 10px 24px; color: var(--dsw-alias-label-secondary); white-space: pre-wrap; word-break: break-word; }
-.row-body .meta { color: var(--dsw-alias-label-caption); font-size: 12px; margin-bottom: 4px; }
 
-/* ---------- 动作条（常驻可见，docs/03 R2.2） ---------- */
-.actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 0 6px 6px 24px; }
+/* ---------- 动作条 ---------- */
+.actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 0 6px 6px 22px; }
 .seq { font-size: 11px; color: var(--dsw-alias-label-caption); border: 1px solid var(--dsw-alias-border-l1); border-radius: 999px; padding: 0 6px; }
 .chip-soft { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px dashed var(--dsw-alias-border-l2); color: var(--dsw-alias-label-caption); }
 .chip-draft { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--ds-color-amber); color: var(--ds-color-amber); }
 .chip-shadow { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-caption); }
 .chain { font-size: 12px; color: var(--dsw-alias-label-secondary); }
-.chain a { color: var(--dsw-alias-brand); cursor: pointer; text-decoration: none; }
 
 /* ---------- 内联编辑器 ---------- */
-.editor { margin: 0 6px 10px 24px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px; background: var(--dsw-alias-bg-layer-2); }
+.editor { margin: 0 6px 10px 22px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px; background: var(--dsw-alias-bg-layer-2); }
 .editor .etitle { font-size: 12px; font-weight: 600; margin: 0 0 2px; }
 .editor .enote { font-size: 12px; color: var(--dsw-alias-label-secondary); margin: 0 0 8px; }
 .field { display: block; margin-bottom: 8px; }
@@ -212,10 +256,10 @@ body {
 .emsg-ok { color: var(--ds-color-green); font-size: 12px; margin: 4px 0; }
 
 /* ---------- 版本历史 ---------- */
-.history { margin: 0 6px 10px 24px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px; }
+.history { margin: 0 6px 10px 22px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px; }
 .vrow { display: flex; align-items: center; gap: 8px; padding: 4px 0; flex-wrap: wrap; }
 .vrow .vlabel { font-size: 12px; color: var(--dsw-alias-label-primary); min-width: 150px; }
-.vrow .vtext { flex: 1 1 220px; font-size: 12px; color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vrow .vtext { flex: 1 1 200px; min-width: 0; font-size: 12px; color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vrow .vwhy { font-size: 11px; color: var(--dsw-alias-label-caption); }
 
 /* ---------- 快照与子会话 ---------- */
@@ -225,12 +269,12 @@ body {
 .badge-src-own { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--ds-color-teal); color: var(--ds-color-teal); }
 .badge-src-team { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--ds-color-purple); color: var(--ds-color-purple); }
 .badge-state { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); }
-.cap { font-size: 12px; color: var(--dsw-alias-label-caption); }
+.cap { font-size: 12px; color: var(--dsw-alias-label-caption); overflow-wrap: anywhere; }
 
 /* ---------- 官方团队区块（只读） ---------- */
 .subhead { font-size: 12px; font-weight: 600; margin: 10px 0 4px; color: var(--dsw-alias-label-secondary); }
-.task, .member { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
-.task .tstat, .member .mstat { width: 8px; height: 8px; border-radius: 999px; }
+.task, .member { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; flex-wrap: wrap; }
+.task .tstat, .member .mstat { width: 8px; height: 8px; border-radius: 999px; flex: none; }
 .s-idle { background: var(--dsw-alias-label-caption); }
 .s-run { background: var(--ds-color-amber); }
 .s-block { background: var(--ds-color-orange); }
@@ -240,7 +284,7 @@ body {
 
 /* ---------- 吸顶未生效 ---------- */
 .sticky-drafts {
-  position: sticky; top: 56px; z-index: 30;
+  position: sticky; top: calc(56px + env(safe-area-inset-top, 0px)); z-index: 30;
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 8px 12px; border-radius: var(--ds-radius);
   background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--ds-color-amber);
@@ -248,36 +292,38 @@ body {
 
 /* ---------- 抽屉 / 弹窗 / 回执 ---------- */
 .drawer {
-  position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 92vw); z-index: 60;
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); z-index: 60;
   background: var(--dsw-alias-bg-layer-2); border-left: 1px solid var(--dsw-alias-border-l2);
   box-shadow: var(--ds-shadow); display: flex; flex-direction: column;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--dsw-alias-border-l1); }
-.drawer-body { padding: 10px 12px; overflow: auto; }
+.drawer-body { padding: 10px 12px; overflow: auto; -webkit-overflow-scrolling: touch; }
 .kv { margin-bottom: 8px; }
 .kv b { display: block; font-size: 12px; color: var(--dsw-alias-label-caption); font-weight: 500; }
-.kv div { font-size: 13px; }
-.modal-wrap { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; padding: 20px; }
-.modal { width: min(560px, 96vw); background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--ds-radius); box-shadow: var(--ds-shadow); }
+.kv div { font-size: 13px; overflow-wrap: anywhere; }
+.modal-wrap { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; padding: 14px; }
+.modal { width: min(560px, 100%); max-height: min(86vh, 86dvh); background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--ds-radius); box-shadow: var(--ds-shadow); display: flex; flex-direction: column; }
 .modal-head { padding: 10px 12px; border-bottom: 1px solid var(--dsw-alias-border-l1); }
-.modal-body { padding: 10px 12px; max-height: 60vh; overflow: auto; }
-.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--dsw-alias-border-l1); }
+.modal-body { padding: 10px 12px; overflow: auto; -webkit-overflow-scrolling: touch; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--dsw-alias-border-l1); flex-wrap: wrap; }
 .warn { margin: 0 0 10px; color: var(--ds-color-amber); }
 .list { margin: 0; padding: 0; list-style: none; }
-.list li { padding: 4px 0; border-top: 1px dashed var(--dsw-alias-border-l1); font-size: 13px; }
+.list li { padding: 4px 0; border-top: 1px dashed var(--dsw-alias-border-l1); font-size: 13px; overflow-wrap: anywhere; }
 .list li:first-child { border-top: 0; }
 .list b { color: var(--dsw-alias-label-caption); font-weight: 500; margin-right: 6px; }
 .modal-reason { display: block; margin-top: 10px; }
 .modal-reason span { display: block; font-size: 12px; color: var(--dsw-alias-label-caption); margin-bottom: 3px; }
 
-.toast-wrap { position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px; z-index: 80; display: flex; flex-direction: column; gap: 6px; align-items: center; }
-.toast { background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; padding: 6px 14px; box-shadow: var(--ds-shadow); font-size: 13px; }
+.toast-wrap { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 80; display: flex; flex-direction: column; gap: 6px; align-items: center; width: min(92vw, 560px); }
+.toast { max-width: 100%; background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; padding: 6px 14px; box-shadow: var(--ds-shadow); font-size: 13px; overflow-wrap: anywhere; }
 .toast.err { border-color: var(--ds-color-red); color: var(--ds-color-red); }
 
 /* ---------- 自测面板 ---------- */
 .selfcheck {
-  position: fixed; right: 12px; bottom: 12px; z-index: 50;
-  width: min(460px, 94vw); max-height: 46vh; overflow: auto;
+  position: fixed; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 50;
+  width: min(460px, calc(100vw - 24px)); max-height: 46vh; overflow: auto;
+  -webkit-overflow-scrolling: touch;
   background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2);
   border-radius: var(--ds-radius); box-shadow: var(--ds-shadow); padding: 10px 12px; font-size: 12px;
 }
@@ -286,25 +332,42 @@ body {
 .selfcheck .bad { color: var(--ds-color-red); }
 .selfcheck code { background: var(--dsw-alias-bg-layer-3); padding: 0 4px; border-radius: 4px; }
 
-/* ---------- 讲解模式：给每个可交互元素加编号热区 ---------- */
+/* ---------- 讲解模式 ---------- */
 body.explain [data-explain] { outline: 1px dashed var(--dsw-alias-brand); outline-offset: 1px; position: relative; }
 body.explain [data-explain]::after {
-  content: attr(data-exnum);
-  position: absolute; top: -8px; left: -6px; z-index: 5;
-  background: var(--dsw-alias-brand); color: #fff; font-size: 10px; line-height: 14px;
-  padding: 0 4px; border-radius: 999px;
+  content: attr(data-exnum); position: absolute; top: -8px; left: -6px; z-index: 5;
+  background: var(--dsw-alias-brand); color: #fff; font-size: 10px; line-height: 14px; padding: 0 4px; border-radius: 999px;
 }
-/* 窄屏：动作按钮要够手指点（docs/03 §6 V7 要求触控目标 ≥44px） */
-@media (max-width: 720px) {
-  .btn, .btn.sm, .actions .btn { min-height: 44px; padding: 8px 12px; }
-  .actions { gap: 8px; }
-  .row-main { min-height: 44px; }
-}
-
 .explainbar {
-  position: fixed; left: 50%; transform: translateX(-50%); bottom: 12px; z-index: 55;
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 55;
+  width: min(92vw, 620px); text-align: center;
   background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-brand);
   border-radius: 999px; padding: 6px 14px; font-size: 12px; box-shadow: var(--ds-shadow);
+}
+
+/* ============================================================================
+ * 卡片内部自适应：容器查询（不是 @media）—— 卡片被挤窄时自己改排布
+ * ==========================================================================*/
+@container (max-width: 520px) {
+  .trendwrap { flex-direction: column; }
+  .axis { display: none; }                          /* 太窄时不画纵轴，省出横向空间 */
+  .card-title .hint { display: none; }
+}
+@container (max-width: 360px) {
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .row-main .tagchip { display: none; }              /* 极窄时只留正文预览与 token */
+}
+
+/* ============================================================================
+ * 真触屏（pointer: coarse）：把可点区域放大到 ≥44px —— 桌面窄窗口不算触屏
+ * ==========================================================================*/
+@media (pointer: coarse) {
+  :root { --ds-touch: 44px; }
+  .btn, .btn.sm, .seg, .chipstep, .sw, .catrow, .row-main, .tcell, .tbar { min-height: 44px; }
+  .tbar { min-height: 2px; }                         /* 柱子本身保持数据高度，靠外层点击区放大 */
+  .actions { gap: 8px; }
+  .field textarea, .field input, .modal input { min-height: 44px; }
+  .trendscroll { padding-bottom: 14px; }
 }
 
 </style>
@@ -381,83 +444,62 @@ body.explain [data-explain]::after {
 <script>
 /* ============================================================================
  * 上下文批改台 · 交互原型（demo.js）
- * 目标：把 docs/03 的交互规格做成"可点击的规格书"——每个动作都能点开看它是做什么的。
+ * 目标：把 docs/03 的交互规格做成"可点击的规格书" —— 每个动作都能点开看它是做什么的。
  * ⚠️ 全部为演示数据与本地状态；不发任何请求、不碰真实会话。
+ *
+ * 趋势区（M05-16）参照参考插件 dsh-context 的 trendChart 设计：
+ *   · granularity: 'turn' | 'step'（按轮次 / 按步骤）
+ *   · mode: 'total' | 'delta'（总计 / 增量）
+ *   · 固定柱宽 + 横向滚动（稀疏不拉伸、稠密就滚动）
+ *   · adaptive：刻度按"当前可见范围"缩放（长日志里远处的尖峰不会把眼前的柱子压平）
+ *   · ✂ 压缩/裁剪事件标记挂在它之后的第一个请求上
  * ==========================================================================*/
 
 /* ------------------------------------------------------------------ 1. 讲解词典 */
 const EXPLAIN = {
   'ui.explain': { t: '讲解模式', what: '打开后所有可交互元素会被编号高亮；点任一元素，右侧滑出"这个按钮是做什么的"。', effect: '只影响看到的内容，不改任何数据。', rev: '可随时关闭', confirm: '不需要', refs: ['docs/03 §0 阅读方式'] },
-  'ui.theme': { t: '深色 / 浅色', what: '在深浅两套主题间切换（这里用同一套 DSH 令牌名）。', effect: '只换配色。', rev: '可随时切回', confirm: '不需要', refs: ['docs/03 §6 V1/V2'] },
-  'ui.selfcheck': { t: '自测面板', what: '显示当前状态组合、这一屏本该出现哪些按钮（对照行身份×状态矩阵）、以及关键盒子的尺寸与是否横向溢出。', effect: '只读。', rev: '可随时关闭', confirm: '不需要', refs: ['docs/03 R4.6', 'docs/05 §4'] },
-  'ui.reset': { t: '重置原型', what: '把演示数据恢复到初始状态（草稿、版本、快照、子会话等）。', effect: '只重置本地演示状态。', rev: '可再点一次回到初始', confirm: '不需要', refs: ['demo'] },
-  'ui.switch': { t: '状态开关', what: '模拟宿主侧的真实状态（轮次是否闭合 / 会话是否在本进程 / 官方团队是否可用 / 草稿条数 / 选中轮次 / 压缩是否忙）。', effect: '切换后界面的按钮可见性、说明条、文案会立即按规范变化。', rev: '可随时切回', confirm: '不需要', refs: ['docs/03 R4.4 / R4.6 / R5.2 / R5.3'] },
+  'ui.theme': { t: '深色 / 浅色', what: '在深浅两套主题间切换（同一套 DSH 令牌名）。', effect: '只换配色。', rev: '可随时切回', confirm: '不需要', refs: ['docs/03 §6 V1/V2'] },
+  'ui.selfcheck': { t: '自测面板', what: '显示当前状态组合、这一屏本该出现哪些按钮（对照行身份×状态矩阵）、关键盒子的尺寸与是否横向溢出。', effect: '只读。', rev: '可随时关闭', confirm: '不需要', refs: ['docs/03 R4.6', 'docs/05 §4'] },
+  'ui.reset': { t: '重置原型', what: '把演示数据恢复到初始状态（草稿、版本、快照、子会话、趋势选项）。', effect: '只重置本地演示状态。', rev: '可再点一次回到初始', confirm: '不需要', refs: ['demo'] },
+  'ui.switch': { t: '状态开关', what: '模拟宿主侧的真实状态（轮次是否闭合 / 会话是否在本进程 / 官方团队是否可用 / 草稿条数 / 压缩是否忙 / 回流是否确认）。', effect: '切换后界面的按钮可见性与文案立即按规范变化。', rev: '可随时切回', confirm: '不需要', refs: ['docs/03 R4.4 / R4.6 / R5.2 / R5.3'] },
+
+  /* —— 趋势区的四个新开关（参照参考插件） —— */
+  'trend.gran': { t: '按轮次 / 按步骤', what: '切换趋势图的粒度：按轮次 = 一轮一根柱（合并该轮各步，柱下标步数）；按步骤 = 一次请求一根柱。', effect: '只换画法；点柱子的含义随之变化——按轮次点柱子 = 选这一轮（右侧显示该轮末步），按步骤点柱子 = 选那一步。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.3', '参考插件 trendChart: granularity'] },
+  'trend.mode': { t: '总计 / 增量', what: '一根柱代表"这次请求的上下文总量"还是"比上一次请求多了多少"。', effect: '增量模式下负值向下画（上下文变小，通常是压缩/裁剪之后）。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.4', '参考插件 trendChart: mode'] },
+  'trend.adaptive': { t: '自适应刻度', what: '打开时，纵轴最大值按"当前可见的那几根柱"算；关闭时按整段历史算。', effect: '长会话里远处的尖峰不会把眼前的柱子压成一条线。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.5', '参考插件 trendChart: adaptive'] },
+  'trend.cat': { t: '聚焦某一类', what: '点右侧分类树里的某一类，趋势图只画那一类的量（纵轴重新缩放）。', effect: '再点一次"全部"恢复。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.6', '参考插件 trendChart: focusCat'] },
+  'trend.jump': { t: '回到当前', what: '把趋势条滚回最右端（最新一次请求）。', effect: '只滚动视图。', rev: '不需要', confirm: '不需要', refs: ['docs/03 R1.7'] },
+  'trend.pick': { t: '点一根柱子', what: '按轮次模式：选中这一轮（右侧切到该轮**末步**）；按步骤模式：选中那一步。', effect: '右侧浏览器的分类树、条数、token 全部跟着变。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.1 / R1.2'] },
+  'trend.strip': { t: '轮次分组条', what: '按步骤模式下，柱子下面按轮分组的刻度带（每格标轮号，宽度 = 该轮步数）。', effect: '点一格 = 选中该轮末步。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.8'] },
 
   'turn.pick': { t: '选择某一轮', what: '点轮次条 = 让右侧浏览器切到该轮最后一步。', effect: '右侧标题变成"第 T 轮（共 N 步，显示末步）"，分类条数/token/占比跟着变。', rev: '随时可切别的轮', confirm: '不需要', refs: ['docs/03 R1.1'] },
-  'step.pick': { t: '步级下拉', what: '手动选某一步（或回到"当前（下一次请求）"）。', effect: '右侧展示该步的上下文构成；与轮次入口交叉比对应当逐项一致。', rev: '随时可切', confirm: '不需要', refs: ['docs/03 R1.2'] },
-  'cat.toggle': { t: '展开 / 收起分类', what: '展开某类（系统提示词 / 工具定义 / 用户消息 / 注入内容 / 技能注入 / 助手消息 / 工具结果）。', effect: '列出该类里的每一条（带 #seq、时间、token）。', rev: '再点一次收起', confirm: '不需要', refs: ['docs/03 §2'] },
+  'step.pick': { t: '步级选择', what: '选某一步（或回到"当前（下一次请求）"）。', effect: '右侧展示该步的上下文构成；与轮次入口交叉比对应当逐项一致。', rev: '随时可切', confirm: '不需要', refs: ['docs/03 R1.2'] },
+  'step.chip': { t: '步级快捷片', what: '当前选中轮次的每一步一片，点一下就切到那一步。', effect: '等于用步级下拉选同一件事，但少两次点击。', rev: '随时可切', confirm: '不需要', refs: ['docs/03 R1.9'] },
+  'step.nav': { t: '上一轮 / 下一轮 · 上一步 / 下一步', what: '在轮与步之间顺序移动（不用去点趋势图）。', effect: '到边界时按钮禁用。', rev: '随时可用', confirm: '不需要', refs: ['docs/03 R1.10'] },
+
+  'cat.toggle': { t: '展开 / 收起分类', what: '展开某类（系统提示词 / 工具定义 / 用户消息 / 注入内容 / 技能注入 / 助手消息 / 工具结果）。', effect: '列出该类里的每一条（带 #seq、时间、token）。**点类名左侧的色块 = 聚焦到趋势图**。', rev: '再点一次收起', confirm: '不需要', refs: ['docs/03 §2'] },
   'row.toggle': { t: '展开这一条', what: '看这一条的正文。', effect: '就地展开全文（不跳页）。', rev: '再点一次收起', confirm: '不需要', refs: ['docs/03 R2.2'] },
 
   'act.edit': { t: '编辑（遮蔽原文）', what: '改写这一条的内容。', effect: '先把改动存成本地草稿（模型还看不到）；确认后才"应用到会话"，届时原文被替换、模型再也看不到原文（但日志里仍在）。', rev: '草稿可放弃；已应用的改动可用"版本历史"恢复', confirm: '提交时要', refs: ['docs/03 R2.2 / R3.3', 'docs/01 F7'] },
   'act.annotate': { t: '批注（保留原文）', what: '不遮蔽原文，追加一条带"作废范围"的更正。', effect: '模型会同时看到原文与更正。', rev: '不可撤销（追加即落地）', confirm: '提交时要', refs: ['docs/03 R2.2', 'docs/01 F6'] },
   'act.pin': { t: '存为不变量', what: '把注入类的这段正文逐字保存为固定块。', effect: '插件不生成、不润色、不改一个字；以后逐字比对就能发现漂移，并可显式重注入。', rev: '可退休（历史保留）', confirm: '保存时要', refs: ['docs/00 G4', 'docs/06 §1'] },
   'act.apply': { t: '应用到会话', what: '把这条草稿真的写进会话。', effect: '追加一条替换事件；模型此后看到的是改后的内容；原文仍保留在日志里但不再可见。', rev: '不可撤销（可用版本历史恢复某一版）', confirm: '要，且会列出本次清单', refs: ['docs/03 R4.3', 'docs/01 F7.1'] },
-  'act.history': { t: '版本历史', what: '看这一条的全部版本：原始 → 每次改写 → 每次回滚。', effect: '只读展示；可选中某一版"恢复"。', rev: '只读', confirm: '不需要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
+  'act.history': { t: '版本历史', what: '看这一条的全部版本：原始 → 每次改写 → 每次回滚（**跨替换体**，按行身份串起来）。', effect: '只读展示；可选中某一版"恢复"。', rev: '只读', confirm: '不需要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
   'act.restore': { t: '恢复这一版', what: '把"模型看到的内容"变回你选的那一版。', effect: '再追加一条替换事件——不是删除，错的那版仍在日志里但不再可见。', rev: '再次替换即可换别的版本', confirm: '要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
-  'act.discard': { t: '放弃未应用的改动', what: '只清本地草稿。', effect: '不影响会话；未保存的输入会丢失。', rev: '不可恢复输入', confirm: '要（文案说清）', refs: ['docs/03 R4.3'] },
 
   'orch.freeze': { t: '冻结当前位置', what: '记录一个冻结点：切点（最后一个 turn/end）、条目数、时间、人写备注、在效固定块版本。', effect: '只写插件本地，不写会话、不改模型可见内容。', rev: '可删除', confirm: '要（说明只写本地）', refs: ['docs/00 S5.2', 'docs/03 R5.1'] },
-  'orch.spawn': { t: '开子会话', what: '用这个会话已完成的轮次做种子，开一个新的子会话/成员，首条任务由你写。', effect: '优先走官方 `spawnTeammate(context:"fork")`（进官方名册）；团队不可用时退化为"裸可续接子会话"（界面会如实标注）。种子是一次性的：之后父会话的新轮次不会进去。', rev: '会话可归档，但种子不可重来', confirm: '要（框内列五项）', refs: ['docs/06 §3.1 / §4.1', 'docs/01 F33'] },
+  'orch.spawn': { t: '开子会话', what: '用这个会话已完成的轮次做种子，开一个新的子会话/成员，首条任务由你写。', effect: '优先走官方 spawnTeammate(context:"fork")（进官方名册）；团队不可用时退化为"裸可续接子会话"（界面如实标注）。种子是一次性的。', rev: '会话可归档，但种子不可重来', confirm: '要（框内列五项）', refs: ['docs/06 §3.1 / §4.1', 'docs/01 F33'] },
   'child.open': { t: '打开', what: '跳到官方视图看这个子会话/成员的完整过程。', effect: '优先在右侧 Sidebar 打开；本插件不重画对话。', rev: '只读跳转', confirm: '不需要', refs: ['docs/03 R5.1.1'] },
-  'child.send': { t: '派活（经官方）', what: '给这个成员追加一条任务消息。', effect: '走官方通道（`agentTeams.sendMessage`），返回 `accepted` 或 `queued`；queued 不许重发。', rev: '不可撤销', confirm: '要（收件人/逐字正文/投递方式/理由）', refs: ['docs/06 §3.2', 'docs/01 F32'] },
+  'child.send': { t: '派活（经官方）', what: '给这个成员追加一条任务消息。', effect: '走官方通道（agentTeams.sendMessage），返回 accepted 或 queued；queued 不许重发。', rev: '不可撤销', confirm: '要（收件人/逐字正文/投递方式/理由）', refs: ['docs/06 §3.2', 'docs/01 F32'] },
   'child.totask': { t: '建成官方任务', what: '把这条待办写成官方任务板上的一条任务。', effect: '写进官方任务板——我们显示的就是官方那份数据，不另存一份。', rev: '可在官方任务板更新/关闭', confirm: '要', refs: ['docs/03 R5.1', 'docs/01 F34'] },
-  'child.compact': { t: '压缩（不可逆）', what: '把子会话的历史压成摘要。', effect: '先体检（是否空闲/是否有未闭合轮次/是否已在压）。成功后原文被摘要取代，不可逆；失败会给出人话与"是否留痕"。', rev: '不可逆', confirm: '要（执行前列出将丢失的区间与条目数）', refs: ['docs/06 §4.2 / §5', 'docs/01 F11'] },
-  'child.interrupt': { t: '打断', what: '停止这个子会话/成员当前的轮次。', effect: '成员走官方 `interrupt`；裸子会话走 `interruptByParent`。已提交的工作不会被回滚。', rev: '不可撤销', confirm: '要（当前状态/会发什么信号/已提交不回滚）', refs: ['docs/03 R4.3', 'docs/06 §4'] },
-  'pending.view': { t: '待处理的结果', what: '子会话结束后，看"结果有没有回流"。', effect: '分三个状态：已收到平台结算通知 / 父会话下一轮已开始 / 回流未确认（父 Agent 当时不在进程 → 平台不投递，需要人工交回）。', rev: '只读（"已查看"记在本地）', confirm: '不需要', refs: ['docs/03 R5.1 第 4 项', 'docs/01 F12.1'] },
-  'team.read': { t: '官方团队区块（只读）', what: '直接显示官方那份 roster 与任务板。', effect: '不复制、不缓存、不自己算依赖就绪；投影报失败时按官方做法在最后有效数据之上显示该失败。', rev: '只读', confirm: '不需要', refs: ['docs/01 F34', 'docs/03 R5.1'] }
+  'child.compact': { t: '压缩（不可逆）', what: '把子会话的历史压成摘要。', effect: '先体检（是否空闲/是否有未闭合轮次/是否已在压）。成功后原文被摘要取代，不可逆；失败会给人话与"是否留痕"。', rev: '不可逆', confirm: '要（执行前列出将丢失的区间与条目数）', refs: ['docs/06 §4.2 / §5', 'docs/01 F11'] },
+  'child.interrupt': { t: '打断', what: '停止这个子会话/成员当前的轮次。', effect: '成员走官方 interrupt；裸子会话走 interruptByParent。已提交的工作不会被回滚。', rev: '不可撤销', confirm: '要（当前状态/会发什么信号/已提交不回滚）', refs: ['docs/03 R4.3', 'docs/06 §4'] },
+  'pending.view': { t: '待处理的结果', what: '子会话结束后，看"结果有没有回流"。', effect: '分三个状态：已收到平台结算通知 / 父会话下一轮已开始 / 回流未确认（父 Agent 当时不在进程 → 平台不投递）。', rev: '只读（"已查看"记在本地）', confirm: '不需要', refs: ['docs/03 R5.1 第 4 项', 'docs/01 F12.1'] },
+  'team.read': { t: '官方团队区块（只读）', what: '直接显示官方那份 roster 与任务板。', effect: '不复制、不缓存、不自己算依赖就绪；投影报失败时按官方做法在最后有效数据之上显示失败。', rev: '只读', confirm: '不需要', refs: ['docs/01 F34', 'docs/03 R5.1'] }
 };
 
 /* ------------------------------------------------------------------ 2. 演示数据 */
 const N = (seq, cat, type, text, tokens, x = {}) => ({ seq, cat, type, text, tokens, ...x });
-
-/** 全量节点（含被遮蔽的原文与替换体） */
-const NODES = [
-  N(1201, 'system', 'system/message', '你是 DeepSeek Harness 的编码助手……（系统提示词：这里只显示前 80 字预览，正文走宿主全文）', 2300, { preview: true }),
-  N(1210, 'inject', 'user/message', '[runtime-context] 当前环境：cwd=/repo，git 分支 main，Node 24.15.0', 180, { name: 'runtime-context' }),
-
-  // T23
-  N(1220, 'user', 'user/message', '帮我把这个插件的 README 改成双语，中文在前。', 46),
-  N(1221, 'assistant', 'assistant/message', '好的，我先看现有 README 与文档索引，再改。', 320),
-  N(1222, 'tool', 'tool/result', 'README.md\nREADME.zh.md\ndocs/00-scope.md\n…（共 42 行）', 410),
-
-  // T24
-  N(1230, 'inject', 'user/message', '[AGENTS.md] 本文件是唯一必读入口……（约 6KB）', 1600, { name: 'AGENTS.md' }),
-  N(1231, 'user', 'user/message', '顺便把「用户消息」这一类的编辑入口做出来，我最关心这个。', 58),
-  N(1232, 'skill', 'user/message', '[skill-catalog] 可用技能：agent-experience / browser-skill / cordis-plugin-development …', 900, { name: 'skill-catalog' }),
-  N(1233, 'assistant', 'assistant/message', '明白。我先把编辑通道的判定做成纯函数，再接界面。', 260),
-  N(1234, 'tool', 'tool/result', 'src/redline/eligibility.ts\nsrc/redline/rows.ts（新增）', 300),
-
-  // T25（当前轮）—— 故意做全边界态
-  N(1240, 'user', 'user/message', '这条消息我后来发现写错了：我说的是"只改用户消息"，其实要把注入内容也一起管。请以后都按这个来。', 120),
-  N(1241, 'assistant', 'assistant/message', '收到，我把两类都纳入判定范围。（助手消息在平台上无法改写，只能批注。）', 300),
-  N(1243, 'tool', 'tool/result', 'npm test — 42 passed, 0 failed（这是工具结果，编辑只能改它的内容文本与错误标记）', 260),
-  N(1287, 'user', 'user/message', '（原始版本 #1287）请把「上下文」面板的默认档位设成"注入的内容"，我要一眼看到模型这轮收到了什么。', 96, { versions: [{ seq: 1287, kind: 'origin', time: '12:05', text: '（原始版本 #1287）请把「上下文」面板的默认档位设成"注入的内容"，我要一眼看到模型这轮收到了什么。', why: '' }] }),
-  N(1290, 'user', 'user/message', '（来自被压缩掉的早期历史 #1290）这句在压缩时被摘要取代了 —— 改写够不到它，只能批注。', 40, { compacted: true }),
-  N(1293, 'assistant', 'assistant/message', '（助手消息 #1293）平台两条规则互斥 → 助手消息无法改写，只能批注。', 210),
-  N(1295, 'tool', 'tool/result', 'ERROR: cannot read properties of undefined (reading "seq")', 150, { err: true }),
-  N(1297, 'inject', 'user/message', '[runtime-context] 当前环境：cwd=/repo，git 分支 main，Node 24.15.0 —— 宿主每轮都会重新注入这一条', 180, { name: 'runtime-context' }),
-  N(1299, 'skill', 'user/message', '[skill-catalog] 可用技能：agent-experience / browser-skill / cordis-plugin-development / editing-cordis-compositions …（底层是 user/message，可编辑）', 900, { name: 'skill-catalog' }),
-  N(1301, 'user', 'user/message', '（当前可见的替换体 #1301）请把「上下文」面板的默认档位设成"注入的内容"，并且**给我逐条的 #seq**。', 110),
-  N(1303, 'inject', 'user/message', '[compaction checkpoint] 早期历史已被压缩成摘要 —— 这一条够不到"改写"，只能批注。', 400, { name: 'compact-checkpoint', compacted: true })
-];
-
-/** 每个请求（步）看到的 surface：seq 列表 + 被遮蔽关系（原文 seq → 遮蔽它的 seq） */
-const REQUESTS = [
-  { seq: 610, turn: 23, step: 1, time: '11:52', surface: [1201, 1210, 1220, 1221, 1222], gone: {} },
-  { seq: 622, turn: 24, step: 1, time: '12:01', surface: [1201, 1210, 1230, 1231, 1232, 1220, 1221, 1222], gone: {} },
-  { seq: 630, turn: 24, step: 2, time: '12:09', surface: [1201, 1210, 1230, 1232, 1220, 1221, 1222, 1231, 1233, 1234], gone: {} },
-  { seq: 641, turn: 25, step: 1, time: '12:10', surface: [1201, 1210, 1230, 1240, 1241, 1243, 1287, 1293, 1295, 1297, 1299, 1301, 1303], gone: { 1287: 1301 } }
-];
 
 const CATS = [
   { key: 'system', label: '系统提示词', color: 'var(--ds-color-indigo)' },
@@ -469,14 +511,102 @@ const CATS = [
   { key: 'tool', label: '工具结果', color: 'var(--ds-color-teal)' }
 ];
 
+const TOTAL_TURNS = 28;          // ← 演示"轮数很多"（原来只有 3 轮）
+const RICH_TURN = TOTAL_TURNS;   // 最后一轮放全部边界态（遮蔽/替换体/助手/工具/压缩）
+
+/** 常驻节点：seq 很小，所以出现在**每一次**请求里 */
+const NODES = [
+  N(1, 'system', 'system/message', '你是 DeepSeek Harness 的编码助手……（系统提示词很长，这里只给预览；正文走宿主全文）', 2300, { preview: true }),
+  N(2, 'inject', 'user/message', '[runtime-context] 当前环境：cwd=/repo，git 分支 main，Node v24.15.0', 180, { name: 'runtime-context' }),
+  N(3, 'inject', 'user/message', '[AGENTS.md] 本文件是唯一必读入口……（约 6KB，宿主每轮注入）', 1600, { name: 'AGENTS.md' })
+];
+
+/** 富态轮（最后一轮）的节点：故意做全边界态 */
+const RICH = {
+  user1: N(1240, 'user', 'user/message', '这条消息我后来发现写错了：我说的是"只改用户消息"，其实要把注入内容也一起管。请以后都按这个来。', 120),
+  asst1: N(1241, 'assistant', 'assistant/message', '收到，我把两类都纳入判定范围。（助手消息在平台上无法改写，只能批注。）', 300),
+  tool1: N(1243, 'tool', 'tool/result', 'npm test — 42 passed, 0 failed（工具结果，编辑只能改它的内容文本与错误标记）', 260),
+  orig: N(1287, 'user', 'user/message', '（原始版本 #1287）请把「上下文」面板的默认档位设成"注入的内容"，我要一眼看到模型这轮收到了什么。', 96, { versions: [{ seq: 1287, kind: 'origin', time: '12:05', text: '（原始版本 #1287）请把「上下文」面板的默认档位设成"注入的内容"，我要一眼看到模型这轮收到了什么。', why: '' }] }),
+  compacted: N(1290, 'user', 'user/message', '（来自被压缩掉的早期历史 #1290）这句在压缩时被摘要取代了 —— 改写够不到它，只能批注。', 40, { compacted: true }),
+  asst2: N(1293, 'assistant', 'assistant/message', '（助手消息 #1293）平台两条规则互斥 → 助手消息无法改写，只能批注。', 210),
+  toolErr: N(1295, 'tool', 'tool/result', 'ERROR: cannot read properties of undefined (reading "seq")', 150, { err: true }),
+  inject2: N(1297, 'inject', 'user/message', '[memory-doc] 项目速览：这是本项目的一句话摘要……（注入类，可编辑，也能存为不变量）', 700, { name: 'memory-doc' }),
+  skill: N(1299, 'skill', 'user/message', '[skill-catalog] 可用技能：agent-experience / browser-skill / cordis-plugin-development / editing-cordis-compositions …（底层是 user/message，可编辑）', 900, { name: 'skill-catalog' }),
+  repl: N(1301, 'user', 'user/message', '（当前可见的替换体 #1301）请把「上下文」面板的默认档位设成"注入的内容"，并且给我逐条的 #seq。', 110),
+  tail: N(1303, 'inject', 'user/message', '[compaction checkpoint] 早期历史已被压缩成摘要 —— 这一条够不到"改写"，只能批注。', 400, { name: 'compact-checkpoint', compacted: true })
+};
+Object.values(RICH).forEach((n) => NODES.push(n));
+
+const USER_TEXTS = [
+  '帮我看看这个报错是怎么来的', '把这段逻辑抽成函数', '这个改动会影响别的地方吗',
+  '跑一遍测试看看', '为什么这里要加锁', '这个接口的返回结构能再简化吗',
+  '帮我补一下注释', '这个分支需要处理空值吗', '把配置项挪到独立文件', '再看一眼有没有遗漏的边界'
+];
+
+/** 早期轮次：按 turn 生成「步数 / 条数都不同」的请求，用来看 28 轮时的效果 */
+function buildEarly() {
+  const nodes = [], reqs = [];
+  for (let turn = 1; turn < TOTAL_TURNS; turn++) {
+    let s = 100 + (turn - 1) * 40;
+    const steps = 1 + (turn % 4);                    // 1–4 步
+    const nUser = 1 + (turn % 2);                    // 1–2 条用户消息
+    const nTool = turn % 4;                          // 0–3 条工具结果
+    const skill = turn % 3 === 0;
+    const userSeqs = [];
+    for (let i = 0; i < nUser; i++) {
+      userSeqs.push(++s);
+      nodes.push(N(s, 'user', 'user/message', `第 ${turn} 轮 · 用户消息 ${i + 1}：${USER_TEXTS[(turn + i) % USER_TEXTS.length]}`, 42 + ((turn * 7 + i * 13) % 90)));
+    }
+    const asst = ++s;
+    nodes.push(N(asst, 'assistant', 'assistant/message', `第 ${turn} 轮的助手回复：先看代码再动手，附带必要说明。（第 ${turn} 轮）`, 180 + ((turn * 17) % 260)));
+    const toolSeqs = [];
+    for (let i = 0; i < nTool; i++) {
+      toolSeqs.push(++s);
+      nodes.push(N(s, 'tool', 'tool/result', `第 ${turn} 轮 · 工具结果 ${i + 1}：${'output line\n'.repeat(1 + ((turn + i) % 3))}`, 70 + ((turn * 11 + i * 29) % 180)));
+    }
+    let skillSeq = null;
+    if (skill) { skillSeq = ++s; nodes.push(N(skillSeq, 'skill', 'user/message', '[skill-catalog] 可用技能：agent-experience / browser-skill / cordis-plugin-development …', 900, { name: 'skill-catalog' })); }
+    for (let k = 1; k <= steps; k++) {
+      const reqSeq = ++s;
+      const surface = [1, 2, 3, ...userSeqs];
+      if (k >= 1) surface.push(asst);
+      for (let i = 0; i < Math.min(k - 1, toolSeqs.length); i++) surface.push(toolSeqs[i]);
+      if (skillSeq) surface.push(skillSeq);
+      reqs.push({ seq: reqSeq, turn, step: k, time: `${10 + Math.floor(turn / 6)}:${String((turn * 3 + k) % 60).padStart(2, '0')}`, surface, gone: {} });
+    }
+  }
+  return { nodes, reqs };
+}
+const EARLY = buildEarly();
+EARLY.nodes.forEach((n) => NODES.push(n));
+
+const REQUESTS = [
+  ...EARLY.reqs,
+  // 富态轮（3 步）：第 2 步出现"原始 #1287"，第 3 步被 #1301 替换掉
+  { seq: 1250, turn: RICH_TURN, step: 1, time: '12:05', surface: [1, 2, 3, 1240, 1241], gone: {} },
+  { seq: 1289, turn: RICH_TURN, step: 2, time: '12:07', surface: [1, 2, 3, 1240, 1241, 1243, 1287], gone: {} },
+  { seq: 1310, turn: RICH_TURN, step: 3, time: '12:10', surface: [1, 2, 3, 1240, 1241, 1243, 1287, 1290, 1293, 1295, 1297, 1299, 1301, 1303], gone: { 1287: 1301 } }
+];
+
+/** ✂ 压缩/裁剪事件：挂在它之后的第一个请求上（参考插件 attachMarkers 的做法） */
+const EVENTS = [
+  { seq: 1200, kind: 'compaction', label: '压缩 checkpoint（早期历史被摘要取代）' },
+  { seq: 1296, kind: 'prune', label: '裁剪：部分工具输出被丢弃' }
+];
+function markerOf(req) {
+  let m = null;
+  for (const ev of EVENTS) if (req.seq >= ev.seq) m = ev;
+  return m;
+}
+
 const initial = () => ({
   theme: 'dark', explain: false, selfcheck: false,
-  sw: { turnOpen: false, live: true, team: true, drafts: 0, turn: 25, compressBusy: false, pendingState: 'settled' },
-  selTurn: 25, selSeq: 641,
-  openCat: 'user', // 默认展开「用户消息」——用户明确说他最关心这一类
-  openElem: null,
-  editor: null, editorError: null, editorOk: null,
-  historyFor: null,
+  sw: { turnOpen: false, live: true, team: true, drafts: 0, compressBusy: false, pendingState: 'settled' },
+  /* 趋势区选项（参照参考插件） */
+  trendGran: 'turn', trendMode: 'total', trendAdaptive: true, trendCat: null,
+  selTurn: RICH_TURN, selSeq: REQUESTS[REQUESTS.length - 1].seq,
+  openCat: 'user', openElem: null,
+  editor: null, editorError: null, editorOk: null, historyFor: null,
   drafts: {}, applied: [], extraNodes: [], invariants: [], snapshots: [], children: [], tasks: [], members: [], pendingSeen: false
 });
 
@@ -484,40 +614,51 @@ let S = initial();
 
 /* ------------------------------------------------------------------ 3. 工具函数 */
 const $ = (id) => document.getElementById(id);
-const nodeOf = (seq) => NODES.concat(S.extraNodes).find((n) => n.seq === seq);
+const ALL = () => NODES.concat(S.extraNodes);
+const nodeOf = (seq) => ALL().find((n) => n.seq === seq);
 const catLabel = (k) => (CATS.find((c) => c.key === k) || { label: k }).label;
-const fmt = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
+const catColor = (k) => (CATS.find((c) => c.key === k) || { color: 'inherit' }).color;
+const fmt = (n) => (Math.abs(n) >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n)));
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const reqOf = () => REQUESTS.find((r) => r.seq === S.selSeq) || REQUESTS[REQUESTS.length - 1];
-const goneMap = () => {
-  const r = reqOf();
-  const m = { ...r.gone };
-  S.applied.forEach((a) => { m[a.replacedSeq] = a.newSeq; });
+const turnSteps = (turn) => REQUESTS.filter((r) => r.turn === turn).length;
+const reqsOfTurn = (turn) => REQUESTS.filter((r) => r.turn === turn);
+const lastOfTurn = (turn) => reqsOfTurn(turn)[reqsOfTurn(turn).length - 1];
+const isLive = () => S.selSeq === REQUESTS[REQUESTS.length - 1].seq;
+
+/** 该请求里"模型可见"的节点（排除被遮蔽的原文；但替换体本身要算可见） */
+const isReplacement = (seq) => S.applied.some((a) => a.newSeq === seq) || S.extraNodes.some((n) => n.seq === seq);
+function goneMapOf(req) {
+  const m = { ...(req.gone || {}) };
+  S.applied.forEach((a) => { if (a.requestSeq === req.seq) m[a.replacedSeq] = a.newSeq; });
   return m;
-};
-/**
- * 这一步的"条目列表"。
- * ⚠️ 被遮蔽的原文**必须留在列表里**（灰显 + "已被 #X 接替" + 版本历史）——
- * 否则用户看不到"这条原来是什么"，也就无法判断该不该恢复（docs/03 R4.6、docs/05 A3）。
- * 只有"模型可见"的计数才需要排除它们。
- */
-const surfaceOf = () => {
-  const r = reqOf();
-  return r.surface
-    .concat(S.applied.filter((a) => a.requestSeq === r.seq).map((a) => a.newSeq))
-    .concat(S.extraNodes.filter((n) => n.requestSeq === r.seq).map((n) => n.seq))
-    .map(nodeOf).filter(Boolean);
-};
-/** 模型真正看得见的那些（排除已被遮蔽的原文） */
-const visibleOf = () => {
-  const gone = goneMap();
-  return surfaceOf().filter((n) => gone[n.seq] === undefined || isReplacementNode(n.seq));
-};
-const isReplacementNode = (seq) => S.applied.some((a) => a.newSeq === seq) || S.extraNodes.some((n) => n.seq === seq);
+}
+function nodesOfReq(req, visibleOnly) {
+  const gone = goneMapOf(req);
+  return req.surface
+    .concat(S.applied.filter((a) => a.requestSeq === req.seq).map((a) => a.newSeq))
+    .concat(S.extraNodes.filter((n) => n.requestSeq === req.seq).map((n) => n.seq))
+    .map(nodeOf).filter(Boolean)
+    .filter((n) => !visibleOnly || gone[n.seq] === undefined || isReplacement(n.seq));
+}
+const goneMap = () => goneMapOf(reqOf());
+const surfaceOf = () => nodesOfReq(reqOf(), false);
+const visibleOf = () => nodesOfReq(reqOf(), true);
+const metricOf = (req, cat) => nodesOfReq(req, true).filter((n) => !cat || n.cat === cat).reduce((s, n) => s + n.tokens, 0);
 const draftOf = (seq) => S.drafts[seq];
 const draftCount = () => Object.keys(S.drafts).length;
-const turnSteps = (turn) => REQUESTS.filter((r) => r.turn === turn).length;
-const lastOfTurn = (turn) => [...REQUESTS].reverse().find((r) => r.turn === turn);
+
+/** 兜住 WebKit 忽略 overscroll-behavior-x 的情况（参照参考插件 overscroll.ts）：
+ *  横向滑到头时取消这次 wheel，否则会触发浏览器的"左滑返回/右滑前进"，整个页面被带出去。 */
+function containHorizontalOverscroll(el) {
+  if (!el) return;
+  el.addEventListener('wheel', (e) => {
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+    const atStart = e.deltaX < 0 && el.scrollLeft <= 0;
+    const atEnd = e.deltaX > 0 && el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
+    if (atStart || atEnd) e.preventDefault();
+  }, { passive: false });
+}
 
 function toast(msg, kind) {
   const d = document.createElement('div');
@@ -538,34 +679,34 @@ function openDrawer(key) {
     <div class="kv"><b>对应规格</b><div>${(e.refs || []).map(esc).join(' · ')}</div></div>`;
   $('drawer').hidden = false;
 }
-function confirmModal({ title, warn, rows, needReason, okText, onOk }) {
-  $('modalTitle').textContent = title;
-  $('modalWarn').textContent = warn;
-  $('modalList').innerHTML = '<ul class="list">' + rows.map((r) => `<li><b>${esc(r[0])}</b>${esc(r[1])}</li>`).join('') + '</ul>';
-  $('modalReasonWrap').hidden = !needReason;
+function confirmModal(o) {
+  $('modalTitle').textContent = o.title;
+  $('modalWarn').textContent = o.warn;
+  $('modalList').innerHTML = '<ul class="list">' + o.rows.map((r) => `<li><b>${esc(r[0])}</b>${esc(r[1])}</li>`).join('') + '</ul>';
+  $('modalReasonWrap').hidden = !o.needReason;
   $('modalReason').value = '';
-  $('modalOk').textContent = okText || '确认';
+  $('modalOk').textContent = o.okText || '确认';
   $('modalWrap').hidden = false;
   $('modalOk').onclick = () => {
-    const reason = needReason ? $('modalReason').value.trim() : '';
-    if (needReason && reason === '') { toast('理由不能为空（会写进记录）', 'err'); return; }
+    const reason = o.needReason ? $('modalReason').value.trim() : '';
+    if (o.needReason && reason === '') { toast('理由不能为空（会写进记录）', 'err'); return; }
     $('modalWrap').hidden = true;
-    onOk(reason);
+    o.onOk(reason);
   };
 }
+/** 选中某个请求（按轮/按步共用入口） */
+function selectReq(req, why) {
+  S.selSeq = req.seq; S.selTurn = req.turn; S.openElem = null;
+  render();
+  if (why) toast(why);
+}
 
-/* ------------------------------------------------------------------ 4. 渲染：状态开关 / 说明条 */
+/* ------------------------------------------------------------------ 4. 状态开关 / 说明条 */
 function renderSwitches() {
-  const items = [
-    ['turnOpen', '轮次未结束'],
-    ['live', '会话在本进程'],
-    ['team', '官方团队可用'],
-    ['compressBusy', '子会话正忙（压缩会 busy）']
-  ];
-  const draftBtn = `<button class="sw" data-act="drafts" aria-pressed="${draftCount() > 0}" data-explain="ui.switch"><i></i>草稿 ${draftCount()} 条</button>`;
+  const items = [['turnOpen', '轮次未结束'], ['live', '会话在本进程'], ['team', '官方团队可用'], ['compressBusy', '子会话正忙（压缩会 busy）']];
   $('switches').innerHTML =
     items.map(([k, label]) => `<button class="sw" data-sw="${k}" aria-pressed="${!!S.sw[k]}" data-explain="ui.switch"><i></i>${label}</button>`).join('') +
-    draftBtn +
+    `<button class="sw" data-act="drafts" aria-pressed="${draftCount() > 0}" data-explain="ui.switch"><i></i>草稿 ${draftCount()} 条</button>` +
     `<button class="sw" data-sw="pendingState" aria-pressed="${S.sw.pendingState === 'unconfirmed'}"><i></i>回流未确认</button>`;
   $('switches').querySelectorAll('[data-sw]').forEach((b) => {
     b.onclick = () => {
@@ -575,153 +716,285 @@ function renderSwitches() {
       render();
     };
   });
-  $('switches').querySelector('[data-act="drafts"]').onclick = () => {
-    S.drafts[1301] = { seq: 1301, text: '（演示草稿）把默认档位设成"注入的内容"，并显示 #seq。', reasoning: '', updatedAt: '12:11' };
-    render(); toast('已加 1 条演示草稿（看右侧行上的"未生效"与吸顶计数）');
+  // 防御：querySelector 取不到就不要硬赋 onclick（冒烟测试抓到的脆弱点）
+  const draftBtn = $('switches').querySelector('[data-act="drafts"]');
+  if (draftBtn) draftBtn.onclick = (e) => {
+    e.preventDefault();
+    const live = REQUESTS[REQUESTS.length - 1];
+    S.drafts[1301] = { seq: 1301, text: '（演示草稿）把默认档位设成"注入的内容"，并显示 #seq。', reasoning: '', updatedAt: '12:11', requestSeq: live.seq };
+    selectReq(live, '已加 1 条演示草稿（看右侧行上的"未生效"与吸顶计数）');
   };
 }
 function renderNotice() {
-  const n = $('noticeBar');
   const msgs = [];
   if (S.sw.turnOpen) msgs.push('当前轮次还没结束 —— 改动只能在轮次边界提交。');
   if (!S.sw.live) msgs.push('这个会话不在本进程里，只能查看，不能编辑。');
   if (!S.sw.team) msgs.push('本机未启用官方智能体团队 —— 与团队相关的对接点已隐藏（不是报错）。');
-  n.hidden = msgs.length === 0;
-  n.innerHTML = msgs.map((m) => `<span>${esc(m)}</span>`).join('<span class="muted">·</span>');
+  $('noticeBar').hidden = msgs.length === 0;
+  $('noticeBar').innerHTML = msgs.map((m) => `<span>${esc(m)}</span>`).join('<span class="muted">·</span>');
 }
 
-/* ------------------------------------------------------------------ 5. 渲染：左列 */
+/* ------------------------------------------------------------------ 5. 左列 */
 function renderStats() {
-  const nodes = visibleOf();
-  const shadowed = surfaceOf().length - nodes.length;
-  const inject = nodes.filter((n) => n.cat === 'inject').length;
-  const user = nodes.filter((n) => n.cat === 'user').length;
+  const vis = visibleOf(), all = surfaceOf();
+  const r = reqOf();
   $('cardStats').innerHTML = `
-    <div class="card-title">上下文统计 <span class="hint">（当前视图：第 ${reqOf().turn} 轮 · 第 ${reqOf().step} 步）</span></div>
+    <div class="card-title">上下文统计 <span class="hint">（当前视图：第 ${r.turn} 轮 · 第 ${r.step} 步${isLive() ? ' · 当前' : ''}）</span></div>
     <div class="stats">
-      <div class="stat"><b>${nodes.length}</b><span>模型可见条目${shadowed ? `（另有 ${shadowed} 条已被遮蔽）` : ''}</span></div>
-      <div class="stat"><b>${user}</b><span>用户消息</span></div>
-      <div class="stat"><b>${inject}</b><span>注入内容</span></div>
+      <div class="stat"><b>${vis.length}</b><span>模型可见条目${all.length > vis.length ? `（另 ${all.length - vis.length} 条被遮蔽）` : ''}</span></div>
+      <div class="stat"><b>${vis.filter((n) => n.cat === 'user').length}</b><span>用户消息</span></div>
+      <div class="stat"><b>${vis.filter((n) => n.cat === 'inject').length}</b><span>注入内容</span></div>
       <div class="stat"><b>${draftCount()}</b><span>未生效改动</span></div>
     </div>`;
 }
+
+/* ---------- 5.1 上下文趋势（按轮次 / 按步骤 · 总计 / 增量 · 自适应 · 聚焦 · ✂） ---------- */
+const BAR_W = 14, BAR_GAP = 3, CHART_H = 112;
+
+function trendItems() {
+  const list = S.trendGran === 'turn'
+    ? (() => {                                   // aggregateByTurn：一轮 = 该轮**末步**的请求，带 stepCount
+        const out = [];
+        for (const r of REQUESTS) {
+          const last = out[out.length - 1];
+          if (last && last.turn === r.turn) out[out.length - 1] = { ...r, stepCount: (last.stepCount || 1) + 1 };
+          else out.push({ ...r, stepCount: 1 });
+        }
+        return out;
+      })()
+    : REQUESTS;
+  const vals = list.map((r) => metricOf(r, S.trendCat));
+  const series = S.trendMode === 'delta'
+    ? vals.map((v, i) => (i === 0 ? v : v - vals[i - 1]))
+    : vals;
+  return { list, series };
+}
+function visibleMax(series, scrollEl) {
+  if (!S.trendAdaptive || !scrollEl) return Math.max(1, ...series.map((v) => Math.abs(v)));
+  const bw = BAR_W + BAR_GAP;
+  const i0 = Math.max(0, Math.floor(scrollEl.scrollLeft / bw) - 1);
+  const i1 = Math.min(series.length - 1, Math.ceil((scrollEl.scrollLeft + scrollEl.clientWidth) / bw) + 1);
+  let m = 1;
+  for (let i = i0; i <= i1; i++) m = Math.max(m, Math.abs(series[i] || 0));
+  return m;
+}
+function applyTrendScale() {
+  const sc = $('trendScroll');
+  if (!sc) return;
+  const series = (window.__trendSeries || []);
+  const max = visibleMax(series, sc);
+  const top = $('trendAxisTop'), mid = $('trendAxisMid');
+  if (top) top.textContent = fmt(max);
+  if (mid) mid.textContent = fmt(max / 2);
+  sc.querySelectorAll('.tbar').forEach((el, i) => {
+    const v = series[i] || 0;
+    const h = Math.max(2, Math.round((Math.abs(v) / max) * CHART_H));
+    el.style.height = h + 'px';
+    el.classList.toggle('neg', v < 0);
+  });
+  sc.dataset.max = String(max);
+}
 function renderTrend() {
-  const turns = [...new Set(REQUESTS.map((r) => r.turn))];
+  const { list, series } = trendItems();
+  window.__trendSeries = series;
+  const maxAll = Math.max(1, ...series.map((v) => Math.abs(v)));
+  const selIdx = list.findIndex((r) => r.seq === S.selSeq);
+  const granLabel = S.trendGran === 'turn' ? `按轮次（共 ${REQUESTS[REQUESTS.length - 1].turn} 轮）` : `按步骤（共 ${REQUESTS.length} 次请求）`;
+  let markerIdx = -1;
+  const markers = list.map((r, i) => { const m = markerOf(r); if (m && i > markerIdx) markerIdx = i; return m; });
+
   $('cardTrend').innerHTML = `
-    <div class="card-title">上下文趋势 <span class="hint">（点某一轮 → 右侧切到该轮末步）</span></div>
-    <div class="trend">
-      ${turns.map((t) => {
-        const r = lastOfTurn(t);
-        const inject = r.surface.filter((s) => (nodeOf(s) || {}).cat === 'inject').length;
-        const user = r.surface.filter((s) => (nodeOf(s) || {}).cat === 'user').length;
-        return `<button class="turnbar" data-turn="${t}" aria-current="${S.selTurn === t}" data-explain="turn.pick">
-          <div class="t">第 ${t} 轮</div>
-          <div class="c"><span class="dot-user"><i></i>${user}</span><span class="dot-inject"><i></i>${inject}</span></div>
-        </button>`;
-      }).join('')}
+    <div class="card-title">上下文趋势
+      <span class="hint">${esc(granLabel)}</span>
+      <span class="grow" style="flex:1"></span>
+      <button class="seg" data-trend="gran" data-v="turn" aria-pressed="${S.trendGran === 'turn'}" data-explain="trend.gran">按轮次</button>
+      <button class="seg" data-trend="gran" data-v="step" aria-pressed="${S.trendGran === 'step'}" data-explain="trend.gran">按步骤</button>
+      <span class="segsep"></span>
+      <button class="seg" data-trend="mode" data-v="total" aria-pressed="${S.trendMode === 'total'}" data-explain="trend.mode">总计</button>
+      <button class="seg" data-trend="mode" data-v="delta" aria-pressed="${S.trendMode === 'delta'}" data-explain="trend.mode">增量</button>
+      <span class="segsep"></span>
+      <button class="seg" data-trend="adaptive" aria-pressed="${S.trendAdaptive}" data-explain="trend.adaptive">自适应</button>
+      <button class="seg" data-act="jumpNow" data-explain="trend.jump">回到当前</button>
+    </div>
+    <div class="cap">聚焦：${S.trendCat ? `<b style="color:${catColor(S.trendCat)}">${esc(catLabel(S.trendCat))}</b> <a href="#" data-act="clearCat">（全部）</a>` : '全部类别 —— 点分类树左边的色块可只画某一类'}
+      · 柱高 = ${S.trendMode === 'delta' ? '比上一次请求的增量' : '该次请求的上下文量'}${S.trendCat ? '（仅该类）' : ''}
+      · 刻度上限 ${S.trendAdaptive ? '按可见范围自适应' : '按整段历史'} = <b id="trendAxisTopInline">${fmt(maxAll)}</b></div>
+    <div class="trendwrap">
+      <div class="axis"><span id="trendAxisTop">${fmt(maxAll)}</span><span id="trendAxisMid">${fmt(maxAll / 2)}</span><span>0</span></div>
+      <div class="trendscroll" id="trendScroll">
+        <div class="trendinner" style="width:${list.length * (BAR_W + BAR_GAP)}px">
+          <div class="markers">${markers.map((m, i) => (m ? `<span class="mark" style="left:${i * (BAR_W + BAR_GAP)}px;width:${BAR_W}px" title="${esc(m.label)}">✂</span>` : '')).join('')}</div>
+          <div class="bars">
+            ${list.map((r, i) => {
+              const v = series[i] || 0;
+              const sel = r.seq === S.selSeq;
+              const label = S.trendGran === 'turn' ? `第 ${r.turn} 轮 · 共 ${r.stepCount || turnSteps(r.turn)} 步 · ≈${fmt(Math.abs(v))}` : `第 ${r.turn} 轮 · 第 ${r.step} 步 · ≈${fmt(Math.abs(v))}`;
+              return `<button class="tbar${sel ? ' sel' : ''}" data-i="${i}" data-seq="${r.seq}" data-explain="trend.pick"
+                        style="width:${BAR_W}px;height:${Math.max(2, Math.round((Math.abs(v) / maxAll) * CHART_H))}px"
+                        title="${esc(label)}"></button>`;
+            }).join('')}
+          </div>
+          <div class="strip">${S.trendGran === 'step'
+            ? [...new Set(list.map((r) => r.turn))].map((t) => {
+                const k = turnSteps(t);
+                return `<button class="tcell" data-turn="${t}" style="width:${k * (BAR_W + BAR_GAP)}px" title="第 ${t} 轮（共 ${k} 步）→ 选中末步" data-explain="trend.strip">${t}</button>`;
+              }).join('')
+            : list.map((r) => `<button class="tcell" data-seq="${r.seq}" style="width:${BAR_W + BAR_GAP}px" title="第 ${r.turn} 轮 · 共 ${r.stepCount} 步">${r.turn}</button>`).join('')}
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="stepchips">
+      <span class="cap">第 ${S.selTurn} 轮：</span>
+      ${reqsOfTurn(S.selTurn).map((r) => `<button class="chipstep ${r.seq === S.selSeq ? 'sel' : ''}" data-seq="${r.seq}" data-explain="step.chip">第 ${r.step} 步</button>`).join('')}
+      <button class="chipstep live ${isLive() ? 'sel' : ''}" data-seq="${REQUESTS[REQUESTS.length - 1].seq}" data-explain="step.chip">当前（下一次请求）</button>
+      <span class="grow" style="flex:1"></span>
+      <button class="seg" data-act="prevTurn" ${S.selTurn <= 1 ? 'disabled' : ''} data-explain="step.nav">◀ 上一轮</button>
+      <button class="seg" data-act="nextTurn" ${S.selTurn >= TOTAL_TURNS ? 'disabled' : ''} data-explain="step.nav">下一轮 ▶</button>
+      <button class="seg" data-act="prevStep" ${reqOf().step <= 1 ? 'disabled' : ''} data-explain="step.nav">◀ 上一步</button>
+      <button class="seg" data-act="nextStep" ${reqOf().step >= turnSteps(S.selTurn) ? 'disabled' : ''} data-explain="step.nav">下一步 ▶</button>
     </div>`;
-  $('cardTrend').querySelectorAll('[data-turn]').forEach((b) => {
-    b.onclick = () => { S.selTurn = Number(b.dataset.turn); const r = lastOfTurn(S.selTurn); S.selSeq = r.seq; S.openCat = null; S.openElem = null; render(); toast(`已切到第 ${S.selTurn} 轮（显示末步：第 ${r.step} 步）`); };
+
+  const c = $('cardTrend');
+  c.querySelectorAll('[data-trend]').forEach((b) => {
+    b.onclick = () => {
+      const k = b.dataset.trend;
+      if (k === 'gran') S.trendGran = b.dataset.v;
+      if (k === 'mode') S.trendMode = b.dataset.v;
+      if (k === 'adaptive') S.trendAdaptive = !S.trendAdaptive;
+      render();
+    };
+  });
+  c.querySelectorAll('.tbar').forEach((b) => {
+    b.onclick = () => {
+      const req = REQUESTS.find((r) => r.seq === Number(b.dataset.seq));
+      const label = S.trendGran === 'turn' ? `已选第 ${req.turn} 轮（切到该轮末步）` : `已选第 ${req.turn} 轮 · 第 ${req.step} 步`;
+      selectReq(req, label);
+    };
+  });
+  c.querySelectorAll('.tcell').forEach((b) => {
+    b.onclick = () => {
+      if (b.dataset.seq) { selectReq(REQUESTS.find((r) => r.seq === Number(b.dataset.seq)), null); return; }
+      const t = Number(b.dataset.turn);
+      selectReq(lastOfTurn(t), `已选第 ${t} 轮（该轮末步）`);
+    };
+  });
+  c.querySelectorAll('.chipstep').forEach((b) => { b.onclick = () => selectReq(REQUESTS.find((r) => r.seq === Number(b.dataset.seq)), null); });
+  c.querySelectorAll('[data-act]').forEach((b) => {
+    b.onclick = () => {
+      const a = b.dataset.act;
+      if (a === 'jumpNow') { const sc = $('trendScroll'); sc.scrollLeft = sc.scrollWidth; applyTrendScale(); toast('已滚到最新一次请求'); return; }
+      if (a === 'clearCat') { S.trendCat = null; render(); return; }
+      if (a === 'prevTurn' || a === 'nextTurn') {
+        const t = S.selTurn + (a === 'nextTurn' ? 1 : -1);
+        if (t >= 1 && t <= TOTAL_TURNS) selectReq(lastOfTurn(t), null);
+        return;
+      }
+      if (a === 'prevStep' || a === 'nextStep') {
+        const list = reqsOfTurn(S.selTurn);
+        const i = list.findIndex((r) => r.seq === S.selSeq);
+        const n = list[i + (a === 'nextStep' ? 1 : -1)];
+        if (n) selectReq(n, null);
+      }
+    };
+  });
+  const sc = $('trendScroll');
+  sc.onscroll = () => { if (S.trendAdaptive) applyTrendScale(); };
+  containHorizontalOverscroll(sc);   // 滑到头不把整页带走（移动端尤其重要）
+  requestAnimationFrame(() => {
+    applyTrendScale();
+    const sel = sc.querySelector('.tbar.sel');
+    if (sel) sc.scrollLeft = Math.max(0, sel.offsetLeft - sc.clientWidth / 2);
+    applyTrendScale();
   });
 }
+
 function renderStep() {
   const r = reqOf();
   $('cardStep').innerHTML = `
-    <div class="card-title">第 ${r.turn} 轮 · 第 ${r.step} 步（共 ${turnSteps(r.turn)} 步） <span class="hint">${r.time}</span></div>
-    <div class="cap">这一屏的条数：用户消息 ${r.surface.filter((s) => (nodeOf(s) || {}).cat === 'user').length} · 注入内容 ${r.surface.filter((s) => (nodeOf(s) || {}).cat === 'inject').length}</div>
-    <div style="margin-top:6px"><button class="btn sm" data-explain="turn.pick" onclick="document.querySelector('[data-turn=\\'${r.turn}\\']').click()">改这一轮的用户消息</button></div>`;
+    <div class="card-title">第 ${r.turn} 轮 · 第 ${r.step} 步（共 ${turnSteps(r.turn)} 步） <span class="hint">${r.time}${isLive() ? ' · 当前（下一次请求）' : ''}</span></div>
+    <div class="cap">这一屏的条数：用户消息 ${visibleOf().filter((n) => n.cat === 'user').length} · 注入内容 ${visibleOf().filter((n) => n.cat === 'inject').length}
+      ${markerOf(r) ? `· <b>✂ ${esc(markerOf(r).label)}</b>` : ''}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+      <button class="btn sm" data-explain="turn.pick" onclick="document.querySelector('[data-turn=\\'${r.turn}\\']')?.click()">改这一轮的用户消息</button>
+      <button class="btn sm ghost" data-act="pickLive" data-explain="turn.pick">回到当前</button>
+    </div>`;
+  const live = $('cardStep').querySelector('[data-act="pickLive"]');
+  if (live) live.onclick = () => selectReq(REQUESTS[REQUESTS.length - 1], null);
 }
 function renderEvents() {
   $('cardEvents').innerHTML = `
-    <div class="card-title">上下文事件 <span class="hint">（这里只放与编辑有关的几条）</span></div>
-    <div class="cap">12:10 注入 runtime-context（#1297） · 12:09 改写 #1287 → #1301 · 12:05 边界：助手消息不可改写（#1293）</div>`;
+    <div class="card-title">上下文事件 <span class="hint">（压缩 / 裁剪，会标在趋势图上）</span></div>
+    ${EVENTS.map((e) => `<div class="cap">#${e.seq} · ${e.kind === 'compaction' ? '压缩' : '裁剪'} · ${esc(e.label)}</div>`).join('')}
+    <div class="cap" style="margin-top:4px">共 ${TOTAL_TURNS} 轮 / ${REQUESTS.length} 次请求 —— 把趋势条拉宽就能看到全部。</div>`;
 }
 
-/* ------------------------------------------------------------------ 6. 渲染：右侧浏览器 */
+/* ------------------------------------------------------------------ 6. 右侧浏览器 */
 function ability(node) {
   const gone = goneMap();
-  const isReplacement = S.applied.some((a) => a.newSeq === node.seq) || S.extraNodes.some((n) => n.seq === node.seq);
-  const shadowed = gone[node.seq] !== undefined && !isReplacement;
+  const repl = isReplacement(node.seq);
+  const shadowed = gone[node.seq] !== undefined && !repl;
   const type = node.type;
-  const canRewrite = !shadowed && type !== 'assistant/message' && type !== 'system/message' && type !== 'developer/message' && !node.compacted;
+  const canRewrite = !shadowed && type !== 'assistant/message' && type !== 'system/message' && !node.compacted;
   return {
-    canRewrite, shadowed, isReplacement,
-    canAnnotate: true,
-    isInjection: node.cat === 'inject',
+    canRewrite, shadowed, isReplacement: repl, canAnnotate: true, isInjection: node.cat === 'inject',
     blockReason: shadowed ? `这一条已被 #${gone[node.seq]} 接替，已不在模型可见内容里`
       : type === 'assistant/message' ? '助手消息在平台上无法改写（两条规则互斥），只能批注'
       : node.compacted ? '这一条被压缩埋掉了，改写够不到它，只能批注'
       : type === 'system/message' ? '系统提示词不可改' : ''
   };
 }
-function renderBrowser() {
-  const nodes = surfaceOf();
-  const byCat = {};
-  CATS.forEach((c) => { byCat[c.key] = nodes.filter((n) => n.cat === c.key); });
-  const total = nodes.reduce((s, n) => s + n.tokens, 0);
-  const r = reqOf();
-  const isLive = S.selSeq === REQUESTS[REQUESTS.length - 1].seq && !S.sw.turnOpen;
-  const title = isLive ? '当前 · 下一次请求' : `第 ${r.turn} 轮 · 第 ${r.step} 步（共 ${turnSteps(r.turn)} 步）`;
-
-  $('cardBrowser').innerHTML = `
-    <div class="card-title">上下文浏览器
-      <span class="hint">DNA 模式</span>
-      <span class="grow" style="flex:1"></span>
-      <select class="btn sm" id="stepPick" data-explain="step.pick">
-        <option value="live">当前（下一次请求）</option>
-        ${REQUESTS.slice().reverse().map((x) => `<option value="${x.seq}" ${x.seq === S.selSeq ? 'selected' : ''}>第 ${x.turn} 轮 · 第 ${x.step} 步（共 ${turnSteps(x.turn)} 步） · ${x.time}</option>`).join('')}
-      </select>
-    </div>
-    <div class="cap" style="margin-bottom:6px">${esc(title)} · 估算合计 ≈ ${fmt(total)} tokens</div>
-    <div id="catList">
-      ${CATS.map((c) => {
-        const list = byCat[c.key] || [];
-        const gone0 = goneMap();
-        const vis = list.filter((n) => gone0[n.seq] === undefined || isReplacementNode(n.seq));
-        const t = vis.reduce((s, n) => s + n.tokens, 0);
-        const open = S.openCat === c.key;
-        return `<div>
-          <button class="catrow" data-cat="${c.key}" aria-expanded="${open}" data-explain="cat.toggle">
-            <span class="chev"></span><i class="swatch" style="background:${c.color}"></i>
-            <span class="label">${c.label}</span><span class="grow"></span>
-            <span class="count">${vis.length} 项${list.length > vis.length ? `（+${list.length - vis.length} 被遮蔽）` : ''}</span><span class="tokens">≈${fmt(t)}</span>
-            <span class="pct">${total ? Math.round(t / total * 100) : 0}%</span>
-          </button>
-          ${open ? `<div class="catbody">${list.map(rowHtml).join('') || '<div class="cap">（这一步没有这类内容）</div>'}</div>` : ''}
-        </div>`;
-      }).join('')}
-    </div>`;
-
-  $('stepPick').onchange = (e) => {
-    const v = e.target.value;
-    if (v === 'live') { S.selSeq = REQUESTS[REQUESTS.length - 1].seq; S.selTurn = REQUESTS[REQUESTS.length - 1].turn; }
-    else { const x = REQUESTS.find((y) => String(y.seq) === v); S.selSeq = x.seq; S.selTurn = x.turn; }
-    S.openCat = null; S.openElem = null; render();
-  };
-  $('cardBrowser').querySelectorAll('[data-cat]').forEach((b) => { b.onclick = () => { S.openCat = S.openCat === b.dataset.cat ? null : b.dataset.cat; S.openElem = null; render(); }; });
-  bindRows();
+const EDGES = () => {
+  const e = {};
+  REQUESTS.forEach((r) => Object.entries(r.gone || {}).forEach(([f, t]) => { e[Number(f)] = t; }));
+  S.applied.forEach((a) => { e[a.replacedSeq] = a.newSeq; });
+  return e;
+};
+function familyOf(seq) {
+  const e = EDGES(), back = {};
+  Object.entries(e).forEach(([f, t]) => { back[t] = Number(f); });
+  let first = seq; const g = new Set();
+  while (back[first] !== undefined && !g.has(first)) { g.add(first); first = back[first]; }
+  const chain = []; let cur = first;
+  while (cur !== undefined && !g.has('f' + cur)) { g.add('f' + cur); chain.push(cur); cur = e[cur]; }
+  return chain;
 }
-
+function versionsOf(node) {
+  const fam = familyOf(node.seq);
+  return fam.map((seq, i) => {
+    const n = nodeOf(seq) || {}, ap = S.applied.find((a) => a.newSeq === seq);
+    return { seq, kind: i === 0 ? 'origin' : (ap && /回滚/.test(ap.reason || '') ? 'rollback' : 'edit'), time: ap ? ap.time : ((n.versions && n.versions[0] && n.versions[0].time) || '—'), text: n.text || '', why: ap ? ap.reason : '' };
+  });
+}
+function historyHtml(node) {
+  const vs = versionsOf(node), cur = vs.length ? vs[vs.length - 1].seq : node.seq;
+  return `<div class="history">
+    <div class="cap" style="margin-bottom:4px">版本历史（同一行身份，跨替换体）：原始 → 每次改写 → 每次回滚</div>
+    ${vs.map((v) => `<div class="vrow">
+      <span class="vlabel">#${v.seq} · ${v.kind === 'origin' ? '原始' : v.kind === 'edit' ? '改写' : '回滚'} · ${esc(v.time || '')}</span>
+      <span class="vtext" title="${esc(v.text)}">${esc((v.text || '').slice(0, 60))}</span>
+      ${v.seq === cur ? '<span class="vwhy">当前可见</span>' : `<button class="btn sm" data-act="restore" data-seq="${cur}" data-to="${v.seq}" data-explain="act.restore">从这一版恢复</button>`}
+    </div>`).join('')}
+  </div>`;
+}
 function rowHtml(node) {
-  const a = ability(node);
+  const a = ability(node), gone = goneMap();
   const chain = S.applied.filter((x) => x.replacedSeq === node.seq);
-  const isNew = S.applied.some((x) => x.newSeq === node.seq) || S.extraNodes.some((n) => n.seq === node.seq);
+  const isNew = isReplacement(node.seq);
   const open = S.openElem === node.seq;
-  const tag = node.name ? `<span class="tagchip">${esc(node.name)}</span>` : '';
-  const appliedChain = chain.length || isNew
-    ? (isNew ? `<span class="chain">（这是替换后的新条目）</span>` : '')
-    : (goneMap()[node.seq] !== undefined ? `<span class="chip-shadow">已被 #${goneMap()[node.seq]} 接替</span>` : '');
-  const draft = draftOf(node.seq) ? `<span class="chip-draft">未生效</span>` : '';
+  const draft = draftOf(node.seq) ? '<span class="chip-draft">未生效</span>' : '';
+  const tail = isNew ? '<span class="chain">（这是替换后的新条目）</span>'
+    : (gone[node.seq] !== undefined ? `<span class="chip-shadow">已被 #${gone[node.seq]} 接替</span>` : '');
   return `<div class="row${a.shadowed ? ' shadowed' : ''}">
     <button class="row-main" data-elem="${node.seq}" data-explain="row.toggle">
-      <span class="tagchip">${catLabel(node.cat)}</span>${tag}
+      <i class="catsq" style="background:${catColor(node.cat)}" title="点色块 = 趋势图聚焦这一类" data-focus="${node.cat}"></i>
+      <span class="tagchip">${catLabel(node.cat)}</span>${node.name ? `<span class="tagchip">${esc(node.name)}</span>` : ''}
       <span class="preview">${esc((node.text || '').slice(0, 90))}</span>
       <span class="tok">≈${fmt(node.tokens)}</span>
     </button>
     ${open ? `<div class="row-body"><div class="meta">#${node.seq} · ${esc(node.type)}${node.err ? ' · 错误结果' : ''}${node.compacted ? ' · 被压缩埋掉' : ''}</div>${esc(node.text)}</div>` : ''}
     <div class="actions" data-rowactions="${node.seq}">
-      <span class="seq" title="事件序号 —— 指认"改哪一条"用它">#${node.seq}</span>
-      ${draft}${appliedChain}
+      <span class="seq">#${node.seq}</span>${draft}${tail}${chain.length ? '<span class="chain">（这里被改过）</span>' : ''}
       ${a.canRewrite ? `<button class="btn sm" data-act="edit" data-seq="${node.seq}" data-explain="act.edit">编辑</button>` : `<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 14))}…</span>`}
       <button class="btn sm" data-act="annotate" data-seq="${node.seq}" data-explain="act.annotate">批注</button>
       ${a.isInjection ? `<button class="btn sm" data-act="pin" data-seq="${node.seq}" data-explain="act.pin">存为不变量</button>` : ''}
@@ -732,67 +1005,12 @@ function rowHtml(node) {
     ${S.editor && S.editor.seq === node.seq ? editorHtml() : ''}
   </div>`;
 }
-
-/**
- * 「行身份」：一次改写会把原节点遮蔽、并追加一个新节点。
- * 版本链必须**跨替换体**串起来（docs/03 R4.5：原 #A → 改写 #M → 回滚 #K），
- * 否则你在新条目上看不到"它原来是什么"，也就无法判断该不该恢复。
- */
-function edges() {
-  const e = {};
-  REQUESTS.forEach((r) => Object.entries(r.gone).forEach(([from, to]) => { e[Number(from)] = to; }));
-  S.applied.forEach((a) => { e[a.replacedSeq] = a.newSeq; });
-  return e;
-}
-/** 同一"行身份"的全部节点，从最早到当前可见 */
-function familyOf(seq) {
-  const e = edges();
-  const back = {};
-  Object.entries(e).forEach(([f, t]) => { back[t] = Number(f); });
-  let first = seq;
-  const guard = new Set();
-  while (back[first] !== undefined && !guard.has(first)) { guard.add(first); first = back[first]; }
-  const chain = [];
-  let cur = first;
-  while (cur !== undefined && !guard.has('f' + cur)) { guard.add('f' + cur); chain.push(cur); cur = e[cur]; }
-  return chain;
-}
-function versionsOf(node) {
-  const fam = familyOf(node.seq);
-  return fam.map((seq, i) => {
-    const n = nodeOf(seq) || {};
-    const ap = S.applied.find((a) => a.newSeq === seq);
-    return {
-      seq,
-      kind: i === 0 ? 'origin' : (ap && /回滚/.test(ap.reason || '') ? 'rollback' : 'edit'),
-      time: ap ? ap.time : (n.versions && n.versions[0] ? n.versions[0].time : '—'),
-      text: n.text || '',
-      why: ap ? ap.reason : ''
-    };
-  });
-}
-function historyHtml(node) {
-  const vs = versionsOf(node);
-  const cur = vs.length ? vs[vs.length - 1].seq : node.seq;
-  return `<div class="history">
-    <div class="cap" style="margin-bottom:4px">版本历史（同一行身份，跨替换体）：原始 → 每次改写 → 每次回滚</div>
-    ${vs.map((v) => `<div class="vrow">
-      <span class="vlabel">#${v.seq} · ${v.kind === 'origin' ? '原始' : v.kind === 'edit' ? '改写' : '回滚'} · ${esc(v.time || '')}</span>
-      <span class="vtext" title="${esc(v.text)}">${esc((v.text || '').slice(0, 60))}</span>
-      ${v.seq === cur ? '<span class="vwhy">当前可见</span>' : `<button class="btn sm" data-act="restore" data-seq="${cur}" data-to="${v.seq}" data-explain="act.restore">从这一版恢复</button>`}
-    </div>`).join('')}
-  </div>`;
-}
-
 function editorHtml() {
-  const st = S.editor;
-  const blocked = S.sw.turnOpen || !S.sw.live;
+  const st = S.editor, blocked = S.sw.turnOpen || !S.sw.live;
   const title = st.kind === 'edit' ? `编辑 #${st.seq}（遮蔽原文）` : st.kind === 'annotate' ? `批注 #${st.seq}（保留原文）` : `把 #${st.seq} 存为不变量`;
-  const note = st.kind === 'pin'
-    ? '固定块逐字保存：插件不生成、不润色、不压缩。'
-    : st.kind === 'annotate'
-      ? '提交后会往会话追加一条更正消息，不可撤销；原文不会被遮蔽，模型两者都看到。'
-      : '这一步只存本地草稿（不进会话）。要生效，提交后还需点「应用到会话」。';
+  const note = st.kind === 'pin' ? '固定块逐字保存：插件不生成、不润色、不压缩。'
+    : st.kind === 'annotate' ? '提交后会往会话追加一条更正消息，不可撤销；原文不会被遮蔽，模型两者都看到。'
+    : '这一步只存本地草稿（不进会话）。要生效，提交后还需点「应用到会话」。';
   return `<div class="editor">
     <p class="etitle">${esc(title)}</p>
     <p class="enote">${esc(note)}</p>
@@ -804,8 +1022,7 @@ function editorHtml() {
       <div style="display:flex;gap:8px">
         <label class="field" style="flex:1"><span>作废范围（起点 seq）</span><input type="number" id="edFrom" value="${esc(st.voidFrom)}"></label>
         <label class="field" style="flex:1"><span>作废范围（终点 seq）</span><input type="number" id="edTo" value="${esc(st.voidTo)}"></label>
-      </div>
-      <p class="enote">作废范围是 seq 区间（含两端）；拿不准就填目标 seq 自己。</p>`
+      </div>`
     : `
       <label class="field"><span>标签</span><input type="text" id="edLabel" value="${esc(st.label || '')}" placeholder="例如「目标」「约束」"></label>
       <label class="field"><span>正文（逐字保存）</span><textarea rows="4" id="edPin">${esc(st.text)}</textarea></label>`}
@@ -819,27 +1036,67 @@ function editorHtml() {
     </div>
   </div>`;
 }
+function renderBrowser() {
+  const nodes = surfaceOf(), r = reqOf();
+  const total = visibleOf().reduce((s, n) => s + n.tokens, 0);
+  const byCat = {}; CATS.forEach((c) => { byCat[c.key] = nodes.filter((n) => n.cat === c.key); });
+  const gone = goneMap();
+  $('cardBrowser').innerHTML = `
+    <div class="card-title">上下文浏览器 <span class="hint">DNA 模式</span>
+      <span class="grow" style="flex:1"></span>
+      <select class="btn sm" id="turnPick" data-explain="turn.pick" title="选轮次">
+        ${Array.from({ length: TOTAL_TURNS }, (_, i) => i + 1).map((t) => `<option value="${t}" ${t === S.selTurn ? 'selected' : ''}>第 ${t} 轮（共 ${turnSteps(t)} 步）</option>`).join('')}
+      </select>
+      <select class="btn sm" id="stepPick" data-explain="step.pick" title="选步骤">
+        ${reqsOfTurn(S.selTurn).map((x) => `<option value="${x.seq}" ${x.seq === S.selSeq ? 'selected' : ''}>第 ${x.step} 步（共 ${turnSteps(S.selTurn)} 步） · ${x.time}</option>`).join('')}
+        <option value="live" ${isLive() ? 'selected' : ''}>当前（下一次请求）</option>
+      </select>
+    </div>
+    <div class="cap" style="margin-bottom:6px">${esc(isLive() ? '当前 · 下一次请求' : `第 ${r.turn} 轮 · 第 ${r.step} 步（共 ${turnSteps(r.turn)} 步）`)} · 估算合计 ≈ ${fmt(total)} tokens${markerOf(r) ? ` · ✂ ${esc(markerOf(r).label)}` : ''}</div>
+    <div id="catList">${CATS.map((c) => {
+      const list = byCat[c.key] || [];
+      const vis = list.filter((n) => gone[n.seq] === undefined || isReplacement(n.seq));
+      const t = vis.reduce((s, n) => s + n.tokens, 0);
+      const open = S.openCat === c.key;
+      return `<div>
+        <button class="catrow" data-cat="${c.key}" aria-expanded="${open}" data-explain="cat.toggle">
+          <span class="chev"></span>
+          <i class="swatch${S.trendCat === c.key ? ' focused' : ''}" data-focus="${c.key}" style="background:${c.color}" title="点色块 = 趋势图只画这一类"></i>
+          <span class="label">${c.label}</span><span class="grow"></span>
+          <span class="count">${vis.length} 项${list.length > vis.length ? `（+${list.length - vis.length} 被遮蔽）` : ''}</span>
+          <span class="tokens">≈${fmt(t)}</span><span class="pct">${total ? Math.round(t / total * 100) : 0}%</span>
+        </button>
+        ${open ? `<div class="catbody">${list.map(rowHtml).join('') || '<div class="cap">（这一步没有这类内容）</div>'}</div>` : ''}
+      </div>`;
+    }).join('')}</div>`;
 
-/* ------------------------------------------------------------------ 7. 渲染：快照与子会话 */
+  $('turnPick').onchange = (e) => selectReq(lastOfTurn(Number(e.target.value)), `已选第 ${e.target.value} 轮（末步）`);
+  $('stepPick').onchange = (e) => {
+    if (e.target.value === 'live') selectReq(REQUESTS[REQUESTS.length - 1], null);
+    else selectReq(REQUESTS.find((x) => x.seq === Number(e.target.value)), null);
+  };
+  $('cardBrowser').querySelectorAll('[data-cat]').forEach((b) => { b.onclick = () => { S.openCat = S.openCat === b.dataset.cat ? null : b.dataset.cat; S.openElem = null; render(); }; });
+  $('cardBrowser').querySelectorAll('[data-focus]').forEach((b) => {
+    b.onclick = (e) => { e.stopPropagation(); const k = b.dataset.focus; S.trendCat = S.trendCat === k ? null : k; render(); toast(S.trendCat ? `趋势图聚焦：${catLabel(k)}` : '趋势图恢复：全部类别'); };
+  });
+  $('cardBrowser').querySelectorAll('[data-elem]').forEach((b) => { b.onclick = (e) => { if (e.target.dataset.focus) return; S.openElem = S.openElem === Number(b.dataset.elem) ? null : Number(b.dataset.elem); render(); }; });
+  $('cardBrowser').querySelectorAll('[data-act]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); rowAct(b); }; });
+}
+
+/* ------------------------------------------------------------------ 7. 快照与子会话 */
 function renderOrch() {
   const c = S.children;
-  const own = c.filter((x) => x.src === 'own');
-  const team = c.filter((x) => x.src === 'team');
-  const activeCount = c.filter((x) => x.state === 'running' || x.state === 'idle').length;
-  const pending = S.sw.pendingState;
-
+  const active = c.filter((x) => x.state === 'running' || x.state === 'idle').length;
   $('cardOrch').innerHTML = `
     <div class="card-title">快照与子会话 <span class="hint">（A′：只做快照化子会话 + 对接官方；不自己造协作层）</span></div>
-
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-      <input class="btn sm" id="snapNote" placeholder="人写备注（插件不生成摘要）" style="min-width:220px" />
+      <input class="btn sm" id="snapNote" placeholder="人写备注（插件不生成摘要）" style="min-width:200px" />
       <button class="btn sm" data-act="freeze" data-explain="orch.freeze" ${!S.sw.live || draftCount() > 0 ? 'disabled' : ''}>冻结当前位置</button>
-      <button class="btn sm" data-act="spawn" data-explain="orch.spawn" ${!S.sw.live || draftCount() > 0 || S.snapshots.length === 0 ? 'disabled' : ''}>开子会话（人写首条任务）</button>
+      <button class="btn sm" data-act="spawn" data-explain="orch.spawn" ${!S.sw.live || draftCount() > 0 || !S.snapshots.length ? 'disabled' : ''}>开子会话（人写首条任务）</button>
     </div>
     ${draftCount() > 0 ? `<div class="cap" style="color:var(--ds-color-amber)">还有 ${draftCount()} 条草稿没提交。草稿不在 fork 种子里，也不在冻结记录里 —— 它只存在插件本地。</div>` : ''}
     ${S.snapshots.length ? `<div class="subhead">冻结记录</div>${S.snapshots.map((s) => `<div class="snap"><span class="snapid">${esc(s.id)}</span><span class="cap">第 ${s.turn} 轮末 · ${s.items} 条 · ${s.time} · 备注：${esc(s.note || '（无）')}</span></div>`).join('')}` : '<div class="cap">还没有冻结记录。建议：先把草稿清零 → 冻结 → 再开子会话。</div>'}
-
-    <div class="subhead">子会话 / 成员索引 <span class="cap">活跃 ${activeCount} / 8（官方 teammate 也占同一份额度）</span></div>
+    <div class="subhead">子会话 / 成员索引 <span class="cap">活跃 ${active} / 8（官方 teammate 也占同一份额度）</span></div>
     ${c.length === 0 ? '<div class="cap">（还没有子会话）</div>' : c.map((x, i) => `
       <div class="snap">
         <span class="snapid">${esc(x.id)}</span>
@@ -855,12 +1112,10 @@ function renderOrch() {
           <button class="btn sm danger" data-act="cinterrupt" data-i="${i}" data-explain="child.interrupt">打断</button>`
         : '<span class="cap">请在官方团队面板管理</span>'}
       </div>`).join('')}
-
-    <div class="subhead">待处理的结果 <span class="cap" data-explain="pending.view">（点右侧问号看三态说明）</span></div>
-    ${pending === 'settled'
+    <div class="subhead">待处理的结果 <span class="cap" data-explain="pending.view">（点这里有说明）</span></div>
+    ${S.sw.pendingState === 'settled'
       ? '<div class="cap">✅ 已收到平台结算通知：子会话 #004c37a5 已结束：「改完了 3 处，测试全绿」。<a href="#" data-act="pendingSeen">标记已查看</a></div>'
       : '<div class="cap" style="color:var(--ds-color-amber)">⚠️ 回流未确认：没收到平台的结算通知 —— 子会话结束了，但父会话没收到回流。<a href="#" data-act="pendingHand">让主会话接着做</a></div>'}
-
     <div class="subhead">官方团队（只读，显示的就是官方那份数据）</div>
     ${S.sw.team ? `
       <div class="cap">roster：${S.members.map((m) => `<span class="member"><i class="mstat ${m.st}"></i>${esc(m.name)}</span>`).join(' ')}</div>
@@ -868,37 +1123,20 @@ function renderOrch() {
       ${S.tasks.length ? S.tasks.map((t) => `<div class="task"><i class="tstat ${t.st}"></i>${esc(t.subject)}<span class="muted">· ${esc(t.owner || '未认领')}${t.blocked ? ' · 被依赖阻塞' : ''}</span></div>`).join('') : '<div class="cap">（任务板为空）</div>'}
       <div class="cap" style="margin-top:4px">去官方面板（成员导航复用官方）</div>`
     : '<div class="cap">本机未启用官方智能体团队 → 对接点全部隐藏（不是报错）。</div>'}`;
-
-  $('cardOrch').querySelectorAll('[data-act]').forEach((b) => { b.onclick = () => orchAct(b); });
+  $('cardOrch').querySelectorAll('[data-act]').forEach((b) => { b.onclick = (e) => { e.preventDefault(); orchAct(b); }; });
 }
 
 /* ------------------------------------------------------------------ 8. 动作 */
-function bindRows() {
-  $('cardBrowser').querySelectorAll('[data-elem]').forEach((b) => { b.onclick = () => { S.openElem = S.openElem === Number(b.dataset.elem) ? null : Number(b.dataset.elem); render(); }; });
-  $('cardBrowser').querySelectorAll('[data-act]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); rowAct(b); }; });
-}
-
 function rowAct(btn) {
   const act = btn.dataset.act;
-  // ⚠️ 编辑器自己的按钮（提交/取消）没有 data-seq，必须在查 node 之前处理，
-  //    否则会被下面的 `if (!node) return` 直接吞掉（实测踩过）。
   S.editorError = null; S.editorOk = null;
   if (act === 'esubmit') return submitEditor();
   if (act === 'ecancel') { S.editor = null; render(); return; }
-
-  const seq = Number(btn.dataset.seq);
-  const node = nodeOf(seq);
+  const seq = Number(btn.dataset.seq), node = nodeOf(seq);
   if (!node) return;
 
-  if (act === 'edit') {
-    S.editor = { kind: 'edit', seq, text: node.text, reasoning: '' };
-    S.historyFor = null; render();
-    toast(`打开 #${seq} 的内联编辑器（注意：预填的是全文，不是 80 字预览）`);
-  }
-  if (act === 'annotate') {
-    S.editor = { kind: 'annotate', seq, reason: '', voidFrom: String(seq), voidTo: String(seq) };
-    S.historyFor = null; render();
-  }
+  if (act === 'edit') { S.editor = { kind: 'edit', seq, text: node.text, reasoning: '' }; S.historyFor = null; render(); toast(`打开 #${seq} 的内联编辑器（预填的是全文，不是 80 字预览）`); }
+  if (act === 'annotate') { S.editor = { kind: 'annotate', seq, reason: '', voidFrom: String(seq), voidTo: String(seq) }; S.historyFor = null; render(); }
   if (act === 'pin') { S.editor = { kind: 'pin', seq, label: '', text: node.text }; S.historyFor = null; render(); }
   if (act === 'history') { S.historyFor = S.historyFor === seq ? null : seq; S.editor = null; render(); }
 
@@ -913,143 +1151,101 @@ function rowAct(btn) {
     });
   }
   if (act === 'restore') {
-    const to = Number(btn.dataset.to);
-    const v = versionsOf(node).find((x) => x.seq === to) || { text: '' };
-    const target = node; // data-seq 传的就是"当前可见"的那条（目标永远是当前可见节点）
+    const to = Number(btn.dataset.to), v = versionsOf(node).find((x) => x.seq === to) || { text: '' };
     confirmModal({
       title: '回滚到某一版',
       warn: '会向会话追加一条替换记录，把模型看到的内容恢复成你选的那一版。原文与中间版本都还在日志里，之后还可以再改。',
-      rows: [['当前可见', `#${seq}`], ['要恢复到的版本', `#${to}`], ['该版正文', (v.text || '').slice(0, 140)], ['理由', '（回滚到 #' + to + '）']],
+      rows: [['当前可见', `#${seq}`], ['要恢复到的版本', `#${to}`], ['该版正文', (v.text || '').slice(0, 140)], ['理由', `（回滚到 #${to}）`]],
       needReason: false, okText: '确认恢复',
       onOk: (reason) => {
         const ns = 1400 + S.applied.length;
-        S.applied.push({ replacedSeq: seq, newSeq: ns, requestSeq: reqOf().seq, text: v.text, reason: reason || ('回滚到 #' + to), time: '12:1' + (S.applied.length % 9) });
+        S.applied.push({ replacedSeq: seq, newSeq: ns, requestSeq: reqOf().seq, text: v.text, reason: reason || `回滚到 #${to}`, time: '12:1' + (S.applied.length % 9) });
         S.extraNodes.push(N(ns, node.cat, node.type, v.text, node.tokens, { name: node.name, requestSeq: reqOf().seq }));
-        S.drafts[seq] = undefined; delete S.drafts[seq];
+        delete S.drafts[seq];
         render(); toast(`已回滚：#${seq} → 恢复为 #${to} 的内容（关系链见行上）`);
       }
     });
   }
 }
-
 function submitEditor() {
-  const st = S.editor;
-  if (!st) return;
+  const st = S.editor; if (!st) return;
   const node = nodeOf(st.seq);
   if (st.kind === 'edit') {
-    const text = ($('edT') && $('edT').value) || '';
-    const reasoning = ($('edR') && $('edR').value) || '';
+    const text = ($('edT') && $('edT').value) || '', reasoning = ($('edR') && $('edR').value) || '';
     if (text === '' && reasoning === '') { S.editorError = '可见文本与思考文本不能同时为空'; render(); return; }
     if (text === node.text && reasoning === '') { S.editorError = '没有实质改动 —— 宿主会拒绝这样的提交（no-change）'; render(); return; }
-    S.drafts[st.seq] = { seq: st.seq, text, reasoning, updatedAt: '12:1x' };
-    S.editor = null; render();
-    toast('已保存草稿（模型还看不到）→ 行上出现「未生效」，点「应用到会话」才生效');
-    return;
+    S.drafts[st.seq] = { seq: st.seq, text, reasoning, updatedAt: '12:1x', requestSeq: reqOf().seq };
+    S.editor = null; render(); toast('已保存草稿（模型还看不到）→ 行上出现「未生效」，点「应用到会话」才生效'); return;
   }
   if (st.kind === 'annotate') {
     const reason = ($('edWhy') && $('edWhy').value.trim()) || '';
-    const from = Number(($('edFrom') && $('edFrom').value) || '');
-    const to = Number(($('edTo') && $('edTo').value) || '');
+    const from = Number(($('edFrom') && $('edFrom').value) || ''), to = Number(($('edTo') && $('edTo').value) || '');
     if (reason === '') { S.editorError = '理由不能为空'; render(); return; }
     if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from > to) { S.editorError = '作废范围要两端都给、且起点 ≤ 终点（bad-range）'; render(); return; }
     const ns = 1500 + S.extraNodes.length;
     const text = `[redline] 更正目标 seq=${st.seq}\n作废范围 seq=${from}..${to}\n理由：${reason}`;
     S.extraNodes.push(N(ns, 'inject', 'user/message', text, 60, { requestSeq: reqOf().seq, name: '批注' }));
-    if (!reqOf().surface.includes(ns)) reqOf().surface.push(ns);
-    S.editor = null; render();
-    toast(`已追加更正 #${ns}（不可撤销）；原文 #${st.seq} 仍在模型可见内容里`);
-    return;
+    const r = reqOf(); if (!r.surface.includes(ns)) r.surface.push(ns);
+    S.editor = null; render(); toast(`已追加更正 #${ns}（不可撤销）；原文 #${st.seq} 仍在模型可见内容里`); return;
   }
   if (st.kind === 'pin') {
-    const label = (($('edLabel') && $('edLabel').value.trim()) || '目标');
-    const text = ($('edPin') && $('edPin').value) || '';
+    const label = (($('edLabel') && $('edLabel').value.trim()) || '目标'), text = ($('edPin') && $('edPin').value) || '';
     if (text.trim() === '') { S.editorError = '固定块正文不能为空'; render(); return; }
     S.invariants.push({ label, text, version: (S.invariants.filter((x) => x.label === label).length + 1) });
-    S.editor = null; render();
-    toast(`已存为固定块「${label}」v${S.invariants.filter((x) => x.label === label).length}（逐字，插件不改一个字）；换会话仍可见 → 每轮逐字比对即可发现漂移`);
+    S.editor = null; render(); toast(`已存为固定块「${label}」（逐字，插件不改一个字）；换会话仍可见 → 每轮逐字比对即可发现漂移`);
   }
 }
-
 function doApply(seq) {
-  const d = draftOf(seq);
-  const node = nodeOf(seq);
-  const ns = 1300 + S.applied.length;
+  const d = draftOf(seq), node = nodeOf(seq), ns = 1300 + S.applied.length;
   S.applied.push({ replacedSeq: seq, newSeq: ns, requestSeq: reqOf().seq, text: d.text, reason: d.reason || '', time: '12:1' + (S.applied.length % 9) });
   S.extraNodes.push(N(ns, node.cat, node.type, d.text, node.tokens, { name: node.name, requestSeq: reqOf().seq }));
   delete S.drafts[seq];
-  render();
-  toast(`已应用：#${seq} 被遮蔽 → 新条目 #${ns}（原文仍在日志里；可用版本历史恢复）`);
+  render(); toast(`已应用：#${seq} 被遮蔽 → 新条目 #${ns}（原文仍在日志里；可用版本历史恢复）`);
 }
-
 function orchAct(b) {
-  const act = b.dataset.act;
-  const i = Number(b.dataset.i);
+  const act = b.dataset.act, i = Number(b.dataset.i);
   if (act === 'freeze') {
     const note = ($('snapNote') && $('snapNote').value.trim()) || '';
     const id = 'snap-20260930-' + String(120000 + S.snapshots.length * 137).slice(0, 6);
     S.snapshots.push({ id, turn: reqOf().turn, items: surfaceOf().length, time: '12:1' + (S.snapshots.length % 9), note });
-    render(); toast('已冻结（只写插件本地：切点 / 条目数 / 时间 / 人写备注 / 固定块版本 —— 不写会话）');
-    return;
+    render(); toast('已冻结（只写插件本地：切点 / 条目数 / 时间 / 人写备注 / 固定块版本 —— 不写会话）'); return;
   }
   if (act === 'spawn') {
     confirmModal({
       title: '允许创建子会话',
       warn: '会用这个会话「已完成的轮次」做种子新建一个子会话（种子是一次性的：之后本会话的新轮次不会进去）。',
-      rows: [
-        ['① 种子范围', `第 ${reqOf().turn} 轮末（cutSeq = 最后一个 turn/end）`],
-        ['② 首条任务', '（见下方理由栏 —— 必须由你写）'],
-        ['③ 继承范围', '✅ 继承：已完成的对话历史（含你已应用的编辑）｜❌ 不继承：父会话的工具授权/权限；父会话也不会自动收到子会话的 transcript / 工具输出 / 思考'],
-        ['④ 副作用', S.sw.team ? '走官方 spawnTeammate(context:"fork") → 进官方名册（任务板/成员导航/派活都有）' : '团队不可用 → 退化为"裸可续接子会话"（没有任务板与官方派活）'],
-        ['⑤ 取消', '取消 = 什么都不发生（不建会话、不写日志）']
-      ],
+      rows: [['① 种子范围', `第 ${reqOf().turn} 轮末（cutSeq = 最后一个 turn/end）`],
+             ['② 首条任务', '（见下方理由栏 —— 必须由你写）'],
+             ['③ 继承范围', '✅ 继承：已完成的对话历史（含你已应用的编辑）｜❌ 不继承：父会话的工具授权/权限；父会话也不会自动收到子会话的 transcript / 工具输出 / 思考'],
+             ['④ 副作用', S.sw.team ? '走官方 spawnTeammate(context:"fork") → 进官方名册（任务板/成员导航/派活都有）' : '团队不可用 → 退化为"裸可续接子会话"（没有任务板与官方派活）'],
+             ['⑤ 取消', '取消 = 什么都不发生（不建会话、不写日志）']],
       needReason: true, okText: '确认创建',
       onOk: (reason) => {
         const id = '00' + (49000 + S.children.length * 771).toString(16).slice(0, 6);
-        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), from: S.snapshots[S.snapshots.length - 1] ? S.snapshots[S.snapshots.length - 1].id : 'snap-（当前）' });
+        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), from: S.snapshots.length ? S.snapshots[S.snapshots.length - 1].id : 'snap-（当前）' });
         render(); toast(`已创建 ${id}（看索引行；来源徽章 = 本项目发起）`);
       }
-    });
-    return;
+    }); return;
   }
   if (act === 'copen') { openDrawer('child.open'); toast('（演示）这里会跳到官方视图：父会话页头血缘目录 / 右侧 Sidebar 打开它的对话'); return; }
   if (act === 'csend') {
-    confirmModal({
-      title: '派活（经官方通道）',
-      warn: '会向子会话写入一条任务消息，不可撤销。',
+    confirmModal({ title: '派活（经官方通道）', warn: '会向子会话写入一条任务消息，不可撤销。',
       rows: [['收件人', S.children[i].id], ['逐字任务正文', '（见理由栏）'], ['投递方式', '排队下一轮（queue）'], ['理由', '（见理由栏）']],
-      needReason: true, okText: '确认发送',
-      onOk: (reason) => { toast(`已发送（模拟官方返回 accepted）：${reason.slice(0, 30)}`); }
-    });
-    return;
+      needReason: true, okText: '确认发送', onOk: (reason) => toast(`已发送（模拟官方返回 accepted）：${reason.slice(0, 30)}`) }); return;
   }
-  if (act === 'ctask') {
-    S.tasks.push({ subject: `跟进 ${S.children[i] ? S.children[i].id : ''} 的产出`, owner: '', blocked: false, st: 's-idle' });
-    render(); toast('已建成官方任务（写进官方任务板 —— 官方面板现在也能看到它）');
-    return;
-  }
+  if (act === 'ctask') { S.tasks.push({ subject: `跟进 ${S.children[i] ? S.children[i].id : ''} 的产出`, owner: '', blocked: false, st: 's-idle' }); render(); toast('已建成官方任务（写进官方任务板 —— 官方面板现在也能看到它）'); return; }
   if (act === 'ccompact') {
     if (S.sw.compressBusy) { toast('压缩被拒：子会话正在运行，等它空闲再压缩。（busy）', 'err'); return; }
-    confirmModal({
-      title: '压缩子会话（不可逆）',
-      warning: '',
-      warn: '子会话的历史会被摘要取代，不可逆。失败也通常会留下痕迹。',
+    confirmModal({ title: '压缩子会话（不可逆）', warn: '子会话的历史会被摘要取代，不可逆。失败也通常会留下痕迹。',
       rows: [['目标', S.children[i].id], ['将被替代的区间与条目数', '第 1–3 步 · 共 12 条'], ['不可逆提示', '原文会被摘要取代（不是遮蔽，读不回来）']],
-      needReason: false, okText: '确认压缩',
-      onOk: () => { S.children[i].state = 'idle'; render(); toast('压缩完成（演示）：子会话历史出现 compaction/* 事件'); }
-    });
-    return;
+      needReason: false, okText: '确认压缩', onOk: () => { S.children[i].state = 'idle'; render(); toast('压缩完成（演示）：子会话历史出现 compaction/* 事件'); } }); return;
   }
   if (act === 'cinterrupt') {
-    confirmModal({
-      title: '打断子会话',
-      warn: '会向子会话发出取消信号；未完成的工作可能被中断，不可撤销。已提交的工作不会被回滚。',
+    confirmModal({ title: '打断子会话', warn: '会向子会话发出取消信号；未完成的工作可能被中断，不可撤销。已提交的工作不会被回滚。',
       rows: [['目标', S.children[i].id], ['当前状态', S.children[i].state === 'running' ? '运行中' : '空闲'], ['信号', '成员走官方 interrupt；裸子会话走 interruptByParent']],
-      needReason: false, okText: '确认打断',
-      onOk: () => { S.children[i].state = 'ended'; render(); toast('已打断（演示）'); }
-    });
-    return;
+      needReason: false, okText: '确认打断', onOk: () => { S.children[i].state = 'ended'; render(); toast('已打断（演示）'); } }); return;
   }
-  if (act === 'pendingSeen') { S.pendingSeen = true; toast('已标记"已查看"（记在插件本地；重启后从父会话日志重扫重建）'); return; }
+  if (act === 'pendingSeen') { S.pendingSeen = true; toast('已标记「已查看」（记在插件本地；重启后从父会话日志重扫重建）'); return; }
   if (act === 'pendingHand') { toast('已把结果交回主会话（演示）'); return; }
 }
 
@@ -1059,7 +1255,7 @@ function renderSelfcheck() {
   if (!S.selfcheck) { box.hidden = true; return; }
   box.hidden = false;
   const rows = [
-    ['原始节点（当前可见）', '编辑 / 批注' + (draftOf(1240) ? ' / 应用到会话' : '')],
+    ['原始节点（当前可见）', '编辑 / 批注'],
     ['替换体（当前可见）', '仍有「编辑」（可连续改）+ 版本历史'],
     ['旧替换体 / 已被遮蔽的原文', '无「编辑」，给原因 + 版本历史'],
     ['助手消息', '只给「批注」+ 原因'],
@@ -1071,15 +1267,20 @@ function renderSelfcheck() {
   const overflow = document.documentElement.scrollWidth > document.documentElement.clientWidth;
   const rowW = document.querySelector('.row-main') ? document.querySelector('.row-main').getBoundingClientRect().width : 0;
   const btnH = document.querySelector('.actions .btn') ? document.querySelector('.actions .btn').getBoundingClientRect().height : 0;
+  const sc = $('trendScroll');
   box.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center"><b>自测面板</b><span class="muted">${S.sw.turnOpen ? '轮次未结束' : '轮次已闭合'} · ${S.sw.live ? '会话在本进程' : '不在本进程'} · 团队${S.sw.team ? '可用' : '不可用'} · 草稿 ${draftCount()} 条</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:center"><b>自测面板</b><span class="muted">${S.sw.turnOpen ? '轮次未结束' : '轮次已闭合'} · ${S.sw.live ? '会话在本进程' : '不在本进程'} · 团队${S.sw.team ? '可用' : '不可用'} · 草稿 ${draftCount()}</span></div>
+    <h4>趋势区</h4>
+    <div>粒度 <code>${S.trendGran}</code> · 模式 <code>${S.trendMode}</code> · 自适应 <code>${S.trendAdaptive}</code> · 聚焦 <code>${S.trendCat || '全部'}</code></div>
+    <div>柱数 <code>${(window.__trendSeries || []).length}</code> · 内容宽 <code>${sc ? Math.round(sc.scrollWidth) : 0}px</code> · 可视宽 <code>${sc ? Math.round(sc.clientWidth) : 0}px</code> · 需横向滚动 <span class="${sc && sc.scrollWidth > sc.clientWidth ? 'ok' : ''}">${sc && sc.scrollWidth > sc.clientWidth ? '是（正常，固定柱宽）' : '否'}</span></div>
+    <div>当前刻度上限 <code>${sc ? sc.dataset.max : '-'}</code>（自适应＝只按可见范围）</div>
     <h4>该出现的按钮（对照 docs/03 R4.6）</h4>
     <ul class="list">${rows.map(([k, v]) => `<li><b>${k}</b>${v}</li>`).join('')}</ul>
     <h4>盒子测量</h4>
     <div>行宽 <code>${Math.round(rowW)}px</code> · 动作按钮高 <code>${Math.round(btnH)}px</code>（窄屏应 ≥44）</div>
-    <div>横向溢出：<span class="${overflow ? 'bad' : 'ok'}">${overflow ? '有（不合格）' : '无'}</span> · 文档宽 <code>${document.documentElement.scrollWidth}</code> / 视口 <code>${document.documentElement.clientWidth}</code></div>
+    <div>整页横向溢出：<span class="${overflow ? 'bad' : 'ok'}">${overflow ? '有（不合格）' : '无'}</span></div>
     <h4>本原型不覆盖的门禁</h4>
-    <div class="muted">真实会话写入、真实压缩、console 无报错、与 dsh-context 并存 —— 这些只能在装进 DSH 后验（docs/03 §7 第 19/30 条）。</div>`;
+    <div class="muted">真实会话写入、真实压缩、console 无报错、与 dsh-context 并存 —— 只能在装进 DSH 后验（docs/03 §7）。</div>`;
 }
 
 /* ------------------------------------------------------------------ 10. 讲解模式 */
@@ -1124,20 +1325,21 @@ $('drawerClose').onclick = () => { $('drawer').hidden = true; };
 $('modalCancel').onclick = () => { $('modalWrap').hidden = true; };
 document.addEventListener('click', (e) => {
   const el = e.target.closest && e.target.closest('[data-explain]');
-  if (S.explain && el) {
-    // 讲解模式 = 只讲解、不改状态：拦下这次点击，避免"看说明"顺手把动作也执行了。
-    e.preventDefault(); e.stopPropagation();
-    openDrawer(el.dataset.explain);
-  }
+  if (S.explain && el) { e.preventDefault(); e.stopPropagation(); openDrawer(el.dataset.explain); }
 }, true);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { S.editor = null; $('modalWrap').hidden = true; $('drawer').hidden = true; render(); }
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && S.editor) submitEditor();
+  if (!S.editor && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    const list = reqsOfTurn(S.selTurn), i = list.findIndex((r) => r.seq === S.selSeq);
+    const n = list[i + (e.key === 'ArrowRight' ? 1 : -1)];
+    if (n) selectReq(n, null);
+  }
 });
 
 /* 预置：两条冻结记录 + 一个成员与任务，让首屏就有内容可点 */
 (function seed() {
-  S.snapshots.push({ id: 'snap-20260930-120412', turn: 24, items: 41, time: '12:04', note: '改完注入漂移，准备开子会话' });
+  S.snapshots.push({ id: 'snap-20260930-120412', turn: 27, items: 41, time: '12:04', note: '改完注入漂移，准备开子会话' });
   S.children.push({ id: '004c37a5', src: 'own', state: 'running', label: '把 README 双语改完并跑测试', from: 'snap-20260930-120412' });
   S.children.push({ id: '00a1b2c3', src: 'team', state: 'idle', label: 'reviewer（官方 teammate）' });
   S.members.push({ name: 'lead（当前会话）', st: 's-run' }, { name: 'reviewer', st: 's-idle' }, { name: 'tester', st: 's-done' });
