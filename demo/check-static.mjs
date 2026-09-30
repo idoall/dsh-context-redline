@@ -44,6 +44,12 @@ for (const k of usedExplain) {
   if (!explainKeys.has(k)) problems.push(`data-explain 没有讲解词：${k}`);
 }
 
+/* 回归护栏：讲解模式**不许**在捕获阶段拦截 [data-explain] 的点击
+ * （旧实现写成 `if (S.explain && el) { e.preventDefault(); ... }` → 开着讲解模式就点不动任何按钮） */
+if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(js)) {
+  problems.push('讲解模式的点击拦截又回来了：必须只让序号节点触发讲解，不能拦按钮本身');
+}
+
 /* 附加：单文件版是否与外链版同步（比较内联前的字节数是否合理） */
 if (!standalone.includes('<style>') || !standalone.includes('TOTAL_TURNS')) {
   problems.push('单文件独立版看起来没重新打包：请跑 node demo/build-standalone.mjs');

@@ -361,10 +361,17 @@ body { transition: padding-right .18s ease-out; }
 
 /* ---------- 讲解模式 ---------- */
 body.explain [data-explain] { outline: 1px dashed var(--dsw-alias-brand); outline-offset: 1px; position: relative; }
-body.explain [data-explain]::after {
-  content: attr(data-exnum); position: absolute; top: -8px; left: -6px; z-index: 5;
-  background: var(--dsw-alias-brand); color: #fff; font-size: 10px; line-height: 14px; padding: 0 4px; border-radius: 999px;
+/* 序号是**真实节点**（伪元素点不到）：只有点它才出讲解，点按钮本身照常交互 */
+.exnum {
+  position: absolute; top: -9px; left: -8px; z-index: 7;
+  min-width: 16px; padding: 0 4px; text-align: center; cursor: help; user-select: none;
+  background: var(--dsw-alias-brand); color: #fff; font-size: 10px; line-height: 15px;
+  border-radius: 999px; box-shadow: 0 0 0 1px var(--dsw-alias-bg-layer-1);
 }
+.exnum:hover, .exnum:focus-visible { outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 1px; }
+/* 横向滚动容器里（overflow-y 被算成 hidden）序号会被裁掉 → 放到元素内部，并给柱子一个最小高度容得下它 */
+.exnum-in { top: 1px; left: 1px; }
+body.explain .trendscroll .tbar { min-height: 17px; }
 .explainbar {
   position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 55;
   width: min(92vw, 620px); text-align: center;
@@ -1399,12 +1406,38 @@ function renderSelfcheck() {
 /* ------------------------------------------------------------------ 10. 讲解模式 */
 function applyExplain() {
   document.body.classList.toggle('explain', S.explain);
+  // 每次渲染都重建序号：先清旧的，避免残留（DOM 会被 render() 整体替换）
+  document.querySelectorAll('.exnum').forEach((el) => el.remove());
   const nodes = document.querySelectorAll('[data-explain]');
-  nodes.forEach((el, idx) => { el.dataset.exnum = String(idx + 1); });
   let bar = document.querySelector('.explainbar');
+
   if (S.explain) {
+    nodes.forEach((el, idx) => {
+      el.dataset.exnum = String(idx + 1);
+      /**
+       * ⚠️ 关键：讲解的触达点是**这个序号本身**，不是被讲解的元素。
+       * 用真实节点（不是 ::after 伪元素，伪元素点不到）—— 于是：
+       *   · 点序号 → 看它是做什么的
+       *   · 点按钮本身 → 照常走它自己的交互（不被拦截）
+       * 之前我在捕获阶段拦了所有 [data-explain] 的点击，导致开着讲解模式就没法试按钮、只能刷新。
+       */
+      const badge = document.createElement('span');
+      badge.className = 'exnum' + (el.closest && el.closest('.trendscroll') ? ' exnum-in' : '');
+      badge.textContent = String(idx + 1);
+      badge.setAttribute('role', 'button');
+      badge.setAttribute('tabindex', '0');
+      badge.setAttribute('title', `#${idx + 1} ${(EXPLAIN[el.dataset.explain] || {}).t || ''} —— 点这里看说明（不影响按钮本身）`);
+      const show = (e) => {
+        e.preventDefault();
+        e.stopPropagation();          // 只吃掉这一次点击，别让它触发按钮自身
+        openDrawer(el.dataset.explain);
+      };
+      badge.addEventListener('click', show);
+      badge.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') show(e); });
+      el.appendChild(badge);
+    });
     if (!bar) { bar = document.createElement('div'); bar.className = 'explainbar'; document.body.appendChild(bar); }
-    bar.innerHTML = `讲解模式已开：共 <b>${nodes.length}</b> 个可交互元素 · 点任一元素看它是做什么的（<span class="muted">Esc 关闭</span>）`;
+    bar.innerHTML = `讲解模式已开：共 <b>${nodes.length}</b> 个可交互元素 · 点**左上角序号**看它是做什么的；**按钮本身照常可用**（<span class="muted">Esc 关闭面板</span>）`;
   } else if (bar) bar.remove();
 }
 
@@ -1436,10 +1469,9 @@ $('btnSelfcheck').onclick = () => { S.selfcheck = !S.selfcheck; render(); };
 $('btnReset').onclick = () => { S = initial(); render(); toast('原型已重置'); };
 $('drawerClose').onclick = () => closeDrawer();
 $('modalCancel').onclick = () => { $('modalWrap').hidden = true; };
+// 捕获阶段**只做一件事**：窄屏（遮罩式）时点面板外关闭。
+// ⚠️ 绝不再拦截 [data-explain] 的点击 —— 那会让讲解模式把按钮本身的交互全部吃掉。
 document.addEventListener('click', (e) => {
-  const el = e.target.closest && e.target.closest('[data-explain]');
-  if (S.explain && el) { e.preventDefault(); e.stopPropagation(); openDrawer(el.dataset.explain); return; }
-  // 只有"窄屏遮罩式"才需要点外面关闭；宽屏是推挤式，点别处应保持面板开着（继续对照着看）
   const drawer = $('drawer');
   if (!drawer || drawer.hidden) return;
   const narrow = typeof window.matchMedia === 'function' ? window.matchMedia('(max-width: 899px)').matches : false;

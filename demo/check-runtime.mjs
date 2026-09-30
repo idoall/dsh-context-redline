@@ -19,10 +19,16 @@ function makeEl(tag = 'div') {
       add: (c) => set.add(c), remove: (c) => set.delete(c), toggle: (c, on) => (on ? set.add(c) : set.delete(c)),
       contains: (c) => set.has(c), _all: () => [...set]
     }; })(),
-    appendChild(c) { this.children.push(c); return c; },
-    removeChild(c) { return c; }, remove() {},
-    setAttribute() {}, getAttribute: () => null, removeAttribute() {},
-    addEventListener() {}, removeEventListener() {},
+    appendChild(c) { c.__parent = el; this.children.push(c); return c; },
+    removeChild(c) { const i = this.children.indexOf(c); if (i >= 0) this.children.splice(i, 1); return c; },
+    remove() { if (el.__parent) { const i = el.__parent.children.indexOf(el); if (i >= 0) el.__parent.children.splice(i, 1); } },
+    __attrs: {},
+    setAttribute(k, v) { el.__attrs[k] = String(v); },
+    getAttribute(k) { return k in el.__attrs ? el.__attrs[k] : null; },
+    removeAttribute(k) { delete el.__attrs[k]; },
+    __on: {},
+    addEventListener(type, fn) { (el.__on[type] = el.__on[type] || []).push(fn); },
+    removeEventListener() {},
     querySelector: () => null, querySelectorAll: () => [],
     getBoundingClientRect: () => ({ width: 320, height: 44, top: 0, left: 0, bottom: 44, right: 320 }),
     focus() {}, blur() {}, click() {}, closest: () => null
@@ -34,14 +40,22 @@ const getById = (id) => {
   if (!registry.has(id)) registry.set(id, makeEl());
   return registry.get(id);
 };
+// 三个"假的可讲解元素"：用来验证序号节点的注入与点击行为
+const explainHosts = Array.from({ length: 3 }, () => { const el = makeEl(); el.dataset.explain = 'act.edit'; return el; });
 const document = {
   documentElement: Object.assign(makeEl('html'), { scrollWidth: 1200, clientWidth: 1200 }),
   body: makeEl('body'),
   getElementById: getById,
   createElement: (t) => makeEl(t),
   querySelector: () => null,
-  querySelectorAll: () => [],
-  addEventListener() {}, removeEventListener() {}
+  querySelectorAll: (sel) => {
+    if (sel === '[data-explain]') return explainHosts;
+    if (sel === '.exnum') return explainHosts.flatMap((h) => h.children.filter((c) => String(c.className).startsWith('exnum')));
+    return [];
+  },
+  __on: {},
+  addEventListener(type, fn) { (document.__on[type] = document.__on[type] || []).push(fn); },
+  removeEventListener() {}
 };
 registry.set('__body', document.body);   // 便于断言 body 上的推挤类
 const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s*899px/.test(q) ? false : false, media: q }) };
@@ -174,6 +188,34 @@ check('行身份链跨替换体：#1287 → #1301', JSON.stringify(api.familyOf(
   api.closeDrawer();
   check('关闭后面板隐藏', registry.get('drawer').hidden === true);
   check('关闭后 body 收回推挤空间', !body.classList.contains('drawer-open'));
+}
+
+/* ---------------- 讲解模式：只有序号可点，按钮本身照常可用（用户报的旧 bug） ---------------- */
+{
+  const S = api.S();
+  S.explain = true; api.render();
+  const badges = explainHosts.map((h) => (h.children || []).find((c) => String(c.className).startsWith('exnum'))).filter(Boolean);
+  check('讲解模式给每个元素注入了**真实序号节点**（伪元素点不到）', badges.length === 3, `badges=${badges.length}`);
+  check('序号带无障碍角色与说明', badges[0] && badges[0].getAttribute('role') === 'button' && /点这里看说明/.test(badges[0].getAttribute('title') || ''));
+
+  api.closeDrawer();
+  const clickBadge = badges[0] && (badges[0].__on.click || [])[0];
+  check('序号自己挂了 click', typeof clickBadge === 'function');
+  let stopped = false;
+  clickBadge({ preventDefault() {}, stopPropagation() { stopped = true; } });
+  check('点序号：只吃掉这一次点击（不冒泡到按钮）', stopped === true);
+  check('点序号：打开讲解面板', registry.get('drawer').hidden === false);
+  check('点序号：body 进入推挤态', registry.get('__body').classList.contains('drawer-open'));
+
+  // 回归护栏：开着讲解模式时，文档捕获阶段**不许**再拦截 [data-explain] 的点击
+  const cap = (document.__on.click || [])[0];
+  let prevented = false;
+  if (cap) cap({ target: { closest: (sel) => (sel === '.drawer' ? null : explainHosts[0]) }, preventDefault() { prevented = true; } });
+  check('开着讲解模式时，点按钮本身不再被拦截（旧 bug 回归）', prevented === false, prevented ? '仍被 preventDefault' : '');
+
+  S.explain = false; api.render();
+  const after = explainHosts.map((h) => (h.children || []).filter((c) => String(c.className).startsWith('exnum')).length);
+  check('关掉讲解模式后序号被清理', after.every((n) => n === 0), JSON.stringify(after));
 }
 
 /* 走一遍动作：草稿 → 应用 → 回滚链 */
