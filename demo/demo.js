@@ -736,42 +736,103 @@ function renderBrowser() {
 function renderOrch() {
   const c = S.children;
   const active = c.filter((x) => x.state === 'running' || x.state === 'idle').length;
+  const stateOf = (s) => (s === 'running' ? ['s-run', '运行中'] : s === 'idle' ? ['s-idle', '空闲'] : ['s-done', '已结束']);
+  /**
+   * 排布约定（用户 2026-09-30 反馈"这块没有其他几个部分好看"）：
+   * 「小标题（.subhead）+ 行（.orch-row）」——和上下文浏览器/上下文事件用同一套语法。
+   * 每个子会话/成员行统一成**两行**：上行 = 身份（id / 来源 / 状态 / 描述），下行 = 动作（缩进 22px，与 .actions 对齐）。
+   * 这样"打开"不会再孤零零挂在右上角、其余按钮也不会掉到第二行还带悬挂缩进。
+   * 状态一律用圆点 + 徽章，**不用 emoji**（docs/03 V5）。
+   */
   $('cardOrch').innerHTML = `
-    <div class="card-title">快照与子会话 <span class="hint">（A′：只做快照化子会话 + 对接官方；不自己造协作层）</span></div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
-      <input class="btn sm" id="snapNote" placeholder="人写备注（插件不生成摘要）" style="min-width:200px" />
+    <div class="card-title">快照与子会话 <span class="hint">A′：只做快照化子会话 + 对接官方；不自己造协作层</span></div>
+
+    <div class="orch-toolbar">
+      <input id="snapNote" placeholder="人写备注（插件不生成摘要）" />
       <button class="btn sm" data-act="freeze" data-explain="orch.freeze" ${!S.sw.live || draftCount() > 0 ? 'disabled' : ''}>冻结当前位置</button>
       <button class="btn sm" data-act="spawn" data-explain="orch.spawn" ${!S.sw.live || draftCount() > 0 || !S.snapshots.length ? 'disabled' : ''}>开子会话（人写首条任务）</button>
+      ${draftCount() > 0 ? `<span class="cap warn-text">还有 ${draftCount()} 条草稿没提交 —— 草稿不在 fork 种子里，也不在冻结记录里，它只存在插件本地。</span>` : ''}
     </div>
-    ${draftCount() > 0 ? `<div class="cap" style="color:var(--ds-color-amber)">还有 ${draftCount()} 条草稿没提交。草稿不在 fork 种子里，也不在冻结记录里 —— 它只存在插件本地。</div>` : ''}
-    ${S.snapshots.length ? `<div class="subhead">冻结记录</div>${S.snapshots.map((s) => `<div class="snap"><span class="snapid">${esc(s.id)}</span><span class="cap">第 ${s.turn} 轮末 · ${s.items} 条 · ${s.time} · 备注：${esc(s.note || '（无）')}</span></div>`).join('')}` : '<div class="cap">还没有冻结记录。建议：先把草稿清零 → 冻结 → 再开子会话。</div>'}
-    <div class="subhead">子会话 / 成员索引 <span class="cap">活跃 ${active} / 8（官方 teammate 也占同一份额度）</span></div>
-    ${c.length === 0 ? '<div class="cap">（还没有子会话）</div>' : c.map((x, i) => `
-      <div class="snap">
-        <span class="snapid">${esc(x.id)}</span>
-        <span class="${x.src === 'own' ? 'badge-src-own' : 'badge-src-team'}">${x.src === 'own' ? '本项目发起' : '来自 Agent Teams'}</span>
-        <span class="badge-state">${x.state === 'running' ? '运行中' : x.state === 'idle' ? '空闲' : '已结束'}</span>
-        <span class="cap">${esc(x.label)}${x.from ? ' · 来自快照 ' + esc(x.from) : ''}</span>
-        <span class="grow" style="flex:1"></span>
-        <button class="btn sm ghost" data-act="copen" data-i="${i}" data-explain="child.open">打开</button>
-        ${x.src === 'own' ? `
-          <button class="btn sm" data-act="csend" data-i="${i}" data-explain="child.send" ${S.sw.team ? '' : 'disabled'}>派活</button>
-          <button class="btn sm" data-act="ctask" data-i="${i}" data-explain="child.totask">建成官方任务</button>
-          <button class="btn sm" data-act="ccompact" data-i="${i}" data-explain="child.compact">压缩</button>
-          <button class="btn sm danger" data-act="cinterrupt" data-i="${i}" data-explain="child.interrupt">打断</button>`
-        : '<span class="cap">请在官方团队面板管理</span>'}
-      </div>`).join('')}
-    <div class="subhead">待处理的结果 <span class="cap" data-explain="pending.view">（点这里有说明）</span></div>
-    ${S.sw.pendingState === 'settled'
-      ? '<div class="cap">✅ 已收到平台结算通知：子会话 #004c37a5 已结束：「改完了 3 处，测试全绿」。<a href="#" data-act="pendingSeen">标记已查看</a></div>'
-      : '<div class="cap" style="color:var(--ds-color-amber)">⚠️ 回流未确认：没收到平台的结算通知 —— 子会话结束了，但父会话没收到回流。<a href="#" data-act="pendingHand">让主会话接着做</a></div>'}
-    <div class="subhead">官方团队（只读，显示的就是官方那份数据）</div>
+
+    <div class="subhead">冻结记录 <span class="hint">只写本地，不写会话</span></div>
+    ${S.snapshots.length
+      ? S.snapshots.map((s) => `
+      <div class="orch-row">
+        <div class="orch-id">
+          <span class="snapid">${esc(s.id)}</span>
+          <span class="cap">第 ${s.turn} 轮末 · ${s.items} 条 · ${s.time}</span>
+          <span class="orch-note orch-desc">人写备注：${esc(s.note || '（无）')}</span>
+        </div>
+      </div>`).join('')
+      : '<div class="cap">还没有冻结记录。建议：先把草稿清零 → 冻结 → 再开子会话。</div>'}
+
+    <div class="subhead">子会话 / 成员索引 <span class="hint">活跃 ${active} / 8 · 官方 teammate 也占同一份额度</span></div>
+    ${c.length === 0 ? '<div class="cap">（还没有子会话）</div>' : c.map((x, i) => {
+      const [stCls, stText] = stateOf(x.state);
+      return `
+      <div class="orch-row">
+        <div class="orch-id">
+          <span class="snapid">${esc(x.id)}</span>
+          <span class="${x.src === 'own' ? 'badge-src-own' : 'badge-src-team'}">${x.src === 'own' ? '本项目发起' : '来自 Agent Teams'}</span>
+          <span class="badge-state"><i class="mstat ${stCls}"></i>${stText}</span>
+          <span class="cap orch-desc">${esc(x.label)}${x.from ? ' · 来自快照 ' + esc(x.from) : ''}</span>
+        </div>
+        <div class="orch-actions">
+          <button class="btn sm ghost" data-act="copen" data-i="${i}" data-explain="child.open">打开</button>
+          ${x.src === 'own' ? `
+            ${S.sw.team ? `
+              <button class="btn sm" data-act="csend" data-i="${i}" data-explain="child.send">派活</button>
+              <button class="btn sm" data-act="ctask" data-i="${i}" data-explain="child.totask">建成官方任务</button>` : ''}
+            <button class="btn sm" data-act="ccompact" data-i="${i}" data-explain="child.compact">压缩</button>
+            <button class="btn sm danger" data-act="cinterrupt" data-i="${i}" data-explain="child.interrupt">打断</button>`
+          : `<span class="cap">${S.sw.team
+              ? '这类成员请在会话页头的 Agent Teams 面板里管理'
+              : '平台目录里的子会话（只读）；本机未启用官方智能体团队，故不提供派活 / 建任务'}</span>`}
+        </div>
+      </div>`;
+    }).join('')}
+
+    <div class="subhead">待处理的结果 <span class="hint" data-explain="pending.view">结算通知由平台尽力投递，投不到就说投不到</span></div>
+    ${S.sw.pendingState === 'settled' ? `
+      <div class="orch-row">
+        <div class="orch-id">
+          <i class="dot dot-ok"></i>
+          <span>已收到平台结算通知</span>
+          <span class="cap orch-desc">子会话 #004c37a5 已结束：「改完了 3 处，测试全绿」</span>
+        </div>
+        <div class="orch-actions">
+          <button class="btn sm ghost" data-act="pendingSeen">标记已查看</button>
+        </div>
+      </div>` : `
+      <div class="orch-row">
+        <div class="orch-id">
+          <i class="dot dot-warn"></i>
+          <span class="warn-text">回流未确认</span>
+          <span class="cap orch-desc">没收到平台的结算通知 —— 子会话结束了，但父会话没收到回流</span>
+        </div>
+        <div class="orch-actions">
+          <button class="btn sm" data-act="pendingHand">让主会话接着做</button>
+        </div>
+      </div>`}
+
+    <div class="subhead">官方团队 <span class="hint" data-explain="team.read">只读 —— 显示的就是官方那份数据</span></div>
     ${S.sw.team ? `
-      <div class="cap">roster：${S.members.map((m) => `<span class="member"><i class="mstat ${m.st}"></i>${esc(m.name)}</span>`).join(' ')}</div>
-      <div class="cap" style="margin-top:4px">任务板：</div>
-      ${S.tasks.length ? S.tasks.map((t) => `<div class="task"><i class="tstat ${t.st}"></i>${esc(t.subject)}<span class="muted">· ${esc(t.owner || '未认领')}${t.blocked ? ' · 被依赖阻塞' : ''}</span></div>`).join('') : '<div class="cap">（任务板为空）</div>'}
-      <div class="cap" style="margin-top:4px">去官方面板（成员导航复用官方）</div>`
-    : '<div class="cap">本机未启用官方智能体团队 → 对接点全部隐藏（不是报错）。</div>'}`;
+      <div class="cap list-label">成员</div>
+      <div class="roster">${S.members.map((m) => `<span class="member"><i class="mstat ${m.st}"></i>${esc(m.name)}</span>`).join('')}</div>
+      <div class="cap list-label">任务板</div>
+      ${S.tasks.length
+        ? S.tasks.map((t) => `
+        <div class="task">
+          <i class="tstat ${t.st}"></i>
+          <span class="subject">${esc(t.subject)}</span>
+          <span class="owner muted">${esc(t.owner || '未认领')}${t.blocked ? ' · 被依赖阻塞' : ''}</span>
+        </div>`).join('')
+        : '<div class="cap">（任务板为空）</div>'}
+      <div class="orch-actions">
+        <button class="btn sm ghost" data-act="teamOpen" data-explain="team.read">去官方面板</button>
+        <span class="cap">成员导航复用官方，我们不在面板里重画对话</span>
+      </div>`
+      : '<div class="cap">本机未启用官方智能体团队 → 派活 / 建成官方任务 / 成员式打断全部不出现（不是报错）。</div>'}`;
   $('cardOrch').querySelectorAll('[data-act]').forEach((b) => { b.onclick = (e) => { e.preventDefault(); orchAct(b); }; });
 }
 
@@ -877,6 +938,7 @@ function orchAct(b) {
     }); return;
   }
   if (act === 'copen') { openDrawer('child.open'); toast('（演示）这里会跳到官方视图：父会话页头血缘目录 / 右侧 Sidebar 打开它的对话'); return; }
+  if (act === 'teamOpen') { toast('（演示）这里会跳到官方团队面板：成员导航与任务板都复用官方那一份'); return; }
   if (act === 'csend') {
     confirmModal({ title: '派活（经官方通道）', warn: '会向子会话写入一条任务消息，不可撤销。',
       rows: [['收件人', S.children[i].id], ['逐字任务正文', '（见理由栏）'], ['投递方式', '排队下一轮（queue）'], ['理由', '（见理由栏）']],
