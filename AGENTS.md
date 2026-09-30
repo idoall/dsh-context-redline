@@ -121,13 +121,20 @@ dsh --profile web --dump-config                                      # 静态确
    · **官方 `browser-use`（Playwright MCP，headless）已按用户选 B 恢复**：两个包装进 `web` profile（版本 `0.2.0-rc.1`，
      与运行时一致；`@playwright/mcp@0.0.80` 解析通过；chromium/headless-shell rev 1243 已在本地缓存，无需下载），
      patch 里那段 `insert` 已取消注释，`dsh --profile web --dump-config` exit 0 且两行都在合成树里。
-     **生效范围＝新建会话**；**已活动的会话（含本会话）不受影响**。要用来验证界面，**开一个新会话**再叫助手。
-   · 会话里没有该工具时，界面验证仍走：① `node demo/check-static.mjs`（id/class/讲解词契约）
-     ② `node demo/check-runtime.mjs`（最小 DOM 桩跑真渲染与切换）③ demo 页面内**自测面板**自报测量值
-     ④ **用户本人在手机与桌面上看**（主观判断只有他能给）。
+     **生效范围＝新建会话**；**已活动的会话不受影响**。
+   · ✅ **已在新会话实测可用**（2026-09-30：`navigate/resize/screenshot/evaluate/console_messages` 都通，
+     用它完成了 `docs/10` 的 M05-23/M05-24）。**两条限制**：① 它只是**本机 headless Chromium**，
+     不是用户的 Chrome、更不是用户的手机；② **headless 无触屏** → `matchMedia('(pointer: coarse)')` 为 `false`，
+     `docs/03` R6.4 V11 的「真触屏 ≥44px」在上面**测不了**（只能把 CSS 规则搬出来模拟验证）。
+     ⟹ 手机端手感的最终判据仍是**用户本人实测**。
+   · 另有两条不依赖浏览器的自检：① `node demo/check-static.mjs`（id/class/讲解词契约）
+     ② `node demo/check-runtime.mjs`（最小 DOM 桩跑真渲染与切换）+ demo 页面内**自测面板**自报测量值。
+     ⚠️ 桩里的 `requestAnimationFrame` **必须后置排队**（不能同步执行），否则「render 内部排 rAF、
+     紧接着读 DOM」这类**时序 bug 在桩里看不见**（M05-24 就是这么漏掉又补上的）。
 4. **布局/交互类改动：先在静态 demo 里做出来、用浏览器量过，再搬进插件。**
    仓库内已有 **`demo/`（M0.5 交互门禁）**：界面改动先在它里面改，**用户逐条确认后**再搬进插件（客户端半无法 TDD，且每次改插件都要用户重启）。
-   demo 要能自报测量值（元素尺寸、命中坐标、是否溢出），因为 agent 侧没有 `evaluate`。
+   demo 仍要能自报测量值（元素尺寸、命中坐标、是否溢出）——那是给用户在真机上看读数用的；原始实测数据见
+   [`demo/screenshots/measure-log.md`](demo/screenshots/measure-log.md)。
 5. **改 UI / 写对接代码前先读官方参考实现**：**最新源码在 `$DSH_SRC`**
    （**0.2.0-rc.2**，含全部 TypeScript 源码与 `packages/experimental/{agent-team,tool-agent-team,client-ui-agent-team,agent-team-profile}`）；
    旧的 `<old-dsh-src>` 是 **0.1.6-alpha.1**，只当历史参考。
@@ -151,13 +158,13 @@ dsh --profile web --dump-config                                      # 静态确
 ## 5. 当前状态
 
 > **进度看板（唯一状态源）**：[`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) —— **细粒度任务表**
-> （ID / 子任务 / 状态 / **文件动作（范围冻结）**），当前 **DONE 43 / 共 176**，需要用户的步骤标 `WAIT🙋`。
+> （ID / 子任务 / 状态 / **文件动作（范围冻结）**），当前 **DONE 45 / 共 178**，需要用户的步骤标 `WAIT🙋`。
 > **每次收尾必须回来同步它**（含 §11 进度总览），否则就会出现第二个"真相"。
 
 | 阶段 | 状态 |
 |---|---|
 | **M0** 文档集 | ✅ **已完成**：`docs/00`–`docs/09`（`docs/07` 已按用户要求删除），过 7 轮外部模型评审（R1–R7）。**用户 2026-09-30 的全部拍板已落地**：Q1 包名、Q2 不做图 2 ②、Q6 可续接、Q11 **A 完整回滚**、Q12 **A′ 对接官方**；其余问题已给**默认值**（不再需要逐项确认） |
-| **M0.5** 静态可交互 demo（交互门禁） | ✅ 第一版已交付（`demo/`，含逐步讲解模式）；**等用户逐条确认交互** |
+| **M0.5** 静态可交互 demo（交互门禁） | ✅ 第一版已交付（`demo/`，含逐步讲解模式）；✅ **已做浏览器实测**（1440/880/879/390 视口，原始数据在 [`demo/screenshots/measure-log.md`](demo/screenshots/measure-log.md)）；**等用户逐条按 R 编号确认交互**（`docs/10` M05-15） |
 | **M1** 骨架与身份（复制 v0.59.2 + 命名空间化） | ⬜ **未开始**——**前置只剩"授权包 ① 装 profile + 重启"**（Q2/Q11 已拍板）。⚠️ **用户未确认前不写任何代码** |
 | **M2** 编辑面（TDD，含完整回滚） | ⬜ |
 | **M3** 右侧可编辑界面（人工门禁） | ⬜ |

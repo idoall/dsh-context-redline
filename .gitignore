@@ -3,6 +3,7 @@ lib/
 *.tsbuildinfo
 *.tgz
 .playwright-cli/
+.playwright-mcp/
 .dsh-code-index/
 coverage/
 .DS_Store

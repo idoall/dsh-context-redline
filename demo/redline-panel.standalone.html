@@ -842,6 +842,7 @@ function applyTrendScale() {
   if (!sc) return;
   const series = (window.__trendSeries || []);
   const max = visibleMax(series, sc);
+  const prevMax = sc.dataset.max;              // 用于判断"刻度上限有没有变"（变了才刷自测面板）
   const top = $('trendAxisTop'), mid = $('trendAxisMid');
   if (top) top.textContent = fmt(max);
   if (mid) mid.textContent = fmt(max / 2);
@@ -852,6 +853,9 @@ function applyTrendScale() {
     el.classList.toggle('neg', v < 0);
   });
   sc.dataset.max = String(max);
+  /* 刻度上限也是自测面板上的一个读数。面板已经开着时，这里要把它刷新掉 ——
+   * 否则面板会一直留着"这个节点刚被重建、还没算过刻度"的那一帧（实测显示 undefined）。 */
+  if (prevMax !== sc.dataset.max && S.selfcheck) renderSelfcheck();
 }
 /* ---------- 趋势图的 hover 提示（照参考插件的 2 行式自绘 tooltip）----------
  * 文案照抄参考插件 i18n：
@@ -1020,6 +1024,9 @@ function renderTrend() {
   const sc = $('trendScroll');
   sc.onscroll = () => { if (S.trendAdaptive) applyTrendScale(); syncTrendTip(); };
   containHorizontalOverscroll(sc);   // 滑到头不把整页带走（移动端尤其重要）
+  /* ⚠️ 必须**同步**先算一次刻度：render() 紧接着就调 renderSelfcheck()，而自测面板要读 data-max。
+   * 只把计算排进下面的 rAF 的话，面板拿到的是"刚重建、还没算过"的节点 → 显示 undefined（实测踩过）。 */
+  applyTrendScale();
   requestAnimationFrame(() => {
     applyTrendScale();
     const sel = sc.querySelector('.tbar.sel');

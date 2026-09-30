@@ -32,7 +32,7 @@
 | X-04 | 新发现的平台事实回写 `docs/01`；未核实的进"待验证"，不得当依据 | DOING | `docs/01-platform-facts.md` |
 | X-05 | 每阶段收尾同步 §11 进度总览（防止出现第二个"真相"） | DOING | 本文件 §11 |
 | X-08 | 维护 `docs/11-session-handoff.md`：每次收尾更新"最新提交/进度/卡点/demo 服务/浏览器工具状态"与那段可复制交接文本（换会话时用户直接粘贴） | DOING（本次已建） | `docs/11-session-handoff.md` |
-| X-07 | **恢复官方浏览器控制**（用户选 B）：装 `@deepseek-ai/dsh-browser-use@0.2.0-rc.1` + `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.2.0-rc.1`（peer 钉在运行时 0.2.0-rc.1；`@playwright/mcp@0.0.80` 经 `require.resolve` 验证可解析；chromium / headless-shell rev 1243 已在 `~/Library/Caches/ms-playwright`）→ 取消 patch 里那段 `insert` 注释 → `dump-config` exit 0 且两行在合成树里；`package.json` 差异仅预期两行、其它插件完好。**回退**：还原 `cordis.patch.yml.before-browser-use-restore-20260930-184704` + `dsh plugin --profile web remove` 那两包 + 重启。**生效范围＝新建会话**（本会话不受影响） | DONE（**待你在新会话验证工具是否出现**） | `$DSH_HOME/profiles/web/{cordis.patch.yml,package.json,pnpm-lock.yaml}`（已各备份一份） |
+| X-07 | **恢复官方浏览器控制**（用户选 B）：装 `@deepseek-ai/dsh-browser-use@0.2.0-rc.1` + `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.2.0-rc.1`（peer 钉在运行时 0.2.0-rc.1；`@playwright/mcp@0.0.80` 经 `require.resolve` 验证可解析；chromium / headless-shell rev 1243 已在 `~/Library/Caches/ms-playwright`）→ 取消 patch 里那段 `insert` 注释 → `dump-config` exit 0 且两行在合成树里；`package.json` 差异仅预期两行、其它插件完好。**回退**：还原 `cordis.patch.yml.before-browser-use-restore-20260930-184704` + `dsh plugin --profile web remove` 那两包 + 重启。**生效范围＝新建会话**（本会话不受影响） | DONE → **2026-09-30 新会话实测工具在位**（`browser_navigate/resize/screenshot/evaluate/console_messages` 均可用，已完成 M05-23/24 的实测）；另附一条限制：headless 无触屏，`(pointer: coarse)` 不命中 | `$DSH_HOME/profiles/web/{cordis.patch.yml,package.json,pnpm-lock.yaml}`（已各备份一份） |
 | X-06 | 🙋 push（最后单独授权）：`git push -u origin main` | WAIT🙋 | 远端 `origin` |
 
 ## 1. M0 · 文档集（**20 / 20 DONE**）
@@ -62,7 +62,7 @@
 
 ---
 
-## 2. M0.5 · 交互 demo（**14 / 15 DONE**，剩定稿）
+## 2. M0.5 · 交互 demo（**23 / 24 DONE**，剩定稿）
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
@@ -87,6 +87,8 @@
 | M05-20 | 修正 ✂ 语义并让它自我说明：一个事件只标一根柱（原来会重复标 → 2 个事件显示 3 个剪刀）；按轮次合并成 `✂×N`；✂ 自身可 hover 出提示、可点击跳转；事件类型文案对齐参考插件（压缩 / 剪枝） | DONE → 冒烟 **41/41**（含"同一事件不会被标两次"） | `demo/demo.js`、`docs/03-ui-spec.md` |
 | M05-21 | 讲解面板改为**推挤式**（像 DSH 右侧栏）：打开时 body 加 `drawer-open` → 内容被挤窄而不是被盖住，宽屏无需关闭即可继续对照；窄屏（<900px）回退成遮罩式，点面板外或 Esc 关闭；关掉讲解模式时面板一并收起 | DONE → 冒烟 **46/46**（含 drawer-open 类的加/收） | `demo/demo.css`、`demo/demo.js` |
 | M05-22 | 讲解模式改为「**只有序号可点**」：序号用真实节点（伪元素点不到）注入，点它出讲解、点按钮本身照常交互（旧实现会在捕获阶段拦掉所有 [data-explain] 点击 → 开着讲解就没法试按钮）；序号可键盘触达、带 title 说明；关掉讲解模式即清理。加了两道回归护栏（冒烟：开着讲解时点按钮不被 preventDefault；静态：禁止旧的点击拦截写法回来） | DONE → 冒烟 **54/54** | `demo/demo.js`、`demo/demo.css`、`demo/check-runtime.mjs`、`demo/check-static.mjs` |
+| M05-23 | 浏览器实测（新会话有官方 Playwright MCP 后第一次跑）：1440 宽屏、880/879 断点、390 手机视口各截图 + 量布局（列宽、卡片高、趋势内容宽/可视宽、整页横向溢出、动作按钮高、console 条数）；原始数据落 `demo/screenshots/measure-log.md` | DONE → 1440 两列各 700 / 溢出 0px；880 仍两列、879 折单列（断点=880）；390 单列 362、趋势 `557>336` 内部滚动、整页溢出 **0px**、console **0 条**；截图 6 张 | `demo/screenshots/**`、`docs/03-ui-spec.md` §7 引言 |
+| M05-24 | 实测抓出的真 bug：自测面板把刻度上限显示成 `undefined`（`renderTrend()` 把刻度计算排进 rAF，`render()` 紧接着渲染面板 → 读到刚重建、没算过的节点）→ 修（末尾同步先算一次 + 刻度变化时刷新面板）；**先写红护栏**：把冒烟测试的 rAF 桩改成**后置队列**（同步 rAF 看不见这类时序 bug），新增 4 条断言，先在旧代码上跑出 4 红、修完 4 绿 | DONE → 修前 **4 红**（`❌ 刻度上限有值…→ undefined` 等）、修后 **58/58 绿**；浏览器复验 `当前刻度上限 7270`（与 `data-max` 一致）、无 `undefined` | `demo/demo.js`、`demo/check-runtime.mjs`、`demo/redline-panel.html`(?v=5)、`demo/redline-panel.standalone.html` |
 | M05-15 | 🙋 **交互定稿**：你逐条按 R 编号确认 → 结论回写 `docs/03` | WAIT🙋 | `docs/03-ui-spec.md`（只改对应 R 各条） |
 
 ---
@@ -279,7 +281,7 @@
 |---|---|---|---|---|---|
 | X 横切 | 8 | **2** | 4 | 1 | 1 |
 | M0 文档集 | 20 | **20** | 0 | 0 | 0 |
-| M0.5 交互 demo | 22 | **21** | 0 | 0 | 1 |
+| M0.5 交互 demo | 24 | **23** | 0 | 0 | 1 |
 | M1 骨架与身份 | 14 | 0 | 0 | 13 | 1 |
 | M2 编辑面 | 28 | 0 | 0 | 28 | 0 |
 | M3 右侧界面 | 22 | 0 | 0 | 21 | 1 |
@@ -288,7 +290,7 @@
 | M5 编排 | 26 | 0 | 0 | 25 | 1 |
 | M6 入口与发布 | 10 | 0 | 0 | 10 | 0 |
 | M7+ 后续 | 4 | 0 | 0 | 4 | 0 |
-| **合计** | **176** | **43** | **4** | **121** | **8** |
+| **合计** | **178** | **45** | **4** | **121** | **8** |
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
 > 当前卡点：**M05-15 交互定稿（等你）**；其后 **M1-01 授权包①（等你重启）**。

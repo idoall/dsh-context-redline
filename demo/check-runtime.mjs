@@ -66,9 +66,16 @@ const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, T
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
   nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement };`;
 
+/**
+ * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
+ * 同步执行会让「render() 内部先排 rAF、紧接着 renderSelfcheck() 读 DOM」这种真实浏览器里
+ * 的**时序 bug 在桩里看不见** —— 2026-09-30 自测面板显示 `undefined` 就是这么漏掉的。
+ */
+const rafQueue = [];
+const flushRaf = () => { while (rafQueue.length) rafQueue.shift()(); };
 const run = new Function('document', 'window', 'requestAnimationFrame', 'setTimeout', 'console',
   code + exposed);
-const api = run(document, window, (cb) => cb(), () => 0, { log() {}, warn() {}, error() {} });
+const api = run(document, window, (cb) => rafQueue.push(cb), () => 0, { log() {}, warn() {}, error() {} });
 
 /* ---------------- 断言 ---------------- */
 const results = [];
@@ -243,6 +250,23 @@ try {
   S.sw.turnOpen = false; S.sw.live = true; S.sw.team = true; api.render();
 } catch (e) { threw = e; }
 check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw === null, threw ? String(threw) : '');
+
+/* ---------------- 自测面板：读数必须是数字，不许出现 undefined ----------------
+ * 真实浏览器里 renderTrend() 把刻度计算排进 rAF，而 render() 紧接着就渲染自测面板 →
+ * 面板读到的是**刚被重建、还没算过**的 #trendScroll → 显示 `undefined`（2026-09-30 实测发现）。
+ * 这里的桩把 rAF 后置，因此能在没有浏览器的环境下复现这条时序。 */
+{
+  const S = api.S();
+  S.selfcheck = true; api.render();                      // rAF 尚未执行（模拟浏览器真实时序）
+  const html = registry.get('selfcheck').innerHTML;
+  check('自测面板：刻度上限有值（rAF 未跑时也不许是 undefined）', !/undefined/.test(html), (html.match(/当前刻度上限[^<]*<code>([^<]*)<\/code>/) || [])[1] || '(没有这一行)');
+  check('自测面板：整块不含 undefined', !/undefined/.test(html), html.includes('undefined') ? '仍含 undefined' : '');
+  flushRaf();
+  const html2 = registry.get('selfcheck').innerHTML;
+  check('自测面板：rAF 跑完之后仍是数字', !/undefined/.test(html2), (html2.match(/当前刻度上限[^<]*<code>([^<]*)<\/code>/) || [])[1] || '(没有这一行)');
+  check('自测面板：读数等于 #trendScroll 上的 data-max', registry.get('trendScroll').dataset.max !== undefined && html2.includes(`<code>${registry.get('trendScroll').dataset.max}</code>`), `data-max=${registry.get('trendScroll').dataset.max}`);
+  S.selfcheck = false; api.render(); flushRaf();
+}
 
 /* ---------------- 汇报 ---------------- */
 const bad = results.filter((r) => !r.ok);

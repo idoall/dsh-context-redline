@@ -427,10 +427,18 @@
 
 ## 7. 验收清单（人工门禁，逐条打勾）
 
-> **验证工具的现实约束（2026-09-30 起）**：本机已按用户要求**彻底删除 browser-skill/`bsk`** → 助手**没有浏览器工具**，
-> 不能再自己截图/量尺寸/看 console。因此界面验证改成三条：
-> ① `node demo/check-static.mjs`（id/class/讲解词契约）；② `node demo/run`（运行时冒烟：真的执行一遍渲染与切换）；
-> ③ **页面内「自测面板」自报测量值**（盒子尺寸、横向溢出、趋势柱数与刻度）+ **你本人在手机与桌面上看**。
+> **验证工具的现状（2026-09-30 更正）**：`browser-skill`/`bsk` 已按用户要求彻底删除；
+> **官方浏览器工具已恢复**（`@deepseek-ai/dsh-browser-use` + `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.2.0-rc.1`，
+> headless Chromium）→ 助手可以自己截图、量尺寸、读 console。**但要限定作用范围**：
+> · **只有新建的会话能用**（已活动的会话不受影响，本插件这条线要开新会话才有）；
+> · 它**不是真机**：headless 且无触屏（实测 `matchMedia('(pointer: coarse)')` 为 `false`）→
+>   R6.4 V11「真触屏 ≥44px」这类条目在它上面**测不了**，只能把 CSS 规则原样搬出来做模拟验证，
+>   **最终仍以你本人在手机与桌面上看为准**（这是你定的纪律）。
+> 另有两条不需要浏览器的自检（每次改动都跑）：
+> ① `node demo/check-static.mjs`（id/class/讲解词契约）；② `node demo/check-runtime.mjs`（最小 DOM 桩真跑渲染与切换）；
+> 页面内「自测面板」自报测量值（盒子尺寸、横向溢出、趋势柱数与刻度）——它是给**你**在真机上看读数用的。
+> 原始测量数据、截图与两个由实测抓出的问题：[`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)。
+>
 > **执行方式（M0.5）**：下面这些**交互类**条目，先在 [`demo/`](../demo/README.md)（可点击的规格书，含「这个按钮是做什么的」讲解模式）里定稿，
 > 你确认后再搬进插件 —— 客户端半无法 TDD，且每改一次插件都要你重启一次。
 
