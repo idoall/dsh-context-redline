@@ -6,6 +6,7 @@
 > · [`docs/04-roadmap`](docs/04-roadmap.md) · [`docs/05-test-plan`](docs/05-test-plan.md)
 > · [`docs/06-orchestration`](docs/06-orchestration.md)
 > · [`docs/08-open-questions`](docs/08-open-questions.md) · [`docs/09-requirements-traceability`](docs/09-requirements-traceability.md)（需求追溯矩阵）
+> · [`docs/10-execution-checklist`](docs/10-execution-checklist.md)（**长任务执行清单**：逐项可勾，每项写清"做什么 / 完成判据"，并标出哪几步需要用户）
 > · [`UPSTREAM.md`](UPSTREAM.md)（上游与许可）
 
 ---
@@ -138,6 +139,9 @@ dsh --profile web --dump-config                                      # 静态确
 ---
 
 ## 5. 当前状态
+
+> **进度看板**：[`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) —— 逐项可勾（当前 **14 / 72**），
+> 每项都写清"做什么 / 完成判据"，需要用户的那几步标了 🙋。**每次收尾都要更新它**。
 
 | 阶段 | 状态 |
 |---|---|

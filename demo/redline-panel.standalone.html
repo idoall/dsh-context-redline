@@ -1,0 +1,1153 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>上下文批改台 · 交互原型（demo）</title>
+<link rel="icon" href="data:," />
+<style>
+/* ============================================================================
+ * 上下文批改台 · 交互原型样式
+ * 规则（docs/03 §6）：颜色一律走"主题令牌"，深浅两套自动跟随；不写死十六进制。
+ * 这里的令牌名沿用 DSH 的 --dsw-alias-* 命名，便于实现时 1:1 换成宿主令牌。
+ * ==========================================================================*/
+
+:root {
+  --dsw-alias-bg-layer-1: #ffffff;
+  --dsw-alias-bg-layer-2: #ffffff;
+  --dsw-alias-bg-layer-3: #f4f4f5;
+  --dsw-alias-label-primary: #18181b;
+  --dsw-alias-label-secondary: #52525b;
+  --dsw-alias-label-caption: #8b8b93;
+  --dsw-alias-border-l1: #e4e4e7;
+  --dsw-alias-border-l2: #d4d4d8;
+  --dsw-alias-interactive-bg-hover: rgba(0, 0, 0, .05);
+  --dsw-alias-brand: #4f46e5;
+  --ds-color-green: #16a34a;
+  --ds-color-teal: #0d9488;
+  --ds-color-purple: #7c3aed;
+  --ds-color-orange: #ea580c;
+  --ds-color-blue: #2563eb;
+  --ds-color-amber: #d97706;
+  --ds-color-red: #dc2626;
+  --ds-color-indigo: #4f46e5;
+  --ds-shadow: 0 8px 24px rgba(0, 0, 0, .10);
+  --ds-radius: 10px;
+  --ds-touch: 32px;
+}
+
+html[data-theme="dark"] {
+  --dsw-alias-bg-layer-1: #232324;
+  --dsw-alias-bg-layer-2: #2c2c2e;
+  --dsw-alias-bg-layer-3: #1b1b1c;
+  --dsw-alias-label-primary: #f4f4f5;
+  --dsw-alias-label-secondary: #b9b9c0;
+  --dsw-alias-label-caption: #8b8b93;
+  --dsw-alias-border-l1: #3a3a3d;
+  --dsw-alias-border-l2: #4a4a4e;
+  --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, .07);
+  --dsw-alias-brand: #8b8bf5;
+  --ds-color-green: #4ade80;
+  --ds-color-teal: #2dd4bf;
+  --ds-color-purple: #c084fc;
+  --ds-color-orange: #fb923c;
+  --ds-color-blue: #60a5fa;
+  --ds-color-amber: #fbbf24;
+  --ds-color-red: #f87171;
+  --ds-color-indigo: #a5b4fc;
+  --ds-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+}
+
+* { box-sizing: border-box; }
+/* ⚠️ 必须显式声明：下面的 .modal-wrap/.drawer 等用了 display:flex，
+   会盖掉 UA 对 [hidden] 的 display:none —— 必须用 !important 压回来。 */
+[hidden] { display: none !important; }
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font: 14px/22px -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  padding-bottom: 110px;
+}
+
+/* ---------- 顶栏 + 状态开关 ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 16px; background: var(--dsw-alias-bg-layer-1);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand .tag {
+  font-size: 12px; color: var(--dsw-alias-label-caption);
+  border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; padding: 1px 8px;
+}
+.brand .link { color: var(--dsw-alias-brand); text-decoration: none; font-size: 12px; }
+.switches { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.top-actions { display: flex; align-items: center; gap: 6px; }
+
+.sw {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px;
+  padding: 4px 10px; font-size: 12px; color: var(--dsw-alias-label-secondary);
+  background: transparent; cursor: pointer; min-height: var(--ds-touch);
+}
+.sw[aria-pressed="true"] { border-color: var(--dsw-alias-brand); color: var(--dsw-alias-label-primary); }
+.sw i { width: 8px; height: 8px; border-radius: 999px; background: var(--dsw-alias-label-caption); }
+.sw[aria-pressed="true"] i { background: var(--ds-color-green); }
+
+.btn {
+  min-height: var(--ds-touch); padding: 5px 10px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary); font-size: 12px;
+}
+.btn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.btn.ghost { background: transparent; }
+.btn.danger { border-color: var(--ds-color-red); color: var(--ds-color-red); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn.sm { min-height: 26px; padding: 2px 8px; font-size: 12px; }
+
+/* ---------- 说明条 ---------- */
+.noticebar {
+  margin: 12px 16px 0; padding: 8px 12px; border-radius: var(--ds-radius);
+  background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1);
+  color: var(--dsw-alias-label-secondary); display: flex; gap: 10px; align-items: center;
+}
+
+/* ---------- 两列布局 ---------- */
+.cols { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(420px, 1.25fr); gap: 12px; padding: 12px 16px; align-items: start; }
+@media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+.col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+.card {
+  background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1);
+  border-radius: var(--ds-radius); padding: 10px 12px; min-width: 0;
+}
+.card-title {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  font-weight: 600; font-size: 13px; color: var(--dsw-alias-label-primary);
+}
+.card-title .hint { font-weight: 400; font-size: 12px; color: var(--dsw-alias-label-caption); }
+
+/* ---------- 状态数字卡 ---------- */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+.stat { border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; padding: 8px; }
+.stat b { display: block; font-size: 18px; line-height: 24px; }
+.stat span { font-size: 12px; color: var(--dsw-alias-label-caption); }
+
+/* ---------- 轮次条 ---------- */
+.trend { display: flex; align-items: flex-end; gap: 4px; overflow-x: auto; padding-bottom: 4px; }
+.turnbar {
+  min-width: 54px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px;
+  padding: 4px 6px; cursor: pointer; text-align: left; background: transparent;
+  color: var(--dsw-alias-label-secondary);
+}
+.turnbar:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.turnbar[aria-current="true"] { border-color: var(--dsw-alias-brand); color: var(--dsw-alias-label-primary); }
+.turnbar .t { font-size: 12px; font-weight: 600; }
+.turnbar .c { display: flex; gap: 6px; font-size: 11px; margin-top: 2px; }
+.dot-user, .dot-inject { display: inline-flex; align-items: center; gap: 3px; }
+.dot-user i, .dot-inject i { width: 6px; height: 6px; border-radius: 999px; }
+.dot-user i { background: var(--ds-color-green); }
+.dot-inject i { background: var(--ds-color-purple); }
+
+/* ---------- 分类树 ---------- */
+.catrow {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: transparent; border: 0; border-radius: 8px; padding: 6px 8px;
+  color: var(--dsw-alias-label-primary); cursor: pointer; min-height: var(--ds-touch);
+}
+.catrow:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.catrow .chev { width: 8px; height: 8px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(-45deg); opacity: .6; }
+.catrow[aria-expanded="true"] .chev { transform: rotate(45deg); }
+.catrow .swatch { width: 9px; height: 9px; border-radius: 2px; }
+.catrow .label { flex: 0 1 auto; }
+.catrow .grow { flex: 1 1 auto; }
+.catrow .count, .catrow .tokens, .catrow .pct { font-size: 12px; color: var(--dsw-alias-label-caption); margin-left: 6px; }
+.catbody { padding: 2px 0 6px 22px; }
+
+/* ---------- 元素行 ---------- */
+.row { border-top: 1px dashed var(--dsw-alias-border-l1); }
+.row:first-child { border-top: 0; }
+.row-main {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: transparent; border: 0; padding: 5px 6px; color: var(--dsw-alias-label-primary);
+  cursor: pointer; min-height: var(--ds-touch);
+}
+.row-main:hover { background: var(--dsw-alias-interactive-bg-hover); border-radius: 6px; }
+/* 已被遮蔽的原文：仍列出，但灰显（docs/03 R4.6） */
+.row.shadowed { opacity: .55; }
+.row.shadowed .preview { text-decoration: line-through; }
+.row-main .tagchip {
+  font-size: 11px; padding: 0 6px; border-radius: 999px;
+  border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary);
+}
+.row-main .preview { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-secondary); }
+.row-main .time, .row-main .tok { font-size: 11px; color: var(--dsw-alias-label-caption); }
+.row-body { padding: 6px 8px 10px 24px; color: var(--dsw-alias-label-secondary); white-space: pre-wrap; word-break: break-word; }
+.row-body .meta { color: var(--dsw-alias-label-caption); font-size: 12px; margin-bottom: 4px; }
+
+/* ---------- 动作条（常驻可见，docs/03 R2.2） ---------- */
+.actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 0 6px 6px 24px; }
+.seq { font-size: 11px; color: var(--dsw-alias-label-caption); border: 1px solid var(--dsw-alias-border-l1); border-radius: 999px; padding: 0 6px; }
+.chip-soft { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px dashed var(--dsw-alias-border-l2); color: var(--dsw-alias-label-caption); }
+.chip-draft { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--ds-color-amber); color: var(--ds-color-amber); }
+.chip-shadow { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-caption); }
+.chain { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.chain a { color: var(--dsw-alias-brand); cursor: pointer; text-decoration: none; }
+
+/* ---------- 内联编辑器 ---------- */
+.editor { margin: 0 6px 10px 24px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px; background: var(--dsw-alias-bg-layer-2); }
+.editor .etitle { font-size: 12px; font-weight: 600; margin: 0 0 2px; }
+.editor .enote { font-size: 12px; color: var(--dsw-alias-label-secondary); margin: 0 0 8px; }
+.field { display: block; margin-bottom: 8px; }
+.field span { display: block; font-size: 12px; color: var(--dsw-alias-label-caption); margin-bottom: 3px; }
+.field textarea, .field input, .modal input {
+  width: 100%; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary);
+  border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 6px; font: inherit; resize: vertical;
+}
+.efoot { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.eblocked { color: var(--ds-color-amber); font-size: 12px; margin: 4px 0; }
+.emsg-err { color: var(--ds-color-red); font-size: 12px; margin: 4px 0; }
+.emsg-ok { color: var(--ds-color-green); font-size: 12px; margin: 4px 0; }
+
+/* ---------- 版本历史 ---------- */
+.history { margin: 0 6px 10px 24px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px; }
+.vrow { display: flex; align-items: center; gap: 8px; padding: 4px 0; flex-wrap: wrap; }
+.vrow .vlabel { font-size: 12px; color: var(--dsw-alias-label-primary); min-width: 150px; }
+.vrow .vtext { flex: 1 1 220px; font-size: 12px; color: var(--dsw-alias-label-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vrow .vwhy { font-size: 11px; color: var(--dsw-alias-label-caption); }
+
+/* ---------- 快照与子会话 ---------- */
+.snap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 0; border-top: 1px dashed var(--dsw-alias-border-l1); }
+.snap:first-child { border-top: 0; }
+.snap .snapid { font-family: ui-monospace, monospace; font-size: 12px; }
+.badge-src-own { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--ds-color-teal); color: var(--ds-color-teal); }
+.badge-src-team { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--ds-color-purple); color: var(--ds-color-purple); }
+.badge-state { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); }
+.cap { font-size: 12px; color: var(--dsw-alias-label-caption); }
+
+/* ---------- 官方团队区块（只读） ---------- */
+.subhead { font-size: 12px; font-weight: 600; margin: 10px 0 4px; color: var(--dsw-alias-label-secondary); }
+.task, .member { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
+.task .tstat, .member .mstat { width: 8px; height: 8px; border-radius: 999px; }
+.s-idle { background: var(--dsw-alias-label-caption); }
+.s-run { background: var(--ds-color-amber); }
+.s-block { background: var(--ds-color-orange); }
+.s-done { background: var(--ds-color-green); }
+.s-fail { background: var(--ds-color-red); }
+.muted { color: var(--dsw-alias-label-caption); }
+
+/* ---------- 吸顶未生效 ---------- */
+.sticky-drafts {
+  position: sticky; top: 56px; z-index: 30;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 12px; border-radius: var(--ds-radius);
+  background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--ds-color-amber);
+}
+
+/* ---------- 抽屉 / 弹窗 / 回执 ---------- */
+.drawer {
+  position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 92vw); z-index: 60;
+  background: var(--dsw-alias-bg-layer-2); border-left: 1px solid var(--dsw-alias-border-l2);
+  box-shadow: var(--ds-shadow); display: flex; flex-direction: column;
+}
+.drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; border-bottom: 1px solid var(--dsw-alias-border-l1); }
+.drawer-body { padding: 10px 12px; overflow: auto; }
+.kv { margin-bottom: 8px; }
+.kv b { display: block; font-size: 12px; color: var(--dsw-alias-label-caption); font-weight: 500; }
+.kv div { font-size: 13px; }
+.modal-wrap { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.modal { width: min(560px, 96vw); background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: var(--ds-radius); box-shadow: var(--ds-shadow); }
+.modal-head { padding: 10px 12px; border-bottom: 1px solid var(--dsw-alias-border-l1); }
+.modal-body { padding: 10px 12px; max-height: 60vh; overflow: auto; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--dsw-alias-border-l1); }
+.warn { margin: 0 0 10px; color: var(--ds-color-amber); }
+.list { margin: 0; padding: 0; list-style: none; }
+.list li { padding: 4px 0; border-top: 1px dashed var(--dsw-alias-border-l1); font-size: 13px; }
+.list li:first-child { border-top: 0; }
+.list b { color: var(--dsw-alias-label-caption); font-weight: 500; margin-right: 6px; }
+.modal-reason { display: block; margin-top: 10px; }
+.modal-reason span { display: block; font-size: 12px; color: var(--dsw-alias-label-caption); margin-bottom: 3px; }
+
+.toast-wrap { position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px; z-index: 80; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.toast { background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; padding: 6px 14px; box-shadow: var(--ds-shadow); font-size: 13px; }
+.toast.err { border-color: var(--ds-color-red); color: var(--ds-color-red); }
+
+/* ---------- 自测面板 ---------- */
+.selfcheck {
+  position: fixed; right: 12px; bottom: 12px; z-index: 50;
+  width: min(460px, 94vw); max-height: 46vh; overflow: auto;
+  background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--ds-radius); box-shadow: var(--ds-shadow); padding: 10px 12px; font-size: 12px;
+}
+.selfcheck h4 { margin: 8px 0 4px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.selfcheck .ok { color: var(--ds-color-green); }
+.selfcheck .bad { color: var(--ds-color-red); }
+.selfcheck code { background: var(--dsw-alias-bg-layer-3); padding: 0 4px; border-radius: 4px; }
+
+/* ---------- 讲解模式：给每个可交互元素加编号热区 ---------- */
+body.explain [data-explain] { outline: 1px dashed var(--dsw-alias-brand); outline-offset: 1px; position: relative; }
+body.explain [data-explain]::after {
+  content: attr(data-exnum);
+  position: absolute; top: -8px; left: -6px; z-index: 5;
+  background: var(--dsw-alias-brand); color: #fff; font-size: 10px; line-height: 14px;
+  padding: 0 4px; border-radius: 999px;
+}
+/* 窄屏：动作按钮要够手指点（docs/03 §6 V7 要求触控目标 ≥44px） */
+@media (max-width: 720px) {
+  .btn, .btn.sm, .actions .btn { min-height: 44px; padding: 8px 12px; }
+  .actions { gap: 8px; }
+  .row-main { min-height: 44px; }
+}
+
+.explainbar {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 12px; z-index: 55;
+  background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-brand);
+  border-radius: 999px; padding: 6px 14px; font-size: 12px; box-shadow: var(--ds-shadow);
+}
+
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <b>上下文批改台</b><span class="tag">交互原型 v1</span>
+    <a class="link" href="./README.md">说明</a>
+  </div>
+  <div class="switches" id="switches" aria-label="状态开关"></div>
+  <div class="top-actions">
+    <button class="btn" id="btnExplain" data-explain="ui.explain">讲解模式</button>
+    <button class="btn" id="btnTheme" data-explain="ui.theme">深色 / 浅色</button>
+    <button class="btn" id="btnSelfcheck" data-explain="ui.selfcheck">自测面板</button>
+    <button class="btn ghost" id="btnReset" data-explain="ui.reset">重置原型</button>
+  </div>
+</header>
+
+<!-- 常驻状态说明条（docs/03 R4.4） -->
+<div class="noticebar" id="noticeBar" hidden></div>
+
+<main class="cols">
+  <section class="col col-left">
+    <div class="card" id="cardStats"></div>
+    <div class="card" id="cardTrend"></div>
+    <div class="card" id="cardStep"></div>
+    <div class="card" id="cardEvents"></div>
+  </section>
+
+  <section class="col col-right">
+    <!-- 吸顶：还有 N 条未生效（docs/03 R4.1） -->
+    <div class="sticky-drafts" id="stickyDrafts" hidden></div>
+    <div class="card" id="cardBrowser"></div>
+    <div class="card" id="cardOrch"></div>
+  </section>
+</main>
+
+<!-- 讲解抽屉（Axure 式「点这个按钮是做什么的」） -->
+<aside class="drawer" id="drawer" hidden>
+  <div class="drawer-head">
+    <b id="drawerTitle">讲解</b>
+    <button class="btn ghost" id="drawerClose">关闭</button>
+  </div>
+  <div class="drawer-body" id="drawerBody"></div>
+</aside>
+
+<!-- 确认框（短警示 + 本次清单，docs/03 R4.3） -->
+<div class="modal-wrap" id="modalWrap" hidden>
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-head"><b id="modalTitle">请确认</b></div>
+    <div class="modal-body">
+      <p class="warn" id="modalWarn"></p>
+      <div id="modalList"></div>
+      <label class="modal-reason" id="modalReasonWrap" hidden>
+        <span>理由（会写进记录）</span>
+        <input type="text" id="modalReason" placeholder="一句话说明为什么这样改" />
+      </label>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" id="modalCancel">取消</button>
+      <button class="btn danger" id="modalOk">确认</button>
+    </div>
+  </div>
+</div>
+
+<!-- 右下角自测面板：报状态组合 / 该出现的按钮 / 盒子测量 -->
+<div class="selfcheck" id="selfcheck" hidden></div>
+
+<!-- 一次性回执提示（任何动作都要有回执） -->
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* ============================================================================
+ * 上下文批改台 · 交互原型（demo.js）
+ * 目标：把 docs/03 的交互规格做成"可点击的规格书"——每个动作都能点开看它是做什么的。
+ * ⚠️ 全部为演示数据与本地状态；不发任何请求、不碰真实会话。
+ * ==========================================================================*/
+
+/* ------------------------------------------------------------------ 1. 讲解词典 */
+const EXPLAIN = {
+  'ui.explain': { t: '讲解模式', what: '打开后所有可交互元素会被编号高亮；点任一元素，右侧滑出"这个按钮是做什么的"。', effect: '只影响看到的内容，不改任何数据。', rev: '可随时关闭', confirm: '不需要', refs: ['docs/03 §0 阅读方式'] },
+  'ui.theme': { t: '深色 / 浅色', what: '在深浅两套主题间切换（这里用同一套 DSH 令牌名）。', effect: '只换配色。', rev: '可随时切回', confirm: '不需要', refs: ['docs/03 §6 V1/V2'] },
+  'ui.selfcheck': { t: '自测面板', what: '显示当前状态组合、这一屏本该出现哪些按钮（对照行身份×状态矩阵）、以及关键盒子的尺寸与是否横向溢出。', effect: '只读。', rev: '可随时关闭', confirm: '不需要', refs: ['docs/03 R4.6', 'docs/05 §4'] },
+  'ui.reset': { t: '重置原型', what: '把演示数据恢复到初始状态（草稿、版本、快照、子会话等）。', effect: '只重置本地演示状态。', rev: '可再点一次回到初始', confirm: '不需要', refs: ['demo'] },
+  'ui.switch': { t: '状态开关', what: '模拟宿主侧的真实状态（轮次是否闭合 / 会话是否在本进程 / 官方团队是否可用 / 草稿条数 / 选中轮次 / 压缩是否忙）。', effect: '切换后界面的按钮可见性、说明条、文案会立即按规范变化。', rev: '可随时切回', confirm: '不需要', refs: ['docs/03 R4.4 / R4.6 / R5.2 / R5.3'] },
+
+  'turn.pick': { t: '选择某一轮', what: '点轮次条 = 让右侧浏览器切到该轮最后一步。', effect: '右侧标题变成"第 T 轮（共 N 步，显示末步）"，分类条数/token/占比跟着变。', rev: '随时可切别的轮', confirm: '不需要', refs: ['docs/03 R1.1'] },
+  'step.pick': { t: '步级下拉', what: '手动选某一步（或回到"当前（下一次请求）"）。', effect: '右侧展示该步的上下文构成；与轮次入口交叉比对应当逐项一致。', rev: '随时可切', confirm: '不需要', refs: ['docs/03 R1.2'] },
+  'cat.toggle': { t: '展开 / 收起分类', what: '展开某类（系统提示词 / 工具定义 / 用户消息 / 注入内容 / 技能注入 / 助手消息 / 工具结果）。', effect: '列出该类里的每一条（带 #seq、时间、token）。', rev: '再点一次收起', confirm: '不需要', refs: ['docs/03 §2'] },
+  'row.toggle': { t: '展开这一条', what: '看这一条的正文。', effect: '就地展开全文（不跳页）。', rev: '再点一次收起', confirm: '不需要', refs: ['docs/03 R2.2'] },
+
+  'act.edit': { t: '编辑（遮蔽原文）', what: '改写这一条的内容。', effect: '先把改动存成本地草稿（模型还看不到）；确认后才"应用到会话"，届时原文被替换、模型再也看不到原文（但日志里仍在）。', rev: '草稿可放弃；已应用的改动可用"版本历史"恢复', confirm: '提交时要', refs: ['docs/03 R2.2 / R3.3', 'docs/01 F7'] },
+  'act.annotate': { t: '批注（保留原文）', what: '不遮蔽原文，追加一条带"作废范围"的更正。', effect: '模型会同时看到原文与更正。', rev: '不可撤销（追加即落地）', confirm: '提交时要', refs: ['docs/03 R2.2', 'docs/01 F6'] },
+  'act.pin': { t: '存为不变量', what: '把注入类的这段正文逐字保存为固定块。', effect: '插件不生成、不润色、不改一个字；以后逐字比对就能发现漂移，并可显式重注入。', rev: '可退休（历史保留）', confirm: '保存时要', refs: ['docs/00 G4', 'docs/06 §1'] },
+  'act.apply': { t: '应用到会话', what: '把这条草稿真的写进会话。', effect: '追加一条替换事件；模型此后看到的是改后的内容；原文仍保留在日志里但不再可见。', rev: '不可撤销（可用版本历史恢复某一版）', confirm: '要，且会列出本次清单', refs: ['docs/03 R4.3', 'docs/01 F7.1'] },
+  'act.history': { t: '版本历史', what: '看这一条的全部版本：原始 → 每次改写 → 每次回滚。', effect: '只读展示；可选中某一版"恢复"。', rev: '只读', confirm: '不需要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
+  'act.restore': { t: '恢复这一版', what: '把"模型看到的内容"变回你选的那一版。', effect: '再追加一条替换事件——不是删除，错的那版仍在日志里但不再可见。', rev: '再次替换即可换别的版本', confirm: '要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
+  'act.discard': { t: '放弃未应用的改动', what: '只清本地草稿。', effect: '不影响会话；未保存的输入会丢失。', rev: '不可恢复输入', confirm: '要（文案说清）', refs: ['docs/03 R4.3'] },
+
+  'orch.freeze': { t: '冻结当前位置', what: '记录一个冻结点：切点（最后一个 turn/end）、条目数、时间、人写备注、在效固定块版本。', effect: '只写插件本地，不写会话、不改模型可见内容。', rev: '可删除', confirm: '要（说明只写本地）', refs: ['docs/00 S5.2', 'docs/03 R5.1'] },
+  'orch.spawn': { t: '开子会话', what: '用这个会话已完成的轮次做种子，开一个新的子会话/成员，首条任务由你写。', effect: '优先走官方 `spawnTeammate(context:"fork")`（进官方名册）；团队不可用时退化为"裸可续接子会话"（界面会如实标注）。种子是一次性的：之后父会话的新轮次不会进去。', rev: '会话可归档，但种子不可重来', confirm: '要（框内列五项）', refs: ['docs/06 §3.1 / §4.1', 'docs/01 F33'] },
+  'child.open': { t: '打开', what: '跳到官方视图看这个子会话/成员的完整过程。', effect: '优先在右侧 Sidebar 打开；本插件不重画对话。', rev: '只读跳转', confirm: '不需要', refs: ['docs/03 R5.1.1'] },
+  'child.send': { t: '派活（经官方）', what: '给这个成员追加一条任务消息。', effect: '走官方通道（`agentTeams.sendMessage`），返回 `accepted` 或 `queued`；queued 不许重发。', rev: '不可撤销', confirm: '要（收件人/逐字正文/投递方式/理由）', refs: ['docs/06 §3.2', 'docs/01 F32'] },
+  'child.totask': { t: '建成官方任务', what: '把这条待办写成官方任务板上的一条任务。', effect: '写进官方任务板——我们显示的就是官方那份数据，不另存一份。', rev: '可在官方任务板更新/关闭', confirm: '要', refs: ['docs/03 R5.1', 'docs/01 F34'] },
+  'child.compact': { t: '压缩（不可逆）', what: '把子会话的历史压成摘要。', effect: '先体检（是否空闲/是否有未闭合轮次/是否已在压）。成功后原文被摘要取代，不可逆；失败会给出人话与"是否留痕"。', rev: '不可逆', confirm: '要（执行前列出将丢失的区间与条目数）', refs: ['docs/06 §4.2 / §5', 'docs/01 F11'] },
+  'child.interrupt': { t: '打断', what: '停止这个子会话/成员当前的轮次。', effect: '成员走官方 `interrupt`；裸子会话走 `interruptByParent`。已提交的工作不会被回滚。', rev: '不可撤销', confirm: '要（当前状态/会发什么信号/已提交不回滚）', refs: ['docs/03 R4.3', 'docs/06 §4'] },
+  'pending.view': { t: '待处理的结果', what: '子会话结束后，看"结果有没有回流"。', effect: '分三个状态：已收到平台结算通知 / 父会话下一轮已开始 / 回流未确认（父 Agent 当时不在进程 → 平台不投递，需要人工交回）。', rev: '只读（"已查看"记在本地）', confirm: '不需要', refs: ['docs/03 R5.1 第 4 项', 'docs/01 F12.1'] },
+  'team.read': { t: '官方团队区块（只读）', what: '直接显示官方那份 roster 与任务板。', effect: '不复制、不缓存、不自己算依赖就绪；投影报失败时按官方做法在最后有效数据之上显示该失败。', rev: '只读', confirm: '不需要', refs: ['docs/01 F34', 'docs/03 R5.1'] }
+};
+
+/* ------------------------------------------------------------------ 2. 演示数据 */
+const N = (seq, cat, type, text, tokens, x = {}) => ({ seq, cat, type, text, tokens, ...x });
+
+/** 全量节点（含被遮蔽的原文与替换体） */
+const NODES = [
+  N(1201, 'system', 'system/message', '你是 DeepSeek Harness 的编码助手……（系统提示词：这里只显示前 80 字预览，正文走宿主全文）', 2300, { preview: true }),
+  N(1210, 'inject', 'user/message', '[runtime-context] 当前环境：cwd=/repo，git 分支 main，Node 24.15.0', 180, { name: 'runtime-context' }),
+
+  // T23
+  N(1220, 'user', 'user/message', '帮我把这个插件的 README 改成双语，中文在前。', 46),
+  N(1221, 'assistant', 'assistant/message', '好的，我先看现有 README 与文档索引，再改。', 320),
+  N(1222, 'tool', 'tool/result', 'README.md\nREADME.zh.md\ndocs/00-scope.md\n…（共 42 行）', 410),
+
+  // T24
+  N(1230, 'inject', 'user/message', '[AGENTS.md] 本文件是唯一必读入口……（约 6KB）', 1600, { name: 'AGENTS.md' }),
+  N(1231, 'user', 'user/message', '顺便把「用户消息」这一类的编辑入口做出来，我最关心这个。', 58),
+  N(1232, 'skill', 'user/message', '[skill-catalog] 可用技能：agent-experience / browser-skill / cordis-plugin-development …', 900, { name: 'skill-catalog' }),
+  N(1233, 'assistant', 'assistant/message', '明白。我先把编辑通道的判定做成纯函数，再接界面。', 260),
+  N(1234, 'tool', 'tool/result', 'src/redline/eligibility.ts\nsrc/redline/rows.ts（新增）', 300),
+
+  // T25（当前轮）—— 故意做全边界态
+  N(1240, 'user', 'user/message', '这条消息我后来发现写错了：我说的是"只改用户消息"，其实要把注入内容也一起管。请以后都按这个来。', 120),
+  N(1241, 'assistant', 'assistant/message', '收到，我把两类都纳入判定范围。（助手消息在平台上无法改写，只能批注。）', 300),
+  N(1243, 'tool', 'tool/result', 'npm test — 42 passed, 0 failed（这是工具结果，编辑只能改它的内容文本与错误标记）', 260),
+  N(1287, 'user', 'user/message', '（原始版本 #1287）请把「上下文」面板的默认档位设成"注入的内容"，我要一眼看到模型这轮收到了什么。', 96, { versions: [{ seq: 1287, kind: 'origin', time: '12:05', text: '（原始版本 #1287）请把「上下文」面板的默认档位设成"注入的内容"，我要一眼看到模型这轮收到了什么。', why: '' }] }),
+  N(1290, 'user', 'user/message', '（来自被压缩掉的早期历史 #1290）这句在压缩时被摘要取代了 —— 改写够不到它，只能批注。', 40, { compacted: true }),
+  N(1293, 'assistant', 'assistant/message', '（助手消息 #1293）平台两条规则互斥 → 助手消息无法改写，只能批注。', 210),
+  N(1295, 'tool', 'tool/result', 'ERROR: cannot read properties of undefined (reading "seq")', 150, { err: true }),
+  N(1297, 'inject', 'user/message', '[runtime-context] 当前环境：cwd=/repo，git 分支 main，Node 24.15.0 —— 宿主每轮都会重新注入这一条', 180, { name: 'runtime-context' }),
+  N(1299, 'skill', 'user/message', '[skill-catalog] 可用技能：agent-experience / browser-skill / cordis-plugin-development / editing-cordis-compositions …（底层是 user/message，可编辑）', 900, { name: 'skill-catalog' }),
+  N(1301, 'user', 'user/message', '（当前可见的替换体 #1301）请把「上下文」面板的默认档位设成"注入的内容"，并且**给我逐条的 #seq**。', 110),
+  N(1303, 'inject', 'user/message', '[compaction checkpoint] 早期历史已被压缩成摘要 —— 这一条够不到"改写"，只能批注。', 400, { name: 'compact-checkpoint', compacted: true })
+];
+
+/** 每个请求（步）看到的 surface：seq 列表 + 被遮蔽关系（原文 seq → 遮蔽它的 seq） */
+const REQUESTS = [
+  { seq: 610, turn: 23, step: 1, time: '11:52', surface: [1201, 1210, 1220, 1221, 1222], gone: {} },
+  { seq: 622, turn: 24, step: 1, time: '12:01', surface: [1201, 1210, 1230, 1231, 1232, 1220, 1221, 1222], gone: {} },
+  { seq: 630, turn: 24, step: 2, time: '12:09', surface: [1201, 1210, 1230, 1232, 1220, 1221, 1222, 1231, 1233, 1234], gone: {} },
+  { seq: 641, turn: 25, step: 1, time: '12:10', surface: [1201, 1210, 1230, 1240, 1241, 1243, 1287, 1293, 1295, 1297, 1299, 1301, 1303], gone: { 1287: 1301 } }
+];
+
+const CATS = [
+  { key: 'system', label: '系统提示词', color: 'var(--ds-color-indigo)' },
+  { key: 'tools', label: '工具定义', color: 'var(--ds-color-amber)' },
+  { key: 'user', label: '用户消息', color: 'var(--ds-color-green)' },
+  { key: 'inject', label: '注入内容', color: 'var(--ds-color-purple)' },
+  { key: 'skill', label: '技能注入', color: 'var(--ds-color-orange)' },
+  { key: 'assistant', label: '助手消息', color: 'var(--ds-color-blue)' },
+  { key: 'tool', label: '工具结果', color: 'var(--ds-color-teal)' }
+];
+
+const initial = () => ({
+  theme: 'dark', explain: false, selfcheck: false,
+  sw: { turnOpen: false, live: true, team: true, drafts: 0, turn: 25, compressBusy: false, pendingState: 'settled' },
+  selTurn: 25, selSeq: 641,
+  openCat: 'user', // 默认展开「用户消息」——用户明确说他最关心这一类
+  openElem: null,
+  editor: null, editorError: null, editorOk: null,
+  historyFor: null,
+  drafts: {}, applied: [], extraNodes: [], invariants: [], snapshots: [], children: [], tasks: [], members: [], pendingSeen: false
+});
+
+let S = initial();
+
+/* ------------------------------------------------------------------ 3. 工具函数 */
+const $ = (id) => document.getElementById(id);
+const nodeOf = (seq) => NODES.concat(S.extraNodes).find((n) => n.seq === seq);
+const catLabel = (k) => (CATS.find((c) => c.key === k) || { label: k }).label;
+const fmt = (n) => (n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const reqOf = () => REQUESTS.find((r) => r.seq === S.selSeq) || REQUESTS[REQUESTS.length - 1];
+const goneMap = () => {
+  const r = reqOf();
+  const m = { ...r.gone };
+  S.applied.forEach((a) => { m[a.replacedSeq] = a.newSeq; });
+  return m;
+};
+/**
+ * 这一步的"条目列表"。
+ * ⚠️ 被遮蔽的原文**必须留在列表里**（灰显 + "已被 #X 接替" + 版本历史）——
+ * 否则用户看不到"这条原来是什么"，也就无法判断该不该恢复（docs/03 R4.6、docs/05 A3）。
+ * 只有"模型可见"的计数才需要排除它们。
+ */
+const surfaceOf = () => {
+  const r = reqOf();
+  return r.surface
+    .concat(S.applied.filter((a) => a.requestSeq === r.seq).map((a) => a.newSeq))
+    .concat(S.extraNodes.filter((n) => n.requestSeq === r.seq).map((n) => n.seq))
+    .map(nodeOf).filter(Boolean);
+};
+/** 模型真正看得见的那些（排除已被遮蔽的原文） */
+const visibleOf = () => {
+  const gone = goneMap();
+  return surfaceOf().filter((n) => gone[n.seq] === undefined || isReplacementNode(n.seq));
+};
+const isReplacementNode = (seq) => S.applied.some((a) => a.newSeq === seq) || S.extraNodes.some((n) => n.seq === seq);
+const draftOf = (seq) => S.drafts[seq];
+const draftCount = () => Object.keys(S.drafts).length;
+const turnSteps = (turn) => REQUESTS.filter((r) => r.turn === turn).length;
+const lastOfTurn = (turn) => [...REQUESTS].reverse().find((r) => r.turn === turn);
+
+function toast(msg, kind) {
+  const d = document.createElement('div');
+  d.className = 'toast' + (kind === 'err' ? ' err' : '');
+  d.textContent = msg;
+  $('toastWrap').appendChild(d);
+  setTimeout(() => d.remove(), 2600);
+}
+function openDrawer(key) {
+  const e = EXPLAIN[key];
+  if (!e) return;
+  $('drawerTitle').textContent = e.t;
+  $('drawerBody').innerHTML = `
+    <div class="kv"><b>它是做什么的</b><div>${esc(e.what)}</div></div>
+    <div class="kv"><b>会发生什么</b><div>${esc(e.effect)}</div></div>
+    <div class="kv"><b>能不能撤回</b><div>${esc(e.rev)}</div></div>
+    <div class="kv"><b>要不要确认</b><div>${esc(e.confirm)}</div></div>
+    <div class="kv"><b>对应规格</b><div>${(e.refs || []).map(esc).join(' · ')}</div></div>`;
+  $('drawer').hidden = false;
+}
+function confirmModal({ title, warn, rows, needReason, okText, onOk }) {
+  $('modalTitle').textContent = title;
+  $('modalWarn').textContent = warn;
+  $('modalList').innerHTML = '<ul class="list">' + rows.map((r) => `<li><b>${esc(r[0])}</b>${esc(r[1])}</li>`).join('') + '</ul>';
+  $('modalReasonWrap').hidden = !needReason;
+  $('modalReason').value = '';
+  $('modalOk').textContent = okText || '确认';
+  $('modalWrap').hidden = false;
+  $('modalOk').onclick = () => {
+    const reason = needReason ? $('modalReason').value.trim() : '';
+    if (needReason && reason === '') { toast('理由不能为空（会写进记录）', 'err'); return; }
+    $('modalWrap').hidden = true;
+    onOk(reason);
+  };
+}
+
+/* ------------------------------------------------------------------ 4. 渲染：状态开关 / 说明条 */
+function renderSwitches() {
+  const items = [
+    ['turnOpen', '轮次未结束'],
+    ['live', '会话在本进程'],
+    ['team', '官方团队可用'],
+    ['compressBusy', '子会话正忙（压缩会 busy）']
+  ];
+  const draftBtn = `<button class="sw" data-act="drafts" aria-pressed="${draftCount() > 0}" data-explain="ui.switch"><i></i>草稿 ${draftCount()} 条</button>`;
+  $('switches').innerHTML =
+    items.map(([k, label]) => `<button class="sw" data-sw="${k}" aria-pressed="${!!S.sw[k]}" data-explain="ui.switch"><i></i>${label}</button>`).join('') +
+    draftBtn +
+    `<button class="sw" data-sw="pendingState" aria-pressed="${S.sw.pendingState === 'unconfirmed'}"><i></i>回流未确认</button>`;
+  $('switches').querySelectorAll('[data-sw]').forEach((b) => {
+    b.onclick = () => {
+      const k = b.dataset.sw;
+      if (k === 'pendingState') S.sw.pendingState = S.sw.pendingState === 'settled' ? 'unconfirmed' : 'settled';
+      else S.sw[k] = !S.sw[k];
+      render();
+    };
+  });
+  $('switches').querySelector('[data-act="drafts"]').onclick = () => {
+    S.drafts[1301] = { seq: 1301, text: '（演示草稿）把默认档位设成"注入的内容"，并显示 #seq。', reasoning: '', updatedAt: '12:11' };
+    render(); toast('已加 1 条演示草稿（看右侧行上的"未生效"与吸顶计数）');
+  };
+}
+function renderNotice() {
+  const n = $('noticeBar');
+  const msgs = [];
+  if (S.sw.turnOpen) msgs.push('当前轮次还没结束 —— 改动只能在轮次边界提交。');
+  if (!S.sw.live) msgs.push('这个会话不在本进程里，只能查看，不能编辑。');
+  if (!S.sw.team) msgs.push('本机未启用官方智能体团队 —— 与团队相关的对接点已隐藏（不是报错）。');
+  n.hidden = msgs.length === 0;
+  n.innerHTML = msgs.map((m) => `<span>${esc(m)}</span>`).join('<span class="muted">·</span>');
+}
+
+/* ------------------------------------------------------------------ 5. 渲染：左列 */
+function renderStats() {
+  const nodes = visibleOf();
+  const shadowed = surfaceOf().length - nodes.length;
+  const inject = nodes.filter((n) => n.cat === 'inject').length;
+  const user = nodes.filter((n) => n.cat === 'user').length;
+  $('cardStats').innerHTML = `
+    <div class="card-title">上下文统计 <span class="hint">（当前视图：第 ${reqOf().turn} 轮 · 第 ${reqOf().step} 步）</span></div>
+    <div class="stats">
+      <div class="stat"><b>${nodes.length}</b><span>模型可见条目${shadowed ? `（另有 ${shadowed} 条已被遮蔽）` : ''}</span></div>
+      <div class="stat"><b>${user}</b><span>用户消息</span></div>
+      <div class="stat"><b>${inject}</b><span>注入内容</span></div>
+      <div class="stat"><b>${draftCount()}</b><span>未生效改动</span></div>
+    </div>`;
+}
+function renderTrend() {
+  const turns = [...new Set(REQUESTS.map((r) => r.turn))];
+  $('cardTrend').innerHTML = `
+    <div class="card-title">上下文趋势 <span class="hint">（点某一轮 → 右侧切到该轮末步）</span></div>
+    <div class="trend">
+      ${turns.map((t) => {
+        const r = lastOfTurn(t);
+        const inject = r.surface.filter((s) => (nodeOf(s) || {}).cat === 'inject').length;
+        const user = r.surface.filter((s) => (nodeOf(s) || {}).cat === 'user').length;
+        return `<button class="turnbar" data-turn="${t}" aria-current="${S.selTurn === t}" data-explain="turn.pick">
+          <div class="t">第 ${t} 轮</div>
+          <div class="c"><span class="dot-user"><i></i>${user}</span><span class="dot-inject"><i></i>${inject}</span></div>
+        </button>`;
+      }).join('')}
+    </div>`;
+  $('cardTrend').querySelectorAll('[data-turn]').forEach((b) => {
+    b.onclick = () => { S.selTurn = Number(b.dataset.turn); const r = lastOfTurn(S.selTurn); S.selSeq = r.seq; S.openCat = null; S.openElem = null; render(); toast(`已切到第 ${S.selTurn} 轮（显示末步：第 ${r.step} 步）`); };
+  });
+}
+function renderStep() {
+  const r = reqOf();
+  $('cardStep').innerHTML = `
+    <div class="card-title">第 ${r.turn} 轮 · 第 ${r.step} 步（共 ${turnSteps(r.turn)} 步） <span class="hint">${r.time}</span></div>
+    <div class="cap">这一屏的条数：用户消息 ${r.surface.filter((s) => (nodeOf(s) || {}).cat === 'user').length} · 注入内容 ${r.surface.filter((s) => (nodeOf(s) || {}).cat === 'inject').length}</div>
+    <div style="margin-top:6px"><button class="btn sm" data-explain="turn.pick" onclick="document.querySelector('[data-turn=\\'${r.turn}\\']').click()">改这一轮的用户消息</button></div>`;
+}
+function renderEvents() {
+  $('cardEvents').innerHTML = `
+    <div class="card-title">上下文事件 <span class="hint">（这里只放与编辑有关的几条）</span></div>
+    <div class="cap">12:10 注入 runtime-context（#1297） · 12:09 改写 #1287 → #1301 · 12:05 边界：助手消息不可改写（#1293）</div>`;
+}
+
+/* ------------------------------------------------------------------ 6. 渲染：右侧浏览器 */
+function ability(node) {
+  const gone = goneMap();
+  const isReplacement = S.applied.some((a) => a.newSeq === node.seq) || S.extraNodes.some((n) => n.seq === node.seq);
+  const shadowed = gone[node.seq] !== undefined && !isReplacement;
+  const type = node.type;
+  const canRewrite = !shadowed && type !== 'assistant/message' && type !== 'system/message' && type !== 'developer/message' && !node.compacted;
+  return {
+    canRewrite, shadowed, isReplacement,
+    canAnnotate: true,
+    isInjection: node.cat === 'inject',
+    blockReason: shadowed ? `这一条已被 #${gone[node.seq]} 接替，已不在模型可见内容里`
+      : type === 'assistant/message' ? '助手消息在平台上无法改写（两条规则互斥），只能批注'
+      : node.compacted ? '这一条被压缩埋掉了，改写够不到它，只能批注'
+      : type === 'system/message' ? '系统提示词不可改' : ''
+  };
+}
+function renderBrowser() {
+  const nodes = surfaceOf();
+  const byCat = {};
+  CATS.forEach((c) => { byCat[c.key] = nodes.filter((n) => n.cat === c.key); });
+  const total = nodes.reduce((s, n) => s + n.tokens, 0);
+  const r = reqOf();
+  const isLive = S.selSeq === REQUESTS[REQUESTS.length - 1].seq && !S.sw.turnOpen;
+  const title = isLive ? '当前 · 下一次请求' : `第 ${r.turn} 轮 · 第 ${r.step} 步（共 ${turnSteps(r.turn)} 步）`;
+
+  $('cardBrowser').innerHTML = `
+    <div class="card-title">上下文浏览器
+      <span class="hint">DNA 模式</span>
+      <span class="grow" style="flex:1"></span>
+      <select class="btn sm" id="stepPick" data-explain="step.pick">
+        <option value="live">当前（下一次请求）</option>
+        ${REQUESTS.slice().reverse().map((x) => `<option value="${x.seq}" ${x.seq === S.selSeq ? 'selected' : ''}>第 ${x.turn} 轮 · 第 ${x.step} 步（共 ${turnSteps(x.turn)} 步） · ${x.time}</option>`).join('')}
+      </select>
+    </div>
+    <div class="cap" style="margin-bottom:6px">${esc(title)} · 估算合计 ≈ ${fmt(total)} tokens</div>
+    <div id="catList">
+      ${CATS.map((c) => {
+        const list = byCat[c.key] || [];
+        const gone0 = goneMap();
+        const vis = list.filter((n) => gone0[n.seq] === undefined || isReplacementNode(n.seq));
+        const t = vis.reduce((s, n) => s + n.tokens, 0);
+        const open = S.openCat === c.key;
+        return `<div>
+          <button class="catrow" data-cat="${c.key}" aria-expanded="${open}" data-explain="cat.toggle">
+            <span class="chev"></span><i class="swatch" style="background:${c.color}"></i>
+            <span class="label">${c.label}</span><span class="grow"></span>
+            <span class="count">${vis.length} 项${list.length > vis.length ? `（+${list.length - vis.length} 被遮蔽）` : ''}</span><span class="tokens">≈${fmt(t)}</span>
+            <span class="pct">${total ? Math.round(t / total * 100) : 0}%</span>
+          </button>
+          ${open ? `<div class="catbody">${list.map(rowHtml).join('') || '<div class="cap">（这一步没有这类内容）</div>'}</div>` : ''}
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  $('stepPick').onchange = (e) => {
+    const v = e.target.value;
+    if (v === 'live') { S.selSeq = REQUESTS[REQUESTS.length - 1].seq; S.selTurn = REQUESTS[REQUESTS.length - 1].turn; }
+    else { const x = REQUESTS.find((y) => String(y.seq) === v); S.selSeq = x.seq; S.selTurn = x.turn; }
+    S.openCat = null; S.openElem = null; render();
+  };
+  $('cardBrowser').querySelectorAll('[data-cat]').forEach((b) => { b.onclick = () => { S.openCat = S.openCat === b.dataset.cat ? null : b.dataset.cat; S.openElem = null; render(); }; });
+  bindRows();
+}
+
+function rowHtml(node) {
+  const a = ability(node);
+  const chain = S.applied.filter((x) => x.replacedSeq === node.seq);
+  const isNew = S.applied.some((x) => x.newSeq === node.seq) || S.extraNodes.some((n) => n.seq === node.seq);
+  const open = S.openElem === node.seq;
+  const tag = node.name ? `<span class="tagchip">${esc(node.name)}</span>` : '';
+  const appliedChain = chain.length || isNew
+    ? (isNew ? `<span class="chain">（这是替换后的新条目）</span>` : '')
+    : (goneMap()[node.seq] !== undefined ? `<span class="chip-shadow">已被 #${goneMap()[node.seq]} 接替</span>` : '');
+  const draft = draftOf(node.seq) ? `<span class="chip-draft">未生效</span>` : '';
+  return `<div class="row${a.shadowed ? ' shadowed' : ''}">
+    <button class="row-main" data-elem="${node.seq}" data-explain="row.toggle">
+      <span class="tagchip">${catLabel(node.cat)}</span>${tag}
+      <span class="preview">${esc((node.text || '').slice(0, 90))}</span>
+      <span class="tok">≈${fmt(node.tokens)}</span>
+    </button>
+    ${open ? `<div class="row-body"><div class="meta">#${node.seq} · ${esc(node.type)}${node.err ? ' · 错误结果' : ''}${node.compacted ? ' · 被压缩埋掉' : ''}</div>${esc(node.text)}</div>` : ''}
+    <div class="actions" data-rowactions="${node.seq}">
+      <span class="seq" title="事件序号 —— 指认"改哪一条"用它">#${node.seq}</span>
+      ${draft}${appliedChain}
+      ${a.canRewrite ? `<button class="btn sm" data-act="edit" data-seq="${node.seq}" data-explain="act.edit">编辑</button>` : `<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 14))}…</span>`}
+      <button class="btn sm" data-act="annotate" data-seq="${node.seq}" data-explain="act.annotate">批注</button>
+      ${a.isInjection ? `<button class="btn sm" data-act="pin" data-seq="${node.seq}" data-explain="act.pin">存为不变量</button>` : ''}
+      ${draftOf(node.seq) ? `<button class="btn sm danger" data-act="apply" data-seq="${node.seq}" data-explain="act.apply">应用到会话</button>` : ''}
+      ${familyOf(node.seq).length > 1 || node.versions ? `<button class="btn sm ghost" data-act="history" data-seq="${node.seq}" data-explain="act.history">版本历史</button>` : ''}
+    </div>
+    ${S.historyFor === node.seq ? historyHtml(node) : ''}
+    ${S.editor && S.editor.seq === node.seq ? editorHtml() : ''}
+  </div>`;
+}
+
+/**
+ * 「行身份」：一次改写会把原节点遮蔽、并追加一个新节点。
+ * 版本链必须**跨替换体**串起来（docs/03 R4.5：原 #A → 改写 #M → 回滚 #K），
+ * 否则你在新条目上看不到"它原来是什么"，也就无法判断该不该恢复。
+ */
+function edges() {
+  const e = {};
+  REQUESTS.forEach((r) => Object.entries(r.gone).forEach(([from, to]) => { e[Number(from)] = to; }));
+  S.applied.forEach((a) => { e[a.replacedSeq] = a.newSeq; });
+  return e;
+}
+/** 同一"行身份"的全部节点，从最早到当前可见 */
+function familyOf(seq) {
+  const e = edges();
+  const back = {};
+  Object.entries(e).forEach(([f, t]) => { back[t] = Number(f); });
+  let first = seq;
+  const guard = new Set();
+  while (back[first] !== undefined && !guard.has(first)) { guard.add(first); first = back[first]; }
+  const chain = [];
+  let cur = first;
+  while (cur !== undefined && !guard.has('f' + cur)) { guard.add('f' + cur); chain.push(cur); cur = e[cur]; }
+  return chain;
+}
+function versionsOf(node) {
+  const fam = familyOf(node.seq);
+  return fam.map((seq, i) => {
+    const n = nodeOf(seq) || {};
+    const ap = S.applied.find((a) => a.newSeq === seq);
+    return {
+      seq,
+      kind: i === 0 ? 'origin' : (ap && /回滚/.test(ap.reason || '') ? 'rollback' : 'edit'),
+      time: ap ? ap.time : (n.versions && n.versions[0] ? n.versions[0].time : '—'),
+      text: n.text || '',
+      why: ap ? ap.reason : ''
+    };
+  });
+}
+function historyHtml(node) {
+  const vs = versionsOf(node);
+  const cur = vs.length ? vs[vs.length - 1].seq : node.seq;
+  return `<div class="history">
+    <div class="cap" style="margin-bottom:4px">版本历史（同一行身份，跨替换体）：原始 → 每次改写 → 每次回滚</div>
+    ${vs.map((v) => `<div class="vrow">
+      <span class="vlabel">#${v.seq} · ${v.kind === 'origin' ? '原始' : v.kind === 'edit' ? '改写' : '回滚'} · ${esc(v.time || '')}</span>
+      <span class="vtext" title="${esc(v.text)}">${esc((v.text || '').slice(0, 60))}</span>
+      ${v.seq === cur ? '<span class="vwhy">当前可见</span>' : `<button class="btn sm" data-act="restore" data-seq="${cur}" data-to="${v.seq}" data-explain="act.restore">从这一版恢复</button>`}
+    </div>`).join('')}
+  </div>`;
+}
+
+function editorHtml() {
+  const st = S.editor;
+  const blocked = S.sw.turnOpen || !S.sw.live;
+  const title = st.kind === 'edit' ? `编辑 #${st.seq}（遮蔽原文）` : st.kind === 'annotate' ? `批注 #${st.seq}（保留原文）` : `把 #${st.seq} 存为不变量`;
+  const note = st.kind === 'pin'
+    ? '固定块逐字保存：插件不生成、不润色、不压缩。'
+    : st.kind === 'annotate'
+      ? '提交后会往会话追加一条更正消息，不可撤销；原文不会被遮蔽，模型两者都看到。'
+      : '这一步只存本地草稿（不进会话）。要生效，提交后还需点「应用到会话」。';
+  return `<div class="editor">
+    <p class="etitle">${esc(title)}</p>
+    <p class="enote">${esc(note)}</p>
+    ${st.kind === 'edit' ? `
+      <label class="field"><span>思考文本（可选；留空则沿用原文）</span><textarea rows="2" id="edR">${esc(st.reasoning || '')}</textarea></label>
+      <label class="field"><span>可见文本（预填的是宿主全文，不是 80 字预览）</span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>`
+    : st.kind === 'annotate' ? `
+      <label class="field"><span>理由</span><textarea rows="2" id="edWhy" placeholder="一句话说明为什么更正">${esc(st.reason || '')}</textarea></label>
+      <div style="display:flex;gap:8px">
+        <label class="field" style="flex:1"><span>作废范围（起点 seq）</span><input type="number" id="edFrom" value="${esc(st.voidFrom)}"></label>
+        <label class="field" style="flex:1"><span>作废范围（终点 seq）</span><input type="number" id="edTo" value="${esc(st.voidTo)}"></label>
+      </div>
+      <p class="enote">作废范围是 seq 区间（含两端）；拿不准就填目标 seq 自己。</p>`
+    : `
+      <label class="field"><span>标签</span><input type="text" id="edLabel" value="${esc(st.label || '')}" placeholder="例如「目标」「约束」"></label>
+      <label class="field"><span>正文（逐字保存）</span><textarea rows="4" id="edPin">${esc(st.text)}</textarea></label>`}
+    ${blocked ? `<p class="eblocked">${S.sw.turnOpen ? '当前轮次还没结束 —— 改动只能在轮次边界提交。' : '这个会话不在本进程里，只能查看，不能编辑。'}</p>` : ''}
+    ${S.editorError ? `<p class="emsg-err">${esc(S.editorError)}</p>` : ''}
+    ${S.editorOk ? `<p class="emsg-ok">${esc(S.editorOk)}</p>` : ''}
+    <div class="efoot">
+      <button class="btn sm" data-act="esubmit" ${blocked ? 'disabled' : ''}>${st.kind === 'pin' ? '保存为固定块' : st.kind === 'annotate' ? '提交更正到会话' : '保存草稿'}</button>
+      <button class="btn sm ghost" data-act="ecancel">取消（Esc）</button>
+      <span class="cap">Cmd/Ctrl + Enter 提交</span>
+    </div>
+  </div>`;
+}
+
+/* ------------------------------------------------------------------ 7. 渲染：快照与子会话 */
+function renderOrch() {
+  const c = S.children;
+  const own = c.filter((x) => x.src === 'own');
+  const team = c.filter((x) => x.src === 'team');
+  const activeCount = c.filter((x) => x.state === 'running' || x.state === 'idle').length;
+  const pending = S.sw.pendingState;
+
+  $('cardOrch').innerHTML = `
+    <div class="card-title">快照与子会话 <span class="hint">（A′：只做快照化子会话 + 对接官方；不自己造协作层）</span></div>
+
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px">
+      <input class="btn sm" id="snapNote" placeholder="人写备注（插件不生成摘要）" style="min-width:220px" />
+      <button class="btn sm" data-act="freeze" data-explain="orch.freeze" ${!S.sw.live || draftCount() > 0 ? 'disabled' : ''}>冻结当前位置</button>
+      <button class="btn sm" data-act="spawn" data-explain="orch.spawn" ${!S.sw.live || draftCount() > 0 || S.snapshots.length === 0 ? 'disabled' : ''}>开子会话（人写首条任务）</button>
+    </div>
+    ${draftCount() > 0 ? `<div class="cap" style="color:var(--ds-color-amber)">还有 ${draftCount()} 条草稿没提交。草稿不在 fork 种子里，也不在冻结记录里 —— 它只存在插件本地。</div>` : ''}
+    ${S.snapshots.length ? `<div class="subhead">冻结记录</div>${S.snapshots.map((s) => `<div class="snap"><span class="snapid">${esc(s.id)}</span><span class="cap">第 ${s.turn} 轮末 · ${s.items} 条 · ${s.time} · 备注：${esc(s.note || '（无）')}</span></div>`).join('')}` : '<div class="cap">还没有冻结记录。建议：先把草稿清零 → 冻结 → 再开子会话。</div>'}
+
+    <div class="subhead">子会话 / 成员索引 <span class="cap">活跃 ${activeCount} / 8（官方 teammate 也占同一份额度）</span></div>
+    ${c.length === 0 ? '<div class="cap">（还没有子会话）</div>' : c.map((x, i) => `
+      <div class="snap">
+        <span class="snapid">${esc(x.id)}</span>
+        <span class="${x.src === 'own' ? 'badge-src-own' : 'badge-src-team'}">${x.src === 'own' ? '本项目发起' : '来自 Agent Teams'}</span>
+        <span class="badge-state">${x.state === 'running' ? '运行中' : x.state === 'idle' ? '空闲' : '已结束'}</span>
+        <span class="cap">${esc(x.label)}${x.from ? ' · 来自快照 ' + esc(x.from) : ''}</span>
+        <span class="grow" style="flex:1"></span>
+        <button class="btn sm ghost" data-act="copen" data-i="${i}" data-explain="child.open">打开</button>
+        ${x.src === 'own' ? `
+          <button class="btn sm" data-act="csend" data-i="${i}" data-explain="child.send" ${S.sw.team ? '' : 'disabled'}>派活</button>
+          <button class="btn sm" data-act="ctask" data-i="${i}" data-explain="child.totask">建成官方任务</button>
+          <button class="btn sm" data-act="ccompact" data-i="${i}" data-explain="child.compact">压缩</button>
+          <button class="btn sm danger" data-act="cinterrupt" data-i="${i}" data-explain="child.interrupt">打断</button>`
+        : '<span class="cap">请在官方团队面板管理</span>'}
+      </div>`).join('')}
+
+    <div class="subhead">待处理的结果 <span class="cap" data-explain="pending.view">（点右侧问号看三态说明）</span></div>
+    ${pending === 'settled'
+      ? '<div class="cap">✅ 已收到平台结算通知：子会话 #004c37a5 已结束：「改完了 3 处，测试全绿」。<a href="#" data-act="pendingSeen">标记已查看</a></div>'
+      : '<div class="cap" style="color:var(--ds-color-amber)">⚠️ 回流未确认：没收到平台的结算通知 —— 子会话结束了，但父会话没收到回流。<a href="#" data-act="pendingHand">让主会话接着做</a></div>'}
+
+    <div class="subhead">官方团队（只读，显示的就是官方那份数据）</div>
+    ${S.sw.team ? `
+      <div class="cap">roster：${S.members.map((m) => `<span class="member"><i class="mstat ${m.st}"></i>${esc(m.name)}</span>`).join(' ')}</div>
+      <div class="cap" style="margin-top:4px">任务板：</div>
+      ${S.tasks.length ? S.tasks.map((t) => `<div class="task"><i class="tstat ${t.st}"></i>${esc(t.subject)}<span class="muted">· ${esc(t.owner || '未认领')}${t.blocked ? ' · 被依赖阻塞' : ''}</span></div>`).join('') : '<div class="cap">（任务板为空）</div>'}
+      <div class="cap" style="margin-top:4px">去官方面板（成员导航复用官方）</div>`
+    : '<div class="cap">本机未启用官方智能体团队 → 对接点全部隐藏（不是报错）。</div>'}`;
+
+  $('cardOrch').querySelectorAll('[data-act]').forEach((b) => { b.onclick = () => orchAct(b); });
+}
+
+/* ------------------------------------------------------------------ 8. 动作 */
+function bindRows() {
+  $('cardBrowser').querySelectorAll('[data-elem]').forEach((b) => { b.onclick = () => { S.openElem = S.openElem === Number(b.dataset.elem) ? null : Number(b.dataset.elem); render(); }; });
+  $('cardBrowser').querySelectorAll('[data-act]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); rowAct(b); }; });
+}
+
+function rowAct(btn) {
+  const act = btn.dataset.act;
+  // ⚠️ 编辑器自己的按钮（提交/取消）没有 data-seq，必须在查 node 之前处理，
+  //    否则会被下面的 `if (!node) return` 直接吞掉（实测踩过）。
+  S.editorError = null; S.editorOk = null;
+  if (act === 'esubmit') return submitEditor();
+  if (act === 'ecancel') { S.editor = null; render(); return; }
+
+  const seq = Number(btn.dataset.seq);
+  const node = nodeOf(seq);
+  if (!node) return;
+
+  if (act === 'edit') {
+    S.editor = { kind: 'edit', seq, text: node.text, reasoning: '' };
+    S.historyFor = null; render();
+    toast(`打开 #${seq} 的内联编辑器（注意：预填的是全文，不是 80 字预览）`);
+  }
+  if (act === 'annotate') {
+    S.editor = { kind: 'annotate', seq, reason: '', voidFrom: String(seq), voidTo: String(seq) };
+    S.historyFor = null; render();
+  }
+  if (act === 'pin') { S.editor = { kind: 'pin', seq, label: '', text: node.text }; S.historyFor = null; render(); }
+  if (act === 'history') { S.historyFor = S.historyFor === seq ? null : seq; S.editor = null; render(); }
+
+  if (act === 'apply') {
+    const d = draftOf(seq);
+    confirmModal({
+      title: '应用到会话',
+      warn: '会向会话追加一条替换记录，之后无法删除；原文对模型永久不可见，但仍保留在日志里。当前可见的那一条之后还能继续改，也能从版本历史里恢复某一版。',
+      rows: [['目标', `#${seq}（当前可见节点）`], ['原文', (node.text || '').slice(0, 120)], ['改后', (d.text || '').slice(0, 120)], ['理由', d.reason || '（未填）']],
+      needReason: false, okText: '确认应用',
+      onOk: () => doApply(seq)
+    });
+  }
+  if (act === 'restore') {
+    const to = Number(btn.dataset.to);
+    const v = versionsOf(node).find((x) => x.seq === to) || { text: '' };
+    const target = node; // data-seq 传的就是"当前可见"的那条（目标永远是当前可见节点）
+    confirmModal({
+      title: '回滚到某一版',
+      warn: '会向会话追加一条替换记录，把模型看到的内容恢复成你选的那一版。原文与中间版本都还在日志里，之后还可以再改。',
+      rows: [['当前可见', `#${seq}`], ['要恢复到的版本', `#${to}`], ['该版正文', (v.text || '').slice(0, 140)], ['理由', '（回滚到 #' + to + '）']],
+      needReason: false, okText: '确认恢复',
+      onOk: (reason) => {
+        const ns = 1400 + S.applied.length;
+        S.applied.push({ replacedSeq: seq, newSeq: ns, requestSeq: reqOf().seq, text: v.text, reason: reason || ('回滚到 #' + to), time: '12:1' + (S.applied.length % 9) });
+        S.extraNodes.push(N(ns, node.cat, node.type, v.text, node.tokens, { name: node.name, requestSeq: reqOf().seq }));
+        S.drafts[seq] = undefined; delete S.drafts[seq];
+        render(); toast(`已回滚：#${seq} → 恢复为 #${to} 的内容（关系链见行上）`);
+      }
+    });
+  }
+}
+
+function submitEditor() {
+  const st = S.editor;
+  if (!st) return;
+  const node = nodeOf(st.seq);
+  if (st.kind === 'edit') {
+    const text = ($('edT') && $('edT').value) || '';
+    const reasoning = ($('edR') && $('edR').value) || '';
+    if (text === '' && reasoning === '') { S.editorError = '可见文本与思考文本不能同时为空'; render(); return; }
+    if (text === node.text && reasoning === '') { S.editorError = '没有实质改动 —— 宿主会拒绝这样的提交（no-change）'; render(); return; }
+    S.drafts[st.seq] = { seq: st.seq, text, reasoning, updatedAt: '12:1x' };
+    S.editor = null; render();
+    toast('已保存草稿（模型还看不到）→ 行上出现「未生效」，点「应用到会话」才生效');
+    return;
+  }
+  if (st.kind === 'annotate') {
+    const reason = ($('edWhy') && $('edWhy').value.trim()) || '';
+    const from = Number(($('edFrom') && $('edFrom').value) || '');
+    const to = Number(($('edTo') && $('edTo').value) || '');
+    if (reason === '') { S.editorError = '理由不能为空'; render(); return; }
+    if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from > to) { S.editorError = '作废范围要两端都给、且起点 ≤ 终点（bad-range）'; render(); return; }
+    const ns = 1500 + S.extraNodes.length;
+    const text = `[redline] 更正目标 seq=${st.seq}\n作废范围 seq=${from}..${to}\n理由：${reason}`;
+    S.extraNodes.push(N(ns, 'inject', 'user/message', text, 60, { requestSeq: reqOf().seq, name: '批注' }));
+    if (!reqOf().surface.includes(ns)) reqOf().surface.push(ns);
+    S.editor = null; render();
+    toast(`已追加更正 #${ns}（不可撤销）；原文 #${st.seq} 仍在模型可见内容里`);
+    return;
+  }
+  if (st.kind === 'pin') {
+    const label = (($('edLabel') && $('edLabel').value.trim()) || '目标');
+    const text = ($('edPin') && $('edPin').value) || '';
+    if (text.trim() === '') { S.editorError = '固定块正文不能为空'; render(); return; }
+    S.invariants.push({ label, text, version: (S.invariants.filter((x) => x.label === label).length + 1) });
+    S.editor = null; render();
+    toast(`已存为固定块「${label}」v${S.invariants.filter((x) => x.label === label).length}（逐字，插件不改一个字）；换会话仍可见 → 每轮逐字比对即可发现漂移`);
+  }
+}
+
+function doApply(seq) {
+  const d = draftOf(seq);
+  const node = nodeOf(seq);
+  const ns = 1300 + S.applied.length;
+  S.applied.push({ replacedSeq: seq, newSeq: ns, requestSeq: reqOf().seq, text: d.text, reason: d.reason || '', time: '12:1' + (S.applied.length % 9) });
+  S.extraNodes.push(N(ns, node.cat, node.type, d.text, node.tokens, { name: node.name, requestSeq: reqOf().seq }));
+  delete S.drafts[seq];
+  render();
+  toast(`已应用：#${seq} 被遮蔽 → 新条目 #${ns}（原文仍在日志里；可用版本历史恢复）`);
+}
+
+function orchAct(b) {
+  const act = b.dataset.act;
+  const i = Number(b.dataset.i);
+  if (act === 'freeze') {
+    const note = ($('snapNote') && $('snapNote').value.trim()) || '';
+    const id = 'snap-20260930-' + String(120000 + S.snapshots.length * 137).slice(0, 6);
+    S.snapshots.push({ id, turn: reqOf().turn, items: surfaceOf().length, time: '12:1' + (S.snapshots.length % 9), note });
+    render(); toast('已冻结（只写插件本地：切点 / 条目数 / 时间 / 人写备注 / 固定块版本 —— 不写会话）');
+    return;
+  }
+  if (act === 'spawn') {
+    confirmModal({
+      title: '允许创建子会话',
+      warn: '会用这个会话「已完成的轮次」做种子新建一个子会话（种子是一次性的：之后本会话的新轮次不会进去）。',
+      rows: [
+        ['① 种子范围', `第 ${reqOf().turn} 轮末（cutSeq = 最后一个 turn/end）`],
+        ['② 首条任务', '（见下方理由栏 —— 必须由你写）'],
+        ['③ 继承范围', '✅ 继承：已完成的对话历史（含你已应用的编辑）｜❌ 不继承：父会话的工具授权/权限；父会话也不会自动收到子会话的 transcript / 工具输出 / 思考'],
+        ['④ 副作用', S.sw.team ? '走官方 spawnTeammate(context:"fork") → 进官方名册（任务板/成员导航/派活都有）' : '团队不可用 → 退化为"裸可续接子会话"（没有任务板与官方派活）'],
+        ['⑤ 取消', '取消 = 什么都不发生（不建会话、不写日志）']
+      ],
+      needReason: true, okText: '确认创建',
+      onOk: (reason) => {
+        const id = '00' + (49000 + S.children.length * 771).toString(16).slice(0, 6);
+        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), from: S.snapshots[S.snapshots.length - 1] ? S.snapshots[S.snapshots.length - 1].id : 'snap-（当前）' });
+        render(); toast(`已创建 ${id}（看索引行；来源徽章 = 本项目发起）`);
+      }
+    });
+    return;
+  }
+  if (act === 'copen') { openDrawer('child.open'); toast('（演示）这里会跳到官方视图：父会话页头血缘目录 / 右侧 Sidebar 打开它的对话'); return; }
+  if (act === 'csend') {
+    confirmModal({
+      title: '派活（经官方通道）',
+      warn: '会向子会话写入一条任务消息，不可撤销。',
+      rows: [['收件人', S.children[i].id], ['逐字任务正文', '（见理由栏）'], ['投递方式', '排队下一轮（queue）'], ['理由', '（见理由栏）']],
+      needReason: true, okText: '确认发送',
+      onOk: (reason) => { toast(`已发送（模拟官方返回 accepted）：${reason.slice(0, 30)}`); }
+    });
+    return;
+  }
+  if (act === 'ctask') {
+    S.tasks.push({ subject: `跟进 ${S.children[i] ? S.children[i].id : ''} 的产出`, owner: '', blocked: false, st: 's-idle' });
+    render(); toast('已建成官方任务（写进官方任务板 —— 官方面板现在也能看到它）');
+    return;
+  }
+  if (act === 'ccompact') {
+    if (S.sw.compressBusy) { toast('压缩被拒：子会话正在运行，等它空闲再压缩。（busy）', 'err'); return; }
+    confirmModal({
+      title: '压缩子会话（不可逆）',
+      warning: '',
+      warn: '子会话的历史会被摘要取代，不可逆。失败也通常会留下痕迹。',
+      rows: [['目标', S.children[i].id], ['将被替代的区间与条目数', '第 1–3 步 · 共 12 条'], ['不可逆提示', '原文会被摘要取代（不是遮蔽，读不回来）']],
+      needReason: false, okText: '确认压缩',
+      onOk: () => { S.children[i].state = 'idle'; render(); toast('压缩完成（演示）：子会话历史出现 compaction/* 事件'); }
+    });
+    return;
+  }
+  if (act === 'cinterrupt') {
+    confirmModal({
+      title: '打断子会话',
+      warn: '会向子会话发出取消信号；未完成的工作可能被中断，不可撤销。已提交的工作不会被回滚。',
+      rows: [['目标', S.children[i].id], ['当前状态', S.children[i].state === 'running' ? '运行中' : '空闲'], ['信号', '成员走官方 interrupt；裸子会话走 interruptByParent']],
+      needReason: false, okText: '确认打断',
+      onOk: () => { S.children[i].state = 'ended'; render(); toast('已打断（演示）'); }
+    });
+    return;
+  }
+  if (act === 'pendingSeen') { S.pendingSeen = true; toast('已标记"已查看"（记在插件本地；重启后从父会话日志重扫重建）'); return; }
+  if (act === 'pendingHand') { toast('已把结果交回主会话（演示）'); return; }
+}
+
+/* ------------------------------------------------------------------ 9. 自测面板 */
+function renderSelfcheck() {
+  const box = $('selfcheck');
+  if (!S.selfcheck) { box.hidden = true; return; }
+  box.hidden = false;
+  const rows = [
+    ['原始节点（当前可见）', '编辑 / 批注' + (draftOf(1240) ? ' / 应用到会话' : '')],
+    ['替换体（当前可见）', '仍有「编辑」（可连续改）+ 版本历史'],
+    ['旧替换体 / 已被遮蔽的原文', '无「编辑」，给原因 + 版本历史'],
+    ['助手消息', '只给「批注」+ 原因'],
+    ['工具结果', '「编辑」（只改内容文本/错误标记）+ 批注'],
+    ['注入内容', '编辑 + 批注 + 存为不变量'],
+    ['被压缩埋掉', '只能批注'],
+    ['系统提示词 / 工具定义', '无动作条，也不留空占位']
+  ];
+  const overflow = document.documentElement.scrollWidth > document.documentElement.clientWidth;
+  const rowW = document.querySelector('.row-main') ? document.querySelector('.row-main').getBoundingClientRect().width : 0;
+  const btnH = document.querySelector('.actions .btn') ? document.querySelector('.actions .btn').getBoundingClientRect().height : 0;
+  box.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center"><b>自测面板</b><span class="muted">${S.sw.turnOpen ? '轮次未结束' : '轮次已闭合'} · ${S.sw.live ? '会话在本进程' : '不在本进程'} · 团队${S.sw.team ? '可用' : '不可用'} · 草稿 ${draftCount()} 条</span></div>
+    <h4>该出现的按钮（对照 docs/03 R4.6）</h4>
+    <ul class="list">${rows.map(([k, v]) => `<li><b>${k}</b>${v}</li>`).join('')}</ul>
+    <h4>盒子测量</h4>
+    <div>行宽 <code>${Math.round(rowW)}px</code> · 动作按钮高 <code>${Math.round(btnH)}px</code>（窄屏应 ≥44）</div>
+    <div>横向溢出：<span class="${overflow ? 'bad' : 'ok'}">${overflow ? '有（不合格）' : '无'}</span> · 文档宽 <code>${document.documentElement.scrollWidth}</code> / 视口 <code>${document.documentElement.clientWidth}</code></div>
+    <h4>本原型不覆盖的门禁</h4>
+    <div class="muted">真实会话写入、真实压缩、console 无报错、与 dsh-context 并存 —— 这些只能在装进 DSH 后验（docs/03 §7 第 19/30 条）。</div>`;
+}
+
+/* ------------------------------------------------------------------ 10. 讲解模式 */
+function applyExplain() {
+  document.body.classList.toggle('explain', S.explain);
+  const nodes = document.querySelectorAll('[data-explain]');
+  nodes.forEach((el, idx) => { el.dataset.exnum = String(idx + 1); });
+  let bar = document.querySelector('.explainbar');
+  if (S.explain) {
+    if (!bar) { bar = document.createElement('div'); bar.className = 'explainbar'; document.body.appendChild(bar); }
+    bar.innerHTML = `讲解模式已开：共 <b>${nodes.length}</b> 个可交互元素 · 点任一元素看它是做什么的（<span class="muted">Esc 关闭</span>）`;
+  } else if (bar) bar.remove();
+}
+
+/* ------------------------------------------------------------------ 11. 渲染 + 事件 */
+function render() {
+  document.documentElement.dataset.theme = S.theme;
+  renderSwitches(); renderNotice();
+  renderStats(); renderTrend(); renderStep(); renderEvents();
+  renderBrowser();
+  $('stickyDrafts').hidden = draftCount() === 0;
+  $('stickyDrafts').innerHTML = `<span>还有 <b>${draftCount()}</b> 条改动未生效</span>
+    <button class="btn sm" data-act="applyAll">逐条应用到会话</button>
+    <button class="btn sm ghost" data-act="discardAll">放弃未应用的改动</button>`;
+  $('stickyDrafts').querySelectorAll('[data-act]').forEach((b) => {
+    b.onclick = () => {
+      if (b.dataset.act === 'discardAll') {
+        confirmModal({ title: '放弃未应用的改动', warn: '只清本地草稿，不影响会话；未保存的输入会丢失。', rows: [['将丢弃', Object.keys(S.drafts).map((s) => '#' + s).join(' · ')]], needReason: false, okText: '确认放弃', onOk: () => { S.drafts = {}; render(); toast('已清空本地草稿（会话未动）'); } });
+      } else {
+        confirmModal({ title: '逐条应用到会话', warn: '会向会话追加替换记录，之后无法删除；原文对模型永久不可见（日志里仍在）。', rows: Object.keys(S.drafts).map((s) => ['#' + s, (draftOf(Number(s)).text || '').slice(0, 90)]), needReason: false, okText: '确认逐条应用', onOk: () => { Object.keys(S.drafts).forEach((s) => doApply(Number(s))); } });
+      }
+    };
+  });
+  renderOrch(); applyExplain(); renderSelfcheck();
+}
+
+$('btnTheme').onclick = () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; render(); };
+$('btnExplain').onclick = () => { S.explain = !S.explain; $('btnExplain').setAttribute('aria-pressed', String(S.explain)); render(); toast(S.explain ? '讲解模式：点任一高亮元素看说明' : '讲解模式已关'); };
+$('btnSelfcheck').onclick = () => { S.selfcheck = !S.selfcheck; render(); };
+$('btnReset').onclick = () => { S = initial(); render(); toast('原型已重置'); };
+$('drawerClose').onclick = () => { $('drawer').hidden = true; };
+$('modalCancel').onclick = () => { $('modalWrap').hidden = true; };
+document.addEventListener('click', (e) => {
+  const el = e.target.closest && e.target.closest('[data-explain]');
+  if (S.explain && el) {
+    // 讲解模式 = 只讲解、不改状态：拦下这次点击，避免"看说明"顺手把动作也执行了。
+    e.preventDefault(); e.stopPropagation();
+    openDrawer(el.dataset.explain);
+  }
+}, true);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { S.editor = null; $('modalWrap').hidden = true; $('drawer').hidden = true; render(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter' && S.editor) submitEditor();
+});
+
+/* 预置：两条冻结记录 + 一个成员与任务，让首屏就有内容可点 */
+(function seed() {
+  S.snapshots.push({ id: 'snap-20260930-120412', turn: 24, items: 41, time: '12:04', note: '改完注入漂移，准备开子会话' });
+  S.children.push({ id: '004c37a5', src: 'own', state: 'running', label: '把 README 双语改完并跑测试', from: 'snap-20260930-120412' });
+  S.children.push({ id: '00a1b2c3', src: 'team', state: 'idle', label: 'reviewer（官方 teammate）' });
+  S.members.push({ name: 'lead（当前会话）', st: 's-run' }, { name: 'reviewer', st: 's-idle' }, { name: 'tester', st: 's-done' });
+  S.tasks.push({ subject: '改 README 双语', owner: 'reviewer', blocked: false, st: 's-run' });
+  S.tasks.push({ subject: '跑全量测试', owner: '', blocked: true, st: 's-block' });
+  S.tasks.push({ subject: '出发布说明', owner: 'tester', blocked: false, st: 's-done' });
+})();
+
+render();
+
+</script>
+</body>
+</html>
