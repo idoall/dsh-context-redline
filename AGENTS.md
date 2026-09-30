@@ -6,7 +6,7 @@
 > · [`docs/04-roadmap`](docs/04-roadmap.md) · [`docs/05-test-plan`](docs/05-test-plan.md)
 > · [`docs/06-orchestration`](docs/06-orchestration.md)
 > · [`docs/08-open-questions`](docs/08-open-questions.md) · [`docs/09-requirements-traceability`](docs/09-requirements-traceability.md)（需求追溯矩阵）
-> · [`docs/10-execution-checklist`](docs/10-execution-checklist.md)（**长任务执行清单**：逐项可勾，每项写清"做什么 / 完成判据"，并标出哪几步需要用户）
+> · [`docs/10-execution-checklist`](docs/10-execution-checklist.md)（**长任务执行清单 · 唯一状态源**：细粒度任务表 `ID / 子任务 / 状态 / 文件动作（范围冻结）`；需要用户的标 `WAIT🙋`）
 > · [`UPSTREAM.md`](UPSTREAM.md)（上游与许可）
 
 ---
@@ -140,8 +140,9 @@ dsh --profile web --dump-config                                      # 静态确
 
 ## 5. 当前状态
 
-> **进度看板**：[`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) —— 逐项可勾（当前 **14 / 72**），
-> 每项都写清"做什么 / 完成判据"，需要用户的那几步标了 🙋。**每次收尾都要更新它**。
+> **进度看板（唯一状态源）**：[`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) —— **细粒度任务表**
+> （ID / 子任务 / 状态 / **文件动作（范围冻结）**），当前 **DONE 35 / 共 167**，需要用户的步骤标 `WAIT🙋`。
+> **每次收尾必须回来同步它**（含 §11 进度总览），否则就会出现第二个"真相"。
 
 | 阶段 | 状态 |
 |---|---|

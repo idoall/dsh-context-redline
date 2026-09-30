@@ -1,204 +1,285 @@
-# 10 · 长任务执行清单（**可勾选 · 逐项说清是做什么的**）
+# 10 · 长任务执行清单（**唯一状态源** · 细粒度）
 
-> **怎么用**：一项做完把 `- [ ]` 改成 `- [x]`，并在行尾补**证据**（测试名 / 原始输出 / 截图路径）。
-> **两级规则**（来自 [`docs/04`](04-roadmap.md)）：
-> ① **一个阶段一停** —— 上一阶段的"完成判据"没拿到证据，不进下一阶段；
-> ② **不写实现代码的前提** —— 你未明确说"开始"之前，本清单的 M1 及之后保持未勾选。
+> **这是本项目的唯一进度状态源。** 任何"做到哪了"的问题，答案都在本文件；与其它文档冲突时，先改本文件再改别的。
 >
-> **图例**：`- [ ]` 未开始 · `- [~]` 进行中 · `- [x]` 已完成 · 🙋 **这一步需要你**（授权/点头/看界面）
+> **列定义**
 >
-> **每个条目都有两行**：**做什么** = 一句人话（不写实现细节，细节在对应文档里）；**完成判据** = 怎么才算真的做完。
+> | 列 | 含义 |
+> |---|---|
+> | **ID** | `阶段-序号`（子步骤加字母，如 `M2-07b`）。**ID 一旦分配不再复用**；作废的行标 `作废` 而不是删掉 |
+> | **子模块 / 子任务** | **一件事**：动什么、动到什么程度。不写"做 A 模块"，而写"在 A 里做 X；输入是…；输出是…" |
+> | **状态** | `DONE` 完成 · `DOING` 在做 · `TODO` 未开始 · `WAIT🙋` 等你（授权/点头/看界面）· `BLOCK` 被前置卡住 |
+> | **文件动作（范围冻结）** | **本任务只许动这些文件**。做到一半发现要动别的文件 → 先回来加一行，再加文件 |
+>
+> **规则**
+> 1. **一个阶段一停**：上一阶段的 `DONE` 没带证据，不进下一阶段。
+> 2. **证据**写在 `→` 后面（测试名 / 原始输出 / 截图路径 / commit）。**不写"已通过"三个字。**
+> 3. **用户未说"开始"之前，M1 及之后一律 `TODO`**，不写实现代码。
+> 4. **`WAIT🙋` 是唯一会停下来的状态** —— 只有需要你授权/点头/看界面时才用它。
+> 5. 本文件是**施工表**；[`docs/04`](04-roadmap.md) 是**阶段说明书**（为什么这样切）。冲突时以 `docs/04` 为准并回来修本表。
 
 ---
 
-## 进度总览
+---
 
-| 阶段 | 是什么 | 项数 | 已完成 | 卡在哪 |
-|---|---|---|---|---|
-| **M0** 文档集 | 把"要做什么/依据真不真/怎么验"写成可评审的规格 | 11 | **11** | — |
-| **M0.5** 交互 demo | 可点击的规格书：先把交互定稿，再写界面代码 | 5 | 3 | 🙋 等你看 demo 提意见 |
-| **M1** 骨架与身份 | 从上游复制代码 + 改名分家（不与参考插件打架） | 9 | 0 | 🙋 授权包①（装 profile + 你重启） |
-| **M2** 编辑面 | 后端逻辑：改、批注、固定块、**回滚**（先写测试） | 10 | 0 | — |
-| **M3** 右侧界面 | 把 M2 的能力做成能点的界面（按 demo 定稿） | 7 | 0 | 依赖 M0.5 定稿 + M2 |
-| **M4** 轮次联动 | 点某一轮 → 看到那一轮的上下文构成 | 3 | 0 | 依赖 M3 |
-| **M4.5** 能力验证 | 真机上确认平台到底允许什么（含破坏性验证） | 6 | 0 | 🙋 授权包② |
-| **M5** 编排 | 冻结快照 → 开子会话 → 压缩 → 对接官方团队 | 9 | 0 | 依赖 M4.5；🙋 授权包③ |
-| **M6** 入口与发布 | 命令/接口/README/发版准备 | 5 | 0 | 依赖 M5 |
-| **M7+** 后续 | 明确"本轮不做"的事（装配层/工具入口/冷恢复） | 3 | 0 | 你已定本轮不做 |
-| **X** 横切 | 授权包记录、证据留档、事实回写、push | 4 | 0 | 🙋 各授权包 |
-| **合计** | | **72** | **14** | 剩 58 项 |
+## 0. 横切（贯穿所有阶段 · 每次收尾都要看）
+
+| ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
+|---|---|---|---|
+| X-01 | push 前清理：本机绝对路径占位化、早期实现线文档删除、模型名/插件名按你要求保留原样 | DONE → commit `eae9ad2`、`ee0a0f2` | 全仓 `*.md` |
+| X-02 | 四个一次性授权包的执行记录（①装 profile+重启 ②破坏性验证 ③E2E 验收 ④push）：谁批的、何时、结论 | TODO | `docs/08-open-questions.md` §9 |
+| X-03 | 每个阶段收尾时回写本表的 `状态` 与 `→ 证据` | DOING | 本文件 |
+| X-04 | 新发现的平台事实回写 `docs/01`；未核实的进"待验证"，不得当依据 | DOING | `docs/01-platform-facts.md` |
+| X-05 | 每阶段收尾同步 §11 进度总览（防止出现第二个"真相"） | DOING | 本文件 §11 |
+| X-06 | 🙋 push（最后单独授权）：`git push -u origin main` | WAIT🙋 | 远端 `origin` |
+
+## 1. M0 · 文档集（**20 / 20 DONE**）
+
+| ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
+|---|---|---|---|
+| M0-01 | 目标 G1–G11（含 G9 可回滚 / G10 不膨胀可观测 / G11 可追溯）+ 非目标 N1–N8 | DONE → R1–R7 七轮评审 | `docs/00-scope.md` §2 |
+| M0-02 | 成功标准 S1–S10 写成"可验收"（计数口径、证据格式） | DONE | `docs/00-scope.md` §3 |
+| M0-03 | 术语表：遮蔽/替换体/被遮蔽原文/行身份/可续接子会话/快照化子会话 | DONE | `docs/00-scope.md` §6 |
+| M0-04 | 平台事实 F1–F13：命名空间冲突、废弃读 API、80 字预览陷阱、surface 替换语义 | DONE → 探针实测 PASS | `docs/01-platform-facts.md` §2–§4 |
+| M0-05 | 平台事实 F14–F27：依赖树、dump-config、主题选择器、面板目标会话判据、fork 种子、压缩前置 | DONE | `docs/01-platform-facts.md` §5 |
+| M0-06 | 平台事实 F28–F35：官方团队走 subagent seam、`ctx.agentTeams` 对接面、`spawnTeammate(context:'fork')`、`agentTeam` 投影、80 字预览 | DONE → 源码 `$DSH_SRC` + 安装树 `.d.ts` | `docs/01-platform-facts.md` §4 |
+| M0-07 | 待验证项 V1–V13：每条写"验什么 / 怎么验 / 失败怎么办" | DONE | `docs/01-platform-facts.md` §6 |
+| M0-08 | 架构 L0–L4 + 两条数据流（含 A′ 的建成员与回流） | DONE | `docs/02-architecture.md` §2–§3 |
+| M0-09 | RPC op 表（读 12 + 写 13 + `team.*`）+ 命令/内部服务入口 | DONE | `docs/02-architecture.md` §5.2 |
+| M0-10 | 存储布局：草稿文件 + `history.sqlite` 六表（**无 children 表**，子会话读平台投影） | DONE | `docs/02-architecture.md` §6 |
+| M0-11 | 界面规格 R1.1–R1.4（轮次联动） | DONE | `docs/03-ui-spec.md` §1 |
+| M0-12 | 界面规格 R2.1–R2.3（每类行的按钮矩阵 + 原因码） | DONE | `docs/03-ui-spec.md` §2 |
+| M0-13 | 界面规格 R3.1–R3.6（三模式合一编辑器、全文预填、确认框、未保存提醒） | DONE | `docs/03-ui-spec.md` §3 |
+| M0-14 | 界面规格 R4.1–R4.6（未生效吸顶、确认框清单、版本历史、**行身份 × 状态矩阵**） | DONE | `docs/03-ui-spec.md` §4 |
+| M0-15 | 界面规格 R5.1–R5.3（快照与子会话面板、来源徽章、V10 降级契约、压缩体检） | DONE | `docs/03-ui-spec.md` §5 |
+| M0-16 | 视觉约束 V1–V8 + **30 条人工门禁** | DONE | `docs/03-ui-spec.md` §6–§7 |
+| M0-17 | 测试计划：lane 划分（edit/channel）+ A1–A24 断言 + 反向验证 + op 追溯 | DONE | `docs/05-test-plan.md` §1–§8 |
+| M0-18 | 编排规格：快照→成员→压缩→派活语义、授权清单 A1–A10、失败码人话、`plan.next` 次序 | DONE | `docs/06-orchestration.md` §1–§7 |
+| M0-19 | 开放问题 Q1–Q12（选项/推荐/阻塞阶段）+ 评审附录 R1–R7（58 条全部采纳） | DONE → 逐条处置表 | `docs/08-open-questions.md` |
+| M0-20 | 需求追溯：U1–U8 + 图 2①–⑥ / 图 3 / 图 4-1…4-5 → 落到哪条目标 | DONE | `docs/09-requirements-traceability.md` |
 
 ---
 
-## M0 · 文档集 ✅（已完成）
+## 2. M0.5 · 交互 demo（**14 / 15 DONE**，剩定稿）
 
-- [x] **M0-1 范围与非目标** —— 做什么/不做什么、可验收的成功标准。
-  *判据*：[`docs/00`](00-scope.md) 的 G1–G11 / N1–N8 / S1–S10 齐备且互相一致。
-- [x] **M0-2 平台事实清单** —— 每条平台行为都带出处、标注"实测/推断"，未核实的单列待验证。
-  *判据*：[`docs/01`](01-platform-facts.md) 有 F1–F35、V1–V13，选不到出处的不写。
-- [x] **M0-3 架构与接口** —— 分几层、数据怎么流、有哪些 RPC、存哪里。
-  *判据*：[`docs/02`](02-architecture.md) 的 §5.2 op 表与 §6 存储布局可被 M2 直接照做。
-- [x] **M0-4 界面规格** —— 编号化的界面规则 + 逐字文案 + 人工门禁清单。
-  *判据*：[`docs/03`](03-ui-spec.md) R1.1–R5.3 + §7 的 30 条门禁。
-- [x] **M0-5 路线图** —— 阶段、产物、**谁能验收**、授权点。
-  *判据*：[`docs/04`](04-roadmap.md) 每个阶段都有"完成判据"。
-- [x] **M0-6 测试计划** —— 断言逐条写成"给定什么 → 做什么 → 断言什么"，并列出反向验证。
-  *判据*：[`docs/05`](05-test-plan.md) 的 A1–A24 + §6 反向验证 + §8 op 追溯。
-- [x] **M0-7 编排规格** —— 快照/子会话/压缩的语义、授权清单、失败码人话、明确不做。
-  *判据*：[`docs/06`](06-orchestration.md) §3/§4/§5 齐备。
-- [x] **M0-8 开放问题** —— 每个未定事项都有选项、推荐与理由，并标清阻塞哪个阶段。
-  *判据*：[`docs/08`](08-open-questions.md) 速查表 + §9 授权包。
-- [x] **M0-9 需求追溯** —— 你的原话与图 2/3/4 的每一项都落到某条目标。
-  *判据*：[`docs/09`](09-requirements-traceability.md) U1–U8 + 图 2①–⑥ / 图 3 / 图 4-1…4-5。
-- [x] **M0-10 外部评审** —— 换模型对抗式评审并逐条处置。
-  *判据*：[`docs/08`](08-open-questions.md) 附录 R1–R7（累计 58 条全部采纳）。
-- [x] **M0-11 上游与许可** —— 来源、Apache-2.0 声明、修改清单。
-  *判据*：[`UPSTREAM.md`](../UPSTREAM.md) + [`NOTICE`](../NOTICE) + [`LICENSE-Apache-2.0`](../LICENSE-Apache-2.0)。
-
-## M0.5 · 交互 demo（**3/5**，等你确认）
-
-- [x] **M05-1 可点击的规格书** —— 假数据 + 真交互，把界面规则摆出来给你点。
-  *判据*：[`demo/`](../demo/README.md) 覆盖 `docs/03` 全量（含状态开关、确认框、版本历史、快照与子会话）。
-- [x] **M05-2 讲解模式** —— 每个可交互元素都能点开看"它是做什么的/会发生什么/能不能撤回/要不要确认/对应哪条 R"。
-  *判据*：40 个热区，点开右侧滑出说明卡；开启时点击只讲解、不改状态。
-- [x] **M05-3 自验与独立版** —— 自己先用浏览器量一遍；并产出**不依赖服务**的单文件版本。
-  *判据*：console 无页面报错、640px 无横向溢出、触控 ≥44px、深浅主题各一遍、5 个 bug 已修（见提交 `b3b65f4`）；
-  `demo/redline-panel.standalone.html` 无外链。
-- [ ] 🙋 **M05-4 你逐条确认交互** —— 你按 R 编号提意见（例：`R2.2 #1295 工具结果不该给编辑`），我改 demo。
-  *判据*：你说"交互定稿"。
-- [ ] **M05-5 结论回写规格** —— 把定稿结论回写 `docs/03`（改哪条就改哪条）。
-  *判据*：`docs/03` 与 demo 一致；不一致处已在文档里写明取舍。
-
-## M1 · 骨架与身份（**未开始**）—— 🙋 先要授权包①
-
-- [ ] 🙋 **M1-0 授权包①** —— 把本仓库装配进 `web` profile，然后**你**重启一次 `dsh web`；我做复验。
-  *判据*：插件日志出现 `host loaded (/api/dsh-context-redline)`；两个面板并存；失败可一键回退（见 `docs/08` §9.1）。
-- [ ] **M1-1 复制上游源码** —— 从上游 `v0.59.2` 复制 `src/`，不带 `.git`、不带上游 CI。
-  *判据*：`UPSTREAM.md` §3 的修改清单与实际 diff 一致。
-- [ ] **M1-2 路由改名** —— HTTP 接口全部改成 `/api/dsh-context-redline/*`。
-  *判据*：`dump-config` 无"路由已注册"冲突；`grep` 无旧路径残留。
-- [ ] **M1-3 投影改名** —— 三个投影 key 改成 `redline*`（同 key 会被静默顶掉，必须改名）。
-  *判据*：`namespace-contract` 检查绿。
-- [ ] **M1-4 其余命名空间分家** —— 界面插槽 id / 文案命名空间 / 消息 kind / 数据目录。
-  *判据*：`namespace-contract` 覆盖的 8 个面全绿。
-- [ ] **M1-5 客户端注册 id** —— 必须等于包名，否则界面加载后不注册。
-  *判据*：浏览器 console 无 `loaded without registering`。
-- [ ] **M1-6 依赖安装（安全顺序）** —— 避免把悬空软链写进共享 profile 目录。
-  *判据*：按 `AGENTS.md` §2.4 的顺序执行，`node_modules/@deepseek-ai` 指向正确。
-- [ ] **M1-7 配置来源表 + CI** —— 每个配置文件的来源写清；CI 自建（上游的会跑不存在的命令）。
-  *判据*：`UPSTREAM.md` §4 表格与仓库实际一致；CI 能跑通自有 lane。
-- [ ] **M1-8 `namespace-contract` 机器检查** —— 用脚本而不是人眼 grep 保证"改干净了"。
-  *判据*：故意改坏一处 → 检查必须变红（反向验证）。
-
-## M2 · 编辑面（TDD，先红后绿）
-
-- [ ] **M2-1 读模型** —— 从宿主读"模型现在看到的内容"（**全文**，不是 80 字预览）。
-  *判据*：A4 断言"返回正文 ≠ 80 字预览"且逐字等于事件内容。
-- [ ] **M2-2 能力判定（纯函数）** —— 按底层事件类型决定给不给"编辑"按钮。
-  *判据*：A17 锁定每种行类型的按钮集合；助手消息只给批注；被遮蔽原文只给原因+历史。
-- [ ] **M2-3 草稿存储** —— 改动先只存本地，可放弃。
-  *判据*：A12 断言"存草稿不改会话事件数"；原子写（.tmp + rename）。
-- [ ] **M2-4 `apply` 写入器** —— 真正写进会话：只在轮次边界、追加式、带上被遮蔽来源。
-  *判据*：A3/A5/A8 绿；轮次未闭合时拒绝且给人话。
-- [ ] **M2-5 `annotate` 写入器** —— 保留原文、追加一条带"作废范围"的更正。
-  *判据*：A6 绿；范围非法时 `bad-range` 人话。
-- [ ] **M2-6 `inject`（固定块重注入）** —— 把固定块正文作为一条普通消息追加（不是伪造宿主内容）。
-  *判据*：A7 绿；带结构化头部的普通 user 消息。
-- [ ] **M2-7 版本历史（行身份链）** —— 把"原 → 改写 → 回滚"串成一条链（**跨替换体**）。
-  *判据*：A16 绿：连续改两次后能在新条目上看到最初原文。
-- [ ] **M2-8 `apply.rollback`（回滚）** —— 把模型看到的内容恢复成你选的那一版。
-  *判据*：A16 断言回滚后逐字等于目标版本；链路可继续回滚。
-- [ ] **M2-9 固定块存储** —— workspace 级（新会话也能看到）+ 版本 + 退休 + 漂移检查。
-  *判据*：A11/A13 绿：跨会话可见、漂移能报出、退休后不再生效。
-- [ ] **M2-10 测试红→绿 + 反向验证** —— 每条护栏都先证明会红，再改实现让它绿。
-  *判据*：`docs/05` §6 的反向验证对 A1–A24 逐条执行并留输出。
-
-## M3 · 右侧可编辑界面（按 demo 定稿搬）
-
-- [ ] **M3-1 面板骨架** —— 左列统计/趋势/步卡片，右列上下文浏览器。
-  *判据*：与 demo 的布局一致（一致性核对清单逐条打勾）。
-- [ ] **M3-2 分类树 + 行动作条** —— 7 类 + 每行动作按"行身份 × 状态"矩阵给。
-  *判据*：`docs/03` R4.6 的每一种组合都手工验过；不出现"点了才报错"的按钮。
-- [ ] **M3-3 内联编辑器 + 确认框** —— 编辑/批注/固定块三模式；提交前必出"短警示 + 本次清单"。
-  *判据*：R3.3/R4.3；取消 = 零副作用（事件数不变）。
-- [ ] **M3-4 版本历史 UI** —— 列出每一版、标明"当前可见"、可恢复；不可恢复态给文案与禁用。
-  *判据*：R4.5 状态表覆盖；不得用 80 字预览冒充正文。
-- [ ] **M3-5 状态与空态** —— 吸顶"还有 N 条未生效"、说明条（轮次未结束/不在本进程）、空/加载/错。
-  *判据*：R4.1/R4.4；窄屏无横向滚动、触控 ≥44px。
-- [ ] 🙋 **M3-6 人工门禁（30 条）** —— 你在浏览器里逐条看。
-  *判据*：`docs/03` §7 的 30 条全过（含深浅主题、640px、Esc/Cmd+Enter）。
-- [ ] **M3-7 与 demo 的一致性核对** —— 逐条确认"插件里就是 demo 里的那个交互"。
-  *判据*：差异清单为 0，或差异已写进 `docs/03` 说明理由。
-
-## M4 · 轮次联动
-
-- [ ] **M4-1 轮次 → 右侧联动** —— 点左侧某一轮，右侧切到**该轮最后一步**。
-  *判据*：轮次条上的数字与右侧列表逐项对得上。
-- [ ] **M4-2 步级下拉** —— 可选某一步或"当前（下一次请求）"。
-  *判据*：与轮次入口交叉比对一致。
-- [ ] **M4-3 改完即生效（不必重启）** —— 客户端产物重打后刷新即可。
-  *判据*：真机硬刷新后行为变化，无需重启 `dsh web`。
-
-## M4.5 · 平台能力验证（**M5 的硬前置**）—— 🙋 包②
-
-- [ ] **M4.5-1 包 A：只读探测（自验）** —— 查平台能力是否存在，不写任何会话。
-  *判据*：每项留原始输出；结论写回 `docs/01`。
-- [ ] 🙋 **M4.5-2 包 B：破坏性真机（一次授权）** —— 在**专用可弃会话**里真跑一遍改写/回滚。
-  *判据*：V7/V9 结论明确（能做/不能做），失败也留证据。
-- [ ] **M4.5-3 V1–V6 读路径与判定** —— 会话是否在本进程、能否读到全文、能力判定是否与真机一致。
-- [ ] **M4.5-4 V7–V9 替换与压缩边界** —— 连改、回滚、跨压缩区间能否恢复。
-- [ ] **M4.5-5 V10–V13 投影与续接** —— 子会话目录可读、可续接子会话端到端、官方团队服务层可用。
-- [ ] **M4.5-6 失败决策表** —— 每一项失败都给出"降级路径"，并回写文档（不允许"以后再想"）。
-  *判据*：[`docs/04`](04-roadmap.md) M4.5 的失败表逐行有结论。
-
-## M5 · 快照 → 子会话 → 压缩 → 对接官方团队
-
-- [ ] **M5-1 冻结快照** —— 只写插件本地：切点/条目数/时间/**你写的备注**/在效固定块版本。
-  *判据*：单测断言"冻结不改会话事件数"。
-- [ ] **M5-2 建成员/子会话** —— 优先官方 `spawnTeammate(context:'fork')`（进官方名册）；团队不可用时退化为裸可续接子会话并**如实标注**。
-  *判据*：真机上官方 roster 里能看到它；种子 = 父会话已完成轮次；父会话之后的新轮次不进去。
-- [ ] **M5-3 确认框（五项）** —— 切点 / 你写的首条任务 / 继承与不继承 / 副作用 / 取消语义。
-  *判据*：取消 = `child.list` 无新会话、事件数不变。
-- [ ] **M5-4 官方对接（读）** —— 显示官方那份 roster 与任务板。
-  *判据*：与官方面板显示同一份数据；投影失败时按官方做法在最后有效数据上显示失败。
-- [ ] **M5-5 官方对接（写）** —— 把待办写成官方任务（`createTask`），带依赖与写入范围。
-  *判据*：写成功后**官方面板能看到**；revision 过期时被拒而不是覆盖。
-- [ ] **M5-6 派活（经官方）** —— 走官方通道发消息，如实显示 `accepted`/`queued`。
-  *判据*：`queued` 时界面不重发、不假装已送达。
-- [ ] **M5-7 压缩** —— 先体检 → 确认（列出将丢失的区间与条目数）→ 执行 → 失败码人话。
-  *判据*：`busy/cancelled/changed/summary/commit/persistence` 各有对应人话；执行后的**实际**范围如实显示。
-- [ ] **M5-8 结果回流可见性** —— 结算通知 / 父会话已继续 / **回流未确认** 三态分开显示。
-  *判据*：没有平台证据时界面**不承诺**"父会话已继续"。
-- [ ] 🙋 **M5-9 端到端验收（授权包③，你在场）** —— 冻结 → 建成员 → 压缩 → 回流 真机全链路。
-  *判据*：`docs/00` S5.5 的每一步都有可核对证据（含"不膨胀"的事件数/字节增量）。
-
-## M6 · 入口与发布准备
-
-- [ ] **M6-1 RPC + 命令入口** —— 插件的接口与 `/redline` 命令可用。
-  *判据*：`docs/02` §5.2 的 op 表逐条可调；命令能给只读报告与一句话建议。
-- [ ] **M6-2 内部服务** —— 把能力暴露给别的插件/命令复用。
-  *判据*：`ctx.redline`（或同类命名）可被调用且不写会话。
-- [ ] **M6-3 README 双语 + 截图** —— 中英成对，含安装/使用/限制。
-  *判据*：`README.md` 与 `README.zh.md` 同步更新（文档纪律）。
-- [ ] **M6-4 发版说明** —— 按你要求的简洁双语版式。
-  *判据*：双语锚点 + 一行兼容性结论 + 分类短 bullet + 升级命令。
-- [ ] **M6-5 打包与安装说明** —— 本地目录安装 → 发布到 npm 的路径写清。
-  *判据*：干净环境按说明装得上、卸得掉。
-
-## M7+ · 本轮明确不做（要动之前先单独立项）
-
-- [ ] **M7-1 上下文装配层** —— 块/模板/人格/组装。**先盘官方那套（preset/persona/instructions/补丁方言）缺什么**，再决定要不要做。
-- [ ] **M7-2 只读工具入口** —— 让模型能读"有哪些漂移/成员"。默认不做。
-- [ ] **M7-3 冷恢复体验** —— 父会话不在进程时的续接与通知（当前是"尽力而为 + 如实显示未确认"）。
-
-## X · 横切（贯穿所有阶段）
-
-- [ ] **X-1 授权包记录** —— 4 个一次性授权包（①装 profile+重启 ②破坏性验证 ③E2E 验收 ④push）的执行时间与结论留档。
-- [ ] **X-2 证据留档** —— 每个阶段收尾时把原始输出/截图贴进对应条目（不写"已通过"三个字）。
-- [ ] **X-3 事实回写** —— 新发现的平台事实写回 [`docs/01`](01-platform-facts.md)；未核实的进"待验证"，不当依据。
-- [ ] 🙋 **X-4 push** —— 最后单独授权再 `git push -u origin main`。
+| ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
+|---|---|---|---|
+| M05-01 | 三文件无构建骨架（HTML 结构 / CSS 令牌 / JS 逻辑），深浅主题同一套令牌名 | DONE → commit `b3b65f4` | `demo/redline-panel.html`、`demo/demo.css` |
+| M05-02 | 假数据做全边界态：原始 / 替换体 / 旧替换体 / 被遮蔽原文 / 助手消息 / 工具结果 / 注入类 / 被压缩埋掉 | DONE | `demo/demo.js` |
+| M05-03 | 左列：统计卡 + 趋势轮次条（用户消息/注入内容计数）+ 步卡片 + 事件列表 | DONE | `demo/demo.js` |
+| M05-04 | 右列浏览器：7 类分类树（条数/≈token/占比）+ 步级下拉 + 轮次联动 + 行展开 | DONE | `demo/demo.js` |
+| M05-05 | 行动作条按"行身份 × 状态"给按钮；被遮蔽行灰显 + 删除线 + 原因提示 | DONE → 修 bug#2 | `demo/demo.js`、`demo/demo.css` |
+| M05-06 | 内联编辑器三模式 + 草稿/未生效/吸顶计数 + 应用到会话 | DONE → 修 bug#3 | `demo/demo.js` |
+| M05-07 | 版本历史：**按行身份跨替换体**串联（原始 → 改写 → 回滚）+ 恢复 + 二次确认 | DONE → 修 bug#4 | `demo/demo.js` |
+| M05-08 | 快照与子会话：冻结→五项确认框开成员→索引（来源徽章/`活跃 N/8`）→派活·建成官方任务·压缩·打断 | DONE | `demo/demo.js` |
+| M05-09 | 待处理结果三态 + 只读官方团队区块（roster + 任务板）+ 团队不可用时对接点全隐 | DONE | `demo/demo.js` |
+| M05-10 | 状态开关驱动可见性：轮次未结束 / 会话在本进程 / 团队可用 / 子会话正忙 / 草稿数 / 回流未确认 | DONE | `demo/demo.js` |
+| M05-11 | 讲解模式：40 个编号热区 + 右侧说明卡（做什么/会发生什么/能否撤回/是否确认/对应 R）；开启时拦截点击 | DONE → `evaluate`：`explain:true, hotzones:40` | `demo/demo.js`、`demo/demo.css` |
+| M05-12 | 自测面板：状态组合 + 该出现的按钮（对照 R4.6）+ 盒子尺寸/横向溢出 | DONE | `demo/demo.js` |
+| M05-13 | 自验并修 5 个真 bug：`[hidden]` 被 `display:flex` 盖掉、遮蔽原文整条消失、保存草稿被吞、版本链不跨替换体、窄屏 26px<44px | DONE → 截图 + `node --check` + 页面 console 0 条 | `demo/*` |
+| M05-14 | 单文件独立版（内联 CSS/JS、无 fetch/XHR/存储/模块）→ 解决"远程打不开" | DONE → `node demo/build-standalone.mjs`（76007 B，实测 7 类/40 热区/0 报错） | `demo/build-standalone.mjs`、`demo/redline-panel.standalone.html` |
+| M05-15 | 🙋 **交互定稿**：你逐条按 R 编号确认 → 结论回写 `docs/03` | WAIT🙋 | `docs/03-ui-spec.md`（只改对应 R 各条） |
 
 ---
 
-> **本清单与 `docs/04` 的关系**：`docs/04` 是"阶段说明书"（每个阶段为什么这样切），本清单是"施工进度表"（逐项可勾、可对账）。
-> 两者冲突时以 `docs/04` 为准，并回来修本清单。
+## 3. M1 · 骨架与身份（**0 / 14**）—— 先要授权包①
+
+| ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
+|---|---|---|---|
+| M1-01 | 🙋 授权包①：把本仓库装配进 `web` profile；**你**重启 `dsh web`；我做复验 | WAIT🙋 | `$DSH_HOME/profiles/web/{package.json,cordis.patch.yml}`（先备份） |
+| M1-02 | 复验：插件日志 `host loaded (/api/dsh-context-redline)`、两个面板并存、console 无注册错误 | TODO | 只读日志 + 浏览器 |
+| M1-03 | 从上游 tag `v0.59.2` 复制 `src/`（不带 `.git`、不带上游 `.github/workflows`） | TODO | `src/**`、`package.json` |
+| M1-04 | 路由改名：`/api/dsh-context/{detail,balance,backfill}` → `/api/dsh-context-redline/*` | TODO | `src/host/**` |
+| M1-05 | 投影改名：`contextTimeline|contextHeaders|contextActivity` → `redlineTimeline|redlineHeaders|redlineActivity` 并定版 `stateVersion` | TODO | `src/host/**` |
+| M1-06 | 插槽 id / 文案命名空间 / 消息 kind / 数据目录 四处分家 | TODO | `src/client/**`、`src/host/**`、`locale/**` |
+| M1-07 | 客户端 bundle 注册 id = 包名（否则 `loaded without registering`） | TODO | `package.json`、客户端入口 |
+| M1-08 | 依赖安装按安全顺序（防 `pnpm install` 写穿共享 profile 链接） | TODO | `node_modules/@deepseek-ai`、`scripts/link-dsh-runtime.mjs` |
+| M1-09 | 配置来源表：每个配置文件从哪来、改了什么、为什么 | TODO | `UPSTREAM.md` §4 |
+| M1-10 | 自建 CI（上游 workflows 已删；它会跑不存在的 `pnpm run verify`） | TODO | `.github/workflows/**`、`package.json` scripts |
+| M1-11 | `namespace-contract` 机器检查覆盖 8 个面 | TODO | `scripts/namespace-contract.mjs` |
+| M1-12 | 反向验证：手工改坏一处命名空间 → 检查必须变红 | TODO | `scripts/namespace-contract.mjs` |
+| M1-13 | `tsc --noEmit` exit 0 + `vitest run --project edit --project channel` 可跑 | TODO | `tsconfig.json`、`vitest.config.ts` |
+| M1-14 | `dsh --profile web --dump-config` 无路由/投影冲突 | TODO | 只读命令 |
+
+---
+
+## 4. M2 · 编辑面（**0 / 28**）
+
+| ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
+|---|---|---|---|
+| M2-01 | 读模型封装：`sessionQuery.readSurface()`（**全文**）+ `readEvent` | TODO | `src/host/redline-channel.ts` |
+| M2-02 | 分类判定：表面节点 → 7 类（system/tools/user/inject/skill/assistant/tool） | TODO | `src/redline/classify.ts` |
+| M2-03 | 行身份链：`seq → 家族`（跨替换体串联，供版本历史与按钮判定共用） | TODO | `src/redline/identity.ts` |
+| M2-04 | 能力判定 a：`assistant/message` → `canRewrite:false` + `assistant-immutable` | TODO | `src/redline/eligibility.ts` |
+| M2-05 | 能力判定 b：被遮蔽的原始节点 → `canRewrite:false` + `shadowed-by:#seq` | TODO | `src/redline/eligibility.ts` |
+| M2-06 | 能力判定 c：替换体（当前可见）→ `canRewrite:true`（**连改可用的关键**） | TODO | `src/redline/eligibility.ts` |
+| M2-07 | 能力判定 d：被压缩埋掉 → 只能批注 + `compacted-region` | TODO | `src/redline/eligibility.ts` |
+| M2-08 | 能力判定 e：工具结果可编辑范围（内容文本 + `isError`；不得改工具名/参数结构） | TODO | `src/redline/eligibility.ts` |
+| M2-09 | 草稿存储：按会话分文件的 `.json` 原子写（`.tmp` + rename） | TODO | `src/host/drafts.ts` |
+| M2-10 | 轮次边界检查：open turn → 拒绝写会话类动作 + `turn-open` | TODO | `src/redline/write.ts` |
+| M2-11 | `apply`：组装替换事件（目标 = 当前可见 seq、保留遮蔽来源、append 到日志尾） | TODO | `src/redline/write.ts` |
+| M2-12 | `apply`：`sourceEventSeqs` 规则（覆盖被遮蔽节点；**assistant 不带**） | TODO | `src/redline/write.ts` |
+| M2-13 | `annotate`：追加带"作废范围"的普通 user 消息（结构化头部，非伪造宿主内容） | TODO | `src/redline/write.ts` |
+| M2-14 | `inject`：固定块正文作为普通消息追加（重注入入口） | TODO | `src/redline/write.ts` |
+| M2-15 | 版本历史查询：读全量日志 → 家族内每版（seq/时间/正文/类型） | TODO | `src/redline/history.ts` |
+| M2-16 | `apply.rollback`：目标 = 当前可见节点 → 追加替换使可见内容 = 选定版本 | TODO | `src/redline/write.ts` |
+| M2-17 | V8 未通过时的降级：读不到正文 → `history-unavailable`，**禁止用 80 字预览冒充** | TODO | `src/redline/history.ts` |
+| M2-18 | 固定块存储：`invariants`（标签/正文/作用域/版本/退休） | TODO | `src/host/invariants.ts` |
+| M2-19 | 固定块作用域 workspace 级（新会话可见）+ 漂移检查（逐字比对当前 surface） | TODO | `src/host/invariants.ts` |
+| M2-20 | 计数与增量：事件数 / 字节（为"不膨胀"提供可核对数字） | TODO | `src/redline/metrics.ts` |
+| M2-21 | 测试 A1–A10（读模型/分类/能力判定/草稿/边界）先红后绿 | TODO | `test/edit/**` |
+| M2-22 | 测试 A11–A16（固定块跨会话、漂移、应用、批注、**回滚逐字相等**） | TODO | `test/edit/**` |
+| M2-23 | 测试 A17（按钮集合按事件类型锁定，**反向验证会红**） | TODO | `test/edit/**` |
+| M2-24 | 测试 A18–A24（降级/失败码/压缩体检/团队 op 转发/服务缺失返回 `null`） | TODO | `test/channel/**` |
+| M2-25 | 反向验证全表执行（逐条改坏 → 确认红 → 改回），结果贴 `docs/05` §6 | TODO | `test/**`、`docs/05-test-plan.md` |
+| M2-26 | 计数契约自测：S1/S1.1 口径与界面数字一致 | TODO | `test/edit/**` |
+| M2-27 | 错误码 → 人话映射（`bad-range`/`no-change`/`turn-open`/`assistant-immutable`/`shadowed`/`history-unavailable`） | TODO | `src/redline/errors.ts` |
+| M2-28 | 冻结快照记录（只写本地：切点/条目数/时间/人写备注/在效固定块版本） | TODO | `src/host/snapshots.ts` |
+
+---
+
+## 5. M3 · 右侧界面（**0 / 22**，按 M05-15 定稿搬）
+
+| ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
+|---|---|---|---|
+| M3-01 | 面板骨架：左统计/趋势/步卡片，右浏览器（复用上游 shell 结构） | TODO | `src/client/**` |
+| M3-02 | 分类树：7 类 + 条数/≈token/占比 + 展开折叠 + 空类不显示 | TODO | `src/client/**` |
+| M3-03 | 步级下拉 + "当前（下一次请求）" + 与轮次入口交叉一致 | TODO | `src/client/**` |
+| M3-04 | 行动作条：`#seq` + 编辑/批注/存为不变量/应用到会话/版本历史（按能力判定给） | TODO | `src/client/**` |
+| M3-05 | 被遮蔽行样式：灰显 + 删除线 + "已被 #X 接替" + 仍可看版本历史 | TODO | `src/client/**` |
+| M3-06 | 内联编辑器·编辑模式（思考文本 + 可见文本，**全文预填**） | TODO | `src/client/**` |
+| M3-07 | 内联编辑器·批注模式（理由 + 作废范围 seq 区间） | TODO | `src/client/**` |
+| M3-08 | 内联编辑器·固定块模式（标签 + 逐字正文） | TODO | `src/client/**` |
+| M3-09 | 确认框：短警示 + 本次清单（按动作不同）+ 理由输入 + 二次确认 | TODO | `src/client/**` |
+| M3-10 | 取消 = 零副作用（事件数不变、子会话数不变） | TODO | `src/client/**`、`test/channel/**` |
+| M3-11 | 版本历史面板：每版一行 + 当前可见标记 + 恢复按钮 | TODO | `src/client/**` |
+| M3-12 | 不可恢复态：跨压缩 / 读不到正文 / 目标已被接替 → 只显示链、不给恢复按钮 | TODO | `src/client/**` |
+| M3-13 | 未生效吸顶条：`还有 N 条改动未生效` + 逐条应用 / 放弃 | TODO | `src/client/**` |
+| M3-14 | 状态说明条（提示样式）：轮次未结束 / 会话不在本进程 | TODO | `src/client/**` |
+| M3-15 | 快照面板：冻结（人写备注）→ 记录列表 | TODO | `src/client/**` |
+| M3-16 | 开子会话确认框五项（切点/首条任务/继承与不继承/副作用/取消语义） | TODO | `src/client/**` |
+| M3-17 | 子会话索引行：来源徽章（`tryMembership`）+ 状态 + `活跃 N/8` + 动作 | TODO | `src/client/**` |
+| M3-18 | 待处理结果三态（已收到结算通知 / 父会话下一轮已开始 / **回流未确认**） | TODO | `src/client/**` |
+| M3-19 | 官方团队只读区块（roster + 任务板；投影 `failure` 时在最后有效数据上显示失败） | TODO | `src/client/**` |
+| M3-20 | 降级：`ctx.agentTeams` 不存在时对接点全隐（不报错、不留空面板） | TODO | `src/client/**` |
+| M3-21 | 视觉与可达性：深浅主题、640px 无横向滚动、触控 ≥44px、Esc/Cmd+Enter | TODO | `src/client/**` |
+| M3-22 | 🙋 人工门禁 30 条（你逐条看）+ 与 demo 的逐条一致性核对 | WAIT🙋 | `docs/03-ui-spec.md` §7 |
+
+---
+
+## 6. M4 · 轮次联动（**0 / 4**）
+
+| ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
+|---|---|---|---|
+| M4-01 | 轮次条数据：每轮 `用户消息 N · 注入内容 N`（口径与 S1 一致） | TODO | `src/client/**`、`src/redline/metrics.ts` |
+| M4-02 | 点击某一轮 → 右侧切到该轮**最后一步**（标题写"共 N 步，显示末步"） | TODO | `src/client/**` |
+| M4-03 | 目标会话判据落地（"当前标签页选中的会话" vs agent 在跑的会话，必须可指认） | TODO | `src/client/**` |
+| M4-04 | 产物重打后硬刷新即生效（不重启 `dsh web`）—— 留证据 | TODO | 构建 + 浏览器验证 |
+
+---
+
+## 7. M4.5 · 平台能力验证（**0 / 18**）—— M5 的硬前置
+
+| ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
+|---|---|---|---|
+| M45-01 | 包 A（只读）：`ctx.agents.get(sessionId)` 对当前会话是否可得（V3） | TODO | 探针脚本（临时目录） |
+| M45-02 | 包 A：能否读到替换前的**原文**（V8 关键） | TODO | 探针脚本 |
+| M45-03 | 包 A：`subagents.getProvider('fork')` 是否在册、`startContinuable` 是否可用（V12） | TODO | 探针脚本 |
+| M45-04 | 包 A：`agentTeam` 投影可读性（V10）+ `tryMembership` 对 Lead 的判定（V13） | TODO | 探针脚本 |
+| M45-05 | 🙋 包 B（一次授权）：在**专用可弃会话**里真跑 替换 → 再替换 → 回滚（V7） | WAIT🙋 | 专用会话日志 |
+| M45-06 | 包 B：跨压缩 checkpoint 的版本能否恢复（V9） | WAIT🙋 | 专用会话日志 |
+| M45-07 | 包 B：`spawnTeammate(context:'fork')` 建出的成员是否进 roster、种子是否正确 | WAIT🙋 | 专用会话 + 官方面板 |
+| M45-08 | V1–V6 逐条给结论（读路径与判定是否与真机一致） | TODO | `docs/01-platform-facts.md` §6 |
+| M45-09 | V10 降级契约实测（不可读时行为符合 `docs/03` R5.1.2.1） | TODO | `docs/03-ui-spec.md` |
+| M45-10 | V11：可续接子会话端到端（含**父不在进程** / **父正忙** 两个分支） | TODO | 专用会话日志 |
+| M45-11 | V12：官方团队启用时服务层仍可用（并记录会话里实际存在的 subagent 工具） | TODO | `dump-config` + 真机 |
+| M45-12 | V13：对接面五项（可选注入 / Lead 判定 / spawnTeammate / 任务板 / 投影） | TODO | `docs/01-platform-facts.md` §6 |
+| M45-13 | 失败决策表：V1–V13 每条失败 → 降级路径（禁止"以后再想"） | TODO | `docs/04-roadmap.md` M4.5 |
+| M45-14 | 能力开关（`{agents,fork,compaction,team}`）默认值定死并写进文档 | TODO | `docs/04-roadmap.md` |
+| M45-15 | 同步变更表：开关一变，`docs/00`/`docs/03`/`docs/05` 三处同改（逐项提交 diff） | TODO | 三份文档 |
+| M45-16 | 授权包 A/B 的记录归档（谁批的、何时、结论） | TODO | `docs/08-open-questions.md` §9 |
+| M45-17 | 真机证据回写：每条结论附命令 + 输出片段 | TODO | `docs/01-platform-facts.md` |
+| M45-18 | 复核：M4.5 全绿前不进 M5（硬门禁写进本文件头部） | TODO | 本文件 |
+
+---
+
+## 8. M5 · 快照 → 子会话 → 压缩 → 对接官方团队（**0 / 26**）
+
+| ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
+|---|---|---|---|
+| M5-01 | `child.create` 优先路径：`agentTeams.spawnTeammate(lead,{context:'fork',provider:forkProvider,…})` | TODO | `src/host/orchestrate.ts` |
+| M5-02 | 兜底路径：`subagents.startContinuable({provider:'fork'})`，界面如实标注"裸子会话" | TODO | `src/host/orchestrate.ts`、`src/client/**` |
+| M5-03 | 可选注入 `agentTeams`：团队未启用时插件仍能加载、对接点全隐 | TODO | 插件入口 |
+| M5-04 | 首条任务必须人写（空则拒绝创建） | TODO | `src/host/orchestrate.ts` |
+| M5-05 | 确认框五项内容生成 | TODO | `src/host/orchestrate.ts`、`src/client/**` |
+| M5-06 | 取消零副作用：`child.list` 无新项 + 事件数不变 | TODO | `test/channel/**` |
+| M5-07 | 官方对接（读）：`agentTeam` 投影 / `listTasks` → 面板显示官方那份数据 | TODO | `src/host/team-bridge.ts` |
+| M5-08 | 官方对接（写）：`createTask({subject,description,blockedBy,writeScopes})` | TODO | `src/host/team-bridge.ts` |
+| M5-09 | 官方对接（写）：`updateTask`（`expectedRevision` 过期被拒，不覆盖） | TODO | `src/host/team-bridge.ts` |
+| M5-10 | 派活：`sendMessage(lead,{target,content})` + 如实显示 `accepted`/`queued`（queued 不重发） | TODO | `src/host/team-bridge.ts`、`src/client/**` |
+| M5-11 | 打断：团队成员走 `agentTeams.interrupt`；裸子会话走 `interruptByParent` | TODO | `src/host/orchestrate.ts` |
+| M5-12 | 来源判定 `tryMembership` → 徽章（本项目发起 / 来自 Agent Teams），不按 label 猜 | TODO | `src/host/team-bridge.ts` |
+| M5-13 | 容量：显示 `活跃 N/8` + 触顶给人话（不含糊、不说"稍后重试"） | TODO | `src/client/**`、`src/host/orchestrate.ts` |
+| M5-14 | 压缩体检：在跑 / 未闭合 / 已在压 / 不在本进程 / 服务缺失 → `canCompact` + 理由 | TODO | `src/host/orchestrate.ts` |
+| M5-15 | 压缩确认：列出将被替代的区间与条目数 + 不可逆提示 | TODO | `src/client/**` |
+| M5-16 | 压缩执行：`compactNow` + 失败码人话（busy/cancelled/changed/summary/commit/persistence） | TODO | `src/host/orchestrate.ts` |
+| M5-17 | 压缩后如实显示**实际**范围（不是预估） | TODO | `src/client/**` |
+| M5-18 | 结果回流：读父会话 `subagent-settled` + `pending_results` 已查看标记 | TODO | `src/host/orchestrate.ts` |
+| M5-19 | 三态判定：已收到结算通知 / 有可关联的后续 `turn/start` / 未确认 | TODO | `src/redline/pending.ts` |
+| M5-20 | `plan.next` 次序机器化：waitTurn > applyDrafts > pinInvariants > startChild > compactChild > reviewChild | TODO | `src/redline/plan.ts` |
+| M5-21 | 不膨胀可观测：周期内父会话事件数/字节增量 + 逐条说明来源 | TODO | `src/redline/metrics.ts` |
+| M5-22 | 单测：`plan.next` 每种输入组合（含"到我这为止"） | TODO | `test/edit/**` |
+| M5-23 | 单测：草稿不进种子（只写本地） | TODO | `test/edit/**` |
+| M5-24 | 单测：团队服务缺失 → `team.*` 返回 `null` 且界面隐藏对接点 | TODO | `test/channel/**` |
+| M5-25 | 🙋 端到端验收（授权包③，你在场点按钮）：冻结 → 建成员 → 压缩 → 回流 | WAIT🙋 | `docs/00-scope.md` S5.5 |
+| M5-26 | 回流未确认的人工入口（"让主会话接着做"）可用 | TODO | `src/client/**` |
+
+---
+
+## 9. M6 · 入口与发布准备（**0 / 10**）
+
+| ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
+|---|---|---|---|
+| M6-01 | RPC ops 全量可用（读 12 + 写 13 + `team.*`），逐个可调 | TODO | `src/host/redline-channel.ts` |
+| M6-02 | `/redline` 命令：只读报告 + 一句话建议（`plan.next` 的 reason 必显） | TODO | `src/host/command.ts` |
+| M6-03 | 内部服务导出（`ctx.redline`）：`inspect/apply/annotate/invariants.*/freeze/plan` | TODO | `src/host/service.ts` |
+| M6-04 | README 双语（成对）+ 截图 + 安装/使用/限制 | TODO | `README.md`、`README.zh.md` |
+| M6-05 | CHANGELOG / release notes（简洁双语版式：锚点 + 兼容性一行 + 分类 bullet + 升级命令） | TODO | `CHANGELOG.md`、`docs/releases/**` |
+| M6-06 | 打包与安装说明（本地目录 → npm 的路径） | TODO | `package.json`、`README*.md` |
+| M6-07 | 干净环境安装验证（装得上、卸得掉、无残留） | TODO | 独立 profile 或临时目录 |
+| M6-08 | 许可与来源复核（`LICENSE-Apache-2.0` 原样、`NOTICE`、`UPSTREAM.md` 与 diff 对齐） | TODO | `LICENSE*`、`NOTICE`、`UPSTREAM.md` |
+| M6-09 | 版本与 tag 策略（tag = `package.json` 版本） | TODO | `package.json` |
+| M6-10 | 发布前自检（本文件全绿 + `dump-config` 无冲突 + 两面板并存） | TODO | 本文件 + 只读命令 |
+
+---
+
+## 10. M7+ · 本轮明确不做（要动之前先单独立项）
+
+| ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
+|---|---|---|---|
+| M7-01 | 装配层：**先盘官方**（preset / agent-preset-registry / persona / agent-instructions / 补丁方言）缺什么 | TODO | `docs/00-scope.md` §4.1（只写调研结论） |
+| M7-02 | 只读工具入口（让模型读"有哪些漂移/成员"）—— 默认不做 | TODO | — |
+| M7-03 | 父不在进程时的冷恢复体验（当前：尽力而为 + 如实显示未确认） | TODO | — |
+| M7-04 | 从更早切点分叉（"从某条旧快照重开"）—— 当前只用最新 `turn/end` | TODO | — |
+
+---
+
+## 11. 进度总览（**每次收尾回来改这里**）
+
+| 阶段 | 项数 | DONE | DOING | TODO | WAIT🙋 |
+|---|---|---|---|---|---|
+| X 横切 | 6 | **1** | 3 | 1 | 1 |
+| M0 文档集 | 20 | **20** | 0 | 0 | 0 |
+| M0.5 交互 demo | 15 | **14** | 0 | 0 | 1 |
+| M1 骨架与身份 | 14 | 0 | 0 | 13 | 1 |
+| M2 编辑面 | 28 | 0 | 0 | 28 | 0 |
+| M3 右侧界面 | 22 | 0 | 0 | 21 | 1 |
+| M4 轮次联动 | 4 | 0 | 0 | 4 | 0 |
+| M4.5 能力验证 | 18 | 0 | 0 | 15 | 3 |
+| M5 编排 | 26 | 0 | 0 | 25 | 1 |
+| M6 入口与发布 | 10 | 0 | 0 | 10 | 0 |
+| M7+ 后续 | 4 | 0 | 0 | 4 | 0 |
+| **合计** | **167** | **35** | **3** | **121** | **8** |
+
+> ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
+> 当前卡点：**M05-15 交互定稿（等你）**；其后 **M1-01 授权包①（等你重启）**。

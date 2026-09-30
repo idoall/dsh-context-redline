@@ -69,7 +69,7 @@ The shell comes **entirely from upstream [`dsh-context`](https://github.com/bowe
 | [`docs/08-open-questions.md`](docs/08-open-questions.md) | **Questions to settle** (each with a recommendation) + the external-model review log |
 | [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **Requirement traceability**: every original request and every capability from the WeChat screenshots → which goal → done / not done / downgraded |
 | [`demo/`](demo/README.md) | **Clickable interaction prototype** (M0.5 gate): fake data, real interactions, and a "what does this button do" explain mode |
-| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist**: tickable items, each stating what it does and its completion criterion, flagging the steps that need you |
+| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, 167 items; steps needing you are marked `WAIT🙋` |
 
 > **Numbering note**: `docs/07` used to be the audit of the earlier attempt; it was deleted on 2026-09-30 at the user's request. **The number is not reused**, to avoid confusion with historical references.
 

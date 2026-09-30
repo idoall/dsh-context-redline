@@ -67,7 +67,7 @@
 | [`docs/08-open-questions.md`](docs/08-open-questions.md) | **待拍板问题**（含推荐与理由）+ **外部模型评审记录**（逐条采纳/不采纳） |
 | [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **需求追溯矩阵**：你的原话与图 2/3/4 每一项 → 落在哪条目标 → 做/不做/降级 |
 | [`demo/`](demo/README.md) | **可点击的交互原型**（M0.5 交互门禁）：假数据 + 真交互 + 「这个按钮是做什么的」讲解模式 |
-| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **长任务执行清单**：逐项可勾（`- [x]`），每项都说清"是做什么的 / 完成判据"，并标出哪几步需要你 |
+| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **长任务执行清单（唯一状态源）**：细粒度任务表 —— `ID / 子任务 / 状态 / 文件动作（范围冻结）`，共 167 项，需要你的那几步标 `WAIT🙋` |
 
 > **编号说明**：`docs/07` 曾是"早期那次尝试"的审计文档，已于 2026-09-30 按用户要求删除；**该编号不复用**，以免与历史引用混淆。
 
