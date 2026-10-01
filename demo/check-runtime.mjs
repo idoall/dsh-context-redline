@@ -664,6 +664,24 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.extraNodes = []; S.applied = []; S.drafts = {}; S.editor = null; api.render();
 }
 
+/* ---------------- 子会话的上下文也能编辑：行上必须说清"现在能不能改"（用户 2026-10-01 问） ----------------
+ * 事实：子会话是真会话；面板跟"当前选中的会话"走 → **打开它就能编辑它的上下文**，不需要两套界面。
+ * 两条前提：① 它**轮次闭合**；② 它**在本进程**（docs/03 R5.1.3）。 */
+{
+  const S = api.S();
+  S.children = [
+    { id: '00aaaaaa', src: 'own', state: 'running', label: '跑测试', from: 'snap-1' },
+    { id: '00bbbbbb', src: 'own', state: 'idle', label: '写文档', from: 'snap-1' }
+  ];
+  api.render();
+  const html = registry.get('cardOrch').innerHTML;
+  check('子会话索引：运行中的那一行要说明"轮次闭合前只能看，不能改"', /轮次闭合前只能看，不能改/.test(html));
+  check('子会话索引：空闲的那一行要说明"打开它就能像这里一样编辑"', /打开它 = 面板切到它的上下文，就能像这里一样编辑/.test(html));
+  check('子会话索引：打开按钮的说明里点出"子会话的上下文同样能编辑"', /子会话的上下文同样能编辑/.test(JSON.stringify(api.EXPLAIN['child.open'])));
+  check('子会话索引：说明里点出两条前提（轮次闭合 / 在本进程）', /轮次闭合/.test(api.EXPLAIN['child.open'].effect) && /在本进程/.test(api.EXPLAIN['child.open'].effect));
+  S.children = []; api.render();
+}
+
 /* ---------------- 汇报 ---------------- */
 const bad = results.filter((r) => !r.ok);
 for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);

@@ -50,7 +50,7 @@ const EXPLAIN = {
 
   'orch.freeze': { t: '冻结当前位置', what: '记录一个冻结点：切点（最后一个 turn/end）、条目数、时间、人写备注、在效固定块版本。', effect: '只写插件本地，不写会话、不改模型可见内容。', rev: '可删除', confirm: '要（说明只写本地）', refs: ['docs/00 S5.2', 'docs/03 R5.1'] },
   'orch.spawn': { t: '开子会话', what: '用这个会话已完成的轮次做种子，开一个新的子会话/成员，首条任务由你写。', effect: '优先走官方 spawnTeammate(context:"fork")（进官方名册）；团队不可用时退化为"裸可续接子会话"（界面如实标注）。种子是一次性的。', rev: '会话可归档，但种子不可重来', confirm: '要（框内列五项）', refs: ['docs/06 §3.1 / §4.1', 'docs/01 F33'] },
-  'child.open': { t: '打开', what: '跳到官方视图看这个子会话/成员的完整过程。', effect: '优先在右侧 Sidebar 打开；本插件不重画对话。', rev: '只读跳转', confirm: '不需要', refs: ['docs/03 R5.1.1'] },
+  'child.open': { t: '打开', what: '跳到官方视图看这个子会话/成员的完整过程。', effect: '优先在右侧 Sidebar 打开；本插件不重画对话。**打开之后面板会跟着切到它的上下文** —— 所以子会话的上下文同样能编辑（改条目/批注/存为不变量/冻结/压缩），不需要两套界面。两条前提：① 它**轮次闭合**（正在跑就只能看）；② 它**在本进程**（拿不到它的 live agent 时只剩只读）。', rev: '只读跳转', confirm: '不需要', refs: ['docs/03 R5.1.1 / R5.1.3'] },
   'child.send': { t: '派活（经官方）', what: '给这个成员追加一条任务消息。', effect: '走官方通道（agentTeams.sendMessage），返回 accepted 或 queued；queued 不许重发。', rev: '不可撤销', confirm: '要（收件人/逐字正文/投递方式/理由）', refs: ['docs/06 §3.2', 'docs/01 F32'] },
   'child.totask': { t: '建成官方任务', what: '把这条待办写成官方任务板上的一条任务。', effect: '写进官方任务板——我们显示的就是官方那份数据，不另存一份。', rev: '可在官方任务板更新/关闭', confirm: '要', refs: ['docs/03 R5.1', 'docs/01 F34'] },
   'child.compact': { t: '压缩（不可逆）', what: '把子会话的历史压成摘要。', effect: '先体检（是否空闲/是否有未闭合轮次/是否已在压）。成功后原文被摘要取代，不可逆；失败会给人话与"是否留痕"。', rev: '不可逆', confirm: '要（执行前列出将丢失的区间与条目数）', refs: ['docs/06 §4.2 / §5', 'docs/01 F11'] },
@@ -1039,6 +1039,9 @@ function renderOrch() {
         </div>
         <div class="orch-actions">
           <button class="btn sm ghost" data-act="copen" data-i="${i}" data-explain="child.open">打开</button>
+          <span class="cap">${x.state === 'running'
+            ? '运行中：打开它 = 面板切到它的上下文；<b>轮次闭合前只能看，不能改</b>（要改就先等它空闲或打断）'
+            : '打开它 = 面板切到它的上下文，就能像这里一样编辑'}</span>
           ${x.src === 'own' ? `
             ${S.sw.team ? `
               <button class="btn sm" data-act="csend" data-i="${i}" data-explain="child.send">派活</button>
