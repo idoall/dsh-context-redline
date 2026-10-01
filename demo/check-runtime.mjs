@@ -860,11 +860,10 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   // 快照卡的 4 个块 + 卡片标题各自一个读数（卡片标题那个也算，所以是 5）
   check('块标题：四个块都有右侧"读数"（.bmeta，两端对齐）', (card.match(/class="bmeta"/g) || []).length === 5,
     `个数=${(card.match(/class="bmeta"/g) || []).length}`);
-  check('焦点块：有运行中子会话时给子会话块加 is-focus（用左侧竖条表达，不是彩色描边）', /orchblock is-focus" data-block="children"/.test(card) || /is-focus[^>]*data-block="children"/.test(card));
+  check('块不许加彩色焦点标记（整圈描边/左侧竖条都被用户否掉）', !/is-focus/.test(card));
   check('子会话行：身份行右侧有 ›（状态 + 箭头，一眼知道可进）', /class="chev"[^>]*>›</.test(card));
-  S.snapshots = []; api.render();
-  check('焦点块：没有冻结记录时，冻结块不加 is-focus', !/is-focus[^>]*data-block="freeze"/.test(registry.get('cardOrch').innerHTML));
-  S.children = []; api.render();
+  S.snapshots = []; S.children = []; api.render();
+  check('块不许加彩色焦点标记（无记录时同样）', !/is-focus/.test(registry.get('cardOrch').innerHTML));
 }
 
 /* ---------------- 全页统一语言：卡片标题也要有右读数（与块标题一致） ---------------- */

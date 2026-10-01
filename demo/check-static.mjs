@@ -223,8 +223,9 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
 /* 17) 借鉴 V0 的视觉细节契约（配色不动）：两端对齐读数 / 焦点块左侧竖条 / 行间虚线 / 行右 › / 块底整宽按钮 */
 {
   if (!/\.bmeta\s*\{[^}]*margin-left:\s*auto/.test(css)) problems.push('块标题右读数（.bmeta）必须右对齐（margin-left:auto）');
-  if (!/\.orchblock\.is-focus\s*\{[^}]*inset 3px 0 0/.test(css)) {
-    problems.push('焦点块要用**左侧竖条**（inset 3px 0 0）表达，不要整圈彩色描边（用户不接受彩色聚焦框）');
+  // ⚠️ 用户 2026-10-01 否掉了"焦点块加彩色标记"（整圈描边与左侧竖条都被否）——这里锁死别再回来
+  if (/is-focus|orchblock\s*\{[^}]*box-shadow:\s*inset/.test(css)) {
+    problems.push('快照卡的块不许再加重色焦点标记（整圈描边 / 左侧竖条都已否掉）：与整页风格不和谐');
   }
   if (!/\.orch-id \.chev\s*\{/.test(css)) problems.push('子会话行右需要 › 标记（.orch-id .chev）');
   if (!/\.btn\.block\s*\{/.test(css)) problems.push('块底需要整宽次级按钮样式（.btn.block）');

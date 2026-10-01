@@ -1133,7 +1133,7 @@ function renderOrch() {
          窄屏单列堆叠但每块有自己的边框与标题（不许再挤成一片）。 */''}
     <div class="orchgrid">
 
-    <section class="orchblock${S.snapshots.length ? ' is-focus' : ''}" data-block="freeze">
+    <section class="orchblock" data-block="freeze">
     <div class="subhead blocktitle">冻结 <span class="hint">先钉一个出发点；开子会话就在下面某一条记录上点</span>
       <span class="bmeta">${S.snapshots.length ? `最新 ${esc(S.snapshots[S.snapshots.length - 1].id)} · 第 ${S.snapshots[S.snapshots.length - 1].turn} 轮末 · ${S.snapshots[S.snapshots.length - 1].items} 条` : '还没有记录'}</span></div>
 
@@ -1169,7 +1169,7 @@ function renderOrch() {
 
     </section>
 
-    <section class="orchblock${S.children.some((x) => x.state === 'running') ? ' is-focus' : ''}" data-block="children">
+    <section class="orchblock" data-block="children">
     <div class="subhead blocktitle">子会话 / 成员索引 <span class="hint">官方 teammate 也占同一份额度</span>
       <span class="bmeta">活跃 ${active} / 8 · 共 ${S.children.length} 个</span></div>
     ${c.length === 0 ? '<div class="cap">（还没有子会话）</div>' : c.map((x, i) => {

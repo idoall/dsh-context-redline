@@ -374,10 +374,9 @@ body {
   border-bottom: 1px dashed var(--dsw-alias-border-l1);   /* 标题下一道虚线，块身份一眼可见 */
 }
 /* ---------- 借鉴 V0 的"小细节"（配色不动，只搬结构与边框语言） ----------
- * ① 块标题两端对齐：左块名 + 右读数；② 焦点块用**左侧竖条**而不是整圈彩色描边
- *（用户明确不喜欢彩色聚焦框，见输入框聚焦那条偏好）；③ 行间细虚线；④ 行右"状态 + ›"；⑤ 块底整宽次级按钮。 */
+ * ① 块标题两端对齐：左块名 + 右读数；② 行间细虚线；③ 行右"状态 + ›"；④ 块底整宽次级按钮。
+ * ⚠️ "焦点块加彩色标记"（无论整圈描边还是左侧竖条）已被用户否掉 —— 与整页风格不和谐，别再加回来。 */
 .blocktitle .bmeta { margin-left: auto; font-weight: 400; color: var(--dsw-alias-label-caption); font-size: 12px; }
-.orchblock.is-focus { border-color: var(--dsw-alias-border-l2); box-shadow: inset 3px 0 0 var(--ds-color-indigo); }
 /* 行间细虚线：分类树 / 浏览器行为与分块内的行同一种语言 */
 .catbody .row + .row,
 #cardBrowser .row + .row { border-top: 1px dashed var(--dsw-alias-border-l1); }
