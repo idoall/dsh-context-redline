@@ -9,12 +9,12 @@
 
 | 项 | 内容 |
 |---|---|
-| 产物 | 本文件集（`docs/00`–`docs/08` + `AGENTS.md` + `README*` + `UPSTREAM.md`/`NOTICE`/`LICENSE*`） |
+| 产物 | 本文件集（`docs/00`–`docs/06` + `docs/08`–`docs/11`；`docs/07` **已删除、编号不复用** + `AGENTS.md` + `README*` + `UPSTREAM.md`/`NOTICE`/`LICENSE*`） |
 | 依赖 | 无 |
 | 测试 | 无（文档）；但每条"平台事实"都必须可追溯到 `docs/01` 的出处 |
 | 验收人 | **你 + 其他模型评审** |
 | 授权点 | 无 |
-| 完成标志 | 评审意见回收 → 改文档 → 你确认"按这份做" |
+| 完成标志 | ✅ 已达成：评审意见（R1–R7）回收 → 改文档 → **用户 2026-10-01 裁定"按照建议执行"**（7 条裁定见 `docs/11` 文末） |
 
 ## M0.5 · 静态可交互 demo（**交互门禁**）
 
@@ -33,11 +33,11 @@
 | 项 | 内容 |
 |---|---|
 | 产物 | 新仓库骨架（`package.json`/`tsconfig`/`tsdown`/`vitest` lane/`scripts`/lint/**CI**）；从 tag `v0.59.2` 复制的 `src/`；**命名空间化改造**（`docs/01` F1–F4）；安全的依赖安装顺序（F14/F15）；**配置来源表**；`dsh --profile web --dump-config` 的挂载确认（F23、V1、V2） |
-| 依赖 | M0 确认（**且 `docs/08` Q1/Q2/Q11 已拍板**） |
+| 依赖 | M0 确认（**且 `docs/08` Q1/Q2/Q11 已拍板** —— ✅ 已满足：Q1 包名 = `dsh-context-redline`、Q2 本轮不做图 2 ②、Q11 = A 完整回滚） |
 | 测试 | `tsc --noEmit` exit 0；`vitest run --project edit --project channel` 可跑；**`namespace-contract` 检查绿**；`--dump-config` 无路由/投影 key 冲突 |
 | 验收人 | **自验**（机械可验）+ 你的 `dump-config` 抽看 |
 | 授权点 | 安装依赖（本地，不需授权）；**装进 web profile 需你单独授权** |
-| 风险 | 上游 `src/` 有 ~60 个文件，命名空间化漏一处就**静默降级**（同 key 投影会被顶掉）→ 因此不能只靠人眼 grep |
+| 风险 | 上游 `src/` 实测有 **110 个文件**（`git ls-tree -r v0.59.2 src | wc -l` = 110），命名空间化漏一处就**静默降级**（同 key 投影会被顶掉）→ 因此不能只靠人眼 grep |
 
 **M1 的完成定义（DoD）**
 
@@ -64,7 +64,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 产物 | `src/edit/`：草稿存储、`node.read`（**全文**）、`apply`（**`user/message` 与 `tool/result`** 的 surface replace，校验照 `docs/01` F6/F7 写死；**`assistant/message` 一律拒绝**并给稳定原因码）、`rollback`（版本历史 + 恢复）、`annotate`（+ 作废范围）、不变量（逐字/版本/workspace/漂移检查/显式重注入）、sqlite（含 `schema_version` 与**幂等迁移**）；`src/shared/redline-route.ts`（两半共用）；`src/host/redline-channel.ts` |
+| 产物 | `src/redline/`（纯逻辑：草稿存储、`node.read`（**全文**）、`apply`（**`user/message` 与 `tool/result`** 的 surface replace，校验照 `docs/01` F6/F7 写死；**`assistant/message` 一律拒绝**并给稳定原因码）、`rollback`（版本历史 + 恢复）、`annotate`（+ 作废范围）、固定块（逐字/版本/workspace/漂移检查/显式重注入）、sqlite（含 `schema_version` 与**幂等迁移**））；`src/shared/redline-route.ts` + `src/shared/redline-errors.ts`（两半共用的对外契约）；`src/host/redline-channel.ts`（唯一上游接线） |
 | 依赖 | M1 |
 | 测试 | 自有 lane：纯逻辑（资格判定 / 行投影 / 漂移逐字判定 / 范围校验 / 快照序列化）；**真实路由级端到端**（捕获宿主注册的精确路由 → 按真实 RPC 信封调用 → 读回 SQLite/草稿文件断言） |
 | 验收人 | **代码级自验**（fake ctx + detached 会话）→ 我；**平台语义**（真机会话上的 replace/回滚/历史正文读取）→ **留给 M4.5 复验**，不由 M2 下定论 |
@@ -72,7 +72,7 @@
 | 口径 | 本阶段的"通过"= **代码与不变量成立**；凡依赖 V7/V8/V9 的条目一律标 **`conditional`**，不得当作平台事实的结论 |
 
 **M2 的 DoD（逐条可断言；带 `conditional` 的等待 M4.5）**
-1. `node.read` 返回的正文 == 事件里的**完整正文**，且**不等于** 80 字预览（封死 `docs/07` §3 的缺陷）。
+1. `node.read` 返回的正文 == 事件里的**完整正文**，且**不等于** 80 字预览（封死早期那次尝试的缺陷——其审计文档 `docs/07` **已删除，编号不复用**，结论见 `docs/01` F35）。
 2. 轮次未闭合 → apply/annotate 均被拒（有测试）。
 3. 已被遮蔽的节点 → apply 被拒（有测试）+ 资格判定给出 `canRewrite:false` 与原因码。
 4. 无草稿 / 无实质改动 → 被拒（有测试）。
@@ -81,8 +81,8 @@
 7. workspace 级固定块在**另一个 sessionId** 下可见（有测试）。
 8. 逐字判定：改一个字即算漂移（有测试）。
 9. **首启空库**（**已按 `docs/08` Q8 降级**）：在一个**空数据目录**上首次启动 → 能建库、写入正确的 `schema_version`、固定块增删改查正常；**代码里不得残留任何"读旧 schema"的兼容分支**（用户已删除旧数据目录，没有旧数据要迁）。
-10. **替换体可再替换**：连续两次改写后，`deriveMessages()` 逐字等于第二次的内容（有测试）。`conditional`：依赖 V7 的**真机会话**复验。
-11. **回滚**：连续两次改写后回滚到原始版本，`deriveMessages()` **逐字等于**最初原文；版本历史链每一步的 seq 都能指认（有测试）。`conditional`：正文来自全量日志这一条依赖 **V8**；V8 未通过时按 `history-unavailable` 降级路径实现（有测试），不得用 80 字预览冒充。
+10. **替换体可再替换**：连续两次改写后，**纯函数断言**（自写 fold 等价物；**不许用 live Session 的同步读 API**，已废弃的 `deriveMessages` 即属此类，见 D6）逐字等于第二次的内容（有测试）。`conditional`：依赖 V7 的**真机会话**复验。
+11. **回滚**：连续两次改写后回滚到原始版本，**纯函数断言**（同上）**逐字等于**最初原文；版本历史链每一步的 seq 都能指认（有测试）。`conditional`：正文来自全量日志这一条依赖 **V8**；V8 未通过时按 `history-unavailable` 降级路径实现（有测试），不得用 80 字预览冒充。
 12. **`assistant/message` 一律拒绝**：能力判定返回 `canRewrite:false` + 稳定原因码；即使强行调用写入口也返回**可读错误**而非平台异常（有测试，反向验证：把原因码去掉必须红）。
 
 ## M3 · 右侧可编辑界面
@@ -126,7 +126,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 产物 | `src/orchestrate/`：冻结记录；**建子会话（A′ 对接官方）**——**优先** `ctx.agentTeams.spawnTeammate(lead, { context:'fork', provider:<forkProvider>, … })`（进 roster 的正式成员，种子=父会话已完成轮次），**兜底** `ctx.subagents.startContinuable({provider:'fork'})`（裸子会话，界面如实标注）；**官方对接**：`team.tasks`/`team.members` 读投影、`createTask`/`updateTask` 写官方任务板、`sendMessage` **经官方**派活、`interrupt`（团队成员）／`interruptByParent`（裸子会话）；`ctx.compaction.compactNow(...)` + 失败码映射；**结果回流可见性**（读父会话 `subagent-settled`）；`plan.next` 判定与面板。**可选注入** `agentTeams`（团队未启用时对接点全部消失） |
+| 产物 | `src/redline/`（编排判定，纯逻辑）+ `src/client/`（面板）+ `src/host/redline-channel.ts`（唯一上游接线）：冻结记录；**建子会话（A′ 对接官方）**——**优先** `ctx.agentTeams.spawnTeammate(lead, { context:'fork', provider:<forkProvider>, … })`（进 roster 的正式成员，种子=父会话已完成轮次），**兜底** `ctx.subagents.startContinuable({provider:'fork'})`（裸子会话，界面如实标注）；**官方对接**：`team.tasks`/`team.members` 读投影、`createTask`/`updateTask` 写官方任务板、`sendMessage` **经官方**派活、`interrupt`（团队成员）／`interruptByParent`（裸子会话）；`ctx.compaction.compactNow(...)` + 失败码映射；**结果回流可见性**（读父会话 `subagent-settled`）；`plan.next` 判定与面板。**可选注入** `agentTeams`（团队未启用时对接点全部消失） |
 | 依赖 | **M4.5 已逐项给出结论**，且 **V12/V13 必须通过**（服务层调用可用、`spawnTeammate(context:'fork')` 能建出成员） |
 | 测试 | 纯逻辑（`plan.next` 的判定次序与"是否需要授权"）可自验；**真机每一步都要证据**：新成员在**官方 roster**里可见、种子=父会话已完成轮次、父会话新轮次**不进去**、压缩后出现 `compaction/*`、`createTask` 后**官方任务板能看到**、`sendMessage` 返回 `accepted/queued` |
 | 验收人 | **你在场，逐动作授权** |
@@ -148,20 +148,20 @@
 
 | 项 | 内容 |
 |---|---|
-| 产物 | 主机斜杠命令 `/redline`（`snapshot`/`children`/`compact`/`invariants`/`drift`）、内部服务导出、README 双语、peer/engines 声明到 `0.2.0-rc.1`（上界 `<0.3.0`）、发布链路（沿用你既有插件的 CI/发版习惯） |
+| 产物 | 主机斜杠命令 `/redline`（`snapshot`/`children`/`compact`/`invariants`/`drift`）、内部服务导出、README 双语、peer/engines 声明 `>=0.2.0-rc.2 <0.3.0`、发布链路（沿用你既有插件的 CI/发版习惯） |
 | 依赖 | M5 |
 | 测试 | 命令的真实路由级测试（复用 M2 的模式）；`dsh --profile web --dump-config` 再确认一次 |
 | 验收人 | 你 |
 | 授权点 | 发布/push/开 PR **必须单独授权**（你的既有规则） |
 
-## M7+ · 待确认的后续（**现在不做**）
+## M7+ · 已定"本轮不做"的后续（**现在不做**）
 
 | 项 | 内容 | 前置 |
 |---|---|---|
-| M7a | 图 2 的"上下文装配"（块库 / 模板 / extends 组装 / 一致性合并） | 需要单独的数据模型设计（见 `docs/00` §4） |
-| M7b | 给正在运行的会话注入"新能力描述"（`ctx.systemPrompt.section` / `agent.inject`） | 需要先定"这段文字由谁写"（与"不许 AI 生成内容"冲突，见 `docs/08` Q5） |
-| M7c | model-facing tool 入口 | 见 `docs/08` Q3 |
-| M7d | **父会话不在进程时的冷恢复与恢复体验**（注意：`startContinuable` 本身**是 M5 的默认主线**，不在这里） | 需要先有 M5；见 `docs/08` Q6 的影响面 |
+| M7a | 图 2 的"上下文装配"（块库 / 模板 / extends 组装 / 一致性合并） | 需要单独的数据模型设计（见 `docs/00` §4）；✅ `docs/08` Q2 已定**本轮不做**，前置改为"**先盘官方那套缺什么**" |
+| M7b | 给正在运行的会话注入"新能力描述"（`ctx.systemPrompt.section` / `agent.inject`） | 需要先定"这段文字由谁写"（与"不许 AI 生成内容"冲突）；✅ `docs/08` Q5 = 🔧 默认已定：**v1 不做**，M7b 再议 |
+| M7c | model-facing tool 入口 | ✅ `docs/08` Q3 = 🔧 默认已定：**v1 不做**（只读工具也留到 M7） |
+| M7d | **父会话不在进程时的冷恢复与恢复体验**（注意：`startContinuable` 本身**是 M5 的默认主线**，不在这里） | 需要先有 M5；✅ `docs/08` Q6 已定 = **可续接**，其影响面见该条 |
 
 ---
 

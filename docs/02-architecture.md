@@ -22,14 +22,14 @@
 │  · 左侧：统计 / Token / 趋势图（轮次条，每轮标「用户消息 N · 注入内容 N」）    │
 │          「第 N 轮 · 第 M 步」卡片（点它 → 驱动右侧）                         │
 │  · 右侧：上下文浏览器（分类 + 条数/token/占比 + 步级下拉 + 每行 #seq）        │
-│          ＋ 行内动作条（编辑/批注/存为不变量/应用到会话）                     │
+│          ＋ 行内动作条（编辑/批注/钉住这一段/应用到会话）                     │
 │          ＋ 行下内联编辑器（kind-aware，不弹窗）                             │
 │          ＋ 常驻「还有 N 条未生效」                                        │
 │          ＋ 快照 / 子会话 面板（冻结 → 开子会话 → 压缩 → 派活）               │
 └────────────────────────────────────────────────────────────────────────────┘
                                    ▲ ▼  RPC（/api/dsh-context-redline/redline）
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ L3  编辑面  src/edit/                                                      │
+│ L3  编辑面  src/redline/                                                   │
 │  drafts      本地草稿（不进会话；原子写 JSON）                              │
 │  inspect     取全文（编辑器的唯一预填来源，**不是**预览）                    │
 │  apply       遮蔽改写：surface replace（user / tool-result；**assistant 平台不支持**，见 docs/01 F7.2）
@@ -39,13 +39,13 @@
 └────────────────────────────────────────────────────────────────────────────┘
                                    ▲ ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
-│ L2  编排面  src/orchestrate/                                               │
+│ L2  编排面  src/redline/orchestrate/                                       │
 │  freeze      冻结点记录（cutSeq = 最后一个 turn/end；不写会话）              │
-│  child       子会话（startContinuable({provider:'fork'})：种子=父会话已完成轮次│
-│              **可续接** → 收工由平台自动回流结算通知，见 docs/06 §3.1）       │
+│  child       子会话（startContinuable({ provider:'fork', label, request:{parent,prompt}, signal })│
+│              ——种子由平台 fork provider 自算；**可续接** → 收工由平台自动回流结算通知（docs/06 §3.1）│
 │  compact     子会话压缩（ctx.compaction.compactNow(childAgent, signal)）     │
-│  steer       派活 / 看状态 / 打断（sendMessage / subagentCatalog / interrupt）│
-│  plan        纯函数判定「下一步该做什么 + 是否需要授权」                      │
+│  steer       发消息 / 看状态 / 打断（转发 ctx.subagents.prompt / subagentCatalog / interrupt）│
+│  plan        纯函数判定「下一步该做什么 + 是否需要确认框」                    │
 └────────────────────────────────────────────────────────────────────────────┘
                                    ▲ ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -63,7 +63,7 @@
 ```
 
 **为什么读不全走投影**：投影是**我们自己的 fold 单元**（为了做趋势/历史/占比），而"某一条的完整正文"必须问宿主——
-所以 `inspect` 用 `ctx.sessionQuery`，不用投影里的 `text`（投影里的 `text` 是 80 字预览，见 `docs/07` §3）。
+所以 `inspect` 用 `ctx.sessionQuery`，不用投影里的 `text`（投影里的 `text` 是 80 字预览；早期审计文档 `docs/07` 已删除，结论见 `docs/01` F35）。
 
 ---
 
@@ -89,14 +89,19 @@
 ```
 ① 草稿全部提交（否则改动不在日志里 → 不会进种子）      ← 最易错的一条
 ② （建议）目标/约束存成 workspace 级固定块             ← 子会话要靠它守住漂移
-③ 冻结：写一条 freeze 记录（cutSeq / 条目数 / 摘要 / 在效固定块版本 / 时间 / 备注）
+③ 冻结：写一条 freeze 记录（cutSeq / 条目数 / digest（内容哈希与计数，**不是**人话摘要）/ 在效固定块版本 / 时间 / 备注）
         ——只写我们自己的库，**不写会话**
-④ 开子会话（**可续接**，必须）：
-        ctx.subagents.startContinuable({ provider: 'fork', parent: ctx.agents.get(sessionId),
-                                         prompt: withContinuableReturnGuidance(parentId, 人写的首条任务),
-                                         label, signal })
-        ——种子 = 父会话「最后一个 turn/end」之前的全部事件（含已应用的编辑）；其后父会话新轮次不进子会话
-        ——**返回指引不能省**：不然子会话不知道要给父会话回传（docs/01 F12.1）
+④ 开子会话（**可续接**，必须）——**以安装树 `.d.ts` 的签名为准**（`ContinuableStartSpec`，实测）：
+        ctx.subagents.startContinuable({
+          provider: 'fork',
+          label: 短标签,                                  // **必填**
+          request: { parent: ctx.agents.get(sessionId),   // 父 Agent 在 request 里
+                     prompt: 人写的首条任务 },             // ContentBlock[]
+          signal,
+        })
+        ——种子 = 父会话「最后一个 turn/end」**及其之前**的全部事件（含已应用的编辑），**由平台 fork provider 自算**
+          （它内部用的是已废弃的同步读，**与我们无关**）；其后父会话新轮次不进子会话
+        ——**返回指引由运行时自己加**（`send_message` 工具可用时即可用）；`withContinuableReturnGuidance` 是运行时内部函数 → **禁止** import/复刻（`docs/01` F12.1）
 ⑤ 压缩：子会话空闲时 ctx.compaction.compactNow(子 Agent, signal)
         ——不可逆；失败码映射成人话（busy → "等它空闲"）
 ⑥ 指挥：sendMessage(父 Agent, childId, 人写的任务, {signal}) / 读 subagentCatalog 看状态 / interruptByParent
@@ -110,40 +115,43 @@
 
 ```
 src/
-├─ host/            ← 上游 v0.59.2（复制；改动面尽量小，见 UPSTREAM.md §3.2）
+├─ host/            ← 上游 tag v0.59.2（复制；改动面尽量小，见 UPSTREAM.md §3.2）
 │   ├─ index.ts         挂载点（上游只在此加一行 watch 我们的通道）
-│   ├─ fold.ts          投影 fold（上游）
+│   ├─ redline-channel.ts ★ **我们唯一的上游接线文件**（RPC 端点 + `op` 分发 + 注入 host 服务）
+│   ├─ fold.ts          投影 fold（上游；key 已改名，见 docs/01 F2）
 │   └─ ...
-├─ client/          ← 上游 v0.59.2（复制）
+├─ client/          ← 上游 tag v0.59.2（复制）
 │   ├─ components/browser.tsx     ★ 我们改：动作条 / 内联编辑器 / 轮次选择 prop
 │   ├─ components/contextView.tsx ★ 我们改：编辑 hook 接线 / 轮次联动 / 快照面板
 │   ├─ i18n.ts                    ★ 我们改：新文案 + 补齐上游缺的 key
 │   └─ ...
-├─ edit/            ← 我们新增：编辑面
+├─ redline/         ← 我们新增：**全部纯逻辑**（禁 `node:*` / DOM / React；edit lane 直接单测）
 │   ├─ drafts.ts        草稿存储（原子写）
 │   ├─ inspect.ts       取全文（sessionQuery）
 │   ├─ apply.ts         遮蔽改写（surface replace，规则照 docs/01 F6/F7 写死）
 │   ├─ annotate.ts      追加更正 + 作废范围
+│   ├─ eligibility.ts   能力判定（**按底层事件类型**给按钮，docs/01 F7.2）
 │   ├─ invariants.ts    逐字固定块（版本 / workspace 作用域 / 漂移判定）
+│   ├─ orchestrate/     ← 编排面的纯逻辑（只装配请求与判定，**不直接调平台服务**）
+│   │   ├─ freeze.ts        冻结点记录
+│   │   ├─ child.ts         建子会话 / 建团队成员的请求装配（真正执行在 host 通道）
+│   │   ├─ compact.ts       压缩体检 + 失败码 → 人话
+│   │   ├─ steer.ts         发消息 / 打断的请求装配（转发官方）
+│   │   └─ plan.ts          纯函数「下一步该做什么」+ 事实装配
 │   └─ store.ts         sqlite（schema_version / invariants / history / snapshots /
 │                        snapshot_links / pending_results）——**不存 children**：
 │                        子关系与状态一律来自平台投影与父日志（docs/01 F13.1）
-├─ orchestrate/     ← 我们新增：编排面
-│   ├─ freeze.ts        冻结点记录
-│   ├─ child.ts         startContinuable({provider:'fork'}) + 返回指引 + 目录/状态读取
-│   ├─ compact.ts       ctx.compaction.compactNow(…)
-│   ├─ steer.ts         sendMessage / listChildren / interrupt
-│   └─ plan.ts          纯函数「下一步该做什么」+ 事实装配
 ├─ shared/          ← 两半共用（**唯一**路由与请求形状来源，防 404）
 │   └─ redline-route.ts
-└─ index.ts             插件入口（export name / inject）
+└─ （无 `src/index.ts`：Host 入口 = `src/host/index.ts`，客户端入口 = `src/client/index.ts`）
 tests/
-└─ redline/         ← 自有 lane（纯逻辑 + 真实路由级；不 import 客户端 primitives）
+├─ edit/            ← 自有 lane（纯逻辑；不 import 客户端 primitives）
+└─ channel/         ← 自有 lane（真实路由级；捕获精确 Fetch 路由后按真实信封调用）
 ```
 
-**纪律**：客户端 bundle **不得** import `src/edit`/`src/orchestrate`/`src/host`（上游有 bundle purity 检查）。
-两半只能通过 `shared/` 的类型与常量交流（早期那次尝试 的 `tests/redline/route-pairing.spec.ts` 就是守这条的）。
-`src/edit/rows.ts` 这类"纯投影"可以放在能被客户端 `import type` 的位置（编译后无运行时依赖）。
+**纪律**：客户端 bundle **不得** import `src/redline`/`src/host`（上游有 bundle purity 检查）。
+两半只能通过 `shared/` 的类型与常量交流（**历史归档线**里，早期那次尝试的 `tests/redline/route-pairing.spec.ts` 就是守这条的；该目录名已废弃，现行是 `tests/edit/`）。
+`src/redline/rows.ts` 这类"纯投影"可以放在能被客户端 `import type` 的位置（编译后无运行时依赖）。
 
 ---
 
@@ -165,7 +173,7 @@ tests/
 
 > `op` 名与请求/响应形状**只能**在 `src/shared/redline-route.ts` 里定义（两半共用；这是防"前缀/形状不成对 404"的唯一手段）。
 
-**只读（不写会话，不需要授权）**
+**只读（不写会话，不需要确认框）—— 14 条**
 
 | op | 请求 | 响应 | 说明 |
 |---|---|---|---|
@@ -177,14 +185,22 @@ tests/
 | `invariant.list` | `{sessionId}` | `InvariantBlock[]` | 含 workspace 级 |
 | `invariant.history` | `{id}` | `InvariantBlock[]` | 全部版本（含退休） |
 | `invariant.drift` | `{sessionId}` | `{id, label, present, firstSeenSeq?}[]` | 漂移检查（逐字比对当前 surface） |
-| `plan.next` | `{sessionId}` | `NextStep` | 「下一步该做什么 + 是否需要授权 + 理由」 |
+| `plan.next` | `{sessionId}` | `NextStep` | 「下一步该做什么 + 是否需要确认框（点确认即授权）+ 理由」 |
 | `snapshot.list` | `{sessionId}` | `FreezeRecord[]` | 冻结记录 |
 | `child.list` | `{sessionId}` | `ChildRow[]` | **读平台投影**：父会话的 `subagentCatalog` / `agentTeam` + 各子会话的 `subagentTiming` / 用量。**不自建 children 表**、不推断状态（`docs/01` F13.1/F24/F34）；用 `tryMembership` 标来源 |
 | `team.members` | `{sessionId}` | `TeamMemberView[]` \| `null` | 转发官方 `ctx.agentTeams.listMembers(lead)`；**服务不存在 → 返回 `null`**（不是空数组，界面据此隐藏对接点） |
 | `team.tasks` | `{sessionId}` | `TeamTaskView[]` \| `null` | 读官方 `agentTeam` 投影 / `listTasks(lead)`——**同一份数据**，不复制、不缓存（`docs/01` F34） |
 | `compact.state` | `{childId}` | `{canCompact, reason}` | 压缩前置条件体检（不写会话） |
 
-**写入（**每一条都需要界面事前列清单 + 用户点头**）**
+> **条数（与 `docs/10` M0-09 / M6-01 的「读 12 + 写 13 + `team.*`」对齐）**：
+> 只读 **14**（= 自有读 **12** + 官方团队读 `team.members`/`team.tasks` **2**）；
+> 写入 **13**（表一，含 `child.interrupt`）；官方团队写入 **4**（表二）。合计 **31**。
+> 官方团队服务不存在（团队未启用）时，`team.*` 一律返回 `null`（不是空数组），界面据此**隐藏**对接点。
+
+**写入（表一：本插件数据 / 会话日志 / 子会话通道）—— 13 条**
+
+> 每一条都要求界面先出**确认框**（短警示 + 本次清单 + 理由）；**用户点「确认」即为该次授权**——
+> 这不是"逐动作找人点头"（D5）。逐动作必须列的清单见 [`docs/06`](06-orchestration.md) §4 的 A1–A11。
 
 | op | 请求 | 响应 | 写哪里 | 可逆？ |
 |---|---|---|---|---|
@@ -197,9 +213,22 @@ tests/
 | `invariant.retire` | `{id}` | `{id, retired:true}` | 我们的 sqlite | ✅ |
 | `invariant.inject` | `{sessionId, id, reason}` | `{newSeq, flushed}` | **会话日志**（追加 user 消息） | ❌ |
 | `snapshot.create` | `{sessionId, label?, note?}` | `FreezeRecord` | 我们的 sqlite | ✅ 可删 |
-| `child.fork` | `{sessionId, snapshotId?, label, prompt}` | `{childId}` | **创建新会话** | 会话可归档，但父会话种子是**一次性**的 |
+| `child.fork` | `{sessionId, snapshotId?, label, prompt}` | `{childId}` | **创建新会话**（优先 `ctx.agentTeams.spawnTeammate`；兜底 `ctx.subagents.startContinuable({provider:'fork', label, request:{parent, prompt}, signal})`） | 会话可归档，但父会话种子是**一次性**的 |
 | `child.compact` | `{childId}` | `{compacted, items?, reason?}` | **子会话历史被摘要取代** | ❌ **不可逆** |
-| `child.send` | `{sessionId, childId, text, mode:'queue'\|'steer'}` | `{messageId}` | 子会话 inbox | ❌ |
+| `child.prompt` | `{requestId（**由我们铸造**：`SubagentPromptRequestId`）, parentSessionId, childSessionId, mode:'continuable', delivery:'queue'\|'steer', content: PromptContentPart[]}` | `{messageId}`（`ctx.subagents.prompt(request, signal)` 的回执） | 子会话 inbox（人写的一条话 = 它的**下一个轮次**） | ❌ |
+| `child.interrupt` | `{childId, parentSessionId}` | `{accepted:true}` | 子会话（`ctx.subagents.interruptByParent(childSessionId, parentSessionId, 'continuable')`；**团队成员**走表二 `team.interrupt`） | ❌ 已提交的工作不回滚 |
+
+**写入（表二：官方 Agent Teams 转发）—— 4 条**
+
+> 团队不可用时这 4 个 op 返回 `null`，界面**不出现**对接点（docs/01 F31/F33、docs/06 §3.2）。
+> `lead` = `ctx.agents.get(sessionId)` 拿到的 live Lead Agent。
+
+| op | 请求 | 响应 | 写哪里 | 可逆？ |
+|---|---|---|---|---|
+| `team.createTask` | `{subject, description, blockedBy?, writeScopes?}` | `TeamTaskView` \| `null` | 官方 Lead 会话日志（`ctx.agentTeams.createTask(lead, request)`） | ❌ 但可用 `updateTask` 改 |
+| `team.updateTask` | `{taskId, expectedRevision, action, subject?, description?, blockedBy?, writeScopes?, owner?}` | `TeamTaskView` \| `null` | 同上（**revision 乐观校验**：`expectedRevision` 过期即被拒，**不覆盖**） | ❌ |
+| `team.sendMessage` | `{target（名册名）, content: ContentBlock[]}` | `{messageId, status:'accepted'\|'queued'}` \| `null` | 官方成员邮箱（`ctx.agentTeams.sendMessage(lead, request)`） | ❌；`queued` **不重发**（如实显示） |
+| `team.interrupt` | `{target（名册名）}` | `{previousStatus:'running'\|'inactive'}` \| `null` | 官方成员（`ctx.agentTeams.interrupt(lead, targetName)`） | ❌ 已提交的工作不回滚 |
 
 ### 5.3 主机斜杠命令
 
@@ -242,6 +271,7 @@ $DSH_HOME/dsh-context-redline/
 > ⟹ **不要复制一份 children 表**去和平台对账——那必然会漂移（`docs/01` F13.1）。
 
 - **不写** `$DSH_HOME/profiles/*`、不写 DSH 安装目录、不写会话日志（除非用户点了写入类动作）。
+- **`digest` = 内容哈希（`counts` = 条目数等计数）**，**不是**人话摘要：本插件**不生成任何摘要/总结**（N4：不产生 AI 生成内容），冻结记录里也不许出现"摘要"字样。
 - `schema_version` 存在的理由：要**继承**早期那次尝试 时期已经存在的 `invariants` 表（用户已有的固定块不该丢）。
 - 机密性：这里存的是**用户自己的上下文正文**（可能含私密内容），与 DSH 会话日志同等敏感；不做任何外发。
 
@@ -265,7 +295,7 @@ $DSH_HOME/dsh-context-redline/
 
 ## 8. 与上游的关系（工程约定）
 
-1. **改动越少越好**：上游文件只在"必须接线"处改（`browser.tsx` / `contextView.tsx` / `i18n.ts` / `client/index.ts` / `host/index.ts`）；我们的东西集中在 `src/edit/`、`src/orchestrate/`、`src/shared/redline-route.ts`、`src/host/redline-channel.ts`。
+1. **改动越少越好**：上游文件只在"必须接线"处改（`browser.tsx` / `contextView.tsx` / `i18n.ts` / `client/index.ts` / `host/index.ts`）；我们的东西集中在 `src/redline/`（含 `src/redline/orchestrate/` 的编排纯逻辑）、`src/shared/redline-route.ts`、`src/host/redline-channel.ts`（**唯一**上游接线文件）。
 2. **基线固定**在 tag `v0.59.2`；上游 `main` 已在其后（`6778768`，2026-09-29），**按需 cherry-pick**，不追。
 3. 每次改上游文件，都要在 `UPSTREAM.md` §3.2 记一行"改了什么、为什么"。
 4. 上游的告警/遥测类入口（版本检查、社交预览等）M1 复制时按需裁掉——它们会引入我们不需要的网络行为。

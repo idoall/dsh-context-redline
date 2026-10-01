@@ -21,7 +21,7 @@
 - M0 文档集：已完成（docs/00–docs/11，过了 7 轮外部模型评审）
 - M0.5 可交互 demo：已交付（demo/），**浏览器实测已完成**（1440 / 880 / 879 / 390 四种视口，
   原始数据 + 截图在 demo/screenshots/measure-log.md），修掉了实测抓出的"自测面板显示 undefined"，
-  冒烟测试 58/58。**当前卡在等用户按 R 编号提交互意见 → 改到"交互定稿"**
+  冒烟测试 **206/206**（`node demo/check-runtime.mjs`；静态契约另跑 `node demo/check-static.mjs`）。**当前卡在等用户按 R 编号提交互意见 → 改到"交互定稿"**
 - M1 及之后：未开工；**插件实现代码仍是零行**（用户没点头前不写）
 
 【硬约束（必须遵守）】
@@ -33,7 +33,7 @@
 
 【环境现状（2026-09-30 起）】
 - 浏览器工具已恢复，**新会话可用，且已实测跑通**：官方 @deepseek-ai/dsh-browser-use +
-  @deepseek-ai/dsh-experimental-browser-use-playwright-mcp（0.2.0-rc.1，headless Chromium；
+  @deepseek-ai/dsh-experimental-browser-use-playwright-mcp（**现行 0.2.0-rc.2**；历史记录里出现过 rc.1，headless Chromium；
   chromium rev 1243 已在 ~/Library/Caches/ms-playwright 缓存）。
   ⚠️ 两条限制：① 只是本机 headless，不是用户的手机/Chrome；② **无触屏** →
   `(pointer: coarse)` 不命中，44px 触控目标只能把 CSS 规则搬出来模拟验证。
@@ -46,7 +46,8 @@
   服务由 demo/serve.py 提供并统一发 Cache-Control: no-store（刷新即最新版）。
 - demo 自检（不需要浏览器）：
   node demo/check-static.mjs   # id/class/讲解词契约 + **单文件版指纹是否最新**
-  node demo/check-runtime.mjs  # 最小 DOM 桩真跑渲染与切换（58 项）
+  node demo/check-runtime.mjs  # 最小 DOM 桩真跑渲染与切换（206 项）
+node scripts/check-docs.mjs   # 文档一致性（版本/目录/命名/计数/表格/重复标题/A17）
   node demo/build-standalone.mjs  # 改完 css/js 必须重打包单文件版（会打印新指纹）
 
 【第一件事】
@@ -67,11 +68,11 @@
 |---|---|
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
-| 最新提交 | `git log -1`：`demo(M0.5)+docs: 浏览器实测（1440/880/879/390）+ 修自测面板 undefined`（哈希不写死，避免"改完文件哈希就变"的自指） |
-| 进度 | `docs/10`：**DONE 76 / 共 209**（DOING 4 · TODO 121 · WAIT🙋 8） |
+| 最新提交 | 以 `git log -1` 为准（哈希不写死）；**本轮在改文档**：文档 review 裁定见本文末 + `scripts/check-docs.mjs` |
+| 进度 | `docs/10`：**DONE 76 / 共 211**（DOING 4 · TODO 123 · WAIT🙋 8） |
 | 当前卡点 | **M05-15 交互定稿（等用户按 R 编号提意见）**；其后 `M1-01 授权包①（等用户重启）` |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store） |
-| 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 6 张截图） |
+| 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
 | 浏览器工具 | 已恢复且**本会话已实测跑通**（`navigate/resize/screenshot/evaluate/console_messages`）；限制：headless、无触屏（`pointer:coarse` 不命中） |
 | 回退（浏览器控制） | 还原 `$DSH_HOME/profiles/web/cordis.patch.yml.before-browser-use-restore-20260930-184704` + `dsh plugin --profile web remove` 两个包 + 用户重启 |
 
@@ -106,3 +107,32 @@
    差异只在给用户看的原因与徽章；单测锁定这个优先级。
 7. **每完成一条任务：在 `docs/10` 把该条验收标准打勾并附原始输出**；进度随时可用
    `node scripts/progress.mjs` 查看（哪些已完成 / 哪些未完成）。
+
+---
+
+## 文档 Review 裁定（2026-10-01 用户：「按照建议执行」）
+
+> 这 7 条是**唯一口径**；docs/00–docs/11、README、UPSTREAM、AGENTS 全部按它对齐。
+> 机器检查：`node scripts/check-docs.mjs`（版本 / 目录 / 命名 / 计数 / 表格 / 重复标题 / A17），**必须退出码 0**。
+
+| # | 议题 | 裁定 |
+|---|---|---|
+| **D1** | 运行时版本 | **`0.2.0-rc.2`**（实测：安装树 `@deepseek-ai/dsh` 与 profile 内 `browser-use` 两包都是 rc.2）。peer 写 `>=0.2.0-rc.2 <0.3.0`。提到 rc.1 只允许出现在**显式标注「历史」**的行（如当时装了什么的记录） |
+| **D2** | 参考插件 | **复制基线 = git tag `v0.59.2`**（写法必须带 `v` 前缀或「基线」字样）；**并存对手 = profile 实装 `0.60.0`**（npm 版本声明不许写 0.59.2）。已实测：0.60.0 仍注册同样的三条 `/api/dsh-context/*` 路由与 `contextTimeline/headers/activity` 投影 key ⟹ F1/F2 冲突结论不变 |
+
+| **D3.1** | `src/host/` 下**只放我们自己的接线文件，且必须带 `redline-` 前缀**（`redline-channel.ts` / `redline-command.ts` / `redline-service.ts`）；其余逻辑（编排、冻结、团队桥、草稿、固定块、快照）一律 `src/redline/**`；**上游文件**（`src/host/index.ts`、`settings.ts`、`src/client/*` 等）只在必须接线处改动 |
+| **D3** | 目录定版（**唯一一套**） | 实现 = `src/redline/**`（纯逻辑，禁 `node:*`/DOM/React）+ `src/host/redline-channel.ts`（**唯一**上游接线文件）+ `src/client/**` + `src/shared/**`；测试 = `tests/edit/**`、`tests/channel/**`（`*.spec.ts`）。`src/edit/**`、`src/orchestrate/**`、`src/edit/pure/**`、`tests/redline/**`、`test/**`（单数）**都是归档线旧名**，只允许出现在带「归档/历史/旧」的行 |
+| **D4** | 装配时序 | **授权包① 是 M1 的收口动作，不是第一步**：仓库内骨架 + `tsc`/`tsdown`/`vitest` 全绿 → 装配进 web profile → `dsh --profile web --dump-config` 无冲突 → **停下等用户重启** |
+| **D5** | 授权粒度 | `docs/06 §4` 的 A1–A10 清单是**界面确认框的内容规格**（用户点确认即授权）；**只有 §9 的 4 个包**需要用户本人动作（①装/重启 ②专用会话破坏性验证 ③端到端验收 ④push）。"不再逐动作确认"与"写会话必须有确认框"**不冲突**：前者说不用找人，后者说界面要拦 |
+| **D6** | M2 断言载体 | 「模型看到什么」一律用**纯函数断言**（自写 fold 等价物，edit lane 可跑）；`deriveMessages()` 是 live Session 同步读（AGENTS §2.2 禁新代码调用），**不许进测试计划**（历史记录行除外）；`docs/05 §2` 必须补 **A17 三栏定义**（7 类行 × 按钮集合） |
+| **D7** | 派活与命名 | 派活口径：**我们不做自己的派活投递；提供"调用官方派活"的入口，团队不可用时不出现**（Q12=A′）。按钮命名统一 **`钉住这一段`**（＝存为固定块）；`存为不变量` 是旧名，全部改掉 |
+
+**连带要求**（review 里同批要清掉的）：
+
+- `docs/00 §2.3/§4.1/§7`、`docs/09` 里"请确认/待用户确认"必须标为**已拍板**（结论回写）。
+- 冻结记录字段不许叫「摘要」（N4：插件不生成摘要）；`digest` 定义成**内容哈希/计数**。
+- `docs/06 §2` 的 fork 种子措辞：**由平台 fork provider 自算**（内部用的是已废弃同步读，与我们无关），切点 = 最后一个 `turn/end` **及其之前**；我们只传首条任务。
+- `docs/02 §5.2` 写入 op 表**补 `child.interrupt` 与 4 个 team 写 op**（`team.createTask`/`team.updateTask`/`team.sendMessage`/`team.interrupt`），并把计数与实际一致。
+- `docs/03` 增：**「帮助」入口 R**、**「不可用态 → 人话原因 → 我该怎么办」汇总表**；`R5.3` 补"压缩只在子会话暴露（我方策略，非平台限制）"；`§7` 门禁与 R2.1/R2.5/R4.6 对齐（**钉住只出现在注入内容与技能注入行**；技能注入的「编辑」按底层事件类型）。
+- `README.md`/`README.zh.md`：项数改 **209**（或以 docs/10 为准），并修表格被引用块截断的问题（双语成对）。
+- `docs/10`：「文件动作（范围冻结）」列**不许**再出现 `$DSH_HOME/**`（那由 Lead 在授权包内操作，teammate 永不触碰）；`test/**` 单数改 `tests/**`；补 **M6-11 用户帮助**、**M6-12 进度脚本** 两条任务。

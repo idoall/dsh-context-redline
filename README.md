@@ -23,14 +23,15 @@ only after review and sign-off. Rationale: agreeing on *what* to build, *on what
 
 ## What it looks like
 
-The shell comes **entirely from upstream [`dsh-context`](https://github.com/bowenliang123/dsh-context) v0.59.2**
-(the panel you already run). What we add on top is **editing** and **orchestration**:
+The shell comes **entirely from upstream [`dsh-context`](https://github.com/bowenliang123/dsh-context)**,
+copied from git tag **`v0.59.2`** — the panel you already run is the installed **`dsh-context@0.60.0`**, and we coexist with it.
+What we add on top is **editing** and **orchestration**:
 
 - **Left**: turn bars carry `user msgs N · injected N`; clicking a turn drives the right panel to that turn's last step.
 - **Right**: the category accordion (system prompt / tool schemas / user messages / injected content /
   skill injection / assistant messages / tool results). Each row shows `#seq` plus actions:
   **Edit** (shadow the original) / **Annotate** (keep the original + a void range) /
-  **Pin as invariant** / **Apply to session**. The editor expands **inline under that row** (never a modal),
+  **Pin this passage** (`钉住这一段`) / **Apply to session**. The editor expands **inline under that row** (never a modal),
   and is prefilled with the **full text**. A sticky banner shows "N changes not yet applied".
 - **Below**: snapshots and child sessions (freeze → fork → compact → dispatch / status / interrupt).
 
@@ -66,16 +67,15 @@ The shell comes **entirely from upstream [`dsh-context`](https://github.com/bowe
 | [`docs/04-roadmap.md`](docs/04-roadmap.md) | Stages M0–M7 (deliverables / tests / **who accepts** / **authorization gates**) |
 | [`docs/05-test-plan.md`](docs/05-test-plan.md) | Test lanes, real-route test pattern, human-gate checklist, failure-mode cases |
 | [`docs/06-orchestration.md`](docs/06-orchestration.md) | Snapshot / fork / compaction / dispatch semantics, authorization list, error-code mapping |
-| [`docs/08-open-questions.md`](docs/08-open-questions.md) | **Questions to settle** (each with a recommendation) + the external-model review log |
+| [`docs/08-open-questions.md`](docs/08-open-questions.md) | **Questions and rulings** (each with a recommendation and its final ruling) + the external-model review log |
 | [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **Requirement traceability**: every original request and every capability from the WeChat screenshots → which goal → done / not done / downgraded |
 | [`demo/`](demo/README.md) | **Clickable interaction prototype** (M0.5 gate): fake data, real interactions, and a "what does this button do" explain mode |
 | [`docs/11-session-handoff.md`](docs/11-session-handoff.md) | **Session handoff**: a copy-paste block plus the fields to refresh at each wrap-up |
-| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, 167 items; steps needing you are marked `WAIT🙋` |
-
-> **Numbering note**: `docs/07` used to be the audit of the earlier attempt; it was deleted on 2026-09-30 at the user's request. **The number is not reused**, to avoid confusion with historical references.
-
+| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, 211 items; steps needing you are marked `WAIT🙋` |
 | [`AGENTS.md`](AGENTS.md) | Working agreement: hard constraints, platform pitfalls, testing discipline |
 | [`UPSTREAM.md`](UPSTREAM.md) / [`NOTICE`](NOTICE) | Upstream provenance, license compliance, list of our modifications |
+
+> **Numbering note**: `docs/07` used to be the audit of the earlier attempt; it was **已删除 (deleted)** on 2026-09-30 at the user's request, and **编号不复用 (the number is not reused)**, to avoid confusion with historical references.
 
 *(The numbered docs are written in Chinese — the project's working language. Ask if you need a translation for review.)*
 

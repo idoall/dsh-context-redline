@@ -23,13 +23,14 @@
 
 ## 2. ⚠️ 最容易搞错的一条：种子取自**日志**，草稿不会过去
 
-- fork 的种子 = 父会话 `snapshotEvents()` 里**最后一个 `turn/end`** 之前的全部事件（`docs/01` F10）。
+- fork 的种子**由平台 fork provider 自算**（它内部用的是**已废弃的同步读**，**与我们无关**，我们也不许调用）：
+  切点 = 父会话**最后一个 `turn/end` 及其之前**的全部事件（`docs/01` F10）；**我们只传首条任务**（`request.prompt`）。
 - 我们的**草稿只在本插件数据目录里**（`docs/01` F5 的反面：草稿不是会话事件）。
 - **推论 1**：**没点「应用到会话」的改动，一个字都不会进子会话。**
 - **推论 2（⚠️ 反过来也成立，且很容易被误判）**：**已经「应用」过的改动（包括你后来发现改错的那次）照样会进子会话** ——
   因为种子是**日志前缀**，"替换事件"本身就在日志里，子会话 fold 之后看到的就是**改后的内容**。
   ⟹ **"开一个新子会话"不能撤销错改**；要撤销，必须在**父会话**里先把它改回去（或从**早于那次改动**的切点分叉，
-  而官方 `spawnTeammate` / `startContinuable` 用的是**最新** `turn/end`，我们 v1 也随它 —— 所以"从更早的快照分叉"
+  而官方 `spawnTeammate` / `startContinuable` 用的是**最新** `turn/end`（= 最后一个 `turn/end`，**含它本身及其之前**），我们 v1 也随它 —— 所以"从更早的快照分叉"
   **不是**默认行为，属于将来可加的能力）。
 
 由此得到一条**强制的界面顺序**（`docs/03` R5.2）：
@@ -58,7 +59,7 @@
 | ④′ | **压缩前体检**（执行前清单） | 一份"将要发生什么"的清单 | 清单里能逐项看到：目标 `childId`、将被摘要替代的**区间与条目数**、**不可逆**提示 | 只读 |
 | ⑤ | **压缩** | 子会话历史被一段摘要取代 | 子会话日志出现 `compaction/*` 事件；`compactNow` 返回结果非 null；界面上显示**实际**范围 | 子会话历史（**不可逆**） |
 | ⑥ | **只读地看状态** | 子会话的阶段 / 耗时 / token | 读平台的 `subagentCatalog`（父会话）+ `subagentTiming`（子会话）；**不自建** | 只读 |
-| ⑥′ | ~~派活~~ / **不做**（Q12=A） | — | **交给官方 Agent Teams**：要派活/任务板就用官方团队；要继续跟**这个**子会话说话，就在**官方子会话视图**里用它的输入框；要停就按它的 **Stop**（`subagents/interruptByParent`） | — |
+| ⑥′ | ~~派活~~ / **不做我们自己的投递**（Q12=A） | — | **但界面提供"调用官方派活"的入口**（`agentTeams.sendMessage`，见 `docs/03` R5.1/R5.1.4；**团队不可用时该入口不出现**）；任务板 / 成员导航同样交给官方 Agent Teams：要派活/任务板就用官方团队；要继续跟**这个**子会话说话，就在**官方子会话视图**里用它的输入框；要停就按它的 **Stop**（`subagents/interruptByParent`） | — |
 | ⑦ | **结果回流**（**平台自动，不是我们造的**） | 父会话日志里出现一条 `subagent-settled` 结算通知（可能还有子会话主动 `sendMessage` 来的 relay 消息） | 父会话被唤醒并继续下一轮；这两类消息在父会话里能看到且**来源可辨** | **父会话日志** |
 
 ### 3.1 子会话的两种形态：**v1 选"可续接"**（本轮更正的设计决策）
@@ -66,7 +67,7 @@
 | 形态 | 调用 | 主会话会被唤醒吗 | 子会话能续聊吗 | v1 |
 |---|---|---|---|---|
 | 一次性 | `ctx.subagents.start(name, …)` | ❌（除"模型自己用工具发起"那条路径）；结果只回到**调用方** | ❌ 终态、只读 | ❌ |
-| **可续接** | **`ctx.subagents.startContinuable({ provider:'fork', parent, prompt, label, signal })`** | **尽力而为**：运行时**在 `send_message` 可用时**自动追加返回指引；settle 时**尝试**往父会话投递 `subagent-settled` 结算通知 | ✅ 持久会话，按顺序收后续消息、可单独 Stop | ✅ **默认** |
+| **可续接** | **`ctx.subagents.startContinuable({ provider:'fork', label（必填）, request:{ parent, prompt }, signal })`**（**实测签名**：`parent`/`prompt` 在 `request` 里，`label` 与 `signal` 在外层；见 §3.1.1） | **尽力而为**：运行时**在 `send_message` 可用时**自动追加返回指引；settle 时**尝试**往父会话投递 `subagent-settled` 结算通知 | ✅ 持久会话，按顺序收后续消息、可单独 Stop | ✅ **默认** |
 
 **为什么 v1 必须用可续接**：你要的是"**子会话完成时，主会话根据子会话结果继续后面的任务**"。
 一次性形态下，若由**我们插件**直接发起，父会话**不会**被唤醒——结果只落到我们手里，于是只剩两条烂路：
@@ -76,7 +77,7 @@
 
 ```
 人点「开子会话」（人写首条任务）
-  → 我们调 startContinuable({provider:'fork'})        ← 种子 = 父会话已完成轮次（含已应用的编辑）
+  → 我们调 startContinuable({provider:'fork', label, request:{parent, prompt}})   ← 种子 = 父会话已完成轮次（含已应用的编辑；**由平台 fork provider 自算**）
   → 运行时**在相邻 send_message 工具可用时**在首条任务后追加「返回指引」：
       "你的父 agent id 是 X；收工前用 send_message 把结果发给它；
        父会话不会自动收到你的 transcript / 工具输出 / 思考；
@@ -96,6 +97,37 @@
    只有拿到父会话里可关联的后续证据（新的 `turn/start`）才敢说"已继续"（`docs/03` R5.1 第 4 项）；
 4. 投递失败/父不在进程是**正常分支**，不是异常：界面给 `回流未确认`，并提供"**让主会话接着做**"的人工入口。
 
+#### 3.1.1 实测签名（来源：安装树 `@deepseek-ai/dsh-subagent/lib/types/`，运行时 `0.2.0-rc.2`；`docs/11` D1）
+
+```ts
+// ContinuableStartSpec —— parent / prompt 在 request 里；label 在外层且**必填**
+ctx.subagents.startContinuable({
+  provider: 'fork',
+  label: '短标签',                     // 必填：持久化为子会话的创建标签
+  childId?: SessionId,                // 可选：调用方预留子会话 id
+  request: {
+    parent: ctx.agents.get(sessionId)!,   // Agent 对象（不是 id）
+    prompt: ContentBlock[],               // 人写的首条任务
+    // 可选：agentOptions（provider / model / reasoningEffort）、maxDepth、toolFilter、persona
+  },
+  signal: AbortSignal,
+})   // → { childId: SessionId, messageId: MessageId }
+```
+
+```ts
+// SubagentPromptRequest —— requestId 由**我们铸造**（调用前就铸好，branded 类型）
+ctx.subagents.prompt({
+  requestId: SubagentPromptRequestId(我们铸的字符串),
+  parentSessionId, childSessionId,
+  mode: 'continuable',
+  delivery: 'queue' | 'steer',        // queue = 排成下一个轮次；steer = 最近步骤边界
+  content: readonly PromptContentPart[],   // 人写的正文
+}, signal)   // → { messageId: MessageId }
+```
+
+打断：`ctx.subagents.interruptByParent(childSessionId, parentSessionId, 'continuable')` → `{ accepted: true }`；
+**团队成员**改用 `ctx.agentTeams.interrupt(lead, targetName)` → `{ previousStatus }`（`docs/02` §5.2 表二）。
+
 ### 3.2 ★ A′：**用官方成员，并接上官方协作层**（Q12 用户已定，依据 `docs/01` F32–F34）
 
 **核心决定**：我们的"开子会话"**优先调官方** `spawnTeammate(context:'fork')` —— 它建出来的是**进 roster 的正式 teammate**，
@@ -104,7 +136,7 @@
 
 | 我们做什么 | 走官方哪个口 | 我们**不**做什么 |
 |---|---|---|
-| **建子会话** | **优先**：`ctx.agentTeams.spawnTeammate(lead, { context:'fork', provider:<forkProvider>, name, description, prompt: 人写首条任务, signal })`；**兜底**：`ctx.subagents.startContinuable({provider:'fork', …})`（裸子会话，界面**如实标注**） | 不造"成员"概念、不自己拼种子 |
+| **建子会话** | **优先**：`ctx.agentTeams.spawnTeammate(lead, { context:'fork', provider:<forkProvider>, name, description, prompt: 人写首条任务, signal })`；**兜底**：`ctx.subagents.startContinuable({ provider:'fork', label, request:{ parent, prompt }, signal })`（裸子会话，界面**如实标注**；实测签名见 §3.1.1） | 不造"成员"概念、不自己拼种子 |
 | **派活**（适配调用官方的） | `ctx.agentTeams.sendMessage(lead, { target: <名册名>, content, signal })`（返回 `accepted/queued`） | 不实现自己的消息/排队/送达 |
 | **任务板** | 读 `agentTeam` 投影（客户端）/ `listTasks`（宿主）；写 `createTask` / `updateTask`（**revision 乐观校验**） | 不自己存任务、不自己算依赖就绪 |
 | **成员导航** | `listMembers` + 跳官方视图（页头 Agent Teams 面板 / 子会话对话） | 不画成员树、不在左侧列表嵌套 |
@@ -126,38 +158,43 @@
 
 ---
 
-## 4. 授权清单（**每一个写入类动作都要单独点头**）
+## 4. 确认框内容规格（A1–A11）
 
 按 `AGENTS.md` §1 与 `docs/01` F13（插件直调**绕过工具级审批**），本文件**不设任何自动路径**。
 
-| # | 动作 | 副作用 | 可否撤销 | 事前必须列的清单 |
+> **粒度（`docs/11` D5）**：下表的 **A1–A11 是界面确认框的内容规格**——**用户点「确认」即为该次授权**，
+> 不需要再去找人点头。**只有 [`docs/08`](08-open-questions.md) §9 的 4 个授权包**
+> （① 装 profile + 重启 ② 专用一次性会话的破坏性验证 ③ M5 端到端验收 ④ push）**需要用户本人动作**。
+> "实施期不再逐动作找用户确认"与"写会话必须有确认框"**不冲突**：前者说不用找人，后者说界面要拦。
+
+| # | 动作 | 副作用 | 可否撤销 | 确认框事前必须列的清单 |
 |---|---|---|---|---|
 | A1 | `apply`（遮蔽改写） | 往会话日志追加 replace 事件 | ❌ append-only，**原文永久对模型不可见**（但仍在日志里） | 改哪一条（`#seq`）、原文是什么、改成什么、为什么 |
 | A2 | `annotate`（批注） | 追加一条带作废范围的更正消息 | ❌ | 更正目标 `#seq`、作废范围、理由 |
-| A3 | **给子会话发消息**（会话互通） | 用 `ctx.subagents.prompt({delivery:"queue"\|"steer"})` 把**人写的**一条话排成子会话的**下一个轮次**（`steer`=最近步骤边界） | ❌ | 收件人 childId、正文逐字、投递方式、理由；返回收件箱 id |
-| A4 | 子会话 → 父会话 | 子 Agent 用 `ctx.subagents.sendMessage` 主动发消息（父忙→最近步骤边界、父闲→起轮次、父不在进程→冷恢复）；另有收工时的 `subagent-settled` 账目 | — | `docs/01` F37 |
-| A3 | **给子会话发消息**（会话互通） | 用 `ctx.subagents.prompt({delivery:"queue"\|"steer"})` 把**人写的**一条话排成子会话的**下一个轮次**（`steer`=最近步骤边界） | ❌ | 收件人 childId、正文逐字、投递方式、理由；返回收件箱 id |
-| A4 | 子会话 → 父会话 | 子 Agent 用 `ctx.subagents.sendMessage` 主动发消息（父忙→最近步骤边界、父闲→起轮次、父不在进程→冷恢复）；另有收工时的 `subagent-settled` 账目 | — | `docs/01` F37 |
-| A3 | `invariant.inject`（重注入固定块） | 追加一条固定块消息 | ❌ | 哪一块、正文逐字、为什么现在注入 |
-| A4 | `invariant.save` / `retire` | 写我们的 sqlite | ✅ 可退休（历史保留） | 标签、正文、作用域 |
-| A5 | `snapshot.create` | 写我们的 sqlite | ✅ 可删 | 切点（最后一个 `turn/end`）、条目数 |
-| A6 | `child.fork` | **创建一个新会话** | 会话可归档；但父会话的种子是**一次性**的 | 种子切点、子会话首条任务（**人写**）、cwd 继承自父会话 |
-| A7 | `child.compact` | 子会话历史被摘要取代 | ❌ **不可逆** | 压哪个子会话、预计丢什么（原文会被摘要取代） |
-| A8 | ~~`child.send`（派活）~~ | **不做**（Q12=A）——派活是官方 Agent Teams 的职责 | — | — |
-| A9 | `apply.rollback`（回滚） | 往会话日志追加一条 replace，把模型看到的内容恢复成选定的历史版本 | ❌ append-only；**但回滚本身还可以再回滚**（目标 = 新的替换体） | 哪一条（当前可见 `#seq`）、恢复到哪一版（`#toSeq` 及其正文摘要）、为什么 |
-| A10 | `child.interrupt`（打断子会话） | 向子会话发出取消信号 | ❌（已提交的工作不会被回滚） | 目标子会话 id、**当前状态**、发出的信号是什么、"已提交工作不回滚"这句实话 |
+| A3 | **`child.prompt`：给人写的一条话排成子会话的下一个轮次**（会话互通） | `ctx.subagents.prompt({ requestId（**我们铸造**）, parentSessionId, childSessionId, mode:'continuable', delivery:'queue'\|'steer', content })`（`steer` = 最近步骤边界；实测签名见 §3.1.1） | ❌ | 收件人 `childSessionId`、正文逐字、投递方式、理由；回执 `messageId` |
+| A4 | 子会话 → 父会话（**平台能力，不是我们的动作**） | 子 Agent 用 `ctx.subagents.sendMessage` 主动发消息（父忙→最近步骤边界、父闲→起轮次、父不在进程→冷恢复）；另有收工时的 `subagent-settled` 账目 | — | **无确认框**：我们只做可见性（`docs/01` F37） |
+| A5 | `invariant.inject`（重注入固定块） | 追加一条固定块消息 | ❌ | 哪一块、正文逐字、为什么现在注入 |
+| A6 | `invariant.save` / `retire` | 写我们的 sqlite | ✅ 可退休（历史保留） | 标签、正文、作用域 |
+| A7 | `snapshot.create` | 写我们的 sqlite | ✅ 可删 | 切点（最后一个 `turn/end`）、条目数 |
+| A8 | `child.fork` | **创建一个新会话** | 会话可归档；但父会话的种子是**一次性**的 | 种子切点、子会话首条任务（**人写**）、cwd 继承自父会话 |
+| A9 | `child.compact` | 子会话历史被平台摘要取代 | ❌ **不可逆** | 压哪个子会话、预计丢什么（原文会被平台摘要取代） |
+| A10 | `apply.rollback`（回滚） | 往会话日志追加一条 replace，把模型看到的内容恢复成选定的历史版本 | ❌ append-only；**但回滚本身还可以再回滚**（目标 = 新的替换体） | 哪一条（当前可见 `#seq`）、恢复到哪一版（`#toSeq` 及其正文）、为什么 |
+| A11 | `child.interrupt`（打断子会话） | 向子会话发出取消信号（团队成员走 `team.interrupt`） | ❌（已提交的工作不会被回滚） | 目标子会话 id、**当前状态**、发出的信号是什么、"已提交工作不回滚"这句实话 |
 
-**"单独点头"的粒度（避免两种极端）**：以下几类是**本地可逆写入**，只需**一次**确认（且有"放弃"路径），
-不必套用 A1–A10 的清单式授权；其余一律按上表逐次列清单：
+> **派活（把任务投递给官方 teammate）不在本表**：那是**官方 Agent Teams** 的职责，我们只提供"调用官方派活"的入口
+> （`team.sendMessage`，`docs/02` §5.2 表二），团队不可用时该入口**不出现**（Q12=A′ / `docs/11` D7）。它的确认框沿用 A3 的清单要求（收件人 / 正文逐字 / 投递方式 / 理由）。
 
-| 动作 | 为什么可以只一次确认 |
+**"只一次确认"的粒度（避免两种极端）**：以下几类是**本地可逆写入**，确认框只需列出作用域（且有"放弃"路径），
+不必套用 A1–A11 的清单式规格；其余一律按上表列清单：
+
+| 动作 | 为什么可以只列作用域 |
 |---|---|
 | `draft.update` / `draft.reset`（保存/放弃草稿） | 不写会话、随时可放弃、可重复 |
 | `snapshot.create`（冻结） | 只写我们自己的库，可删除 |
-| `invariant.save`（存固定块） | 只写我们自己的库，可退休且历史保留 |
+| `invariant.save`（钉住这一段） | 只写我们自己的库，可退休且历史保留 |
 
-> 换句话说：**写会话 / 建会话 / 改变运行中的子会话 / 不可逆** → 清单式授权；
-> **只写本地且可逆** → 一次确认 + 明说作用域即可。
+> 换句话说：**写会话 / 建会话 / 改变运行中的子会话 / 不可逆** → 确认框列清单；
+> **只写本地且可逆** → 确认框只列作用域即可。
 
 **界面义务**：动作旁必须能看出"这一步会**写会话**吗"，文案不许含糊（`docs/03` R3.3 / R4.3）。
 
@@ -169,7 +206,7 @@
 
 | 项 | 内容 |
 |---|---|
-| ① 种子范围 | `cutSeq` —— 父会话**最后一个 `turn/end`** 的 seq（"冻结到这里为止"） |
+| ① 种子范围 | `cutSeq` —— 父会话**最后一个 `turn/end`** 的 seq（"冻结到这里为止"；种子 = 这一条**及其之前**的全部事件，由**平台 fork provider 自算**） |
 | ② 首条任务 | **人写**，必填（空则不允许确认）；这是子会话的第一条 user 消息 |
 | ③ 继承范围 | ✅ 继承：父会话**已完成的对话历史**（含你已应用的编辑）；❌ 不继承：父会话的**工具授权/权限**、父会话此后的新轮次、**以及父会话不会自动收到子会话的 transcript / 工具输出 / 思考**（子会话要靠 `send_message` 主动回传，收工时平台另有结算通知） |
 | ④ 副作用 | 新建一个会话；种子是**一次性**的；父会话之后的新轮次**不会**进去；子会话是独立 sessionId（workspace 级固定块对它可见） |
@@ -204,7 +241,7 @@
 
 判定**次序**（纯函数，可单测；每一条都带 `reason` 给界面显示，不允许让用户猜）：
 
-| 序 | 条件 | 返回 | 需要授权 |
+| 序 | 条件 | 返回 | 需要确认框 |
 |---|---|---|---|
 | 1 | 轮次未闭合 | `waitTurn` | ❌ |
 | 2 | 有未提交草稿 | `applyDrafts`（理由必须写明"**种子取自会话日志，草稿不会带过去**"） | ✅ |
@@ -232,14 +269,14 @@
 
 ## 7. 明确不做（避免范围膨胀）
 
-- ❌ **不自动开子会话**：`child.create` 只在用户点了按钮之后调用。
+- ❌ **不自动开子会话**：`child.fork`（`docs/02` §5.2 的 op 名）只在用户点了按钮之后调用。
 - ❌ **不自动重注入**：固定块只**报告**漂移；重注入必须人点。
 - ❌ **不自动压缩**：压缩不可逆，必须人点（且先过体检）。
 - ❌ **不伪造宿主内容**：`runtime-context` / AGENTS.md / 技能目录由宿主生成，我们**造不出**官方快照；我们追加的一律是**带结构化头部的普通 user 消息**。
 - ❌ **不做"删除历史"**：append-only 里没有删除；能做的只有遮蔽（模型不可见、日志仍在）与压缩（体积变小但不可逆）。
 - ❌ **不批量静默操作**：即使"全部应用"，也要逐条列出 `#seq`。
-- ❌ **不自己做协作层**（**Q12=A，用户已定**）：派活（`child.send`）、任务板、成员导航、团队编排**一律不实现**——
-  官方 Agent Teams 已有，且两套并存会互相干扰。我们的面板只到"**建子会话 + 状态/回流/来源可见 + 跳转**"为止（§3.2）。
+- ❌ **不自己做协作层**（**Q12=A′，用户已定**）：**派活投递**（我们只提供"调用官方派活"的入口 `team.sendMessage`，团队不可用时不出现）、任务板（只读写官方 `team.*`）、成员导航（只跳转官方视图）、团队编排**一律不自己实现**——
+  官方 Agent Teams 已有，且两套并存会互相干扰。我们的面板只到"**建子会话 + 状态/回流/来源可见 + 跳转**"为止（§3.2 / `docs/11` D7）。
 
 ---
 
@@ -254,5 +291,5 @@
 | **父会话之后的新轮次不进子会话** | 真机：父会话再跑一轮，子会话日志无变化 | **用户** |
 | **压缩真的发生** | 真机：子会话出现 `compaction/*` | **用户** |
 | **界面** | 浏览器人工门禁（`docs/03` §7） | **用户** |
-| **派活 / 任务板 / 成员导航** | **不验**（Q12=A：不在我们范围内）；改验 | 真机：**官方 Agent Teams 面板**能建 teammate、显示任务板、导航到成员会话 | **用户**（确认"这条我们没做，且官方那边可用"） |
+| **派活 / 任务板 / 成员导航** | **本插件不验**（Q12=A′：不在我们范围内）→ 改验**官方那一侧**：Agent Teams 面板能建 teammate、显示任务板、导航到成员会话 | **用户**（确认"这条我们没做，且官方那边可用"） |
 | **建子会话 + 回流** | 真机：人写首条任务建子会话 → 它跑完 → 父会话出现 `subagent-settled`；在**官方子会话视图**里能继续跟它对话 | **用户** |

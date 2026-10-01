@@ -16,7 +16,7 @@
 | lane | 目录 | 可依赖的运行时 import | 能不能稳定跑 | 跑什么 |
 |---|---|---|---|---|
 | `edit`（自有护栏·纯逻辑） | `tests/edit/` | **只允许** `src/redline/**` 与 `src/shared/**` | ✅ 必须永远绿 | 资格判定、行投影、漂移逐字判定、范围校验、快照/血缘序列化、`plan.next` 判定次序、能力开关组合 |
-| `channel`（自有护栏·真实路由级） | `tests/channel/` | 允许 `src/host/redline-channel.ts` 与 `src/edit/**`；**禁止** `src/client/**` | ✅ 必须永远绿 | 捕获宿主注册的**精确 Fetch 路由** → 按真实 RPC 信封调用 → 读回 SQLite/草稿文件断言 |
+| `channel`（自有护栏·真实路由级） | `tests/channel/` | 允许 `src/host/redline-channel.ts` 与 `src/redline/**`；**禁止** `src/client/**` | ✅ 必须永远绿 | 捕获宿主注册的**精确 Fetch 路由** → 按真实 RPC 信封调用 → 读回 SQLite/草稿文件断言 |
 | `host`（上游带的） | `tests/host/` | 上游 | ⚠️ 环境依赖，可能整片失败 | 上游 fold/投影。**不作为门禁**，但改动上游文件时要跑一次做对照 |
 | `client`（上游带的） | `tests/client/` | 上游客户端 | ⚠️ 同上 | 上游客户端组件。**不作为门禁** |
 
@@ -49,6 +49,11 @@
 ## 2. 必须有的断言（每条按 **fixture → action → assertion** 三栏写全）
 
 > 这是 M2 的自动化门禁。带 `conditional` 的条目**不等 M4.5 结论就不能算平台事实**。
+>
+> ⚠️ **断言载体（D6）**：「模型看到什么」一律用**纯函数断言**（自写 fold 等价物，`edit` lane 可跑）。
+> **不许用 live Session 的同步读 API**（`deriveMessages` / `eventAt` / `snapshotEvents` —— 它们的类型注释已写
+> "new calls are prohibited"，见 `AGENTS.md` §2.2）；只有**标注「历史」**的对比行可以提到旧实现。
+> A17 是这件事的护栏：**按钮集合（能力判定）也按底层事件类型锁**，不靠人眼在界面上核对。
 
 ### 2.1 草稿与只读（不写会话）
 
@@ -64,9 +69,10 @@
 
 | # | fixture | action | assertion |
 |---|---|---|---|
-| **A2** | 一条 append-origin 的 `user/message`（seq=A）+ 草稿 | `apply{seq:A}` | ① 追加一条 `surfaceOp:{op:'replace',startSeq:A,endSeq:A}`；② `deriveMessages()` 里**看不到**原文；③ A 不再是 surface 节点；④ 5 秒内 `readSurface` 能看到替换关系 |
+| **A2** | 一条 append-origin 的 `user/message`（seq=A）+ 草稿 | `apply{seq:A}` | ① 追加一条 `surfaceOp:{op:'replace',startSeq:A,endSeq:A}`；② **纯函数 fold 等价物**（自写 fold，`edit` lane 可跑）里**看不到**原文 —— **不许用 live Session 的同步读 API**（`deriveMessages` / `eventAt` / `snapshotEvents`，见 §2 引言与 `AGENTS.md` §2.2）；③ A 不再是 surface 节点；④ 5 秒内 `readSurface` 能看到替换关系 |
 | **A3a** | 分别构造 `user/message` 与 `tool/result`（各自 append-origin）与草稿 | `apply` 各一次 | ① 两类**都成功**；② `tool/result` 的替换**只改了 `content`**（其余字段深比较相等）；③ `user/message` 带 `sourceEventSeqs:[原 seq]` |
 | **A3b** | 一条 `assistant/message`（append-origin） | ① 先问能力判定；② 再**强行**调写入口 | ① 能力判定返回 `canRewrite:false` + **稳定原因码**（如 `assistant-not-rewritable`）；② 强行调用返回**可读错误**（带同一个原因码），**不是**平台抛出的 `sourceEventSeqs must include…` 或 `assistant/message embeds…` |
+| **A17** | **7 类行各一条**（系统提示词 / 工具定义 / 用户消息 / 注入内容 / 技能注入 / 助手消息 / 工具结果）+ **4 个状态夹具**（技能注入底层是 `assistant/message` ／ 被压缩埋掉 ／ 已被遮蔽的原文 ／ 旧替换体） | 调**能力判定纯函数**，逐类取按钮集合（常用档与「高级编辑」开档各跑一遍） | ① 按钮集合**逐类相等**于 `docs/03` R2.1 + R4.6 的矩阵：系统提示词与工具定义 = **无动作条、也不留空占位**；用户消息 = `编辑` + `批注`；注入内容 = `编辑` + `批注` + `钉住这一段`；技能注入 = `批注` + `钉住这一段`，且 `编辑` **按底层事件类型**（`user/message`/`tool/result` → 有，`assistant/message` → 没有）；助手消息 = **只** `批注` + `版本历史`；工具结果 = `批注`，`编辑` 只在高级档出现（收起时留 `高级编辑` 标记）；被压缩埋掉 = **只** `批注`；已被遮蔽的原文 / 旧替换体 = `批注` + `版本历史`（不给 `编辑` / `应用到会话`）；② 判定**按底层事件类型**，不按分类名猜（`docs/01` F7.2）；③ **反向**：让 `canRewrite` 对 `assistant/message` 返回 true → 必须红 |
 | **A5** | 一个**未闭合轮次**的会话（有 `turn/start` 无 `turn/end`）+ 草稿 | `apply` / `annotate` / `invariant.inject` 各一次 | 三个写入器**全部**被拒，且错误文案里提到"轮次未结束"；**会话事件数不变** |
 | **A6** | 一条已被遮蔽的**原始节点**（`#A` 已被 `#M` 替换） | `apply{seq:A}` | 被拒；错误码可读（对应用户文案是"这一条已不在模型可见内容里"） |
 | **A7** | ① 没有草稿的 seq；② 草稿内容与原文**完全相同** | `apply` 两次 | 两次都被拒，且两次的**原因码可区分**（`no-draft` vs `no-change`） |
@@ -85,7 +91,7 @@
 
 | # | fixture | action | assertion |
 |---|---|---|---|
-| **A16** | 一条 `user/message` 原文 `#A` → 替换成 `#M` → 再替换成 `#K` | `history.list{当前可见 seq}` → `apply.rollback{seq:K, toSeq:A}` | ① 历史链返回 `[A(origin), M(edit), K(edit)]`，正文可读；② 回滚后 `deriveMessages()` **逐字等于 #A 的原文**；③ 行上关系链为 `原 #A → #M → #K → 回滚 #N` |
+| **A16** | 一条 `user/message` 原文 `#A` → 替换成 `#M` → 再替换成 `#K` | `history.list{当前可见 seq}` → `apply.rollback{seq:K, toSeq:A}` | ① 历史链返回 `[A(origin), M(edit), K(edit)]`，正文可读；② 回滚后**纯函数 fold 等价物逐字等于 #A 的原文**（同样不许用 live Session 的同步读 API，见 §2 引言）；③ 行上关系链为 `原 #A → #M → #K → 回滚 #N` |
 | **A18** | ① 注入一个"能读到被遮蔽正文"的 readSession 实现；② 注入一个"读不到"的实现 | `history.list` / `node.read` | ① 能读到时：返回完整正文；② 读不到时：返回 **`history-unavailable`** 这一稳定降级信号，**绝不用 80 字预览冒充**。<br>⚠️ **`conditional`**：**真机上"被遮蔽原文到底读不读得到"由 M4.5 的 V8 专项验证**，不在 M2 下定论（见 §3.1） |
 
 ### 2.5 契约与纯度（防"两边各自自洽但合不上"）
@@ -93,10 +99,10 @@
 | # | fixture | action | assertion |
 |---|---|---|---|
 | **A12** | 宿主半装好后，从**客户端那一半**的 transport 层发一次请求 | 逐个 op 打一次 | ① 客户端**实际 POST 的 URL** == 宿主注册表里捕获的 `path`（同一个常量来源）；② 把 `src/shared/redline-route.ts` 的常量改错一处 → **必须红**（两侧任何一侧单改都要红） |
-| **A13** | 客户端 bundle 的入口文件 | 静态**与动态** import 图分析 | `src/client/**` 的可达 import 图里**不出现** `src/host/**`、`src/edit/**`（实现）、`node:*`。**反向**：加一行动态 import → 必须红 |
+| **A13** | 客户端 bundle 的入口文件 | 静态**与动态** import 图分析 | `src/client/**` 的可达 import 图里**不出现** `src/host/**`、`src/redline/**`（实现）、`node:*`。**反向**：加一行动态 import → 必须红 |
 | **A14** | 表驱动：`plan.next` 的所有输入组合（轮次开/闭 × 草稿 0/N × 固定块 0/N × occupancy 未定/<0.7/≥0.7 × 能力开关组合） | 逐条调用 | ① 返回的 `kind` 与优先级次序**逐条符合** `docs/06` §6 的表；② `needsAuthorization` 正确；③ 每个 `reason` 非空且包含关键事实（例如有草稿时**必须**提到"种子取自会话日志"） |
 | **A20** | 本地写 op：`invariant.save` / `invariant.retire` / `snapshot.create` / `draft.update` | 各调一次 | ① 只写数据目录/sqlite；② **会话事件数不变**；③ 再次调用（幂等场景）结果可预期 |
-| **A21** | 把能力开关置 `{agents:false}` / `{fork:false}` / `{compaction:false}` | 调 `child.fork` / `child.compact` / `child.send` / `child.interrupt` | ① 各自返回**明确的不可用错误码**；② **根本没有调用平台 API**（用 spy 断言 `ctx.subagents` / `ctx.compaction` 零调用）——避免"能力为 false 但按钮还在，点下去是平台异常" |
+| **A21** | 把能力开关置 `{agents:false}` / `{fork:false}` / `{compaction:false}` / `{team:false}` | 调 `child.fork` / `child.compact` / `child.prompt`（发消息）/ `child.interrupt` / `team.sendMessage`（派活，经官方）/ `team.interrupt` | ① 各自返回**明确的不可用错误码**；② **根本没有调用平台 API**（用 spy 断言 `ctx.subagents` / `ctx.compaction` / `ctx.agentTeams` 零调用）——避免"能力为 false 但按钮还在，点下去是平台异常"；③ `{team:false}` 时 `派活` / `建成官方任务` 入口**不出现**（不是置灰，`docs/03` R5.1） |
 
 ### 2.6 迁移
 
@@ -138,7 +144,7 @@ node scripts/namespace-contract.mjs        # M1 的命名空间自检（docs/04 
 
 ## 4. 人工门禁（浏览器）
 
-> **唯一权威清单是 `docs/03` §7 的 30 条**（按 R 编号覆盖，逐条打勾）。
+> **唯一权威清单是 `docs/03` §7 的 31 条**（按 R 编号覆盖，逐条打勾）。
 > 本节不再重复条目内容，只给**执行前的前置条件**与**证据格式**——两份清单如果有出入，以 `docs/03` §7 为准，并回改本节。
 
 **每个条目的证据格式**（缺一项即不算通过）：
@@ -163,14 +169,19 @@ node scripts/namespace-contract.mjs        # M1 的命名空间自检（docs/04 
 |---|---|
 | `#15`（回滚逐字恢复） | **M4.5 的 V8 = pass** 才执行；否则只执行 `#16`（关闭态） |
 | `#16`（不可恢复态都有文案） | 无（任何情况下都要执行） |
-| `#19` / `#23`（开子会话 / 派活闭环） | ① M4.5 的 ② `agents`、③ `fork`、**V10**（`subagentCatalog` 等投影可读）、**V11**（续存 fork 端到端，含"父不在进程 / 父正忙"两种情形）都有结论；② **官方 `dsh-client-ui-subagent` 已挂载**，父会话页头的血缘触发器存在且能打开一个 child（否则"打开 → 官方视图"这条承诺无法兑现）。任一不满足 → 按 `docs/04` 的同步变更表验"不存在 / 降级" |
+| `#19` / `#23`（开子会话 / 建子会话 + 结果回流） | ① M4.5 的 ② `agents`、③ `fork`、**V10**（`subagentCatalog` 等投影可读）、**V11**（续存 fork 端到端，含"父不在进程 / 父正忙"两种情形）都有结论；② **官方 `dsh-client-ui-subagent` 已挂载**，父会话页头的血缘触发器存在且能打开一个 child（否则"打开 → 官方视图"这条承诺无法兑现）。任一不满足 → 按 `docs/04` 的同步变更表验"不存在 / 降级" |
+| `#10`（派活确认框） | 只有 `ctx.agentTeams` 存在（团队启用）时才验；**团队不可用时改验"入口不出现"**（`docs/03` R5.1 / D7） |
 | `#21`（压缩体检） | M4.5 的 ④ 有结论（可用 → 验执行；不可用 → 验"不显示执行按钮"） |
 | `#30`（并存） | 两插件同 profile（需授权） |
-| **另立一条门禁**：官方 subagent UI 可用 | 与 `#30`（与 `dsh-context@0.59.2` 并存）**分开验**：本插件**不得注册或替代**官方的 subagent 槽位（`conversation.session.header.lineage` / `.actions` / `sidebar.chat.conversation` / `sidebar.right.pane.tab` / `conversation.composer`） |
+| **另立一条门禁**：官方 subagent UI 可用 | 与 `#30`（与 `dsh-context@0.60.0` 并存）**分开验**：本插件**不得注册或替代**官方的 subagent 槽位（`conversation.session.header.lineage` / `.actions` / `sidebar.chat.conversation` / `sidebar.right.pane.tab` / `conversation.composer`） |
+| `#31`（帮助入口） | 无（客户端半的静态交互，可在 demo 与真机各看一遍；点 `指给我看` 的高亮不许改元素自身样式，见 `docs/03` §7 引言） |
 
 ---
 
 ## 5. 边界与失败模式用例（每条都要有用例或明确文案）
+
+> 用户向口径（"为什么按钮是灰的 / 只能看不能改 / 我该怎么办"）统一在 `docs/03` **R4.7 的汇总表**；
+> 本节的"期望"与它**不许冲突**（冲突时以 R4.7 为准并回改本节）。
 
 | # | 场景 | 期望 |
 |---|---|---|
@@ -220,7 +231,7 @@ node scripts/namespace-contract.mjs        # M1 的命名空间自检（docs/04 
 | A13 | 在客户端里加一行动态 `import('../../host/...')` | **红** |
 | A14 | 调换 `plan.next` 的优先级；或把 `needsAuthorization` 全设 false | **红** |
 | A15（已降级） | 在代码里加一段"读旧 schema"的兼容分支 | **红**（旧数据目录已被用户删除，不该有任何旧库分支 —— `docs/08` Q8） |
-| A16 | 把"回滚"实现成新 append 一条（而不是 replace 当前可见节点） | **红**（`deriveMessages()` 会同时看到新旧两条） |
+| A16 | 把"回滚"实现成新 append 一条（而不是 replace 当前可见节点） | **红**（纯函数 fold 等价物会同时看到新旧两条；不许用 live Session 同步读 API，见 §2 引言） |
 | A17 | 让 `canRewrite` 对 `assistant/message` 返回 true | **红** |
 | A18 | 在"读不到"的实现下返回 80 字预览 | **红** |
 | A19 | 去掉会话隔离 / 损坏草稿时静默返回 `{}` | **红** |
@@ -253,11 +264,11 @@ demo 的验收口径：
 | `draft.list` | A1、A19 | #6 | M2 |
 | `draft.update` | A1、A20 | #4、#12 | M2 |
 | `draft.reset` | A1、A20 | #12 | M2 |
-| `apply` | A2、A3a、A3b、A5、A6、A7 | #5、#10、#11 | M2 |
+| `apply` | A2、A3a、A3b、A5、A6、A7、A17 | #5、#10、#11 | M2 |
 | `apply.rollback` | A16、A18 | #15、#16 | M2 |
 | `history.list` | A16、A18、A24 | #15、#16 | M2 |
 | `edits.list` | A24 | #5 | M2 |
-| `annotate` | A8、A9、A5 | #10、#11 | M2 |
+| `annotate` | A8、A9、A5、A17 | #10、#11 | M2 |
 | `turnState` | A19、A5 | #13、#14 | M2 |
 | `invariant.list` | A10、A19 | #17 | M2 |
 | `invariant.history` | A11 | #17 | M2 |
@@ -272,8 +283,10 @@ demo 的验收口径：
 | `child.fork` | A21 | #19 | M5 |
 | `child.compact` | A21 | #21、#22 | M5 |
 | `compact.state` | A22 | #21 | M5 |
-| `child.send` | A21 | #10、#23 | M5 |
+| `child.prompt`（发消息：人写话 → 子会话新轮次） | A21 | #23 | M5 |
 | `child.interrupt` | A21 | #10、#23 | M5 |
+| `team.members` / `team.tasks`（只读对接） | A21（服务不存在 → 返回 `null`，界面隐藏对接点） | #23 | M5 |
+| `team.createTask` / `team.updateTask` / `team.sendMessage`（派活，经官方）/ `team.interrupt` | A21、A17（团队不可用时入口不出现） | #10、#23 | M5 |
 | `/redline` 子命令（`snapshot`/`children`/`compact`/`invariants`/`drift`） | 每个子命令一条真实路由级用例（同 A12 的信封） | 与对应 op 同条目 | M6 |
 
 **能力开关为 false 时**：上表里对应的 op 改为断言"**明确不可用错误码 + 零平台调用**"（A21），人工门禁条目改为验"入口不存在"，并在 `docs/04` 的同步变更表里留下 diff。

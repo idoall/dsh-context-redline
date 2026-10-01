@@ -4,10 +4,11 @@
 > **纪律**：每条都标 `实测` / `推断`，并给出可复核的位置。凡未核实的，一律写"待验证"，不许当依据。
 >
 > **路径约定**（本机）：
-> - `$DSH_PKG` = `$DSH_PKG`
->   （**当前真正在跑的构建**，版本 **0.2.0-rc.1**，每个包独立，`lib/types/*.d.ts` 是权威签名）
+> - `$DSH_PKG` = `<dsh-install>/node_modules/@deepseek-ai`
+>   （**当前真正在跑的构建**，版本 **0.2.0-rc.2**（2026-10-01 实测），每个包独立，`lib/types/*.d.ts` 是权威签名）
 > - `$DSH_PROFILE` = `$DSH_HOME/profiles/node_modules/@deepseek-ai`（profile 层依赖树）
-> - `$DSH_SRC` = `<dsh-workdir>/deepseek-harness`（源码 monorepo，**版本 0.1.6-alpha.1，落后于运行时**，只用于看实现细节，**签名一律以 `$DSH_PKG` 为准**）
+> - `$DSH_SRC` = `<dsh-workdir>/deepseek-harness`（源码 monorepo，**版本与运行时同步 = 0.2.0-rc.2**，语义看它、签名以 `$DSH_PKG` 为准）
+>   · ⚠️ **历史**：早期那次尝试的源码副本是 `0.1.6-alpha.1`（`<old-dsh-src>`），**落后于运行时**，只当历史参考，其中的行号/结论不许当依据
 > - `$UPSTREAM` = `<upstream-clone>`（参考插件 clone，带 tag）
 
 ---
@@ -16,13 +17,14 @@
 
 | 事实 | 值 | 怎么核实的 |
 |---|---|---|
-| DSH 版本 | **0.2.0-rc.1** | `$DSH_PKG` 各包 `package.json` |
+| DSH 版本 | **0.2.0-rc.2** | `$DSH_PKG` 各包 `package.json`（2026-10-01 实测：安装树与 `$DSH_PROFILE` 都是 rc.2） |
 | Node | v24.15.0 | 当前进程 |
-| 参考插件 | `dsh-context@0.59.2` **已装并在跑** | `$DSH_HOME/profiles/web/package.json` 的 dependencies + 用户界面截图 |
+| 参考插件 | profile 里**实装 `dsh-context@0.60.0`**（`^0.60.0`），**已装并在跑**；我们的**复制基线 = git tag `v0.59.2`**（两者同源） | `$DSH_HOME/profiles/web/package.json` 的 dependencies + `node_modules/dsh-context/package.json` |
 | 我们的插件 | 目录 symlink 在 `$DSH_HOME/profiles/web/node_modules/dsh-context-redline`，但**不在** `dsh.profile.bundles` 里 → **当前未启用** | 同上 |
-| 早期那次尝试 的验证运行时 | `0.1.7-rc.2`（不是现在这个） | `git show v2-archive-20260928:AGENTS.md` |
+| 早期那次尝试 的验证运行时 | `0.1.7-rc.2`（**历史**，不是现在这个） | `git show v2-archive-20260928:AGENTS.md` |
 
-> **含义**：任何"v2 里验证过"的结论，都必须在 0.2.0-rc.1 上**重新验证**。这也是我们把基线换成 `v0.59.2` 的原因。
+> **含义**：任何"早期那次尝试 里验证过"的结论，都必须在 **0.2.0-rc.2** 上**重新验证**。
+> 这也是我们把**复制基线**换成 git tag `v0.59.2` 的原因。（版本仍在往前走：`0.2.0-rc.1` 是**历史**运行时，那时的实测结论同样要按 rc.2 复核一遍。）
 
 ---
 
@@ -39,7 +41,10 @@ if (this.fetchRoutes.has(route.path))
 ```
 
 - 注册入口：`ctx.connection.fetch.register({ path, methods, requestBody, fetch })`
-  （`$DSH_PKG/dsh-client-connection/lib/types/rpc.d.ts:149` 附近；上游 v2 的用法见 `host/redline-channel.ts:213-222`）
+  （`$DSH_PKG/dsh-client-connection/lib/types/rpc.d.ts:111`（接口）/ `:128`（方法）；上游 v2 的用法见 `host/redline-channel.ts:213-222`）
+- ⚠️ **`path` 写全量（含 `/api` 前缀）**：类型注释说它是"Absolute path **below `/api`**"（`rpc.d.ts:112`），
+  但上游实测注册值就是**含前缀**的 `'/api/dsh-context/detail'`（`src/host/detail.ts:43`）——**别照注释把 `/api` 去掉**，
+  否则客户端 POST 的 URL 与注册路径不成对，成 404 而不是抛错（更难发现）。
 - 上游注册的路径：`/api/dsh-context/detail`、`/api/dsh-context/balance`、`/api/dsh-context/backfill`
   （对应 `src/host/detail.ts:43`、`src/host/balance.ts:29`、`src/host/backfill.ts:51`，客户端还有 `src/client/timelineSource.ts:37`）
 - **结论**：复制上游 `src/` 时，**所有**路径必须改成我们自己的前缀 `/api/dsh-context-redline/*`。
@@ -48,7 +53,7 @@ if (this.fetchRoutes.has(route.path))
 ### F2 · 投影 key：同 key 的两种命运（静默顶掉 / 抛错）
 
 ```js
-// $DSH_PKG/dsh-session-projection/lib/index.js:85-93
+// $DSH_PKG/dsh-session-projection/lib/index.js:84-91（0.2.0-rc.2 实测行号）
 const existing = this.registrations.get(key);
 if (existing === void 0) this.registrations.set(key, { def: erased, cells: new WeakMap(), refs: 1 });
 else {
@@ -59,7 +64,8 @@ else {
 }
 ```
 
-- 上游的 key：`contextTimeline`（`src/host/timeline.ts:310`）、`contextHeaders`（`src/host/headers.ts:186`）、`contextActivity`（`src/host/activity.ts:233`）
+- 上游的 key（行号 2026-10-01 按 tag `v0.59.2` 复核）：`contextTimeline`（`src/host/timeline.ts:310`）、
+  `contextHeaders`（`src/host/headers.ts:186`）、`contextActivity`（`src/host/activity.ts:245`）。
 - **结论**：key 必须改成 `redlineTimeline` / `redlineHeaders` / `redlineActivity`。
   否则：stateVersion 撞上 → 我们的 fold 被参考插件的定义顶掉（面板数字看着"对"，其实不是我们的口径）；
   stateVersion 不同 → 插件直接抛错。**两种失败都不会给出清晰提示。**
@@ -72,15 +78,36 @@ DSH 的 `dsh-client-modules` 按**包名**校验客户端模块注册 id，不�
 
 - 我们的 tsdown 配置从上游继承，注册 id 由 `pkg.name` 自动生成 → **改包名会自动同步**，但 slot id / locale 命名空间/投影 key / 路由**不会**自动改，必须人工逐个对齐。
 
-### F4 · 其余需要"分家"的名字（实测 + 工程判断）
+### F4 · 其余需要"分家"的名字（实测：行号按 tag `v0.59.2` 复核，2026-10-01）
 
-| 面 | 上游值 | 我们的值 |
+> ⚠️ 这一节是**最容易漏的一节**：F1/F2/F3 撞车会**抛错**，而下面这些**多半是静默**的
+> （偏好被两边共用、slot 被后注册者顶掉、localStorage 互相覆盖），排查时看不到任何报错。
+> 判据一律是**字符串相等**，所以"上游值 → 我们的值"必须逐个改，且改完要能用机器断言（见本节末尾）。
+
+| 面 | 上游值（`v0.59.2` 实测出处） | 我们的值 |
 |---|---|---|
 | `conversation.view` slot id | `context` | `redline` |
-| locale 命名空间 | `dsh-context` | `dsh-context-redline` |
+| **其余 slot id**（同一批注册，同样按字符串分派） | `context-jump`（`src/client/index.ts:113`）、`context-modal`（`:125`）、`context-overview`（`:140` `sidebar.footer.action` 与 `:148` `shell.overlay`） | `redline-*`（同样逐个改） |
+| **键控 slot**（`key:` 参与分派） | `settings.plugin.item`（`src/client/index.ts:181`）与 `plugins.bundle.config`（`:199`）都以 `key: NS` 注册；`sidebar.right.pane.tab` 以 `key: SIDEBAR_CONTEXT_ID` 注册（`src/client/sidebar.ts:87`） | 键控名照旧，但 `key` 必须换成我们的命名空间 |
+| **`SETTINGS_NAMESPACE`**（宿主侧设置服务 + 持久化偏好命名空间） | `'dsh-context'`（`src/host/settings.ts:26`，`:53` `service.register(SETTINGS_NAMESPACE, SettingsSchema)`） | `'dsh-context-redline'`。**撞车是静默的**：两个插件共用同一份偏好，用户改一边另一边跟着变 |
+| **`SIDEBAR_CONTEXT_ID` / `SIDEBAR_CONTEXT_KIND`** | 都是 `'dsh-context'`（`src/client/sidebar.ts:31,38`） | 分家（否则右侧 Sidebar 的标签类型互相顶掉） |
+| **localStorage key** | `'dsh-context:platform-balance'`（`src/client/balance.ts:26`） | 分家（否则两个插件互相覆盖余额缓存） |
+| locale 命名空间（`NS`） | `'dsh-context'`（`src/client/index.ts:65`） | `'dsh-context-redline'` |
 | 插件 `name` 导出 | `dsh-context` | `dsh-context-redline` |
-| `MessageSourceMap` kind | 上游自己的 kind | `dsh-context-redline`（merge-extensible，无 catch-all `plugin`，各生产者自declare） |
+| `MessageSourceMap` kind | **无**——上游**不注册任何消息来源 kind**（`git grep MessageSourceMap v0.59.2 -- src/` 零命中），所以这一面**没有"上游旧值"要分家** | `dsh-context-redline`（merge-extensible，无 catch-all `plugin`，各生产者自 declare） |
 | 数据目录 | 无（上游只读） | `$DSH_HOME/dsh-context-redline` |
+
+**机器断言（M1 的 `namespace-contract` 用）**：查"上游旧值零命中"时**必须带排除**，
+否则正则会把我们自己的名字判红：
+
+```js
+// ✅ 正确：排除我们已经改好的前缀
+/dsh-context(?!-redline)/          // 命中 dsh-context、dsh-context:platform-balance；不命中 dsh-context-redline
+// ❌ 错误：/dsh-context/ 会把 dsh-context-redline 也算命中
+```
+
+同理，`contextTimeline` 这类 key 要断言**改后**是 `redlineTimeline`（而不是断言"文件里没有 contextTimeline"——
+`docs/01`/`UPSTREAM.md` 里的说明文字本来就该提到上游旧名）。
 
 ---
 
@@ -108,7 +135,8 @@ ownEvents(): readonly SessionEvent[];
 | `readEvent`/`traceEvent`/`traceSession` | 见文件 | 替换关系溯源（`start` 事件 → 被遮蔽节点） |
 
 > **设计含义**：我们把**读**全部放在 `sessionQuery` 上（异步、冷会话也能读、且一次能拿到**全文**），
-> 把**写**放在 live `Session.append` 上。早期那次尝试 的致命缺陷（`docs/07` §3）正是因为它的"读"取的是宿主投影里的 80 字预览。
+> 把**写**放在 live `Session.append` 上。早期那次尝试 的致命缺陷正是因为它的"读"取的是宿主投影里的 80 字预览
+> （当时的审计文档 `docs/07` 已按用户要求删除、**编号不复用**；结论已并入本文 F35）。
 
 ### F6 · 写入：`encodeSurfaceOp` 的三个硬校验（实测）
 
@@ -288,8 +316,8 @@ ctx.subagents.startContinuable(spec): Promise<{ childId: SessionId; messageId: M
 
 **两条必须写进实现的配套事实**
 
-1. **返回指引是运行时自己加的，不是插件 API**：`withContinuableReturnGuidance(parentId, prompt)`
-   由运行时在 **`startContinuable` 内部、且相邻 `send_message` 工具可用时**调用
+1. **返回指引是运行时自己加的，不是插件 API**：`withContinuableReturnGuidance(parentId, prompt)` —— ⛔ **禁止**插件 import / 复刻 / 调用它（它是运行时内部函数，既可能导不到，也会造成重复注入）。
+   它由运行时在 **`startContinuable` 内部、且相邻 `send_message` 工具可用时**调用
    （定义在 `lib/index.js:599`，调用点 `:1738`），把下面这段接在子会话首条任务后面：
    > *"Your parent agent id is `<id>`. Before you finish, send your result to that agent with `send_message({…})`.
    > **The parent does not automatically receive your transcript, tool output, or reasoning.**
@@ -474,7 +502,7 @@ SpawnTeammateRequest = {
 ### F36 · 会话侧边栏里**没有**"缩进嵌子会话"这回事（插件也做不到）· 实测
 
 用户 2026-10-01 问：微信群里有人把子会话**缩进嵌在左侧会话列表**里（看着像层级），DSH 能不能这样做？
-核实结论（读安装树里官方包自己的文档，0.2.0-rc.1）：
+核实结论（读安装树里官方包自己的文档，0.2.0-rc.2）：
 
 1. `$DSH_PKG/dsh-client-ui-workspace/README.zh.md`：「待处理交互显示为警告点，**subagent 来源的 Session 则保持隐藏**。」
 2. `$DSH_PKG/dsh-client-ui-subagent/README.zh.md`：「**普通会话侧边栏会省略 subagent 对话**，因此父会话页头目录是它们的导航入口。」
@@ -485,33 +513,6 @@ SpawnTeammateRequest = {
 ⟹ 那位朋友看到的界面**不是官方 DSH 默认行为**（可能是别人的改造/补丁，或别的产品）。
 ⟹ 本插件**不重复造**：沿用官方入口（父会话页头谱系目录 + 右侧 Sidebar）；想在会话行上加"后代 N"这类标记，
    只能用上面那几个 action 插槽，**不能**让子会话出现在会话列表里。要"左侧可见"得走上游产品建议。
-
-### F37 · ★★ 会话之间**互通消息**的官方通道（多轮子会话的答案）· 实测（读安装树类型定义）
-
-用户 2026-10-01 问：能不能在主会话里创建一个新会话来当子会话，**与它互通消息（多轮）**？
-答：**能，而且我们选的"可续接"子会话本来就是多轮的** —— "只能一轮"是对 **one-shot**（`start()`）的印象，
-不是 continuable 的行为。三条公开 API（`$DSH_PKG/dsh-subagent/lib/types/index.d.ts`）：
-
-1. **人写的话 → 子会话的「下一个轮次」**：`ctx.subagents.prompt(request, signal)`
-   —— *"Deliver one **browser-authored** message to a continuable child through the exact live direct parent…
-   **Queue delivery targets a later turn**; steer delivery targets the nearest step"*。
-   ⟹ 每发一条就是它的**一个新轮次**；`steer` 则是插到**最近的步骤边界**（不打断当前这步）。
-   失败码含 `subagent/parent-unavailable`、`subagent/not-resumable`、`subagent/delivery-unavailable`（冷恢复遇容量上限）。
-2. **双向**：`ctx.subagents.sendMessage(sender, targetId, content, options)` ——
-   *"Steer one **model-authored** message to the sender's **direct parent or direct continuable child**.
-   A running target admits it at the nearest step boundary; an idle target **starts a turn**, and
-   **an absent direct child cold-resumes from persistence**."*
-   ⟹ 子 Agent 也能主动给父会话发消息；父忙→最近步骤边界接收、父闲→起一个轮次、**不在进程→冷恢复**。
-3. **可指定模型与推理档 + 短标签**：`SubagentStartRequest.agentOptions`
-   = *"Optional host-Agent **provider, model, reasoning-effort, and output-token** overrides.
-   Requires `SubagentCapabilities.agentOptions`; in-process providers merge them over the parent Agent's options."*；
-   `label` = *"Optional short display label persisted with a session-backed child."*
-
-**约束**（别忽略）：投递要求**直接父子邻接**（direct parent/child）且**发送方是 live Agent**；
-子会话可以冷恢复、父会话不可以。另有一条运行时账目 `subagent-settled`（best-effort：父不在进程就不投递）。
-
-**推论（我们据此决策）**：**不需要**为了"多轮"去造普通会话；反而普通会话**没有父子邻接** ⟹ 没有回程通道
-（`prompt`/`sendMessage` 都会以邻接被拒）。缺的只是**界面入口**（打开子会话 / 给它发消息），这属于我们的面板职责。
 
 ### F37 · ★★ 会话之间**互通消息**的官方通道（多轮子会话的答案）· 实测（读安装树类型定义）
 
@@ -552,14 +553,14 @@ SpawnTeammateRequest = {
 | F17 | 深色主题的选择器是 **`body[data-ds-dark-theme]`**（不是 media query，也不在 `html` 上）→ 不写配置也能实测深色 | 早期那次尝试 §2.5（实测值：`--dsw-alias-bg-layer-1` 浅 `#fff` / 深 `#232324`；`bg-layer-2` 浅 `#fff` / 深 `#2c2c2e`） |
 | F18 | 两个 `@deepseek-ai` 依赖树**都不完整**：profile 层缺内部包、安装层缺 `react`/`react-dom`/`shiki`/`clsx` | 早期那次尝试 §2.5（2026-09-28 实测；`scripts/link-dsh-runtime.mjs` 默认链 profile 层） |
 | F19 | `ctx.sessionProjections` 是**注册表**，不是数据源；`stateOf(session,key)` / `snapshot(session,keys?)` 返回值 | `$DSH_PKG/dsh-session-projection/lib/types/index.d.ts` |
-| F20 | 宿主**没有**任何现成的"每请求上下文构成"投影；上游是靠自己的 fold 单元算出来并 `wire.view` 下发的 | 逐个枚举 0.2.0-rc.1 的 `SessionProjectionStateMap` 合并点：`turnOutline`/`contextBreakdown`/`tokenUsage`/`contextPressure`/`subagentCatalog`/`todos`/`goal`/`plan`… 无一是"每请求上下文清单" |
+| F20 | 宿主**没有**任何现成的"每请求上下文构成"投影；上游是靠自己的 fold 单元算出来并 `wire.view` 下发的 | 逐个枚举 0.2.0-rc.2 的 `SessionProjectionStateMap` 合并点：`turnOutline`/`contextBreakdown`/`tokenUsage`/`contextPressure`/`subagentCatalog`/`todos`/`goal`/`plan`… 无一是"每请求上下文清单" |
 | F21 | 斜杠命令：`ctx.commands.register({name (小写无斜杠), description, handler(invocation)})`，`invocation = {commandId, agent, rawInput, attachments, signal}` | `$DSH_PKG/dsh-commands/lib/types/index.d.ts`；`/compact` 是完整范例（`$DSH_SRC packages/compaction/command-compact/src/index.ts:104-118`） |
 | F22 | 系统提示词可按 Agent 作用域注入：`ctx.systemPrompt.section/context`（每 **preStep** 重新 assemble），一次性可用 `agent.inject(msg)` | `$DSH_SRC packages/core/agent-loop/src/agent.ts:246`、`runtime-context.ts:14-70`。**M7+** 才用 |
 | F23 | `dsh --profile web --dump-config` 可**静态合成插件树而不 boot** → 用来确认插件挂载与我们的命名空间是否冲突 | 早期那次尝试 §2.5 |
 | F24 | 子会话的目录/状态/身份**已有平台投影**：父会话 `subagentCatalog`、子会话 `subagentTiming` + `subagent` | `$DSH_PKG/dsh-subagent/lib/types/{catalog,projection-types}.d.ts`；见 §F13.1 |
 | F25 | **子会话不进左侧会话列表**；导航入口是**父会话页头的血缘面包屑 + 后代数量触发器**；官方 UI 包 `dsh-client-ui-subagent`（5 个槽位，含右侧 Sidebar 打开子会话对话） | `$DSH_PKG/dsh-client-ui-subagent/README.zh.md`（原文见 §F13.1） |
 | F26 | **fork 子会话可以可续接**：fork provider 实现了 `prepareContinuable`（方法存在即能力）→ `startContinuable({provider:'fork'})` 可用 | `$DSH_PKG/dsh-subagent-fork-in-process/lib/index.js` 全文；`dsh-subagent/lib/types/types.d.ts:360-375`；见 §F13.2 |
-| F27 | 可续接子会话的回传由**运行时**负责：建时自动追加**返回指引**（`withContinuableReturnGuidance`），settle 时往**父会话日志**追加 `subagent-settled` **结算通知** | `$DSH_PKG/dsh-subagent/lib/index.js:599,633`；见 §F12.1 |
+| F27 | 可续接子会话的回传由**运行时**负责：建时自动追加**返回指引**（`withContinuableReturnGuidance` —— ⛔ **插件禁止** import/调用它，只传人写的首条任务），settle 时往**父会话日志**追加 `subagent-settled` **结算通知** | `$DSH_PKG/dsh-subagent/lib/index.js:599,633`；见 §F12.1 |
 
 ---
 
