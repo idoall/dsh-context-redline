@@ -852,6 +852,20 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
     `标题数=${(card.match(/class="subhead blocktitle"/g) || []).length}`);
 }
 
+/* ---------------- 借鉴 V0 的"小细节"（配色不动）：两端对齐读数 / 焦点块 / 行右 › ---------------- */
+{
+  const S = api.S();
+  S.snapshots = []; S.children = [{ id: '00aaaaaa', src: 'own', state: 'running', label: '跑测试' }]; api.render();
+  const card = registry.get('cardOrch').innerHTML;
+  check('块标题：四个块都有右侧"读数"（.bmeta，两端对齐）', (card.match(/class="bmeta"/g) || []).length === 4,
+    `个数=${(card.match(/class="bmeta"/g) || []).length}`);
+  check('焦点块：有运行中子会话时给子会话块加 is-focus（用左侧竖条表达，不是彩色描边）', /orchblock is-focus" data-block="children"/.test(card) || /is-focus[^>]*data-block="children"/.test(card));
+  check('子会话行：身份行右侧有 ›（状态 + 箭头，一眼知道可进）', /class="chev"[^>]*>›</.test(card));
+  S.snapshots = []; api.render();
+  check('焦点块：没有冻结记录时，冻结块不加 is-focus', !/is-focus[^>]*data-block="freeze"/.test(registry.get('cardOrch').innerHTML));
+  S.children = []; api.render();
+}
+
 /* ---------------- 汇报 ---------------- */
 const bad = results.filter((r) => !r.ok);
 for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);

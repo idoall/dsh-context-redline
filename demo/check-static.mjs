@@ -211,6 +211,16 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (!/\.orchblock > \.blocktitle/.test(css)) problems.push('每块标题必须有独立样式（块身份要一眼可见）');
 }
 
+/* 17) 借鉴 V0 的视觉细节契约（配色不动）：两端对齐读数 / 焦点块左侧竖条 / 行间虚线 / 行右 › / 块底整宽按钮 */
+{
+  if (!/\.bmeta\s*\{[^}]*margin-left:\s*auto/.test(css)) problems.push('块标题右读数（.bmeta）必须右对齐（margin-left:auto）');
+  if (!/\.orchblock\.is-focus\s*\{[^}]*inset 3px 0 0/.test(css)) {
+    problems.push('焦点块要用**左侧竖条**（inset 3px 0 0）表达，不要整圈彩色描边（用户不接受彩色聚焦框）');
+  }
+  if (!/\.orch-id \.chev\s*\{/.test(css)) problems.push('子会话行右需要 › 标记（.orch-id .chev）');
+  if (!/\.btn\.block\s*\{/.test(css)) problems.push('块底需要整宽次级按钮样式（.btn.block）');
+}
+
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
  * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
  * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */

@@ -1128,8 +1128,9 @@ function renderOrch() {
          窄屏单列堆叠但每块有自己的边框与标题（不许再挤成一片）。 */''}
     <div class="orchgrid">
 
-    <section class="orchblock" data-block="freeze">
-    <div class="subhead blocktitle">冻结 <span class="hint">先钉一个出发点；开子会话就在下面某一条记录上点</span></div>
+    <section class="orchblock${S.snapshots.length ? ' is-focus' : ''}" data-block="freeze">
+    <div class="subhead blocktitle">冻结 <span class="hint">先钉一个出发点；开子会话就在下面某一条记录上点</span>
+      <span class="bmeta">${S.snapshots.length ? `最新 ${esc(S.snapshots[S.snapshots.length - 1].id)} · 第 ${S.snapshots[S.snapshots.length - 1].turn} 轮末 · ${S.snapshots[S.snapshots.length - 1].items} 条` : '还没有记录'}</span></div>
 
     <div class="orch-toolbar">
       <input id="snapNote" placeholder="人写备注（插件不生成摘要）" />
@@ -1163,8 +1164,9 @@ function renderOrch() {
 
     </section>
 
-    <section class="orchblock" data-block="children">
-    <div class="subhead blocktitle">子会话 / 成员索引 <span class="hint">活跃 ${active} / 8 · 官方 teammate 也占同一份额度</span></div>
+    <section class="orchblock${S.children.some((x) => x.state === 'running') ? ' is-focus' : ''}" data-block="children">
+    <div class="subhead blocktitle">子会话 / 成员索引 <span class="hint">官方 teammate 也占同一份额度</span>
+      <span class="bmeta">活跃 ${active} / 8 · 共 ${S.children.length} 个</span></div>
     ${c.length === 0 ? '<div class="cap">（还没有子会话）</div>' : c.map((x, i) => {
       const [stCls, stText] = stateOf(x.state);
       return `
@@ -1174,6 +1176,7 @@ function renderOrch() {
           <span class="${x.src === 'own' ? 'badge-src-own' : 'badge-src-team'}">${x.src === 'own' ? '本项目发起' : '来自 Agent Teams'}</span>
           <span class="badge-state"><i class="mstat ${stCls}"></i>${stText}</span>
           <span class="cap orch-desc">${esc(x.label)}${x.from ? ' · 来自快照 ' + esc(x.from) : ''}</span>
+          <span class="chev" title="打开它（去官方视图）">›</span>
         </div>
         <div class="orch-actions">
           <button class="btn sm ghost" data-act="copen" data-i="${i}" data-explain="child.open">打开</button>
@@ -1198,7 +1201,8 @@ function renderOrch() {
     </section>
 
     <section class="orchblock" data-block="pending">
-    <div class="subhead blocktitle">待处理的结果 <span class="hint" data-explain="pending.view">结算通知由平台尽力投递，投不到就说投不到</span></div>
+    <div class="subhead blocktitle">待处理的结果 <span class="hint" data-explain="pending.view">结算通知由平台尽力投递，投不到就说投不到</span>
+      <span class="bmeta">${S.pendingSeen ? '已全部确认' : '1 条待确认'}</span></div>
     ${S.sw.pendingState === 'settled' ? `
       <div class="orch-row">
         <div class="orch-id">
@@ -1224,7 +1228,8 @@ function renderOrch() {
     </section>
 
     <section class="orchblock" data-block="team">
-    <div class="subhead blocktitle">官方团队 <span class="hint" data-explain="team.read">只读 —— 显示的就是官方那份数据</span></div>
+    <div class="subhead blocktitle">官方团队 <span class="hint" data-explain="team.read">只读 —— 显示的就是官方那份数据</span>
+      <span class="bmeta">${S.sw.team ? `${S.members.length} 位成员 · ${S.tasks.length} 条任务` : '未启用'}</span></div>
     ${S.sw.team ? `
       <div class="cap list-label">成员</div>
       <div class="roster">${S.members.map((m) => `<span class="member"><i class="mstat ${m.st}"></i>${esc(m.name)}</span>`).join('')}</div>
@@ -1238,7 +1243,7 @@ function renderOrch() {
         </div>`).join('')
         : '<div class="cap">（任务板为空）</div>'}
       <div class="orch-actions">
-        <button class="btn sm ghost" data-act="teamOpen" data-explain="team.read">去官方面板</button>
+        <button class="btn sm ghost block" data-act="teamOpen" data-explain="team.read">去官方面板</button>
         <span class="cap">成员导航复用官方，我们不在面板里重画对话</span>
       </div>`
       : '<div class="cap">本机未启用官方智能体团队 → 派活 / 建成官方任务 / 成员式打断全部不出现（不是报错）。</div>'}

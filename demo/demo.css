@@ -369,6 +369,16 @@ body {
   margin: 2px 0 4px; padding-bottom: 4px;
   border-bottom: 1px dashed var(--dsw-alias-border-l1);   /* 标题下一道虚线，块身份一眼可见 */
 }
+/* ---------- 借鉴 V0 的"小细节"（配色不动，只搬结构与边框语言） ----------
+ * ① 块标题两端对齐：左块名 + 右读数；② 焦点块用**左侧竖条**而不是整圈彩色描边
+ *（用户明确不喜欢彩色聚焦框，见输入框聚焦那条偏好）；③ 行间细虚线；④ 行右"状态 + ›"；⑤ 块底整宽次级按钮。 */
+.blocktitle .bmeta { margin-left: auto; font-weight: 400; color: var(--dsw-alias-label-caption); font-size: 12px; }
+.orchblock.is-focus { border-color: var(--dsw-alias-border-l2); box-shadow: inset 3px 0 0 var(--ds-color-indigo); }
+.orchblock .orch-row + .orch-row,
+.orchblock .orch-row + .cap,
+.orchblock .task + .task { border-top: 1px dashed var(--dsw-alias-border-l1); }
+.orch-id .chev { margin-left: auto; color: var(--dsw-alias-label-caption); font-size: 14px; line-height: 1; padding-left: 6px; }
+.btn.block { display: block; width: 100%; text-align: center; }
 .orchblock:has(.warn-text) { border-color: var(--ds-color-amber); }
 .orchblock > .subhead + .subhead { margin-top: 6px; }
 @media (min-width: 1040px) {
