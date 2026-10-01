@@ -294,6 +294,26 @@ body {
 .chip-shadow { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-caption); }
 .chain { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 
+/* ---------- 上下文事件（会变的做成行，不变的收成小字） ---------- */
+.evsum { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--dsw-alias-label-secondary); margin: 2px 0 6px; }
+.evchip { font-size: 11px; border-radius: 999px; padding: 0 7px; border: 1px solid var(--dsw-alias-border-l2); }
+.evchip-done { border-color: var(--ds-color-indigo); color: var(--ds-color-indigo); }
+.evchip-todo { color: var(--dsw-alias-label-caption); }
+.evlist { display: flex; flex-direction: column; gap: 4px; }
+.evrow { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2); border-left-width: 3px; background: var(--dsw-alias-bg-layer-2); }
+.evrow.is-done { border-left-color: var(--ds-color-indigo); }
+.evrow.is-todo { border-left-color: var(--dsw-alias-border-l2); border-style: dashed; background: transparent; opacity: .62; }
+.evicon { font-size: 12px; }
+.evrow.is-todo .evicon { filter: grayscale(1); }
+.evmain { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; font-size: 12px; }
+.evlabel { color: var(--dsw-alias-label-secondary); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.evat { font-size: 11px; color: var(--dsw-alias-label-caption); white-space: nowrap; }
+.evstate { font-size: 11px; border-radius: 999px; padding: 0 6px; white-space: nowrap;
+  border: 1px solid var(--ds-color-indigo); color: var(--ds-color-indigo); }
+.evrow.is-todo .evstate { border-color: var(--dsw-alias-border-l2); color: var(--dsw-alias-label-caption); }
+.evhint { margin: 6px 0 0; }
+
 /* ---------- 内联编辑器 ---------- */
 .editor { margin: 0 6px 10px 22px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px; background: var(--dsw-alias-bg-layer-2); }
 .editor .etitle { font-size: 12px; font-weight: 600; margin: 0 0 2px; }
@@ -515,7 +535,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 f29338e</span>
+    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 3305f40</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -852,6 +872,8 @@ const catColor = (k) => (CATS.find((c) => c.key === k) || { color: 'inherit' }).
 const fmt = (n) => (Math.abs(n) >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n)));
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const reqOf = () => REQUESTS.find((r) => r.seq === S.selSeq) || REQUESTS[REQUESTS.length - 1];
+/** 当前在效固定块版本（冻结记录身份的一部分）：id@版本，稳定排序后拼串。 */
+const invariantsVersion = () => S.invariants.filter((b) => !b.retired).map((b) => `${b.id}@${b.version}`).sort().join('|') || 'none';
 const turnSteps = (turn) => REQUESTS.filter((r) => r.turn === turn).length;
 const reqsOfTurn = (turn) => REQUESTS.filter((r) => r.turn === turn);
 const lastOfTurn = (turn) => reqsOfTurn(turn)[reqsOfTurn(turn).length - 1];
@@ -1354,23 +1376,30 @@ function renderStep() {
 function renderEvents() {
   $('cardEvents').innerHTML = `
     <div class="card-title">上下文事件 <span class="hint">（压缩 / 裁剪，会标在趋势图上）</span></div>
-    <div class="cap" style="margin-bottom:4px"><b>这一栏是干什么用的</b>：告诉你"上下文在哪一轮被压掉/剪掉过"。<br>
-      为什么重要：<b>被压掉的条目从此改不了</b>（只能批注），而且压缩是<b>不可逆</b>的 —— 所以看到 ✂ 就知道"那之前的条目已经不在模型可见内容里了"。<br>
-      <b>✂</b> 每个事件只标在它之后的<b>第一个请求</b>上（鼠标移到 ✂ 上看详情，点它可跳到那一次）。</div>
     ${(() => {
-      /* 用户 2026-10-01：「内容是不变的，不拟真」→ 事件必须**随当前位置变化**：
-       * 当前这一步（含）之前发生过的算"已发生"；之后的标成"尚未发生"（灰）—— 那时候它还没被压/剪。 */
+      /* 用户 2026-10-01（两条）：「内容不变、不拟真」+「会变的和不变的都挤在一起、都是浅灰、不醒目」
+       * ⟹ ① 事件随当前这一步变化；② **会变的内容做成事件行**（已发生＝有色条+实心标记，尚未发生＝虚线灰），
+       *    不会变的说明收成最后一行小字（它不随位置变，就不该占视觉重量）。 */
       const cur = reqOf().seq;
       const done = EVENTS.filter((e) => e.seq <= cur);
       const later = EVENTS.filter((e) => e.seq > cur);
-      const line = (e, isDone) => {
+      const row = (e, isDone) => {
         const at = REQUESTS.find((r) => r.seq >= e.seq) || {};
-        return `<div class="cap${isDone ? '' : ' dim'}">${isDone ? '' : '<b>尚未发生</b> · '}#${e.seq} · ✂ ${KIND_LABEL[e.kind]} · ${esc(e.label)} → 发生在第 ${at.turn} 轮 · 第 ${at.step} 步</div>`;
+        return `<div class="evrow ${isDone ? 'is-done' : 'is-todo'}">
+          <span class="evicon">✂</span>
+          <span class="evmain"><b>${esc(KIND_LABEL[e.kind])}</b><span class="evlabel">${esc(e.label)}</span></span>
+          <span class="evat">第 ${at.turn} 轮 · 第 ${at.step} 步</span>
+          <span class="evstate">${isDone ? '已发生' : '尚未发生'}</span>
+        </div>`;
       };
-      return `<div class="cap" style="margin-top:2px">看的是<b>第 ${reqOf().turn} 轮 · 第 ${reqOf().step} 步</b>这一刻：<b>${done.length} 条已发生</b>${later.length ? ` · ${later.length} 条还没发生（下面灰色那几条）` : ''}</div>`
-        + done.map((e) => line(e, true)).join('') + later.map((e) => line(e, false)).join('');
-    })()}
-    <div class="cap" style="margin-top:4px">共 ${TOTAL_TURNS} 轮 / ${REQUESTS.length} 次请求 —— 把趋势条拉宽就能看到全部。</div>`;
+      return `<div class="evsum">看的是<b>第 ${reqOf().turn} 轮 · 第 ${reqOf().step} 步</b>这一刻
+        <span class="evchip evchip-done">已发生 ${done.length}</span>
+        <span class="evchip evchip-todo">还没发生 ${later.length}</span></div>
+        <div class="evlist">${done.map((e) => row(e, true)).join('')}${later.map((e) => row(e, false)).join('')}</div>
+        <div class="cap evhint"><b>这一栏是干什么用的</b>：告诉你上下文在哪一轮被压掉 / 剪掉过。
+          被压掉的条目从此改不了（只能批注），压缩也不可逆 —— 灰色那几条是<b>还没发生</b>的。
+          每个事件标在它之后的第一个请求上（点趋势图上的 ✂ 可跳到那一次）。共 ${TOTAL_TURNS} 轮 / ${REQUESTS.length} 次请求。</div>`;
+    })()}`;
 }
 
 /* ------------------------------------------------------------------ 6. 右侧浏览器 */
@@ -1707,14 +1736,18 @@ function renderOrch() {
     ${S.invariants.filter((b) => !b.retired).length === 0 ? '<span class="cap">建议先把目标 / 约束（尤其是每轮被重新注入的那几条）存为固定块，否则子会话里没人守漂移。</span>' : ''}
     </div>
 
-    <div class="subhead">冻结记录 <span class="hint">只写本地，不写会话 · <b>历史机制：每点一次加一条，不覆盖</b></span></div>
+    <div class="subhead">冻结记录 <span class="hint">只写本地，不写会话 · <b>一条记录 = 一个「切点 + 当时的固定块版本」</b>；同一身份再点不新增（只问你要不要改备注）；备注可改、其余字段只能删</span></div>
     ${S.snapshots.length
-      ? S.snapshots.map((s) => `
+      ? S.snapshots.map((s, i) => `
       <div class="orch-row">
         <div class="orch-id">
           <span class="snapid">${esc(s.id)}</span>
-          <span class="cap">第 ${s.turn} 轮末 · ${s.items} 条 · ${s.time}</span>
+          <span class="cap">第 ${s.turn} 轮末 · ${s.items} 条 · ${s.time} · 固定块版本：${esc(s.inv === undefined ? '—' : (s.inv === 'none' ? '无' : s.inv))}</span>
           <span class="orch-note orch-desc">人写备注：${esc(s.note || '（无）')}</span>
+        </div>
+        <div class="orch-actions">
+          <button class="btn sm ghost" data-act="snote" data-i="${i}" data-explain="orch.freeze">改备注</button>
+          <button class="btn sm ghost" data-act="sdel" data-i="${i}" data-explain="orch.freeze">删除</button>
         </div>
       </div>`).join('')
       : '<div class="cap">还没有冻结记录。建议：先把草稿清零 → 冻结 → 再开子会话。</div>'}
@@ -1920,10 +1953,53 @@ function orchAct(b) {
     return;
   }
   if (act === 'freeze') {
+    /* ⚠️ 幂等（用户 2026-10-01：「同一位置再点一次为什么会出现多条？我没理解」）：
+     * 一条冻结记录的**身份** = 「切点 + 当时在效的固定块版本」。
+     * 同一身份再点一次 **不是新记录**，而是问你要不要更新那条的备注（写错了不用一条条改）。
+     * 其余字段（切点/条目数/时刻/固定块版本）是当时的客观读数 —— **不可改**，只能删（改了就不叫凭证）。 */
+    const cut = `${reqOf().turn}·${reqOf().step}`, inv = invariantsVersion();
+    const same = S.snapshots.find((x) => x.cut === cut && x.inv === inv);
     const note = ($('snapNote') && $('snapNote').value.trim()) || '';
+    if (same) {
+      confirmModal({
+        title: '这一刻已经冻过了',
+        warn: '同一个切点 + 同一批在效固定块只保留一条记录（否则就是重复的废记录）。要更新那条的备注吗？',
+        rows: [['已有记录', `${same.id} · 第 ${same.turn} 轮末 · ${same.items} 条 · ${same.time}`],
+               ['原来的备注', same.note || '（无）'],
+               ['这次要写的备注', note || '（空 —— 确认后保持原备注不变）'],
+               ['不会变的字段', '切点 / 条目数 / 冻结时刻 / 当时的固定块版本（客观读数，改了就不是凭证了）']],
+        needReason: false, okText: '更新备注', helpKey: 'orch.freeze',
+        // 确认时**再读一次**输入框：先写备注再点、或点完再写，两种顺序都成立
+        onOk: () => { const t = ($('snapNote') && $('snapNote').value.trim()) || note; if (t) same.note = t; render(); toast(`已更新 ${same.id} 的备注（没有新增记录）`); }
+      });
+      return;
+    }
     const id = 'snap-20260930-' + String(120000 + S.snapshots.length * 137).slice(0, 6);
-    S.snapshots.push({ id, turn: reqOf().turn, items: surfaceOf().length, time: '12:1' + (S.snapshots.length % 9), note });
+    const row = { id, cut, inv, turn: reqOf().turn, items: surfaceOf().length, time: '12:1' + (S.snapshots.length % 9), note };
+    S.snapshots.push(row);
     render(); toast('已冻结（只写插件本地：切点 / 条目数 / 时间 / 人写备注 / 固定块版本 —— 不写会话）'); return;
+  }
+  if (act === 'snote' || act === 'sdel') {
+    const x = S.snapshots[i];
+    if (!x) return;
+    if (act === 'snote') {
+      confirmModal({
+        title: '改这条冻结记录的备注',
+        warn: '只有你写的备注能改；切点 / 条目数 / 时刻 / 固定块版本是客观读数，不改。',
+        rows: [['记录', `${x.id} · 第 ${x.turn} 轮末 · ${x.items} 条 · ${x.time}`], ['现在的备注', x.note || '（无）']],
+        needReason: true, okText: '保存备注', helpKey: 'orch.freeze',
+        onOk: (t) => { x.note = t; render(); toast('备注已更新'); }
+      });
+      return;
+    }
+    confirmModal({
+      title: '删除这条冻结记录',
+      warn: '只删这条本地记录，不影响会话与模型可见内容。',
+      rows: [['记录', `${x.id} · 第 ${x.turn} 轮末 · ${x.items} 条 · ${x.time}`], ['备注', x.note || '（无）']],
+      needReason: false, okText: '删除', helpKey: 'orch.freeze',
+      onOk: () => { S.snapshots.splice(i, 1); render(); toast('已删除该冻结记录'); }
+    });
+    return;
   }
   if (act === 'spawn') {
     confirmModal({

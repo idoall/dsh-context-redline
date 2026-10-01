@@ -746,20 +746,41 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('固定块面板：解释"按钮为什么长在条目行上"（要选钉哪一段）', /按钮之所以长在/.test(blocks) && /钉哪一段/.test(blocks));
 
   // ② 事件随位置变化
-  const early = api.REQUESTS[0].seq, late = api.lastOfTurn(api.TOTAL_TURNS).seq;
-  S.selSeq = early; S.selTurn = api.REQUESTS[0].turn; api.render();
+  // 取"两个事件之间"的那一刻：这样才能同时看到"1 条已发生 + 1 条还没发生"
+  const between = api.REQUESTS.find((r) => r.seq >= 1200);
+  const early = between.seq, late = api.lastOfTurn(api.TOTAL_TURNS).seq;
+  S.selSeq = early; S.selTurn = between.turn; api.render();
   const evEarly = registry.get('cardEvents').innerHTML;
   S.selSeq = late; S.selTurn = api.TOTAL_TURNS; api.render();
   const evLate = registry.get('cardEvents').innerHTML;
-  check('上下文事件：看早期那一步时，事件标成「尚未发生」', /尚未发生/.test(evEarly) && /条已发生/.test(evEarly));
-  check('上下文事件：看最后一步时，事件全部「已发生」且内容与早期**不一样**', !/尚未发生/.test(evLate) && evEarly !== evLate);
+  check('上下文事件：看早期那一步时，事件标成「尚未发生」+ 计数分开显示', /尚未发生/.test(evEarly) && /已发生 1/.test(evEarly) && /还没发生 1/.test(evEarly));
+  check('上下文事件：看最后一步时，事件全部「已发生」且内容与早期**不一样**', !/尚未发生/.test(evLate) && /已发生 2/.test(evLate) && evEarly !== evLate);
+  check('上下文事件：会变的事件做成行（is-done / is-todo），不变的说明收成小字', /class="evrow is-done"/.test(evLate) && /evhint/.test(evLate));
 
-  // ③ 冻结是历史机制
+  /* ③ 冻结：**幂等**（用户 2026-10-01 纠正："同一位置再点一次为什么会出现多条？"）——
+   * 一条记录的身份 = 「切点 + 当时的固定块版本」；同身份再点 → **不新增**，只问要不要改备注。
+   * 备注可改；切点/条目数/时刻/固定块版本不可改（客观读数），只能删。 */
   S.snapshots = [];
   api.orchAct({ dataset: { act: 'freeze' } });
   const afterOne = S.snapshots.length;
   api.orchAct({ dataset: { act: 'freeze' } });
-  check('冻结：每点一次**加一条**，不覆盖（历史机制）', afterOne === 1 && S.snapshots.length === 2, `第一次=${afterOne} 第二次=${S.snapshots.length}`);
+  check('冻结：同一位置再点**不新增**记录（幂等），而是问"要不要改备注"', afterOne === 1 && S.snapshots.length === 1 && registry.get('modalWrap').hidden === false && /已经冻过/.test(registry.get('modalTitle').textContent), `第一次=${afterOne} 第二次=${S.snapshots.length}`);
+  check('冻结确认框：写明"只保留一条"并列出不会变的字段', /只保留一条/.test(registry.get('modalWarn').textContent) && /不会变的字段/.test(registry.get('modalList').innerHTML));
+  document.getElementById('snapNote').value = '改一下备注';
+  document.getElementById('modalOk').onclick();
+  check('冻结：备注能被更新，且仍然只有一条记录', S.snapshots.length === 1 && S.snapshots[0].note === '改一下备注', `note=${S.snapshots[0] && S.snapshots[0].note}`);
+  // 换一个位置 → 才是新记录
+  S.selSeq = api.REQUESTS[0].seq; S.selTurn = api.REQUESTS[0].turn;
+  api.orchAct({ dataset: { act: 'freeze' } });
+  check('冻结：**不同位置**才新增一条（两条并存）', S.snapshots.length === 2);
+  // 改备注 / 删除
+  api.orchAct({ dataset: { act: 'snote', i: 1 } });
+  document.getElementById('modalReason').value = '第二条的备注';
+  document.getElementById('modalOk').onclick();
+  check('冻结记录：备注可就地改（另一条不受影响）', S.snapshots[1].note === '第二条的备注' && S.snapshots[0].note === '改一下备注');
+  api.orchAct({ dataset: { act: 'sdel', i: 0 } });
+  document.getElementById('modalOk').onclick();
+  check('冻结记录：可删除（只删本地记录）', S.snapshots.length === 1 && S.snapshots[0].note === '第二条的备注');
 
   // ④ 多轮子会话的事实必须写在讲解词里
   const sp = api.EXPLAIN['orch.spawn'].what;
