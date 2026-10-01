@@ -192,6 +192,14 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (!/第 1 步/.test(js) || !/应用到会话/.test(js)) problems.push('「保存草稿」旁边必须写清两步流程（否则用户不知道点完还要做什么）');
 }
 
+/* 15) 说明文字里的 markdown 星号必须经 md() 转换，不许原样进 HTML（踩过三次：趋势说明、讲解说明栏、编辑器提示） */
+{
+  // ⚠️ 先剥注释（第三次踩同一个坑：注释里解释病历时会把 ** 照样写一遍）
+  const jsc = js.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ');
+  const htmlStrings = jsc.split('\n').filter((l) => /<p class|<span|innerHTML/.test(l) && /\*\*/.test(l));
+  if (htmlStrings.length) problems.push(`这些行把 markdown 的 ** 直接写进了 HTML（会原样显示星号）：${htmlStrings[0].trim().slice(0, 60)}`);
+}
+
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
  * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
  * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */

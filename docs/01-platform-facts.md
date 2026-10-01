@@ -471,6 +471,21 @@ SpawnTeammateRequest = {
 **规则**：编辑器的读写一律走 `node.read`（宿主全文）；`docs/05` 的 **A4** 用"返回正文 ≠ 80 字预览"把它锁死。
 （早期那次尝试正是把预览当正文，点一次「编辑+应用」就把整条消息截成 80 字 —— 数据破坏级缺陷。）
 
+### F36 · 会话侧边栏里**没有**"缩进嵌子会话"这回事（插件也做不到）· 实测
+
+用户 2026-10-01 问：微信群里有人把子会话**缩进嵌在左侧会话列表**里（看着像层级），DSH 能不能这样做？
+核实结论（读安装树里官方包自己的文档，0.2.0-rc.1）：
+
+1. `$DSH_PKG/dsh-client-ui-workspace/README.zh.md`：「待处理交互显示为警告点，**subagent 来源的 Session 则保持隐藏**。」
+2. `$DSH_PKG/dsh-client-ui-subagent/README.zh.md`：「**普通会话侧边栏会省略 subagent 对话**，因此父会话页头目录是它们的导航入口。」
+3. 官方在会话行上暴露的插槽**只有 action 类**：`sidebar.workspaces.session.menu.item`、
+   `sidebar.workspaces.session.row.action`、`sidebar.session.row.leading`、`sidebar.session.row.hover`
+   —— **没有"插入一条新会话行"的插槽**。
+
+⟹ 那位朋友看到的界面**不是官方 DSH 默认行为**（可能是别人的改造/补丁，或别的产品）。
+⟹ 本插件**不重复造**：沿用官方入口（父会话页头谱系目录 + 右侧 Sidebar）；想在会话行上加"后代 N"这类标记，
+   只能用上面那几个 action 插槽，**不能**让子会话出现在会话列表里。要"左侧可见"得走上游产品建议。
+
 ---
 
 ## 5. 其它已核实事实

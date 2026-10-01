@@ -716,6 +716,22 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.extraNodes = []; S.applied = []; S.editor = null; api.render();
 }
 
+/* ---------------- 「说人话」的固定结构：一句话是什么 / 为什么需要 / 什么时候用 / 不做什么 ----------------
+ * 用户 2026-10-01：「看了右侧弹出的提示，也没看懂」→ 说明文字光有术语不算说明，要有这四段。 */
+{
+  const need = (key, marks, label) => {
+    const e = api.EXPLAIN[key];
+    const text = e ? (e.what + ' ' + e.effect + ' ' + e.rev) : '';
+    check(`说明说人话：${label}`, !!e && marks.every((m) => text.includes(m)), e ? marks.filter((m) => !text.includes(m)).join('缺:') || '' : '没有这条讲解词');
+  };
+  need('act.pin', ['一句话', '为什么需要', '你什么时候会用它', '它不做什么', '逐字'], '存为不变量');
+  need('orch.freeze', ['一句话', '记下什么', '为什么需要', '它不做什么', '什么时候会用'], '冻结当前位置');
+  need('orch.spawn', ['一句话', '两条路', '种子是一次性的', '在界面上怎么找'], '开子会话');
+  // 上下文事件卡：必须说明"这一栏是干什么用的"
+  const cap = registry.get('cardEvents').innerHTML;
+  check('上下文事件卡：说明"这一栏是干什么用的"（不只是图标含义）', /这一栏是干什么用的/.test(cap) && /被压掉的条目从此改不了/.test(cap));
+}
+
 /* ---------------- 汇报 ---------------- */
 const bad = results.filter((r) => !r.ok);
 for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);
