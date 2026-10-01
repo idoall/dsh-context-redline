@@ -657,7 +657,7 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('批注确认框：写明它是"请求式"的（不遮蔽原文、不保证模型照做）', /请求式/.test(rows) && /不遮蔽原文/.test(rows));
   check('批注确认框：给出"想确定生效"的替代路径', /确定生效/.test(rows) && /应用到会话/.test(rows));
   check('批注确认框：短警示说清"原文保留、两者都能看到"', /不可撤销；原文保留，模型两者都能看到/.test(registry.get('modalWarn').textContent));
-  check('批注确认框：本次清单含更正目标 / 作废范围 / 理由', /更正目标/.test(rows) && /作废范围/.test(rows) && /理由/.test(rows));
+  check('批注确认框：本次清单含更正目标（人话）/ 范围说明 / 理由', /更正目标/.test(rows) && /只针对上面这一条/.test(rows) && /理由/.test(rows));
   document.getElementById('modalOk').onclick();
   const added = S.extraNodes[S.extraNodes.length - 1];
   check('批注确认后：真的追加了那条更正（带结构化头部）', S.extraNodes.length === before + 1 && /\[redline\] 更正目标 seq=/.test(added.text) && /作废范围 seq=/.test(added.text));
@@ -693,22 +693,25 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('编辑用户消息：主字段叫「正文」', /正文/.test(eh) && /id="edT"/.test(eh));
   check('编辑用户消息：思考文本收进「高级」折叠（默认不展开）', /<details class="adv">/.test(eh) && /id="edR"/.test(eh));
   check('编辑用户消息：写清两步流程（保存草稿 → 应用到会话才生效）', /第 1 步/.test(eh) && /应用到会话/.test(eh) && /才会真的生效/.test(eh));
-  check('编辑器：提交按钮旁边有「?」帮助（点它看说明）', /class="qmark" data-help="act.edit"/.test(eh));
+  check('编辑器：提交按钮**左上角飘一个「?」**（与讲解模式序号同一种做法，不是按钮后面挂一个）', /class="qfloat"[^>]*data-help="act.edit"/.test(eh) && /class="qwrap"/.test(eh));
 
   // 批注：不许再出现数字输入框，作废范围改成"就这一条 / 从这条到…"
   S.editor = { kind: 'annotate', seq: userNode.seq, reason: '演示', voidFrom: String(userNode.seq), voidTo: String(userNode.seq) };
   const ah = api.editorHtml();
   check('批注：不再让用户输 seq 数字（没有 type="number"）', !/type="number"/.test(ah));
-  check('批注：作废范围默认「就这一条」，扩大才用下拉选（带正文预览）', /id="voidOne"/.test(ah) && /id="voidRange"/.test(ah) && /id="edTo"/.test(ah) && /#\$\{/.test(ah) === false);
-  check('批注：把"作废范围是什么"解释给用户看', /事件序号区间/.test(ah) && /你不用记数字/.test(ah));
-  check('批注：提交按钮旁边也有「?」', /class="qmark" data-help="act.annotate"/.test(ah));
+  /* 用户 2026-10-01：一步可能几百条、一会话上万条，"从这条到…"的下拉既没有语义、又是性能/体验负担
+   * → 批注**只针对点的那一条**；要更大的范围就写在理由里（模型读的正是理由）。 */
+  check('批注：**没有**范围选择器（不许出现下拉/区间选择）', !/id="edTo"/.test(ah) && !/voidRange/.test(ah), '');
+  check('批注：只针对"你点的那一条"，并说清更大范围写在理由里', /只针对/.test(ah) && /写在理由里/.test(ah));
+  check('批注：更正目标用人话描述（轮/步/类别/正文开头），seq 退居括号', /class="targetbox"/.test(ah) && /第 \$\{/.test(ah) === false && /事件序号 #/.test(ah));
+  check('批注：提交按钮左上角也有「?」', /class="qfloat"[^>]*data-help="act.annotate"/.test(ah));
 
   // 走一遍：默认"就这一条"→ 确认框里写的是人话范围
   S.extraNodes = []; S.applied = [];
   document.getElementById('edWhy').value = '演示理由';
   api.submitEditor();
   const rows = registry.get('modalList').innerHTML;
-  check('批注确认框：作废范围显示成「就这一条（#seq）」而不是裸区间', /就这一条（#/.test(rows), rows.slice(0, 80));
+  check('批注确认框：更正目标显示成人话（第 N 轮 · 第 M 步 · 类别 “正文…”（#seq））', /第 \d+ 轮 · 第 \d+ 步/.test(rows) && /#\d+/.test(rows), rows.slice(0, 90));
   document.getElementById('modalOk').onclick();
   S.extraNodes = []; S.applied = []; S.editor = null; api.render();
 }

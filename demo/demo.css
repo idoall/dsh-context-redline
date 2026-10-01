@@ -418,14 +418,23 @@ body { transition: padding-right .18s ease-out; }
  * （<select> 只能装 option，塞进去的编号会被浏览器丢掉 —— 用户实测"编号看不见"就是这个） */
 .pickwrap { position: relative; display: inline-flex; align-items: center; }
 
-/* 「?」帮助按钮：给**动态出现**的按钮用（编辑器里的提交/取消、确认框里的确认）——
- * 讲解模式的编号是按"元素类别"固定编号的，动态才出现的按钮拿不到稳定编号，所以给它一个问号。 */
-.qmark {
-  width: 18px; height: 18px; min-height: 0; padding: 0; line-height: 1;
-  border-radius: 999px; border: 1px solid var(--dsw-alias-border-l2); background: transparent;
-  color: var(--dsw-alias-label-caption); font-size: 11px; cursor: help;
+/* 「?」帮助标记：给**动态出现**的按钮用（编辑器里的提交/取消、确认框里的确认）。
+ * 做法与讲解模式的序号**完全一致**：贴着元素的**左上角**飘一个小圆标 —— 一眼就知道它对应哪个按钮。
+ * 用户 2026-10-01：「我说的问号不是在按钮后面单独加一个问号……这么做用户体验看着很差」。 */
+.qwrap { position: relative; display: inline-flex; align-items: center; }
+.qfloat {
+  position: absolute; top: -9px; left: -8px; z-index: 8;
+  min-width: 16px; padding: 0 4px; text-align: center; cursor: help; user-select: none;
+  background: var(--dsw-alias-brand); color: #fff; font-size: 10px; line-height: 15px;
+  border-radius: 999px; box-shadow: 0 0 0 1px var(--dsw-alias-bg-layer-1);
 }
-.qmark:hover, .qmark:focus-visible { border-color: var(--dsw-alias-brand); color: var(--dsw-alias-label-primary); outline: none; }
+.qfloat:hover, .qfloat:focus-visible { outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 1px; }
+/* "这条批注针对哪一条"：用人话（轮/步/类别/正文开头）说，seq 退居括号里 */
+.targetbox {
+  margin: 4px 0 8px; padding: 6px 8px; border-left: 3px solid var(--dsw-alias-brand);
+  background: var(--dsw-alias-bg-layer-3); border-radius: 4px;
+  font-size: 12px; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere;
+}
 /* 编辑器里的「高级」折叠（思考文本这类多数消息没有的字段） */
 .adv { margin: 4px 0 8px 22px; }
 .adv summary { cursor: pointer; font-size: 12px; color: var(--dsw-alias-label-secondary); }

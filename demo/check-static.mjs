@@ -184,8 +184,10 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
 
 /* 14) 界面说人话：四条硬要求（用户 2026-10-01） */
 {
-  if (/type="number"/.test(js)) problems.push('批注的作废范围不许再用数字输入框（用户不知道 seq）——应改成"就这一条 / 从这条到…"的选择器');
-  if (!/class="qmark" data-help/.test(js)) problems.push('动态出现的按钮（提交/取消/确认）必须带「?」帮助按钮（讲解模式给不了它们稳定编号）');
+  if (/type="number"/.test(js)) problems.push('批注不许再用数字输入框（用户不知道 seq）');
+  if (/id="edTo"/.test(js)) problems.push('批注不许再给"从这条到…"的范围选择器（一步几百条、一会话上万条 → 无意义且是负担；要范围就写在理由里）');
+  if (!/class="qfloat"/.test(js) || !/class="qwrap"/.test(js)) problems.push('动态出现的按钮要用**左上角飘的**「?」（.qfloat/.qwrap，与讲解模式序号同一种做法），不是按钮后面再挂一个按钮');
+  if (!/class="targetbox"/.test(js)) problems.push('批注必须用**人话**说明"这条批注针对哪一条"（轮/步/类别/正文开头），#seq 只能退居括号');
   if (!/<details class="adv">/.test(js)) problems.push('思考文本这类"多数消息没有"的字段必须收进「高级」折叠（R3.2 本来就要求折叠）');
   if (!/第 1 步/.test(js) || !/应用到会话/.test(js)) problems.push('「保存草稿」旁边必须写清两步流程（否则用户不知道点完还要做什么）');
 }

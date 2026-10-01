@@ -806,34 +806,35 @@ function rowHtml(node) {
     ${S.editor && S.editor.seq === node.seq ? editorHtml() : ''}
   </div>`;
 }
+/** 用**人话**描述"这一条是哪一条"：轮 / 步 / 类别 / 正文开头。`#seq` 只是日志里的编号，退居次要。 */
+function nodeWhere(n) {
+  const r = reqOf();
+  return `第 ${r.turn} 轮 · 第 ${r.step} 步 · ${catLabel(n.cat)}`;
+}
+const nodeExcerpt = (n, len = 26) => `“${String(n.text || '').replace(/\s+/g, ' ').slice(0, len)}…”`;
+
 function editorHtml() {
   const st = S.editor, blocked = S.sw.turnOpen || !S.sw.live;
   const node = nodeOf(st.seq);              // 字段要按**底层类型**给（R3.2）：工具结果只给内容文本 + isError
-  const title = st.kind === 'edit' ? `编辑 #${st.seq}（遮蔽原文）` : st.kind === 'annotate' ? `批注 #${st.seq}（保留原文）` : `把 #${st.seq} 存为不变量`;
+  const title = st.kind === 'edit' ? `编辑第 ${reqOf().turn} 轮 · 第 ${reqOf().step} 步的这一条`
+    : st.kind === 'annotate' ? `批注第 ${reqOf().turn} 轮 · 第 ${reqOf().step} 步的这一条`
+    : `把这一条存为不变量`;
   const note = st.kind === 'pin' ? '固定块逐字保存：插件不生成、不润色、不压缩。'
     : st.kind === 'annotate' ? '提交后会往会话追加一条更正消息，不可撤销；原文不会被遮蔽，模型两者都看到。它是"请求式"的（不保证模型照做）。'
     : '这一步只把改动存在插件本地，模型还看不到；要让模型看到，还要做下面第 2 步。';
-  // docs/03 R3.4：多段文本会被合并为一段 → 编辑器上方常驻一行灰字（仅在原消息确实是多段时出现）
   const multiPara = st.kind === 'edit' && /\n\s*\n/.test(String(st.text || ''));
-  /* 用户 2026-10-01：「触发之后才展开的按钮，编号不好加，那就加一个问号，点了问号说明是什么」。 */
-  const q = (key, label) => `<button class="qmark" data-help="${key}" title="${esc(label)}：点这里看它是做什么的（不影响这个按钮）">?</button>`;
-  /* 批注的作废范围：**不让用户输数字**。默认「就这一条」；要扩大就从当前这一步的行里选（带正文预览）。 */
-  const rangePicker = () => {
-    const rowsInStep = nodesOfReq(reqOf(), true).filter((n) => n.seq >= 0);
-    const st2 = node ? nodesOfReq(reqOf(), true) : [];
-    return `<div class="field"><span>作废范围：要模型忽略哪几条</span>
-      <div class="efoot">
-        <label class="pickone"><input type="radio" name="voidMode" id="voidOne" checked> 就这一条（#${st.seq}）</label>
-        <label class="pickone"><input type="radio" name="voidMode" id="voidRange"> 从这一条到：</label>
-        <select class="btn sm" id="edTo" disabled>
-          ${st2.map((n) => `<option value="${n.seq}">${esc(catLabel(n.cat))} · ${esc(String(n.text || '').slice(0, 22))}… (#${n.seq})</option>`).join('')}
-        </select>
-      </div>
-      <p class="cap">"作废范围"就是写进那条更正消息里的<b>事件序号区间</b>（#seq）—— 模型靠它知道你指的是哪几条；你不用记数字，选就行。</p>
-    </div>`;
-  };
+  /* ③ 左上角飘一个「?」——与讲解模式序号同一种做法（贴着元素，一眼知道对应谁）。
+   *    用户 2026-10-01：「我说的问号不是在按钮后面单独加一个问号……这么做用户体验看着很差」。 */
+  const q = (key, label) => `<span class="qfloat" role="button" tabindex="0" data-help="${key}"
+      title="${esc(label)}：点这里看它是做什么的（不影响这个按钮）">?</span>`;
+  /* ① 更正目标写成人话（哪一轮、哪一步、哪一类、正文开头），#seq 只作为追溯编号放在括号里。 */
+  const targetBox = () => (node ? `<div class="targetbox">
+      <b>${esc(nodeWhere(node))}</b><br>${esc(nodeExcerpt(node))}
+      <span class="cap">（事件序号 #${node.seq}：写进更正消息里供追溯；你不用记它）</span>
+    </div>` : '');
   return `<div class="editor">
     <p class="etitle">${esc(title)}</p>
+    ${st.kind !== 'annotate' ? '' : targetBox()}
     <p class="enote">${esc(note)}</p>
     ${multiPara ? '<p class="enote">这条消息有多个文本段落；改写后会合并为一段。</p>' : ''}
     ${st.kind === 'edit' ? (node && node.type === 'tool/result' ? `
@@ -846,8 +847,8 @@ function editorHtml() {
         <label class="field"><textarea rows="2" id="edR">${esc(st.reasoning || '')}</textarea></label>
       </details>`)
     : st.kind === 'annotate' ? `
-      <label class="field"><span>理由（会写进那条更正消息，模型看得到）</span><textarea rows="2" id="edWhy" placeholder="一句话说明为什么更正">${esc(st.reason || '')}</textarea></label>
-      ${rangePicker()}`
+      <label class="field"><span>理由（会写进那条更正消息，模型看得到）</span><textarea rows="3" id="edWhy" placeholder="一句话说明为什么更正">${esc(st.reason || '')}</textarea></label>
+      <p class="cap">这条批注<b>只针对上面那一条</b>。如果你要作废的范围不止这一条，就直接写在理由里（例如"上面第 3、4 条都作废"）—— 模型读的正是这段理由，不需要你去选范围或记编号。</p>`
     : `
       <label class="field"><span>标签</span><input type="text" id="edLabel" value="${esc(st.label || '')}" placeholder="例如「目标」「约束」"></label>
       <label class="field"><span>正文（逐字保存）</span><textarea rows="4" id="edPin">${esc(st.text)}</textarea></label>`}
@@ -856,9 +857,8 @@ function editorHtml() {
     ${S.editorOk ? `<p class="emsg-ok">${esc(S.editorOk)}</p>` : ''}
     ${st.kind === 'edit' ? '<p class="cap esteps"><b>第 1 步</b> 保存草稿 → 只存在插件本地（模型还看不到）· <b>第 2 步</b> 行上出现「未生效」→ 点<b>「应用到会话」</b>才会真的生效（那时原文被遮蔽、模型只看到改后的）</p>' : ''}
     <div class="efoot">
-      <button class="btn sm" data-act="esubmit" ${blocked ? 'disabled' : ''}>${st.kind === 'pin' ? '保存为固定块' : st.kind === 'annotate' ? '提交更正到会话' : '保存草稿'}</button>
-      ${q(st.kind === 'pin' ? 'act.pin' : st.kind === 'annotate' ? 'act.annotate' : 'act.edit', '这个按钮')}
-      <button class="btn sm ghost" data-act="ecancel">取消（Esc）</button>
+      <span class="qwrap"><button class="btn sm" data-act="esubmit" ${blocked ? 'disabled' : ''}>${st.kind === 'pin' ? '保存为固定块' : st.kind === 'annotate' ? '提交更正到会话' : '保存草稿'}</button>${q(st.kind === 'pin' ? 'act.pin' : st.kind === 'annotate' ? 'act.annotate' : 'act.edit', '这个按钮')}</span>
+      <span class="qwrap"><button class="btn sm ghost" data-act="ecancel">取消（Esc）</button></span>
       <span class="cap">Cmd/Ctrl + Enter 提交</span>
     </div>
   </div>`;
@@ -908,7 +908,7 @@ function renderBrowser() {
   });
   $('cardBrowser').querySelectorAll('[data-elem]').forEach((b) => { b.onclick = (e) => { if (e.target.dataset.focus) return; S.openElem = S.openElem === Number(b.dataset.elem) ? null : Number(b.dataset.elem); render(); }; });
   $('cardBrowser').querySelectorAll('[data-act]').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); rowAct(b); }; });
-  wireHelpButtons(); wireEditorBits();
+  wireHelpButtons();
 }
 
 /* ------------------------------------------------------------------ 7. 快照与子会话 */
@@ -957,14 +957,6 @@ function blockDrift(b) {
 
 /** 给所有「?」帮助按钮接线（编辑器、确认框、动态弹出的按钮都用它）。
  *  用户 2026-10-01：「触发之后才展开的按钮，编号不好加，那就加一个问号，点了问号说明是什么」。 */
-/** 编辑器里的小控件：批注的"作废范围"单选 → 控制下拉是否可用。
- *  用户 2026-10-01：「用户根本就不懂 seq，还要输准确数字」→ 默认就这一条，扩大才选。 */
-function wireEditorBits() {
-  const one = $('voidOne'), range = $('voidRange'), sel = $('edTo');
-  if (!one || !range || !sel) return;
-  const sync = () => { sel.disabled = !range.checked; };
-  one.onchange = sync; range.onchange = sync; sync();
-}
 function wireHelpButtons() {
   document.querySelectorAll('[data-help]').forEach((b) => {
     b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openDrawer(b.dataset.help); };
@@ -1194,13 +1186,11 @@ function submitEditor() {
   if (st.kind === 'annotate') {
     const reason = ($('edWhy') && $('edWhy').value.trim()) || '';
     if (reason === '') { S.editorError = '理由不能为空'; render(); return; }
-    /* 作废范围**不让用户输数字**：默认"就这一条"，要扩大就从这一步的行列表里选（用户 2026-10-01：
-     * "你还是要输入准确的数字，用户怎么能知道准确的数字？"）。 */
-    const rangeOn = !!($('voidRange') && $('voidRange').checked);
-    const from = st.seq;
-    const to = rangeOn && $('edTo') ? Number($('edTo').value) : st.seq;
-    if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from > to) { S.editorError = '作废范围不合法（bad-range）'; render(); return; }
-    const rangeText = rangeOn ? `#${from} ～ #${to}` : `就这一条（#${from}）`;
+    /* ⚠️ 批注**只针对你点的那一条**（用户 2026-10-01：范围下拉在"一步几百条、一会话上万条"时
+     * 既没有语义、又是性能/体验负担；要说明更大范围就写在**理由**里 —— 模型读的正是理由）。
+     * 结构化头部里的 seq 只用于我们自己的追溯。 */
+    const from = st.seq, to = st.seq;
+    const rangeText = `${nodeWhere(nodeOf(st.seq))} ${nodeExcerpt(nodeOf(st.seq), 18)}（#${st.seq}）`;
     /* ⚠️ R3.3.1：凡**写入型**提交按钮都要先出 R4.3 确认框，`提交更正到会话` 不例外
      *（唯一例外是「保存草稿」——不写会话、可一键放弃）。原先这里直接追加，是漏了这道门。
      * 框里必须写清"这条更正在**快照/子会话**里起什么作用"（用户 2026-10-01 问的那件事）。 */
@@ -1208,8 +1198,8 @@ function submitEditor() {
       title: '提交更正到会话（批注）',
       warn: '会向会话追加一条消息，不可撤销；原文保留，模型两者都能看到。',
       rows: [
-        ['更正目标', `#${st.seq}`],
-        ['作废范围', rangeText],
+        ['更正目标', rangeText],   // 人话：第 N 轮 · 第 M 步 · 类别 “正文…”（#seq）—— 只有这一条
+        ['范围', '只针对上面这一条；要更大范围请写在理由里'],
         ['理由', reason],
         ['在快照里', '这条更正会随快照（fork 种子）进子会话 —— 但它只是"请求式"的：不遮蔽原文、不保证模型照做；而且长对话或压缩之后，它可能被摘要吞掉'],
         ['想要"确定生效"', '用「编辑」+「应用到会话」（遮蔽原文，模型只看到改后的那条）；想长期有效则「存为不变量」']
