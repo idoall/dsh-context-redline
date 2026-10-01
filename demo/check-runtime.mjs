@@ -805,26 +805,37 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.invariants = []; S.snapshots = []; S.children = []; S.selTurn = api.TOTAL_TURNS; S.selSeq = late; api.render();
 }
 
-/* ---------------- 冻结记录的**用途**：多个可选的分叉起点（用户 2026-10-01："多条的作用是什么？"） ----------------
- * 规格 R5.1：开子会话要"选一条冻结记录（或当前）"；demo 原先硬编码"现在"，所以多条看着没意义。
- * 现在：面板有「分叉起点」选择器 → 种子取自**你选的那条**；没有记录时自动补记一条并标明。 */
+/* ---------------- 冻结记录的用途：**每一条记录行上就是一个出发点**（用户 2026-10-01 定的结构） ----------------
+ * 用户原话：「我应该在我冻结的那一条后边加上开子会话，而不是在子会话跟冻结当前位置是同一条」——
+ * 所以：① 没有全局的「开子会话」按钮；② 每条冻结记录行上有 `从这里开子会话`；
+ * ③ 点第 i 行 → 确认框 ① = 那一条的客观字段；④ 建出的子会话 from = 那一条。 */
 {
   const S = api.S();
   S.snapshots = []; S.children = []; S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.selTurn = api.TOTAL_TURNS; api.render();
-  check('分叉起点：面板里有选择器（默认"还没有记录 → 开子会话时自动补记"）', /id="seedPick"/.test(registry.get('cardOrch').innerHTML) && /自动补记/.test(registry.get('cardOrch').innerHTML));
-  // 造两条起点（不同切点）→ 选早的那条开子会话，子会话的 from 必须是**选中的那一条**
+  check('冻结记录：还没有记录时，界面明确说"先冻结"（没有全局开子会话按钮可点）',
+    !/data-act="spawn"/.test(registry.get('cardOrch').innerHTML) && /还没有冻结记录/.test(registry.get('cardOrch').innerHTML));
+  // 造两条起点（不同切点）
   S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; api.orchAct({ dataset: { act: 'freeze' } });
   const first = S.snapshots[0].id;
   S.selSeq = api.REQUESTS[0].seq; S.selTurn = api.REQUESTS[0].turn; api.orchAct({ dataset: { act: 'freeze' } });
-  check('分叉起点：不同切点 → 两条记录（= 两个可选起点）', S.snapshots.length === 2, `条数=${S.snapshots.length}`);
+  check('冻结记录：不同切点 → 两条记录（= 两个出发点）', S.snapshots.length === 2, `条数=${S.snapshots.length}`);
   api.render();
-  document.getElementById('seedPick').value = first;      // 选**早**的那条
-  api.orchAct({ dataset: { act: 'spawn' } });
+  const html = registry.get('cardOrch').innerHTML;
+  check('结构：**每条**冻结记录行上都有「从这里开子会话」（按行计数 = 记录条数）',
+    (html.match(/data-act="spawn"/g) || []).length === 2, `按钮数=${(html.match(/data-act="spawn"/g) || []).length}`);
+  check('结构：行上的按钮写明"种子 = 这一条"的客观字段', /种子 = 这一条/.test(html));
+  // 点**第 0 行**的按钮 → ① 必须是第 0 条（不是最新那条）
+  api.orchAct({ dataset: { act: 'spawn', i: 0 } });
   const rows = registry.get('modalList').innerHTML;
-  check('开子会话：① 分叉起点写的是**所选那条记录**的客观字段（不是硬编码"现在"）', rows.includes(first) && /第 \d+ 轮末/.test(rows) && /固定块版本/.test(rows), rows.slice(0, 90));
-  document.getElementById('modalReason').value = '按 v1 的口径补一轮';
+  check('开子会话：点哪一行，① 分叉起点就是那一条的客观字段', rows.includes(first) && /第 \d+ 轮末/.test(rows) && /固定块版本/.test(rows), rows.slice(0, 90));
+  document.getElementById('modalReason').value = '按 v1 口径补一轮';
   document.getElementById('modalOk').onclick();
-  check('开子会话：建出来的子会话来源 = 选中的那条起点', S.children.length === 1 && S.children[0].from === first, `from=${S.children[0] && S.children[0].from} 期望 ${first}`);
+  check('开子会话：建出的子会话来源 = 点的那一行', S.children.length === 1 && S.children[0].from === first, `from=${S.children[0] && S.children[0].from} 期望 ${first}`);
+  // 删掉那一条后，再点同索引 → 应当拒绝（不许凭空拿"最新那条"顶上）
+  S.snapshots.splice(0, 1);
+  const before = S.children.length;
+  api.orchAct({ dataset: { act: 'spawn', i: 5 } });
+  check('开子会话：起点不存在时**不建会话**（不许拿别的记录顶上）', S.children.length === before);
   S.snapshots = []; S.children = []; api.render();
 }
 

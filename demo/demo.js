@@ -74,23 +74,12 @@ const EXPLAIN = {
     rev: '可以删除这条记录',
     confirm: '要（短警示会说清"只写插件本地、不写会话"）',
     refs: ['docs/00 S5.2', 'docs/03 R5.1'] },
-  'orch.seed': {
-    t: '分叉起点（选哪一条冻结记录当种子）',
-    what: '**一句话**：开子会话时，种子**取自你在这里选的那条冻结记录**（不是"总是从现在"）。\n'
-      + '**冻结记录为什么会有多条**：它是**一个可选的分叉起点**，不是书签。切点决定"从哪一刻的日志做种子"、\n'
-      + '条目数是当时的规模、固定块版本是当时在生效的口径 —— 这三样都是种子的输入。\n'
-      + '所以：昨晚口径 v1 冻一条、今天口径 v2 再冻一条，你就有了**两个**可选起点；\n'
-      + '要补一个"仍按 v1 干"的子会话，就选早的那条（只有一条记录时做不到这件事）。\n'
-      + '**为什么参数不能改**：改了就等于声称"这个子会话是从某个你从没冻结过的时刻分出来的"（伪造凭证）。\n'
-      + '备注是给你看的 → 可改；切点/条目数/固定块版本是给种子用的 → 只读，不想要就整条删。\n'
-      + '**还没冻结过怎么办**：开子会话时会自动补记一条（界面上标明"开子会话时自动记录"）。',
-    effect: '只影响"下一次开子会话从哪一刻取种子"。不改会话、不改模型可见内容。',
-    rev: '换一条选即可（记录本身可删，但子会话已经在跑的话，它的起点记录建议留着）',
-    confirm: '不需要',
-    refs: ['docs/03 R5.1', 'docs/06 §2'] },
   'orch.spawn': {
-    t: '开子会话（把这件事交给一个新会话来干）',
+    t: '从这里开子会话（把这件事交给一个新会话来干）',
     what: '**一句话**：拿当前会话"已经聊完的部分"当**起点**，开一个**真的新会话**去干一件具体的活，首条任务由你写。\n'
+      + '**你点的是哪一行，种子就取自哪一条冻结记录**（切点决定"从哪一刻的日志做种子"、条目数是当时的规模、\n'
+      + '固定块版本是当时在生效的口径）—— "想从哪一刻分叉"这件事靠**你在哪一行点**来回答，不需要去别处再选一遍。\n'
+      + '冻结记录为什么可能有多条：**不同时刻的出发点**（昨晚按 v1 分出去、今天按 v2 分出去）。\n'
       + '**它就是你在别处看到的"主会话派活给子会话"**：子会话是独立会话（有自己的日志、自己的上下文）。\n'
       + '**它是多轮的**（这一条最容易误会）：可续接子会话**可以一直接收你的后续消息** —— 每发一条就是它的**一个新轮次**\n'
       + '（官方 `ctx.subagents.prompt({delivery:"queue"})` = 排成下一个轮次；`steer` = 插到最近的步骤边界）。\n'
@@ -1137,27 +1126,13 @@ function renderOrch() {
     <div class="orch-toolbar">
       <input id="snapNote" placeholder="人写备注（插件不生成摘要）" />
       <button class="btn sm" data-act="freeze" data-explain="orch.freeze" ${!S.sw.live || draftCount() > 0 ? 'disabled' : ''}>冻结当前位置</button>
-      <button class="btn sm" data-act="spawn" data-explain="orch.spawn" ${!S.sw.live || draftCount() > 0 || !S.snapshots.length ? 'disabled' : ''}>开子会话（人写首条任务）</button>
+      <span class="cap">冻完会在下面多出一条记录 —— <b>开子会话就在那条记录上点</b>（你在哪一条点，就从哪一刻分叉）</span>
+
       ${draftCount() > 0 ? `<span class="cap warn-text">还有 ${draftCount()} 条草稿没提交 —— 草稿不在 fork 种子里，也不在冻结记录里，它只存在插件本地。</span>` : ''}
     ${S.invariants.filter((b) => !b.retired).length === 0 ? '<span class="cap">建议先把目标 / 约束（尤其是每轮被重新注入的那几条）存为固定块，否则子会话里没人守漂移。</span>' : ''}
     </div>
 
-    <div class="subhead">分叉起点 <span class="hint">开子会话时，种子就取自这一条冻结记录</span></div>
-    <div class="cap" style="margin-bottom:6px">
-      冻结记录不是书签，而是<b>一个可选的分叉起点</b>：切点决定"从哪一刻的日志做种子"、条目数是当时的规模、
-      固定块版本是当时在生效的口径。<b>多条 = 多个可选的起点</b>（例如今天按 v2 分叉、但要补一个按 v1 干的子会话，
-      就选最早那条）。参数只读 —— 它们是种子的输入，改了就等于伪造"从哪一刻分出来"。
-    </div>
-    <div class="efoot" style="margin-bottom:6px">
-      <label class="cap" for="seedPick">从这一刻分叉：</label>
-      <span class="pickwrap" data-explain="orch.seed"><select class="btn sm" id="seedPick">
-        ${S.snapshots.length
-          ? [...S.snapshots].reverse().map((x, k) => `<option value="${esc(x.id)}">${k === 0 ? '（最新）' : ''}${esc(x.id)} · 第 ${x.turn} 轮末 · ${x.items} 条 · ${esc(x.inv === undefined ? '—' : (x.inv === 'none' ? '无固定块' : x.inv))}</option>`).join('')
-          : '<option value="">（现在这一刻 —— 还没有冻结记录，开子会话时会自动补记一条）</option>'}
-      </select></span>
-    </div>
-
-    <div class="subhead">冻结记录 <span class="hint">只写本地，不写会话 · <b>一条记录 = 一个「切点 + 当时的固定块版本」</b>；同一身份再点不新增（只问你要不要改备注）；备注可改、其余字段只能删</span></div>
+    <div class="subhead">冻结记录（每一条 = 一个出发点）<span class="hint">只写本地，不写会话 · <b>一条记录 = 一个「切点 + 当时的固定块版本」</b>；同一身份再点不新增（只问你要不要改备注）；备注可改、其余字段只能删</span></div>
     ${S.snapshots.length
       ? S.snapshots.map((s, i) => `
       <div class="orch-row">
@@ -1167,6 +1142,11 @@ function renderOrch() {
           <span class="orch-note orch-desc">人写备注：${esc(s.note || '（无）')}</span>
         </div>
         <div class="orch-actions">
+          ${/* 用户 2026-10-01：想分叉就在**这一条**后面点 —— 别把"开子会话"挂在冻结按钮那一行，
+               那样子会话跟冻结看着是同一条，用户不知道自己在哪一条上分叉。 */''}
+          <button class="btn sm" data-act="spawn" data-i="${i}" data-explain="orch.spawn"
+            ${!S.sw.live || draftCount() > 0 ? 'disabled title="先处理草稿 / 会话不在本进程"' : ''}>从这里开子会话</button>
+          <span class="cap">种子 = 这一条（第 ${s.turn} 轮末 · ${s.items} 条 · 固定块版本 ${esc(s.inv === undefined ? '—' : (s.inv === 'none' ? '无' : s.inv))}）</span>
           <button class="btn sm ghost" data-act="snote" data-i="${i}" data-explain="orch.freeze">改备注</button>
           <button class="btn sm ghost" data-act="sdel" data-i="${i}" data-explain="orch.freeze">删除</button>
         </div>
@@ -1355,24 +1335,13 @@ function doApply(seq) {
   delete S.drafts[seq];
   render(); toast(`已应用：#${seq} 被遮蔽 → 新条目 #${ns}（原文仍在日志里；可用版本历史恢复）`);
 }
-/** 当前选中的分叉起点（冻结记录）；没有记录时**自动补一条**（界面上标明"开子会话时自动记录"）。
- *  这就是"冻结多条"的用途：**它们是多个可选的分叉起点**（种子 = 切点 + 条目数 + 当时在效的固定块版本）。 */
-function seedOf() {
-  const pick = $('seedPick');
-  const id = pick ? pick.value : '';
-  const hit = id ? S.snapshots.find((x) => x.id === id) : null;
-  if (hit) return hit;
-  const cut = `${reqOf().turn}·${reqOf().step}`;
-  const auto = { id: 'snap-20260930-' + String(120000 + S.snapshots.length * 137).slice(0, 6), cut,
-    inv: invariantsVersion(), turn: reqOf().turn, items: surfaceOf().length,
-    time: '12:1' + (S.snapshots.length % 9), note: '（开子会话时自动记录）', auto: true };
-  S.snapshots.push(auto);
-  return auto;
+/** 分叉起点 = **你点的那一行冻结记录**（行内按钮 `data-i`）。
+ *  用户 2026-10-01 定的结构：「想分叉就在冻结的那一条后面点『从这里开子会话』」——
+ *  所以这里不接受"当前"或"默认最新"，必须是**一条真实存在的记录**（没有记录就不能点，按钮不存在）。 */
+function seedAt(i) {
+  return S.snapshots[i] || null;
 }
-function seedLabel() {
-  const x = seedOf();
-  return `${x.id}${x.auto ? '（开子会话时自动记录）' : ''} · 第 ${x.turn} 轮末 · ${x.items} 条 · 固定块版本：${x.inv === 'none' ? '无' : x.inv}`;
-}
+const seedLabel = (x) => `${x.id} · 第 ${x.turn} 轮末 · ${x.items} 条 · 固定块版本：${x.inv === undefined ? '—' : (x.inv === 'none' ? '无' : x.inv)}`;
 function orchAct(b) {
   const act = b.dataset.act, i = Number(b.dataset.i);
   if (act === 'cprompt') {
@@ -1441,11 +1410,12 @@ function orchAct(b) {
     return;
   }
   if (act === 'spawn') {
-    const seed = seedOf();
+    const seed = seedAt(i);
+    if (!seed) { toast('这条冻结记录已经不在了（可能被删了）', 'err'); return; }
     confirmModal({
       title: '允许创建子会话',
       warn: '会用这个会话「已完成的轮次」做种子新建一个子会话（种子是一次性的：之后本会话的新轮次不会进去）。',
-      rows: [['① 分叉起点', seedLabel()],
+      rows: [['① 分叉起点', seedLabel(seed)],
              ['② 首条任务', '（见下方理由栏 —— 必须由你写）'],
              ['③ 继承范围', '✅ 继承：已完成的对话历史（含你已应用的编辑）｜❌ 不继承：父会话的工具授权/权限；父会话也不会自动收到子会话的 transcript / 工具输出 / 思考'],
              ['④ 副作用', S.sw.team ? '走官方 spawnTeammate(context:"fork") → 进官方名册（任务板/成员导航/派活都有）' : '团队不可用 → 退化为"裸可续接子会话"（没有任务板与官方派活）'],
