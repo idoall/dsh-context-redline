@@ -211,6 +211,15 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (!/\.orchblock > \.blocktitle/.test(css)) problems.push('每块标题必须有独立样式（块身份要一眼可见）');
 }
 
+/* 16.5) 全页统一语言（2026-10-01 一致性 pass）：卡片标题与块标题同一套（下细虚线 + 右读数） + 行间细虚线 */
+{
+  if (!/\.card-title\s*\{[^}]*border-bottom:\s*1px dashed/.test(css)) problems.push('卡片标题下必须有细虚线（与「快照与子会话」的块标题同一套语言）');
+  if (!/\.card-title \.bmeta\s*\{/.test(css)) problems.push('卡片标题要有右读数样式（.card-title .bmeta）');
+  if (!/#cardBrowser \.row \+ \.row/.test(css) || !/\.catbody \.row \+ \.row/.test(css)) {
+    problems.push('分类树/浏览器行之间要有细虚线分隔（与块内行分隔一致）');
+  }
+}
+
 /* 17) 借鉴 V0 的视觉细节契约（配色不动）：两端对齐读数 / 焦点块左侧竖条 / 行间虚线 / 行右 › / 块底整宽按钮 */
 {
   if (!/\.bmeta\s*\{[^}]*margin-left:\s*auto/.test(css)) problems.push('块标题右读数（.bmeta）必须右对齐（margin-left:auto）');

@@ -402,7 +402,8 @@ function renderStats() {
   const vis = visibleOf(), all = surfaceOf();
   const r = reqOf();
   $('cardStats').innerHTML = `
-    <div class="card-title">上下文统计 <span class="hint">（当前视图：第 ${r.turn} 轮 · 第 ${r.step} 步${isLive() ? ' · 当前' : ''}）</span></div>
+    <div class="card-title">上下文统计 <span class="hint">（当前视图：第 ${r.turn} 轮 · 第 ${r.step} 步${isLive() ? ' · 当前' : ''}）</span>
+      <span class="bmeta">本步可见 ${surfaceOf().length} 条 · ≈${fmt(surfaceOf().reduce((a, n) => a + n.tokens, 0))} tokens</span></div>
     <div class="stats">
       <div class="stat"><b>${vis.length}</b><span>模型可见条目${all.length > vis.length ? `（另 ${all.length - vis.length} 条被遮蔽）` : ''}</span></div>
       <div class="stat"><b>${vis.filter((n) => n.cat === 'user').length}</b><span>用户消息</span></div>
@@ -749,7 +750,8 @@ function renderStep() {
   const hasUser = !S.sw.noUser && !!turnLastUser(r.turn);
   const hasInject = !!turnLastInject(r.turn);
   $('cardStep').innerHTML = `
-    <div class="card-title">第 ${r.turn} 轮 · 第 ${r.step} 步（共 ${turnSteps(r.turn)} 步） <span class="hint">${r.time}${isLive() ? ' · 当前（下一次请求）' : ''}</span></div>
+    <div class="card-title">第 ${r.turn} 轮 · 第 ${r.step} 步 <span class="hint">${r.time}${isLive() ? ' · 当前（下一次请求）' : ''}</span>
+      <span class="bmeta">共 ${turnSteps(r.turn)} 步 · ${reqsOfTurn(r.turn).length} 次请求</span></div>
     <div class="cap">这一屏的条数：用户消息 ${visibleOf().filter((n) => n.cat === 'user').length} · 注入内容 ${visibleOf().filter((n) => n.cat === 'inject').length}
       ${markerOf(r) ? `· <b>✂ ${esc(markerOf(r).label)}</b>` : ''}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
@@ -770,7 +772,8 @@ function renderStep() {
 }
 function renderEvents() {
   $('cardEvents').innerHTML = `
-    <div class="card-title">上下文事件 <span class="hint">（压缩 / 裁剪，会标在趋势图上）</span></div>
+    <div class="card-title">上下文事件 <span class="hint">（压缩 / 裁剪，会标在趋势图上）</span>
+      <span class="bmeta">共 ${EVENTS.length} 次 · 不可逆</span></div>
     ${(() => {
       /* 用户 2026-10-01（两条）：「内容不变、不拟真」+「会变的和不变的都挤在一起、都是浅灰、不醒目」
        * ⟹ ① 事件随当前这一步变化；② **会变的内容做成事件行**（已发生＝有色条+实心标记，尚未发生＝虚线灰），
@@ -1066,7 +1069,8 @@ function renderBlocks() {
     </div>`;
   }).join('');
   box.innerHTML = `
-    <div class="card-title">固定块（不变量） <span class="hint"><b>全局</b>：workspace 级，本会话与子会话都看得见</span></div>
+    <div class="card-title">固定块（不变量） <span class="hint"><b>全局</b>：workspace 级，本会话与子会话都看得见</span>
+      <span class="bmeta">${S.invariants.filter((b) => !b.retired).length} 个在效 / 共 ${S.invariants.length} 个</span></div>
     <div class="cap" style="margin-bottom:4px"><b>这一栏是全局的</b>（不属于某一类条目）：<b>任何一轮、任何会话</b>想钉住的话都汇总到这里，之后每轮逐字比对、发现漂移就标出来。<br>
       按钮之所以长在<b>条目行上</b>，只是因为"钉哪一段"要在那条上选 —— 钉下来的固定块本身对<b>整个上下文</b>生效。<br>
       逐字保存：插件不生成、不润色、不压缩。漂移检查只做<b>逐字包含</b>判断（不含推断）。</div>
@@ -1121,7 +1125,8 @@ function renderOrch() {
    * 状态一律用圆点 + 徽章，**不用 emoji**（docs/03 V5）。
    */
   $('cardOrch').innerHTML = `
-    <div class="card-title">快照与子会话 <span class="hint">A′：只做快照化子会话 + 对接官方；不自己造协作层</span></div>
+    <div class="card-title">快照与子会话 <span class="hint">A′：只做快照化子会话 + 对接官方；不自己造协作层</span>
+      <span class="bmeta">冻结 ${S.snapshots.length} · 子会话 ${S.children.length}</span></div>
 
     ${/* 用户 2026-10-01：「整块挤成一个大竖条、看着乱」→ 按**内容块**分区：
          冻结 / 子会话索引 / 待处理的结果 / 官方团队。宽屏两块并排（冻结一列，索引+待处理一列，团队跨两列），

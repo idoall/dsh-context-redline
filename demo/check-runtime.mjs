@@ -857,13 +857,22 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   const S = api.S();
   S.snapshots = []; S.children = [{ id: '00aaaaaa', src: 'own', state: 'running', label: '跑测试' }]; api.render();
   const card = registry.get('cardOrch').innerHTML;
-  check('块标题：四个块都有右侧"读数"（.bmeta，两端对齐）', (card.match(/class="bmeta"/g) || []).length === 4,
+  // 快照卡的 4 个块 + 卡片标题各自一个读数（卡片标题那个也算，所以是 5）
+  check('块标题：四个块都有右侧"读数"（.bmeta，两端对齐）', (card.match(/class="bmeta"/g) || []).length === 5,
     `个数=${(card.match(/class="bmeta"/g) || []).length}`);
   check('焦点块：有运行中子会话时给子会话块加 is-focus（用左侧竖条表达，不是彩色描边）', /orchblock is-focus" data-block="children"/.test(card) || /is-focus[^>]*data-block="children"/.test(card));
   check('子会话行：身份行右侧有 ›（状态 + 箭头，一眼知道可进）', /class="chev"[^>]*>›</.test(card));
   S.snapshots = []; api.render();
   check('焦点块：没有冻结记录时，冻结块不加 is-focus', !/is-focus[^>]*data-block="freeze"/.test(registry.get('cardOrch').innerHTML));
   S.children = []; api.render();
+}
+
+/* ---------------- 全页统一语言：卡片标题也要有右读数（与块标题一致） ---------------- */
+{
+  api.render();
+  const titled = ['cardStats', 'cardStep', 'cardEvents', 'cardBlocks', 'cardOrch'];
+  const missing = titled.filter((id) => !/class="bmeta"/.test(registry.get(id).innerHTML));
+  check('卡片标题：非工具栏类卡片都有右侧读数（与块标题同一套语言）', missing.length === 0, missing.join(','));
 }
 
 /* ---------------- 汇报 ---------------- */

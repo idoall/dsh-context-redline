@@ -139,10 +139,14 @@ body {
   container-type: inline-size;         /* ← 卡片内部用容器查询自适应（参照参考插件的 @container 写法） */
 }
 .card-title {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  /* 与「快照与子会话」的块标题**同一套语言**：标题下一道细虚线 + 右侧读数（两端对齐） */
+  margin: 0 0 8px; padding-bottom: 6px;
+  border-bottom: 1px dashed var(--dsw-alias-border-l1);
   font-weight: 600; font-size: 13px; color: var(--dsw-alias-label-primary);
 }
 .card-title .hint { font-weight: 400; font-size: 12px; color: var(--dsw-alias-label-caption); }
+.card-title .bmeta { margin-left: auto; font-weight: 400; font-size: 12px; color: var(--dsw-alias-label-caption); }
 
 /* ---------- 状态数字卡 ---------- */
 .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr)); gap: 8px; }
@@ -374,6 +378,12 @@ body {
  *（用户明确不喜欢彩色聚焦框，见输入框聚焦那条偏好）；③ 行间细虚线；④ 行右"状态 + ›"；⑤ 块底整宽次级按钮。 */
 .blocktitle .bmeta { margin-left: auto; font-weight: 400; color: var(--dsw-alias-label-caption); font-size: 12px; }
 .orchblock.is-focus { border-color: var(--dsw-alias-border-l2); box-shadow: inset 3px 0 0 var(--ds-color-indigo); }
+/* 行间细虚线：分类树 / 浏览器行为与分块内的行同一种语言 */
+.catbody .row + .row,
+#cardBrowser .row + .row { border-top: 1px dashed var(--dsw-alias-border-l1); }
+/* 浏览器行的动作条与正文之间也来一道（轻），让"身份 / 动作"两层更清楚 */
+#cardBrowser .row .actions { border-top: 1px dashed var(--dsw-alias-border-l1); padding-top: 4px; }
+
 .orchblock .orch-row + .orch-row,
 .orchblock .orch-row + .cap,
 .orchblock .task + .task { border-top: 1px dashed var(--dsw-alias-border-l1); }
