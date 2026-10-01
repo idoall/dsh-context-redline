@@ -905,6 +905,50 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.snapshots = []; api.render();
 }
 
+/* ---------------- 钉住的职责划分（用户 2026-10-01 问：能不能只在「固定块」模块里管） ----------------
+ * 结论：**创建留在行上**（要选"钉哪一段原文"），**管理在模块里**（查看/漂移/重注入/退休），
+ * 且同一条原文只钉一次（幂等：已钉住的行显示 `已钉住 · vN`，不再给创建按钮）。 */
+{
+  const S = api.S();
+  S.invariants = []; S.applied = []; S.extraNodes = []; S.openCat = 'inject'; S.editor = null;
+  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.selTurn = api.TOTAL_TURNS; api.render();
+  const inj = api.nodesOfReq(api.lastOfTurn(api.TOTAL_TURNS), true).filter((n) => n.cat === 'inject');
+  const target = inj[0];
+  const browser = () => registry.get('cardBrowser').innerHTML;
+  check('注入类行上：给「钉住这一段」这个创建入口', new RegExp('data-act="pin" data-seq="' + target.seq + '"').test(browser()) && /钉住这一段/.test(browser()));
+  // 钉一次
+  api.rowAct({ dataset: { act: 'pin', seq: String(target.seq) } });
+  document.getElementById('edLabel').value = 'AGENTS.md';
+  document.getElementById('edPin').value = target.text;
+  api.submitEditor();
+  check('钉住：落成固定块（v1）', S.invariants.length === 1 && S.invariants[0].version === 1);
+  api.render();
+  check('钉住：**同一条原文不再给创建按钮**（改显示 `已钉住 · vN`，避免重复钉）',
+    !new RegExp('data-act="pin" data-seq="' + target.seq + '"').test(browser()) && /已钉住 · v1/.test(browser()));
+  const blocks = registry.get('cardBlocks').innerHTML;
+  check('固定块模块：写明"按钮为什么在行上"（要选钉哪一段）+ 正文只读', /按钮之所以长在/.test(blocks) && /钉哪一段/.test(blocks) && /基准，只读/.test(blocks));
+  check('固定块模块：给"去注入内容里钉一段"的跳转入口', /data-act="gotoPin"/.test(blocks));
+  // 跳转入口真的会展开"注入内容"
+  S.openCat = null; api.render();
+  api.orchAct({ dataset: { act: 'gotoPin' } });
+  check('跳转入口：点了会展开「注入内容」这一类', S.openCat === 'inject');
+  /* 冻结块：用法备注要"占一行以内"（用户 2026-10-01：两行太占空间）
+   * 做法：说明**压到一句话**（`冻完在下面出记录 → 在那条上点「从这里开子会话」`），
+   * 而"先存固定块"的完整建议降级成旁边一个紧凑标记 `尚无固定块`（完整句子进 title，仍然可被验到）。 */
+  S.invariants = []; api.render();
+  const orch = registry.get('cardOrch').innerHTML;
+  const note = (orch.match(/<span class="cap">(冻完在下面出记录[^<]*)<b>([^<]*)<\/b><\/span>/) || []);
+  check('冻结块：说明压到一句话（不再把"建议先存固定块"整句塞进同一行）',
+    note.length === 3 && (note[1] + note[2]).length <= 40, `字数=${(note[1] || '') .length + (note[2] || '').length}`);
+  check('冻结块：完整建议降级为紧凑标记 `尚无固定块`（句子进 title，仍可发现）',
+    /<span class="chip-soft" title="建议先把目标 \/ 约束/.test(orch) && /尚无固定块/.test(orch));
+  // 有固定块时，这个标记不该再出现
+  S.invariants = [{ id: 'inv-x-1', label: 'x', text: 'x', version: 1, retired: false, scope: 'workspace', savedAt: '12:00' }];
+  api.render();
+  check('冻结块：已经有固定块时，不再提示"尚无固定块"', !/尚无固定块/.test(registry.get('cardOrch').innerHTML));
+  S.invariants = []; api.render();
+}
+
 /* ---------------- 汇报 ---------------- */
 const bad = results.filter((r) => !r.ok);
 for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);

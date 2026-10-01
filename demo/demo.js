@@ -44,7 +44,7 @@ const EXPLAIN = {
   'act.edit': { t: '编辑（遮蔽原文）', what: '改写这一条的内容。', effect: '先把改动存成本地草稿（模型还看不到）；确认后才"应用到会话"，届时原文被替换、模型再也看不到原文（但日志里仍在）。', rev: '草稿可放弃；已应用的改动可用"版本历史"恢复', confirm: '提交时要', refs: ['docs/03 R2.2 / R3.3', 'docs/01 F7'] },
   'act.annotate': { t: '批注（保留原文）', what: '不遮蔽原文，追加一条带「作废范围」的更正（一条普通 user 消息，不是伪造宿主内容）。', effect: '模型会同时看到原文与更正 —— 所以它是**请求式**的：靠措辞让模型照做，平台不保证。它会随快照（fork 种子）进子会话；不会被重新注入（不漂），但**长对话或压缩之后可能被摘要吞掉**。想要"确定生效"要用「编辑」+「应用到会话」。', rev: '不可撤销（追加即落地）', confirm: '提交时要（确认框里会写清它在快照里起什么作用）', refs: ['docs/03 R2.2 / R3.3.1', 'docs/01 F6'] },
   'act.pin': {
-    t: '存为不变量（把这段话"钉住"，**全局**生效）',
+    t: '钉住这一段（成为全局固定块）',
     what: '**一句话**：把这一条的正文**逐字抄一份**存在插件本地，当成"标准口径"。\n'
       + '**为什么需要**：注入内容 / 技能注入这两类是**每一轮都由宿主重新塞给模型**的（AGENTS.md、项目约定、技能目录…）。\n'
       + '你这一轮把它改对了，下一轮宿主又塞了一份原文进来 —— 于是"改一轮漂一轮"。钉住一份原文，之后每轮都能**逐字比对**，\n'
@@ -885,7 +885,9 @@ function rowHtml(node) {
           : `<button class="btn sm" data-act="edit" data-seq="${node.seq}" data-explain="act.edit">编辑</button>`)
         : `<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 14))}…</span>`}
       ${a.canAnnotate ? `<button class="btn sm" data-act="annotate" data-seq="${node.seq}" data-explain="act.annotate">批注</button>` : ''}
-      ${a.pinnable ? `<button class="btn sm" data-act="pin" data-seq="${node.seq}" data-explain="act.pin">存为不变量</button>` : ''}
+      ${a.pinnable ? (pinnedVersionOf(node)
+        ? `<span class="chip-soft" title="这一段已经钉住了（逐字基准见「固定块」那一栏）；要换基准就在新的那条注入上再钉一次">已钉住 · v${pinnedVersionOf(node)}</span>`
+        : `<button class="btn sm" data-act="pin" data-seq="${node.seq}" data-explain="act.pin" title="把这一段的正文逐字钉住，成为全局固定块">钉住这一段</button>`) : ''}
       ${draftOf(node.seq) ? `<button class="btn sm danger" data-act="apply" data-seq="${node.seq}" data-explain="act.apply">应用到会话</button>` : ''}
       ${familyOf(node.seq).length > 1 || node.versions ? `<button class="btn sm ghost" data-act="history" data-seq="${node.seq}" data-explain="act.history">版本历史</button>` : ''}
     </div>`}
@@ -1049,6 +1051,11 @@ function wireHelpButtons() {
     b.onclick = (e) => { e.preventDefault(); e.stopPropagation(); openDrawer(b.dataset.help); };
   });
 }
+/** 这一条注入是否已经被钉住（逐字相同即视为同一条基准），返回最新版本号；没有则返回 0。 */
+function pinnedVersionOf(node) {
+  const hit = S.invariants.filter((b) => b.text === node.text);
+  return hit.length ? Math.max(...hit.map((b) => b.version)) : 0;
+}
 function renderBlocks() {
   const box = $('cardBlocks');
   if (!box) return;
@@ -1061,7 +1068,7 @@ function renderBlocks() {
         <span class="cap orch-desc">${esc(b.label)} · v${b.version} · ${b.scope === 'workspace' ? 'workspace 级（新会话也看得见）' : '仅本会话'} · ${d.why}</span>
       </div>
       <div class="orch-actions">
-        <span class="orch-note">正文逐字：${esc(b.text.slice(0, 46))}${b.text.length > 46 ? '…' : ''}</span>
+        <span class="orch-note">正文逐字（基准，只读）：${esc(b.text.slice(0, 46))}${b.text.length > 46 ? '…' : ''}</span>
         <button class="btn sm" data-act="breinject" data-id="${esc(b.id)}" data-explain="act.reinject">重注入</button>
         <button class="btn sm ghost" data-act="bretire" data-id="${esc(b.id)}" data-explain="act.retire" ${b.retired ? 'disabled' : ''}>退休</button>
       </div>
@@ -1070,10 +1077,15 @@ function renderBlocks() {
   box.innerHTML = `
     <div class="card-title">固定块（不变量） <span class="hint"><b>全局</b>：workspace 级，本会话与子会话都看得见</span>
       <span class="bmeta">${S.invariants.filter((b) => !b.retired).length} 个在效 / 共 ${S.invariants.length} 个</span></div>
-    <div class="cap" style="margin-bottom:4px"><b>这一栏是全局的</b>（不属于某一类条目）：<b>任何一轮、任何会话</b>想钉住的话都汇总到这里，之后每轮逐字比对、发现漂移就标出来。<br>
-      按钮之所以长在<b>条目行上</b>，只是因为"钉哪一段"要在那条上选 —— 钉下来的固定块本身对<b>整个上下文</b>生效。<br>
-      逐字保存：插件不生成、不润色、不压缩。漂移检查只做<b>逐字包含</b>判断（不含推断）。</div>
-    ${S.invariants.length ? rows : '<div class="cap">还没有固定块。在<b>注入内容</b>那一类里点某条的「存为不变量」（例如 <b>AGENTS.md</b> / <b>memory-doc</b> / <b>runtime-context</b>）。</div>'}`;
+    <div class="cap" style="margin-bottom:4px"><b>这一栏是全局的</b>（不属于某一类条目）：任何一轮、任何会话钉住的话都汇总到这里，之后每轮逐字比对、发现漂移就标出来。<br>
+      按钮之所以长在<b>条目行上</b>，是因为要选的是<b>钉哪一段</b>：请回到上面「注入内容 / 技能注入」点那一条的 <b>「钉住这一段」</b>。
+      钉下的正文就是<b>漂移基准</b>，所以它在本栏里<b>只读</b>；要换基准就在新的那条上再钉一次（自动升版）。<br>
+      逐字保存：插件不生成、不润色、不压缩；漂移检查只做<b>逐字包含</b>判断（不含推断）。</div>
+    <div class="efoot" style="margin-bottom:6px">
+      <button class="btn sm ghost" data-act="gotoPin" data-explain="act.pin">去注入内容里钉一段</button>
+      <span class="cap">会展开「注入内容」这一类，并按行给出「钉住这一段」</span>
+    </div>
+    ${S.invariants.length ? rows : '<div class="cap">还没有固定块。回到上面展开 <b>注入内容</b>，点某条的 <b>「钉住这一段」</b>（例如 <b>AGENTS.md</b> / <b>memory-doc</b> / <b>runtime-context</b>）。</div>'}`;
   box.querySelectorAll('[data-act]').forEach((el) => {
     el.onclick = () => blockAct(el.dataset.act, el.dataset.id);
   });
@@ -1141,10 +1153,12 @@ function renderOrch() {
     <div class="orch-toolbar">
       <input id="snapNote" placeholder="人写备注（插件不生成摘要）" />
       <button class="btn sm" data-act="freeze" data-explain="orch.freeze" ${!S.sw.live || draftCount() > 0 ? 'disabled' : ''}>冻结当前位置</button>
-      <span class="cap">冻完会在下面多出一条记录 —— <b>开子会话就在那条记录上点</b>（你在哪一条点，就从哪一刻分叉）</span>
+      <span class="cap">冻完在下面出记录 → <b>在那条上点「从这里开子会话」</b></span>
+      ${S.invariants.filter((b) => !b.retired).length === 0
+        ? '<span class="chip-soft" title="建议先把目标 / 约束（尤其是每轮被重新注入的那几条）存为固定块，否则子会话里没人守漂移">尚无固定块</span>'
+        : ''}
 
       ${draftCount() > 0 ? `<span class="cap warn-text">还有 ${draftCount()} 条草稿没提交 —— 草稿不在 fork 种子里，也不在冻结记录里，它只存在插件本地。</span>` : ''}
-    ${S.invariants.filter((b) => !b.retired).length === 0 ? '<span class="cap">建议先把目标 / 约束（尤其是每轮被重新注入的那几条）存为固定块，否则子会话里没人守漂移。</span>' : ''}
     </div>
 
     <div class="subhead">冻结记录（每一条 = 一个出发点）<span class="hint">只写本地，不写会话 · <b>一条记录 = 一个「切点 + 当时的固定块版本」</b>；同一身份再点不新增（只问你要不要改备注）；备注可改、其余字段只能删</span></div>
@@ -1418,6 +1432,11 @@ function orchAct(b) {
     const row = { id, cut, inv, turn: reqOf().turn, items: surfaceOf().length, time: '12:1' + (S.snapshots.length % 9), note };
     S.snapshots.push(row);
     render(); toast('已冻结（只写插件本地：切点 / 条目数 / 时间 / 人写备注 / 固定块版本 —— 不写会话）'); return;
+  }
+  if (act === 'gotoPin') {
+    S.openCat = 'inject'; S.selSeq = reqOf().seq; render();
+    toast('已展开「注入内容」——点某条的「钉住这一段」即可钉住它的原文');
+    return;
   }
   if (act === 'snote' || act === 'sdel') {
     const x = S.snapshots[i];
