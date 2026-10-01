@@ -30,6 +30,9 @@ const EXPLAIN = {
   'trend.strip': { t: '轮次分组条', what: '按步骤模式下，柱子下面按轮分组的刻度带（每格标轮号，宽度 = 该轮步数）。', effect: '点一格 = 选中该轮末步。讲解模式下**只标第一格**，每一格行为都一样。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.8'] },
 
   'turn.pick': { t: '选择某一轮', what: '点轮次条 = 让右侧浏览器切到该轮最后一步。', effect: '右侧标题变成"第 T 轮（共 N 步，显示末步）"，分类条数/token/占比跟着变。', rev: '随时可切别的轮', confirm: '不需要', refs: ['docs/03 R1.1'] },
+  'turn.inject': { t: '改这一轮的注入内容', what: '切到这一轮**最后一条注入内容**（AGENTS.md / memory-doc / runtime-context 这类每轮由宿主重新注入的东西），就地展开编辑器。', effect: '注入内容才是最容易让模型理解错的那一半；而且它每轮会被重新注入 —— 改一轮漂一轮，所以改完通常还要「存为不变量」把口径钉住。', rev: '只切视图与展开编辑器，不改任何内容', confirm: '不需要', refs: ['docs/03 R1.16'] },
+  'act.reinject': { t: '重注入固定块', what: '把这块正文**逐字**作为一条消息重新注入会话。', effect: '会往会话追加一条消息，不可撤销；插件不改一个字。用于"宿主这轮没注入 / 被改漂了"时把口径重新钉回去。', rev: '不可撤销（追加即落地）', confirm: '要（列出块版本与正文逐字）', refs: ['docs/03 R4.3', 'docs/00 G4'] },
+  'act.retire': { t: '退休固定块', what: '让这块不再生效（历史版本保留）。', effect: '之后漂移检查不再盯它；冻结记录里"在效固定块版本"跟着变；已开出去的子会话不受影响。', rev: '可重新保存为新版本', confirm: '要', refs: ['docs/03 R4.3', 'docs/06 §1'] },
   'step.pick': { t: '步级选择', what: '选某一步（或回到"当前（下一次请求）"）。', effect: '右侧展示该步的上下文构成；与轮次入口交叉比对应当逐项一致。', rev: '随时可切', confirm: '不需要', refs: ['docs/03 R1.2'] },
   'step.chip': { t: '步级快捷片', what: '当前选中轮次的每一步一片，点一下就切到那一步。', effect: '等于用步级下拉选同一件事，但少两次点击。', rev: '随时可切', confirm: '不需要', refs: ['docs/03 R1.9'] },
   'step.nav': { t: '上一轮 / 下一轮 · 上一步 / 下一步', what: '在轮与步之间顺序移动（不用去点趋势图）。', effect: '到边界时按钮禁用。', rev: '随时可用', confirm: '不需要', refs: ['docs/03 R1.10'] },
@@ -676,6 +679,7 @@ function editTurnUserMessage(turn) {
 function renderStep() {
   const r = reqOf();
   const hasUser = !S.sw.noUser && !!turnLastUser(r.turn);
+  const hasInject = !!turnLastInject(r.turn);
   $('cardStep').innerHTML = `
     <div class="card-title">第 ${r.turn} 轮 · 第 ${r.step} 步（共 ${turnSteps(r.turn)} 步） <span class="hint">${r.time}${isLive() ? ' · 当前（下一次请求）' : ''}</span></div>
     <div class="cap">这一屏的条数：用户消息 ${visibleOf().filter((n) => n.cat === 'user').length} · 注入内容 ${visibleOf().filter((n) => n.cat === 'inject').length}
@@ -684,12 +688,17 @@ function renderStep() {
       <button class="btn sm" data-act="editTurnUser" data-explain="turn.pick"
         ${hasUser ? '' : 'disabled title="这一轮没有用户消息"'}
         title="切到这一轮最后一条用户消息，展开编辑器">改这一轮的用户消息</button>
+      <button class="btn sm" data-act="editTurnInject" data-explain="turn.inject"
+        ${hasInject ? '' : 'disabled title="这一轮没有注入内容"'}
+        title="切到这一轮最后一条注入内容，展开编辑器">改这一轮的注入内容</button>
       <button class="btn sm ghost" data-act="pickLive" data-explain="turn.pick">回到当前</button>
     </div>`;
   const live = $('cardStep').querySelector('[data-act="pickLive"]');
   if (live) live.onclick = () => selectReq(REQUESTS[REQUESTS.length - 1], null);
   const editUser = $('cardStep').querySelector('[data-act="editTurnUser"]');
   if (editUser) editUser.onclick = () => { if (!editTurnUserMessage(r.turn)) toast('这一轮没有用户消息'); };
+  const editInject = $('cardStep').querySelector('[data-act="editTurnInject"]');
+  if (editInject) editInject.onclick = () => { if (!editTurnInject(r.turn)) toast('这一轮没有注入内容'); };
 }
 function renderEvents() {
   $('cardEvents').innerHTML = `
@@ -857,6 +866,109 @@ function renderBrowser() {
 }
 
 /* ------------------------------------------------------------------ 7. 快照与子会话 */
+/**
+ * R1.16「改这一轮的注入内容」—— R1.4 的对称入口（用户 2026-10-01：**注入内容才是 AI 会理解错的那一半**）。
+ * 取这一轮**最后一条**注入内容（seq 最大的那条 inject），展开「注入内容」类 → 打开编辑器（预填全文）。
+ */
+function turnLastInject(turn) {
+  const reqs = reqsOfTurn(turn);
+  for (let i = reqs.length - 1; i >= 0; i--) {
+    const ins = nodesOfReq(reqs[i], true).filter((n) => n.cat === 'inject');
+    if (ins.length) return { req: reqs[i], node: ins[ins.length - 1] };
+  }
+  return null;
+}
+function editTurnInject(turn) {
+  const hit = turnLastInject(turn);
+  if (!hit) return false;
+  S.selSeq = hit.req.seq; S.selTurn = hit.req.turn;
+  S.openCat = 'inject'; S.openElem = hit.node.seq;
+  S.editor = { kind: 'edit', seq: hit.node.seq, text: hit.node.text, reasoning: '' };
+  S.editorError = null; S.editorOk = null; S.historyFor = null;
+  render();
+  const row = document.querySelector ? document.querySelector(`[data-elem="${hit.node.seq}"]`) : null;
+  if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  toast(`已切到第 ${turn} 轮最后一条注入内容 #${hit.node.seq}（${hit.node.name || '注入'}），编辑器已展开`);
+  return true;
+}
+
+/**
+ * 固定块（不变量）的**漂移检查**：这块正文现在还**逐字**出现在当前这一步的注入内容里吗？
+ * 为什么必须做：注入类每轮由宿主重新注入，改一轮漂一轮 —— 不逐字比对就不知道"钉住的还是不是那句话"。
+ * 只做**逐字包含**判断（不含推断、不含模糊匹配），与 docs/03 S4 的口径一致。
+ */
+function blockDrift(b) {
+  const here = nodesOfReq(reqOf(), true).filter((n) => n.cat === 'inject');
+  if (b.retired) return { ok: false, code: 'retired', why: '已退休：不再生效（历史版本保留）' };
+  const hit = here.find((n) => String(n.text || '').includes(b.text));
+  if (hit) return { ok: true, code: 'pinned', seq: hit.seq, why: `逐字命中 #${hit.seq}${hit.name ? '（' + hit.name + '）' : ''}` };
+  const edited = here.find((n) => S.applied.some((a) => a.replacedSeq === n.seq || a.newSeq === n.seq));
+  return {
+    ok: false, code: edited ? 'edited' : 'missing',
+    why: edited ? `这一步的注入被改写过（#${edited.seq}），钉住的原文已不在里面` : '当前这一步的注入内容里找不到这段正文'
+  };
+}
+
+function renderBlocks() {
+  const box = $('cardBlocks');
+  if (!box) return;
+  const rows = S.invariants.map((b) => {
+    const d = blockDrift(b);
+    return `<div class="orch-row">
+      <div class="orch-id">
+        <span class="snapid">${esc(b.id)}</span>
+        <span class="badge-state"><i class="mstat ${d.ok ? 's-done' : b.retired ? 's-idle' : 's-run'}"></i>${d.ok ? '在效' : b.retired ? '已退休' : '漂移'}</span>
+        <span class="cap orch-desc">${esc(b.label)} · v${b.version} · ${b.scope === 'workspace' ? 'workspace 级（新会话也看得见）' : '仅本会话'} · ${d.why}</span>
+      </div>
+      <div class="orch-actions">
+        <span class="orch-note">正文逐字：${esc(b.text.slice(0, 46))}${b.text.length > 46 ? '…' : ''}</span>
+        <button class="btn sm" data-act="breinject" data-id="${esc(b.id)}" data-explain="act.reinject">重注入</button>
+        <button class="btn sm ghost" data-act="bretire" data-id="${esc(b.id)}" data-explain="act.retire" ${b.retired ? 'disabled' : ''}>退休</button>
+      </div>
+    </div>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="card-title">固定块（不变量） <span class="hint">注入内容每轮会被宿主重新注入 —— 钉住它，才能发现"漂了没有"</span></div>
+    <div class="cap" style="margin-bottom:4px">逐字保存：插件不生成、不润色、不压缩。漂移检查只做<b>逐字包含</b>判断（不含推断）。</div>
+    ${S.invariants.length ? rows : '<div class="cap">还没有固定块。在<b>注入内容</b>那一类里点某条的「存为不变量」（例如 <b>AGENTS.md</b> / <b>memory-doc</b> / <b>runtime-context</b>）。</div>'}`;
+  box.querySelectorAll('[data-act]').forEach((el) => {
+    el.onclick = () => blockAct(el.dataset.act, el.dataset.id);
+  });
+}
+
+function blockAct(act, id) {
+  const b = S.invariants.find((x) => x.id === id);
+  if (!b) return;
+  if (act === 'breinject') {
+    confirmModal({
+      title: '重注入固定块',
+      warn: '会往会话追加一条消息，不可撤销。',
+      rows: [['固定块', `${b.label} · v${b.version} · ${b.scope}`],
+             ['正文逐字', b.text],
+             ['为什么现在注入', b.id]],
+      needReason: true, okText: '确认重注入',
+      onOk: (reason) => {
+        const live = REQUESTS[REQUESTS.length - 1];
+        S.extraNodes.push(N(1400 + S.extraNodes.length, 'inject', 'user/message', b.text, Math.round(b.text.length * 1.6),
+          { name: b.label }));
+        S.extraNodes[S.extraNodes.length - 1].requestSeq = live.seq;
+        render();
+        toast(`已重注入「${b.label}」（逐字追加；理由：${reason || '（未填）'}）`);
+      }
+    });
+    return;
+  }
+  if (act === 'bretire') {
+    confirmModal({
+      title: '退休固定块',
+      warn: '退休后它不再生效，但历史版本会保留。',
+      rows: [['块 id 与版本', `${b.id} · v${b.version}`], ['当前生效范围', b.scope], ['退休影响面', '冻结记录里记的"在效固定块版本"会跟着变；已开出去的子会话不受影响']],
+      needReason: false, okText: '确认退休',
+      onOk: () => { b.retired = true; render(); toast(`已退休「${b.label}」（历史版本保留）`); }
+    });
+  }
+}
+
 function renderOrch() {
   const c = S.children;
   const active = c.filter((x) => x.state === 'running' || x.state === 'idle').length;
@@ -876,6 +988,7 @@ function renderOrch() {
       <button class="btn sm" data-act="freeze" data-explain="orch.freeze" ${!S.sw.live || draftCount() > 0 ? 'disabled' : ''}>冻结当前位置</button>
       <button class="btn sm" data-act="spawn" data-explain="orch.spawn" ${!S.sw.live || draftCount() > 0 || !S.snapshots.length ? 'disabled' : ''}>开子会话（人写首条任务）</button>
       ${draftCount() > 0 ? `<span class="cap warn-text">还有 ${draftCount()} 条草稿没提交 —— 草稿不在 fork 种子里，也不在冻结记录里，它只存在插件本地。</span>` : ''}
+    ${S.invariants.filter((b) => !b.retired).length === 0 ? '<span class="cap">建议先把目标 / 约束（尤其是每轮被重新注入的那几条）存为固定块，否则子会话里没人守漂移。</span>' : ''}
     </div>
 
     <div class="subhead">冻结记录 <span class="hint">只写本地，不写会话</span></div>
@@ -1025,12 +1138,19 @@ function submitEditor() {
   if (st.kind === 'pin') {
     const label = (($('edLabel') && $('edLabel').value.trim()) || '目标'), text = ($('edPin') && $('edPin').value) || '';
     if (text.trim() === '') { S.editorError = '固定块正文不能为空'; render(); return; }
-    S.invariants.push({ label, text, version: (S.invariants.filter((x) => x.label === label).length + 1) });
+    const version = S.invariants.filter((x) => x.label === label).length + 1;
+    S.invariants.push({
+      id: 'inv-' + label.replace(/\s+/g, '-').slice(0, 16) + '-' + version,
+      label, text, version, retired: false, scope: 'workspace',
+      savedAt: '12:1' + (S.invariants.length % 9)
+    });
     S.editor = null; render(); toast(`已存为固定块「${label}」（逐字，插件不改一个字）；换会话仍可见 → 每轮逐字比对即可发现漂移`);
   }
 }
 function doApply(seq) {
-  const d = draftOf(seq), node = nodeOf(seq), ns = 1300 + S.applied.length;
+  // ⚠️ 新条目的 seq 从 **1600** 起（不是 1300）：演示数据里已经有 1300/1301/1303/1305 这些条目，
+  //    从 1300 起算的话**连改两次就会撞号** —— nodeOf() 会命中演示里那条同名 seq，张冠李戴（2026-10-01 实测）。
+  const d = draftOf(seq), node = nodeOf(seq), ns = 1600 + S.applied.length;
   S.applied.push({ replacedSeq: seq, newSeq: ns, requestSeq: reqOf().seq, text: d.text, reason: d.reason || '', time: '12:1' + (S.applied.length % 9) });
   S.extraNodes.push(N(ns, node.cat, node.type, d.text, node.tokens, { name: node.name, requestSeq: reqOf().seq }));
   delete S.drafts[seq];
@@ -1230,7 +1350,7 @@ function render() {
       }
     };
   });
-  renderOrch(); applyExplain(); renderSelfcheck();
+  renderBlocks(); renderOrch(); applyExplain(); renderSelfcheck();
 }
 
 /**

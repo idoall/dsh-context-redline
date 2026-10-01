@@ -94,7 +94,7 @@ const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
-  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editTurnUserMessage, turnLastUser, editorHtml };`;
+  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editTurnUserMessage, turnLastUser, editorHtml, editTurnInject, turnLastInject, blockDrift, blockAct };`;
 
 /**
  * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
@@ -465,7 +465,7 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
  * 与人工门禁第 5 条在 demo 上验不了」。补一条这样的演示消息，并让它成为 R1.4 的目标。 */
 {
   const S = api.S();
-  // ⚠️ 前面的用例跑过"草稿 → 应用"，会往最后一轮追加一条 seq=1300 的替换体（它就成了该轮最后一条用户消息）。
+  // ⚠️ 前面的用例跑过"草稿 → 应用"，会往最后一轮追加一条替换体（seq 从 1600 起）（它就成了该轮最后一条用户消息）。
   //    这里先清干净，否则验的不是演示数据的原始状态（第一版就是这么误红的）。
   S.applied = []; S.extraNodes = []; S.drafts = {}; S.editor = null;
   const longOnes = api.NODES.filter((n) => n.cat === 'user' && String(n.text || '').length > 200 && /\n\s*\n/.test(n.text));
@@ -482,6 +482,81 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   const htmlSingle = api.editorHtml();
   check('R3.4：单段消息**不**出现该提示（不许见谁都提示）', !/这条消息有多个文本段落/.test(htmlSingle), `单段样例 #${single.seq}`);
   S.editor = null; S.openCat = null; S.openElem = null; api.render();
+}
+
+/* ---------------- 注入内容是一等公民（用户 2026-10-01：「注入内容也是要编辑的」） ----------------
+ * 检查四件事：能改（R2.1 的行按钮）→ 能钉住（存为不变量后**看得见**）→ 能看漂移（逐字比对）→
+ * 能重注入 / 能退休（R4.3 的确认框）。之前只有"能改"，存完就消失了。 */
+{
+  const S = api.S();
+  S.applied = []; S.extraNodes = []; S.drafts = {}; S.invariants = []; S.editor = null;
+  S.selTurn = api.TOTAL_TURNS; S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.sw.noUser = false;
+  api.render();
+
+  const req = api.lastOfTurn(api.TOTAL_TURNS);
+  const injects = api.nodesOfReq(req, true).filter((n) => n.cat === 'inject');
+  const lastInj = injects[injects.length - 1];
+  // ① 「改这一轮的注入内容」：R1.16，R1.4 的对称入口（它会把「注入内容」类展开）
+  const ok = api.editTurnInject(api.TOTAL_TURNS);
+  // ⚠️ 这条必须放在 editTurnInject 之后：注入类默认是折叠的，折叠时那不是"行上没按钮"而是"行没渲染"
+  check('注入类：行上给出「存为不变量」（R2.1）', /data-act="pin"/.test(registry.get('cardBrowser').innerHTML) && injects.length > 0, `这一步注入 ${injects.length} 条`);
+  check('R1.16：能切到该轮最后一条注入内容并展开编辑器', ok === true && S.openCat === 'inject' && !!S.editor && S.editor.seq === lastInj.seq, `editor.seq=${S.editor && S.editor.seq} 期望 ${lastInj.seq}`);
+  check('R1.16：编辑器预填的是这条注入的全文', !!S.editor && S.editor.text === lastInj.text);
+
+  // ② 存为不变量 → 面板里看得见
+  S.editor = { kind: 'pin', seq: lastInj.seq, label: 'AGENTS.md', text: lastInj.text };
+  // submitEditor 对固定块是从 DOM 读标签/正文的（真实页面里是用户在输入框里填）→ 桩里要先塞值
+  document.getElementById('edLabel').value = 'AGENTS.md';
+  document.getElementById('edPin').value = lastInj.text;
+  api.submitEditor();
+  const b = S.invariants[0];
+  check('存为不变量：落库为 workspace 级 + 带 id/版本/时间', !!b && b.scope === 'workspace' && !!b.id && b.version === 1 && !!b.savedAt, JSON.stringify(b && { id: b.id, version: b.version, scope: b.scope }));
+  api.render();
+  check('固定块面板：列表里看得见它（不再是"存完就消失"）', new RegExp(b.id).test(registry.get('cardBlocks').innerHTML));
+
+  // ③ 漂移检查：当前这一步逐字命中 → 在效
+  const d0 = api.blockDrift(b);
+  check('漂移检查：正文逐字出现在当前注入里 → 在效', d0.ok === true && d0.code === 'pinned', d0.why);
+
+  // ④ 把这条注入改掉（走真正的 apply 路径）→ 漂移检查必须报出来
+  S.drafts[lastInj.seq] = { seq: lastInj.seq, text: '（演示）把 AGENTS.md 这段口径改掉了', reasoning: '', requestSeq: api.lastOfTurn(api.TOTAL_TURNS).seq };
+  api.doApply(lastInj.seq);
+  const d1 = api.blockDrift(b);
+  check('漂移检查：注入被改写后必须报"漂移"（不许沉默）', d1.ok === false && d1.code === 'edited', d1.why);
+
+  // ⑤ 重注入：确认框（R4.3）→ 逐字追加
+  api.blockAct('breinject', b.id);
+  document.getElementById('modalReason').value = '宿主这轮没注入，钉回去';
+  registry.get('modalOk').onclick();
+  check('重注入：往会话**逐字**追加了这段正文', S.extraNodes.some((n) => n.text === b.text), `extraNodes=${S.extraNodes.length}`);
+
+  // ⑥ 退休：确认框 → 不再生效（历史保留）
+  api.blockAct('bretire', b.id);
+  registry.get('modalOk').onclick();
+  const d2 = api.blockDrift(b);
+  check('退休固定块：不再生效，且历史版本仍在列表里', b.retired === true && d2.code === 'retired' && new RegExp(b.id).test(registry.get('cardBlocks').innerHTML));
+
+  // ⑦ R5.2：一块固定块都没有时，要给出建议
+  S.invariants = []; S.applied = []; S.extraNodes = []; api.render();
+  check('R5.2：没有固定块时给出"先存固定块"的建议', /先把目标 \/ 约束/.test(registry.get('cardOrch').innerHTML));
+}
+
+/* ---------------- apply 生成的新 seq 不许撞上演示数据里已有的条目 ----------------
+ * 2026-10-01 实测：生成规则本来是 `1300 + 已应用数`，而演示数据里已经有 1300/1301/1303/1305 →
+ * **连改两次就撞号**，nodeOf() 会命中演示里那条同名 seq，出现"张冠李戴"（浏览器里真的复现了）。 */
+{
+  const S = api.S();
+  S.applied = []; S.extraNodes = []; S.drafts = {}; S.editor = null;
+  const before = new Set(api.NODES.map((n) => n.seq));
+  const targets = [2, 3];                       // 两条不同的注入条目，各改一次
+  for (const seq of targets) {
+    S.drafts[seq] = { seq, text: '（演示）改后的正文 ' + seq, reasoning: '', requestSeq: api.lastOfTurn(api.TOTAL_TURNS).seq };
+    api.doApply(seq);
+  }
+  const news = S.applied.map((a) => a.newSeq);
+  check('apply 生成的新 seq 不与演示数据撞号', news.every((s) => !before.has(s)), `新 seq=${news.join(',')} · 原有 ${[...before].slice(-6).join(',')}…`);
+  check('apply 生成的新 seq 彼此不重复', new Set(news).size === news.length, `新 seq=${news.join(',')}`);
+  S.applied = []; S.extraNodes = []; S.drafts = {}; api.render();
 }
 
 /* ---------------- 汇报 ---------------- */

@@ -161,6 +161,14 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   }
 }
 
+/* 11) 注入内容是一等公民：三件事缺一不可（用户 2026-10-01 指出"注入内容也是要编辑的"） */
+{
+  if (!/id="cardBlocks"/.test(html)) problems.push('固定块面板没了（cardBlocks）——注入内容存成固定块后将无处可看');
+  if (!/function blockDrift/.test(js)) problems.push('固定块的漂移检查没了（逐字比对当前注入）——注入每轮被重新注入，没有它就看不出漂了没有');
+  if (!/重注入固定块/.test(js) || !/退休固定块/.test(js)) problems.push('重注入 / 退休 的确认框没了（R4.3 要求的短警示与本次清单）');
+  if (!/function editTurnInject/.test(js)) problems.push('「改这一轮的注入内容」入口没了（R1.16）——注入类不该只有用户消息那条快捷入口');
+}
+
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
  * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
  * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */
