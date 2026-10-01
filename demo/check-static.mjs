@@ -101,6 +101,17 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   }
 }
 
+/* 6) 类名撞车护栏：类别色段必须叫 .cseg
+ * `.seg` 已经是**分段控件按钮**的类（按轮次/按步骤/总计/增量…），
+ * 当时我把柱子的类别色段也叫 .seg → 那条 `.seg { display:block; width:100% }`
+ * 直接把这些按钮撑成了整行（自己踩过一次，靠浏览器实测才发现）。 */
+{
+  const flat = css.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\s+/g, ' ');
+  const segRules = (flat.match(/(^|\})\s*\.seg\s*\{/g) || []).length;
+  if (segRules !== 1) problems.push(`分段控件按钮的 .seg 规则应恰好 1 条，实际 ${segRules} 条 —— 类别色段不许再叫 .seg（撞名会改掉按钮布局）`);
+  if (!/\.cseg\s*\{/.test(flat)) problems.push('类别色段必须有 .cseg 规则（颜色=类别、段高=该类占比）');
+}
+
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
  * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
  * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */

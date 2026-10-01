@@ -56,6 +56,7 @@ const trendBars = Array.from({ length: 3 }, (_, i) => {
 });
 const trendCells = Array.from({ length: 2 }, () => {
   const el = makeEl('button'); el.className = 'tcell';
+  el.classList.add('tcell');      // ⚠️ 与柱子同理：桩里 classList 与 className 是两套东西
   el.dataset.explain = 'trend.strip'; el.closest = (s) => (s === '.trendscroll' ? trendScroll : null);
   return el;
 });
@@ -77,6 +78,7 @@ const document = {
     }
     if (sel === '#trendScroll .tbar') return trendBars;
     if (sel === '#trendScroll .tcell') return trendCells;
+    if (sel === '#trendScroll [data-explain]') return trendBars.concat(trendCells);
     return [];
   },
   __on: {},
@@ -90,7 +92,7 @@ const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
-  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement };`;
+  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN };`;
 
 /**
  * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
@@ -228,7 +230,7 @@ check('行身份链跨替换体：#1287 → #1301', JSON.stringify(api.familyOf(
   const S = api.S();
   S.explain = true; api.render();
   const badges = explainHosts.map((h) => (h.children || []).find((c) => String(c.className).startsWith('exnum'))).filter(Boolean);
-  check('讲解模式给每个元素注入了**真实序号节点**（伪元素点不到）', badges.length === 3, `badges=${badges.length}`);
+  check('讲解模式给可标元素注入了**真实序号节点**（伪元素点不到，同类只标一个）', badges.length === 1, `badges=${badges.length}`);
   check('序号带无障碍角色与说明', badges[0] && badges[0].getAttribute('role') === 'button' && /点这里看说明/.test(badges[0].getAttribute('title') || ''));
 
   api.closeDrawer();
@@ -321,14 +323,56 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
  * 是**整列**（height:100%）可点，色块画在子元素里 —— 短柱子上方的空白也能移中。
  * 我们的旧实现把高度与色块都放在按钮本身上，命中区只有那 69px 的色块。 */
 {
+  const S = api.S();
+  S.trendMode = 'total'; S.trendCat = null; api.render();   // 前面的用例可能把模式停在 delta
   const html = registry.get('cardTrend').innerHTML;
   // ⚠️ 必须要求 "tbar" 后面紧跟空格或引号 —— 否则 class="tbar-fill" 也会被当成柱子
   //    （第一版就是这么错的：柱子数虚报成 144，另一条断言也被 fill 的内联 height 误伤）
   const bars = html.match(/class="tbar(?=[ "])[^"]*"/g) || [];
-  const fills = html.match(/class="tbar-fill"/g) || [];
-  check('趋势柱体：每根柱子都有内层色块 .tbar-fill', bars.length > 0 && fills.length === bars.length, `柱子 ${bars.length} 根 · 色块 ${fills.length} 个`);
+  const fills = html.match(/class="tbar-fill(?=[ "])[^"]*"/g) || [];
+  check('趋势柱体：每根柱子都有内层图形 .tbar-fill', bars.length > 0 && fills.length === bars.length, `柱子 ${bars.length} 根 · 内层 ${fills.length} 个`);
   const outerHasHeight = /class="tbar(?=[ "])[^"]*"[^>]*style="[^"]*height:/.test(html);
   check('趋势柱体：高度不再写在外层按钮上（外层是整列命中区）', !outerHasHeight, outerHasHeight ? '外层仍带 height' : '');
+
+  /* 柱体必须**按类别分色**（用户 2026-10-01：参考插件是"按分类树有多少类、按上下文占比画颜色"）。
+   * 旧实现是整根一个品牌色 + 负值涂红 —— 看不出构成，也让"增量"失去意义。 */
+  const segs = [...html.matchAll(/class="cseg" data-cat="([a-z]+)"/g)].map((m) => m[1]);
+  const keys = new Set(['system', 'tools', 'user', 'inject', 'skill', 'assistant', 'tool']);
+  check('趋势柱体：段是按类别分的（每段带 data-cat）', segs.length > 0 && segs.every((k) => keys.has(k)), `段 ${segs.length} 个 · 类别 ${[...new Set(segs)].join('/')}`);
+  check('趋势柱体：段用的是类别色（不再是单一品牌色）', (html.match(/class="cseg"[^>]*background:var\(--ds-color-/g) || []).length === segs.length, `带类别色的段 ${(html.match(/class="cseg"[^>]*background:var\(--ds-color-/g) || []).length}/${segs.length}`);
+  // 总计模式：不应出现增量专用的零线与两臂
+  check('总计模式：不渲染零线与上下两臂', !/zeroline/.test(html) && !/arm-up/.test(html));
+}
+
+/* 增量模式：围绕零线分两臂（正差向上、负差向下），且**不再用"红色 = 负"** */
+{
+  const S = api.S();
+  S.trendMode = 'delta'; api.render();
+  const html = registry.get('cardTrend').innerHTML;
+  check('增量模式：有零线', /class="zeroline"/.test(html));
+  check('增量模式：每根柱子分成向上的臂与向下的臂', (html.match(/class="arm arm-up"/g) || []).length > 0 && (html.match(/class="arm arm-down"/g) || []).length > 0);
+  check('增量模式：段仍然是类别色（不用红色表示负）', !/--ds-color-red/.test(html));
+  /* 每根柱子的"上臂 + 下臂"总高必须 ≤ 柱区高（112px）。
+   * 不筛正负号的话两臂内容一样、总高翻倍 —— 实测踩过（两臂都是 system:42 + user:2 + …）。 */
+  {
+    const barsHtml = html.split('class="tbar').slice(1);
+    const bad = barsHtml.filter((b) => {
+      const hs = [...b.matchAll(/class="cseg"[^>]*height:(\d+(?:\.\d+)?)px/g)].map((m) => Number(m[1]));
+      return hs.reduce((n, h) => n + h, 0) > 112 + 1;
+    });
+    check('增量模式：上臂+下臂总高不超过柱区高（两臂没有重复渲染全部类别）', bad.length === 0, bad.length ? `${bad.length} 根柱子超了` : '');
+  }
+
+  check('增量模式：轴显式给出零线上下的量', /id="trendAxisBottom"/.test(html));
+  S.trendMode = 'total'; api.render();
+}
+
+/* 趋势卡底部：步级快捷片与顺序导航已按用户意见删除（柱体 hover 就报第几轮/第几步） */
+{
+  const html = registry.get('cardTrend').innerHTML;
+  check('趋势卡底部不再有步级快捷片', !/stepchips/.test(html) && !/chipstep/.test(html));
+  check('趋势卡底部不再有 上一轮/下一轮/上一步/下一步 导航', !/上一轮|下一轮|上一步|下一步/.test(html));
+  check('轮号刻度带保留（它是坐标轴，不是导航）', /class="strip"/.test(html));
 }
 
 /* ---------------- 讲解模式：同类重复元素只标一个编号，且不改变元素自身样式 ----------------
@@ -339,7 +383,12 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   const S = api.S();
   S.explain = true; api.render();
   const badgesOf = (el) => (el.children || []).filter((c) => String(c.className).startsWith('exnum')).length;
-  check('讲解模式：3 个普通可讲解元素仍然各有一个编号', explainHosts.every((h) => badgesOf(h) === 1), explainHosts.map(badgesOf).join(','));
+  const noOf = (el) => { const b = (el.children || []).find((c) => String(c.className).startsWith('exnum')); return b ? b.textContent : null; };
+  const expectNo = (key) => String(Object.keys(api.EXPLAIN).indexOf(key) + 1);
+  check('讲解模式：同类元素共用一个编号，只标一个', badgesOf(explainHosts[0]) === 1 && explainHosts.slice(1).every((h) => badgesOf(h) === 0), explainHosts.map(badgesOf).join(','));
+  check('讲解模式：编号 = 该类别在讲解词典里的固定序号（不随出现顺序变）',
+    noOf(explainHosts[0]) === expectNo('act.edit'), `实际 ${noOf(explainHosts[0])} · 应为 ${expectNo('act.edit')}`);
+  check('讲解模式：趋势柱体的编号同样是固定的类别序号', noOf(trendBars[1]) === expectNo('trend.pick'), `实际 ${noOf(trendBars[1])} · 应为 ${expectNo('trend.pick')}`);
   check('讲解模式：柱子**不是每根都标**（3 根里只标 1 根）', trendBars.reduce((n, b) => n + badgesOf(b), 0) === 1, `柱子上的编号：${trendBars.map(badgesOf).join(',')}`);
   check('讲解模式：标记在**当前选中的那根**柱子上', badgesOf(trendBars[1]) === 1 && badgesOf(trendBars[0]) === 0 && badgesOf(trendBars[2]) === 0);
   check('讲解模式：轮次刻度格同样只标 1 个', trendCells.reduce((n, c) => n + badgesOf(c), 0) === 1, `刻度格上的编号：${trendCells.map(badgesOf).join(',')}`);
@@ -347,7 +396,7 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
    * 否则柱子这类重复元素会各自带一个虚线环 —— 图表照样不像原样（用户就是为此提的意见）。 */
   const marked = (el) => (el.classList && el.classList.contains('explain-num') ? 1 : 0);
   check('讲解模式：只有带编号的元素被标亮（重复柱体不加环）', trendBars.reduce((n, b) => n + marked(b), 0) === 1, `带环的柱子：${trendBars.map(marked).join(',')}`);
-  check('讲解模式：普通可讲解元素都带编号也都被标亮', explainHosts.every((h) => badgesOf(h) === 1 && marked(h) === 1));
+  check('讲解模式：带编号的元素同时被标亮', badgesOf(explainHosts[0]) === 1 && marked(explainHosts[0]) === 1);
   S.explain = false; api.render();
   check('关掉讲解模式后，柱子与刻度格上的编号都被清理', trendBars.concat(trendCells).every((el) => badgesOf(el) === 0));
   check('关掉讲解模式后，标亮状态也被清理', trendBars.concat(trendCells).every((el) => marked(el) === 0));

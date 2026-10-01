@@ -178,7 +178,7 @@ body {
 .trendinner { width: max-content; min-width: 100%; }
 .markers { position: relative; height: 14px; }
 .mark { position: absolute; top: 0; font-size: 11px; color: var(--ds-color-amber); text-align: center; }
-.bars { display: flex; align-items: flex-end; gap: 3px; height: 112px; }
+.bars { position: relative; display: flex; align-items: flex-end; gap: 3px; height: 112px; }
 /* 趋势柱体（用户 2026-10-01 反馈：移上去、点中了都看不出是哪一根）
  * 照参考插件 dsh-context 的 .lc-bar 定死三件事：
  *   ① **整列**都是命中区（height:100%），色块画在内层 .tbar-fill 上 —— 短柱子上方的空白也能移中；
@@ -188,17 +188,29 @@ body {
  *    选中规则若排在 hover 前面，鼠标停在刚点过的柱子上时虚线 hover 会盖掉实线选中，
  *    只有把指针移开才看得见"选中了"。所以下面三段的先后顺序不能改。 */
 .tbar {
+  position: relative;
   flex: none; height: 100%; padding: 0; border: 0; background: transparent; cursor: pointer;
   display: flex; align-items: flex-end;
   border-radius: 2px 2px 0 0; outline: 1px dashed transparent; outline-offset: 1px;
   transition: background-color .15s ease-in-out, outline-color .15s ease-in-out;
 }
-.tbar-fill {
-  display: block; width: 100%; border-radius: 2px 2px 0 0;
-  background: linear-gradient(to top, var(--dsw-alias-brand), color-mix(in srgb, var(--dsw-alias-brand) 55%, transparent));
-  transition: filter .15s ease-in-out;
-}
-.tbar.neg .tbar-fill { background: linear-gradient(to bottom, var(--ds-color-red), color-mix(in srgb, var(--ds-color-red) 55%, transparent)); }
+/* 柱子本体只是**整列命中区**；真正的图形是内层按类别分出来的段（照参考插件 dsh-context 的
+ * `.lc-bar` + `.lc-cat-seg`：颜色 = 类别，段高 = 该类在这根柱子里的量）。 */
+.tbar-fill { display: block; width: 100%; transition: filter .15s ease-in-out; }
+.tbar-stack { display: flex; flex-direction: column-reverse; }   /* 总计：段从下往上堆 */
+.tbar-stack > .cseg:first-child { border-radius: 0 0 2px 2px; }
+.tbar-stack > .cseg:last-child { border-radius: 2px 2px 0 0; }
+/* ⚠️ 类别色段叫 .cseg，**不能**叫 .seg —— .seg 已经是分段控件按钮的类（上面第 110 行），
+ * 撞名会把这些按钮变成 display:block; width:100%（自己踩过一次）。 */
+.cseg { display: block; width: 100%; }
+/* 增量：围绕**零线**分成两臂 —— 正差向上、负差向下，颜色仍是类别（方向表示正负） */
+.tbar-diverge { position: absolute; inset: 0; height: 100%; }
+.arm { position: absolute; left: 0; width: 100%; display: flex; }
+.arm-up { flex-direction: column-reverse; }
+.arm-up > .cseg:last-child { border-radius: 2px 2px 0 0; }
+.arm-down { flex-direction: column; }
+.arm-down > .cseg:last-child { border-radius: 0 0 2px 2px; }
+.zeroline { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--dsw-alias-border-l2); pointer-events: none; }
 /* ① 悬停预览：整列底色 + 虚线框 + 色块提亮 */
 .tbar:hover { background: var(--dsw-alias-interactive-bg-hover); outline-color: var(--dsw-alias-brand); }
 .tbar:hover .tbar-fill { filter: brightness(1.25); }

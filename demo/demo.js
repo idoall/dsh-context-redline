@@ -240,6 +240,9 @@ function toast(msg, kind) {
   setTimeout(() => d.remove(), 2600);
 }
 /** 打开讲解面板：**推**出右侧栏（body 加 drawer-open → 内容被挤窄、不被遮住） */
+/** 讲解词里用 `**粗体**` 写强调（照参考插件的写法）。抽屉是 innerHTML，所以要转成 <b>，
+ *  否则页面上会原样显示两个星号（实测踩过：说明栏与抽屉里都出现过字面的 `**`）。 */
+const md = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
 function openDrawer(key) {
   const e = EXPLAIN[key];
   if (!e) return;
@@ -248,10 +251,10 @@ function openDrawer(key) {
   if (body) body.scrollTop = 0;
   $('drawerTitle').textContent = e.t;
   $('drawerBody').innerHTML = `
-    <div class="kv"><b>它是做什么的</b><div>${esc(e.what)}</div></div>
-    <div class="kv"><b>会发生什么</b><div>${esc(e.effect)}</div></div>
-    <div class="kv"><b>能不能撤回</b><div>${esc(e.rev)}</div></div>
-    <div class="kv"><b>要不要确认</b><div>${esc(e.confirm)}</div></div>
+    <div class="kv"><b>它是做什么的</b><div>${md(e.what)}</div></div>
+    <div class="kv"><b>会发生什么</b><div>${md(e.effect)}</div></div>
+    <div class="kv"><b>能不能撤回</b><div>${md(e.rev)}</div></div>
+    <div class="kv"><b>要不要确认</b><div>${md(e.confirm)}</div></div>
     <div class="kv"><b>对应规格</b><div>${(e.refs || []).map(esc).join(' · ')}</div></div>`;
   $('drawer').hidden = false;
 }
@@ -332,6 +335,25 @@ function renderStats() {
 /* ---------- 5.1 上下文趋势（按轮次 / 按步骤 · 总计 / 增量 · 自适应 · 聚焦 · ✂） ---------- */
 const BAR_W = 14, BAR_GAP = 3, CHART_H = 112;
 
+/**
+ * 每根柱子**按类别拆开**（照参考插件 dsh-context 的 trendChart）：
+ *   · 总计模式：`parts[cat]` = 该类这次的上下文量 → 柱体是 7 个类别的堆叠，颜色 = 类别；
+ *   · 增量模式：`parts[cat]` = 该类与上一根柱子的差 → 正差向上、负差向下（方向表示正负，颜色仍是类别）。
+ * 参考实现的原话："positive category deltas pile UP from the zero line, negative ones hang DOWN
+ * from it, both in category colors (direction carries the sign, color the category)"。
+ * 之前我们的实现是"整根一个品牌色、负值涂红"，既看不出构成，也让增量模式失去意义。
+ */
+function barParts(req, prevReq) {
+  const out = {};
+  for (const c of CATS) {
+    const v = metricOf(req, c.key);
+    out[c.key] = S.trendMode === 'delta' ? v - (prevReq ? metricOf(prevReq, c.key) : 0) : v;
+  }
+  if (S.trendCat) {                    // 聚焦某一类时：只保留那一类（其余置 0）
+    for (const c of CATS) if (c.key !== S.trendCat) out[c.key] = 0;
+  }
+  return out;
+}
 function trendItems() {
   const list = S.trendGran === 'turn'
     ? (() => {                                   // aggregateByTurn：一轮 = 该轮**末步**的请求，带 stepCount
@@ -344,39 +366,78 @@ function trendItems() {
         return out;
       })()
     : REQUESTS;
-  const vals = list.map((r) => metricOf(r, S.trendCat));
-  const series = S.trendMode === 'delta'
-    ? vals.map((v, i) => (i === 0 ? v : v - vals[i - 1]))
-    : vals;
-  return { list, series };
+  const parts = list.map((r, i) => barParts(r, i > 0 ? list[i - 1] : null));
+  const series = parts.map((p) => CATS.reduce((sum, c) => sum + (p[c.key] || 0), 0));
+  return { list, series, parts };
 }
-function visibleMax(series, scrollEl) {
-  if (!S.trendAdaptive || !scrollEl) return Math.max(1, ...series.map((v) => Math.abs(v)));
+/** 可见范围（自适应刻度只按眼前这几根算）。 */
+function visibleRange(n, scrollEl) {
+  if (!S.trendAdaptive || !scrollEl) return [0, n - 1];
   const bw = BAR_W + BAR_GAP;
   const i0 = Math.max(0, Math.floor(scrollEl.scrollLeft / bw) - 1);
-  const i1 = Math.min(series.length - 1, Math.ceil((scrollEl.scrollLeft + scrollEl.clientWidth) / bw) + 1);
-  let m = 1;
-  for (let i = i0; i <= i1; i++) m = Math.max(m, Math.abs(series[i] || 0));
-  return m;
+  const i1 = Math.min(n - 1, Math.ceil((scrollEl.scrollLeft + scrollEl.clientWidth) / bw) + 1);
+  return [i0, i1];
 }
+/**
+ * 刻度：返回整柱上限与零线上下限。
+ * 增量模式下零线按 maxUp : maxDown **成比例**分割柱区（参考插件原文：
+ * "The zero line splits the bar area PROPORTIONALLY to the larger side, so the px-per-token scale is
+ * identical above and below it — a compaction's downward bar reads honestly against a growth bar."），
+ * 于是"向下那截"和"向上那截"每一像素代表的量是一样的，不会骗人。
+ */
+function chartScale(parts, scrollEl) {
+  const [i0, i1] = visibleRange(parts.length, scrollEl || null);
+  let maxTotal = 1, maxUp = 1, maxDown = 1;
+  for (let i = i0; i <= i1; i++) {
+    const p = parts[i] || {};
+    let up = 0, down = 0;
+    for (const c of CATS) {
+      const v = p[c.key] || 0;
+      if (v >= 0) up += v; else down += -v;
+    }
+    maxTotal = Math.max(maxTotal, up + down);
+    maxUp = Math.max(maxUp, up);
+    maxDown = Math.max(maxDown, down);
+  }
+  const span = Math.max(1, maxUp + maxDown);
+  const deltaScale = CHART_H / span;
+  const upPx = Math.round(maxUp * deltaScale);
+  return { maxTotal, maxUp, maxDown, deltaScale, upPx, downPx: CHART_H - upPx };
+}
+const visibleMax = (series, scrollEl) => (S.trendMode === 'delta'
+  ? chartScale(window.__trendParts || [], scrollEl).maxUp
+  : chartScale(window.__trendParts || [], scrollEl).maxTotal);
 function applyTrendScale() {
   const sc = $('trendScroll');
   if (!sc) return;
-  const series = (window.__trendSeries || []);
-  const max = visibleMax(series, sc);
+  const parts = (window.__trendParts || []);
+  const sc0 = chartScale(parts, sc);
+  const delta = S.trendMode === 'delta';
   const prevMax = sc.dataset.max;              // 用于判断"刻度上限有没有变"（变了才刷自测面板）
-  const top = $('trendAxisTop'), mid = $('trendAxisMid');
-  if (top) top.textContent = fmt(max);
-  if (mid) mid.textContent = fmt(max / 2);
+  // 轴标签：增量模式下要显式给出零线上下的量（不再用"红色 = 负"这种讲不清的表达）
+  const top = $('trendAxisTop'), mid = $('trendAxisMid'), bot = $('trendAxisBottom');
+  if (top) top.textContent = fmt(delta ? sc0.maxUp : sc0.maxTotal);
+  if (mid) mid.textContent = delta ? '' : fmt(sc0.maxTotal / 2);
+  if (bot) bot.textContent = delta ? '-' + fmt(sc0.maxDown) : '0';
+  const inline = $('trendAxisTopInline');
+  if (inline) inline.textContent = fmt(delta ? sc0.maxUp : sc0.maxTotal);
+  const zero = sc.querySelector ? sc.querySelector('.zeroline') : null;
+  if (zero) zero.style.bottom = sc0.downPx + 'px';
+  const totalScale = CHART_H / Math.max(1, sc0.maxTotal);
+  const segH = (v, scale) => Math.max(1, Math.round(Math.abs(v) * scale)) + 'px';
   sc.querySelectorAll('.tbar').forEach((el, i) => {
-    const v = series[i] || 0;
-    const h = Math.max(2, Math.round((Math.abs(v) / max) * CHART_H));
-    // 高度写在**内层色块**上；柱子本体是整列命中区（照参考插件 .lc-bar）
-    const fill = el.querySelector ? el.querySelector('.tbar-fill') : null;
-    if (fill) fill.style.height = h + 'px'; else el.style.height = h + 'px';
-    el.classList.toggle('neg', v < 0);
+    const p = parts[i] || {};
+    if (delta) {
+      // 增量：两臂分别锚在零线下方/上方，段高按同一 px/量 比例（参考插件 deltaScale 的语义）
+      const up = el.querySelector ? el.querySelector('.arm-up') : null;
+      const down = el.querySelector ? el.querySelector('.arm-down') : null;
+      if (up) { up.style.bottom = sc0.downPx + 'px'; up.querySelectorAll('.cseg').forEach((sg) => { sg.style.height = segH(p[sg.dataset.cat], sc0.deltaScale); }); }
+      if (down) { down.style.top = sc0.upPx + 'px'; down.querySelectorAll('.cseg').forEach((sg) => { sg.style.height = segH(p[sg.dataset.cat], sc0.deltaScale); }); }
+    } else {
+      el.querySelectorAll('.cseg').forEach((sg) => { sg.style.height = segH(p[sg.dataset.cat], totalScale); });
+    }
   });
-  sc.dataset.max = String(max);
+  sc.dataset.max = String(delta ? sc0.maxUp : sc0.maxTotal);
   /* 刻度上限也是自测面板上的一个读数。面板已经开着时，这里要把它刷新掉 ——
    * 否则面板会一直留着"这个节点刚被重建、还没算过刻度"的那一帧（实测显示 undefined）。 */
   if (prevMax !== sc.dataset.max && S.selfcheck) renderSelfcheck();
@@ -422,9 +483,11 @@ function showTrendTip(i, req, series) {
 function hideTrendTip() { const tip = $('trendTip'); if (tip) tip.hidden = true; }
 
 function renderTrend() {
-  const { list, series } = trendItems();
+  const { list, series, parts } = trendItems();
   window.__trendSeries = series;
-  const maxAll = Math.max(1, ...series.map((v) => Math.abs(v)));
+  window.__trendParts = parts;                       // applyTrendScale 要按类别重算每段高度
+  const sc0 = chartScale(parts, null);               // 首屏按整段历史；rAF 里再按可见范围自适应收紧
+  const maxAll = S.trendMode === 'delta' ? sc0.maxUp : sc0.maxTotal;
   const selIdx = list.findIndex((r) => r.seq === S.selSeq);
   const granLabel = S.trendGran === 'turn' ? `按轮次（共 ${REQUESTS[REQUESTS.length - 1].turn} 轮）` : `按步骤（共 ${REQUESTS.length} 次请求）`;
   const markers = list.map((r) => markersOfBar(r));
@@ -443,10 +506,16 @@ function renderTrend() {
       <button class="seg" data-act="jumpNow" data-explain="trend.jump">回到当前</button>
     </div>
     <div class="cap">聚焦：${S.trendCat ? `<b style="color:${catColor(S.trendCat)}">${esc(catLabel(S.trendCat))}</b> <a href="#" data-act="clearCat">（全部）</a>` : '全部类别 —— 点分类树左边的色块可只画某一类'}
-      · 柱高 = ${S.trendMode === 'delta' ? '比上一次请求的增量' : '该次请求的上下文量'}${S.trendCat ? '（仅该类）' : ''}
-      · 刻度上限 ${S.trendAdaptive ? '按可见范围自适应' : '按整段历史'} = <b id="trendAxisTopInline">${fmt(maxAll)}</b></div>
+      · ${S.trendMode === 'delta'
+        ? '每根柱子是<b>比上一次请求的增量</b>：涨的段在零线<b>上方</b>、跌的段在<b>下方</b>，颜色仍然是类别'
+        : '柱体<b>按类别分色堆叠</b>：段高 = 该类这次的上下文量，颜色与右侧分类树一一对应'}${S.trendCat ? '（已聚焦某一类）' : ''}
+      · 刻度 ${S.trendAdaptive ? '按可见范围自适应' : '按整段历史'} = <b id="trendAxisTopInline">${fmt(maxAll)}</b></div>
     <div class="trendwrap">
-      <div class="axis"><span id="trendAxisTop">${fmt(maxAll)}</span><span id="trendAxisMid">${fmt(maxAll / 2)}</span><span>0</span></div>
+      <div class="axis">
+        <span id="trendAxisTop">${fmt(maxAll)}</span>
+        <span id="trendAxisMid">${S.trendMode === 'delta' ? '' : fmt(maxAll / 2)}</span>
+        <span id="trendAxisBottom">${S.trendMode === 'delta' ? '-' + fmt(sc0.maxDown) : '0'}</span>
+      </div>
       <div class="trendpos">
       <div class="chart-tip" id="trendTip" hidden></div>
       <div class="trendscroll" id="trendScroll">
@@ -455,17 +524,35 @@ function renderTrend() {
             ? `<span class="mark" data-marki="${i}" data-explain="trend.mark" style="left:${i * (BAR_W + BAR_GAP)}px;width:${BAR_W}px">✂${evs.length > 1 ? '×' + evs.length : ''}</span>`
             : '')).join('')}</div>
           <div class="bars">
+            ${S.trendMode === 'delta' ? `<i class="zeroline" style="bottom:${sc0.downPx}px"></i>` : ''}
             ${list.map((r, i) => {
-              const v = series[i] || 0;
+              const v = series[i] || 0, p = parts[i] || {};
               const sel = r.seq === S.selSeq;
               /* 整列都是命中区：色块画在内层 .tbar-fill 上（照参考插件 dsh-context 的 .lc-bar）。
                * 顺带把"这一轮里的其它柱子"标出来（in-turn）——按步骤模式下一轮有多根，
                * 光靠一根柱子的框看不出点中的是哪一轮。 */
               const inTurn = !sel && r.turn === S.selTurn;
-              const label = S.trendGran === 'turn' ? `第 ${r.turn} 轮 · 共 ${r.stepCount || turnSteps(r.turn)} 步 · ≈${fmt(Math.abs(v))}` : `第 ${r.turn} 轮 · 第 ${r.step} 步 · ≈${fmt(Math.abs(v))}`;
+              const label = `${S.trendGran === 'turn' ? `第 ${r.turn} 轮 · 共 ${r.stepCount || turnSteps(r.turn)} 步` : `第 ${r.turn} 轮 · 第 ${r.step} 步`} · ${S.trendMode === 'delta' ? 'Δ' : '≈'}${fmt(Math.abs(v))}`;
+              // 每段 = 一个类别（只有有量才渲染）；颜色走 CATS，与右侧分类树同源
+              /* sign：'up' 只画正差、'down' 只画负差（undefined = 总计模式，全画）。
+               * 不筛的话两臂会一模一样 —— 实测踩过：每根柱子上下两臂内容完全相同，总高翻倍。 */
+              const segs = (vals, scale, sign) => CATS.map((c) => {
+                const sv = vals[c.key] || 0;
+                if (!sv) return '';
+                if (sign === 'up' && sv <= 0) return '';
+                if (sign === 'down' && sv >= 0) return '';
+                return `<i class="cseg" data-cat="${c.key}" style="height:${Math.max(1, Math.round(Math.abs(sv) * scale))}px;background:${c.color}"></i>`;
+              }).join('');
+              const totalScale = CHART_H / Math.max(1, sc0.maxTotal);
+              const inner = S.trendMode === 'delta'
+                ? `<i class="tbar-fill tbar-diverge">
+                     <i class="arm arm-up" style="bottom:${sc0.downPx}px">${segs(p, sc0.deltaScale, 'up')}</i>
+                     <i class="arm arm-down" style="top:${sc0.upPx}px">${segs(p, sc0.deltaScale, 'down')}</i>
+                   </i>`
+                : `<i class="tbar-fill tbar-stack">${segs(p, totalScale)}</i>`;
               return `<button class="tbar${sel ? ' sel' : ''}${inTurn ? ' in-turn' : ''}" data-i="${i}" data-seq="${r.seq}" data-explain="trend.pick"
                         aria-label="${esc(label)}"
-                        style="width:${BAR_W}px"><i class="tbar-fill" style="height:${Math.max(2, Math.round((Math.abs(v) / maxAll) * CHART_H))}px"></i></button>`;
+                        style="width:${BAR_W}px">${inner}</button>`;
             }).join('')}
           </div>
           <div class="strip">${S.trendGran === 'step'
@@ -480,16 +567,9 @@ function renderTrend() {
       </div>
       </div>
     </div>
-    <div class="stepchips">
-      <span class="cap">第 ${S.selTurn} 轮：</span>
-      ${reqsOfTurn(S.selTurn).map((r) => `<button class="chipstep ${r.seq === S.selSeq ? 'sel' : ''}" data-seq="${r.seq}" data-explain="step.chip">第 ${r.step} 步</button>`).join('')}
-      <button class="chipstep live ${isLive() ? 'sel' : ''}" data-seq="${REQUESTS[REQUESTS.length - 1].seq}" data-explain="step.chip">当前（下一次请求）</button>
-      <span class="grow" style="flex:1"></span>
-      <button class="seg" data-act="prevTurn" ${S.selTurn <= 1 ? 'disabled' : ''} data-explain="step.nav">◀ 上一轮</button>
-      <button class="seg" data-act="nextTurn" ${S.selTurn >= TOTAL_TURNS ? 'disabled' : ''} data-explain="step.nav">下一轮 ▶</button>
-      <button class="seg" data-act="prevStep" ${reqOf().step <= 1 ? 'disabled' : ''} data-explain="step.nav">◀ 上一步</button>
-      <button class="seg" data-act="nextStep" ${reqOf().step >= turnSteps(S.selTurn) ? 'disabled' : ''} data-explain="step.nav">下一步 ▶</button>
-    </div>`;
+    `;  /* 底部那一条（步级快捷片 + 上一轮/下一轮/上一步/下一步）按用户 2026-10-01 的意见删掉：
+           柱体自身 hover 就报"第几轮 / 第几步"，点一下就选中；那一排只是重复信息、还抢注意力。
+           柱子下面那行轮号刻度带保留 —— 它是图表的坐标轴，不是导航。 */
 
   const c = $('cardTrend');
   c.querySelectorAll('[data-trend]').forEach((b) => {
@@ -530,23 +610,11 @@ function renderTrend() {
       selectReq(lastOfTurn(t), `已选第 ${t} 轮（该轮末步）`);
     };
   });
-  c.querySelectorAll('.chipstep').forEach((b) => { b.onclick = () => selectReq(REQUESTS.find((r) => r.seq === Number(b.dataset.seq)), null); });
   c.querySelectorAll('[data-act]').forEach((b) => {
     b.onclick = () => {
       const a = b.dataset.act;
       if (a === 'jumpNow') { const sc = $('trendScroll'); sc.scrollLeft = sc.scrollWidth; applyTrendScale(); toast('已滚到最新一次请求'); return; }
       if (a === 'clearCat') { S.trendCat = null; render(); return; }
-      if (a === 'prevTurn' || a === 'nextTurn') {
-        const t = S.selTurn + (a === 'nextTurn' ? 1 : -1);
-        if (t >= 1 && t <= TOTAL_TURNS) selectReq(lastOfTurn(t), null);
-        return;
-      }
-      if (a === 'prevStep' || a === 'nextStep') {
-        const list = reqsOfTurn(S.selTurn);
-        const i = list.findIndex((r) => r.seq === S.selSeq);
-        const n = list[i + (a === 'nextStep' ? 1 : -1)];
-        if (n) selectReq(n, null);
-      }
     };
   });
   const sc = $('trendScroll');
@@ -1008,16 +1076,33 @@ function renderSelfcheck() {
  * 用户的原话是"我以为讲解模式只是加个编号，不会影响原来的样式"。
  * 柱体优先标**当前选中的那根**（用户正看着哪根，编号就落在哪根上）；刻度格标第一格。
  */
+/** 编号 = 该元素**类别**（data-explain 键）在讲解词典里的固定序号。
+ *  为什么不用"第几个出现就编几号"：那是**按出现顺序现数**，而两种粒度下前面的元素个数并不一样
+ *  （按步骤时多一个 ✂ 标记、按轮次时轮次刻度格又没有 data-explain）→ 用户实测"点轮次时第 1 步是 18、
+ *  点按步骤时变成 20"。改成按类别固定后，切换粒度编号**永远不变**（同类元素共用一个编号）。 */
+const EXPLAIN_ORDER = Object.keys(EXPLAIN);
+const explainNo = (key) => EXPLAIN_ORDER.indexOf(key) + 1;
 function explainTargets() {
   const all = [...document.querySelectorAll('[data-explain]')];
-  const bars = [...document.querySelectorAll('#trendScroll .tbar')];
-  const cells = [...document.querySelectorAll('#trendScroll .tcell')];
-  if (!bars.length && !cells.length) return all;
+  // 趋势区里同类元素成百上千（72 根柱、28 格刻度、若干 ✂），那里**每类只标一个**：
+  // 全标的话图表会被编号糊满（实测 102 个）。区外元素不重复标。
+  const chart = [...document.querySelectorAll('#trendScroll [data-explain]')];
+  if (!chart.length) return all;
+  const pickBy = (cls) => {
+    const els = chart.filter((el) => el.classList && el.classList.contains(cls));
+    return els.find((el) => el.classList.contains('sel')) || els[0];
+  };
   const keep = new Set();
-  const bar = bars.find((b) => b.classList && b.classList.contains('sel')) || bars[0];
-  if (bar) keep.add(bar);
-  if (cells[0]) keep.add(cells[0]);
-  return all.filter((el) => (!bars.includes(el) && !cells.includes(el)) || keep.has(el));
+  for (const cls of ['tbar', 'tcell', 'mark']) { const el = pickBy(cls); if (el) keep.add(el); }
+  // 通用规则（docs/03 §7）：**同类重复元素只标一个编号** —— 柱体标选中的那根、其余同类标第一个。
+  const seen = new Set();
+  return all.filter((el) => {
+    if (chart.includes(el) && !keep.has(el)) return false;
+    const k = el.dataset.explain;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 }
 function applyExplain() {
   document.body.classList.toggle('explain', S.explain);
@@ -1028,8 +1113,9 @@ function applyExplain() {
   let bar = document.querySelector('.explainbar');
 
   if (S.explain) {
-    nodes.forEach((el, idx) => {
-      el.dataset.exnum = String(idx + 1);
+    nodes.forEach((el) => {
+      const no = explainNo(el.dataset.explain);
+      el.dataset.exnum = String(no);
       /**
        * ⚠️ 关键：讲解的触达点是**这个序号本身**，不是被讲解的元素。
        * 用真实节点（不是 ::after 伪元素，伪元素点不到）—— 于是：
@@ -1040,10 +1126,10 @@ function applyExplain() {
       el.classList.add('explain-num');   // 高亮（::after 虚线环）只跟着有编号的元素走
       const badge = document.createElement('span');
       badge.className = 'exnum' + (el.closest && el.closest('.trendscroll') ? ' exnum-in' : '');
-      badge.textContent = String(idx + 1);
+      badge.textContent = String(no);
       badge.setAttribute('role', 'button');
       badge.setAttribute('tabindex', '0');
-      badge.setAttribute('title', `#${idx + 1} ${(EXPLAIN[el.dataset.explain] || {}).t || ''} —— 点这里看说明（不影响按钮本身）`);
+      badge.setAttribute('title', `#${no} ${(EXPLAIN[el.dataset.explain] || {}).t || ''} —— 点这里看说明（不影响按钮本身）`);
       const show = (e) => {
         e.preventDefault();
         e.stopPropagation();          // 只吃掉这一次点击，别让它触发按钮自身
@@ -1054,7 +1140,7 @@ function applyExplain() {
       el.appendChild(badge);
     });
     if (!bar) { bar = document.createElement('div'); bar.className = 'explainbar'; document.body.appendChild(bar); }
-        bar.innerHTML = `讲解模式已开：共 <b>${nodes.length}</b> 个序号 · 点**左上角序号**看它是做什么的；**按钮本身照常可用**（<span class="muted">Esc 关闭面板</span>）<span class="muted"> · 重复的同类元素（如趋势柱体、轮次刻度）只标一个，行为一样</span>`;
+        bar.innerHTML = `讲解模式已开：共 <b>${nodes.length}</b> 个序号 · 点<b>左上角序号</b>看它是做什么的；<b>按钮本身照常可用</b>（<span class="muted">Esc 关闭面板</span>）<span class="muted"> · 同类元素共用一个编号、只标一个</span>`;
   } else if (bar) bar.remove();
 }
 
