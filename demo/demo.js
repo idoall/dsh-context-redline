@@ -40,6 +40,7 @@ const EXPLAIN = {
   'cat.toggle': { t: '展开 / 收起分类', what: '展开某类（系统提示词 / 工具定义 / 用户消息 / 注入内容 / 技能注入 / 助手消息 / 工具结果）。', effect: '列出该类里的每一条（带 #seq、时间、token）。**点类名左侧的色块 = 聚焦到趋势图**。', rev: '再点一次收起', confirm: '不需要', refs: ['docs/03 §2'] },
   'row.toggle': { t: '展开这一条', what: '看这一条的正文。', effect: '就地展开全文（不跳页）。', rev: '再点一次收起', confirm: '不需要', refs: ['docs/03 R2.2'] },
 
+  'ui.advanced': { t: '高级编辑', what: '打开后，**工具结果**这一类的「编辑」入口才会出现。', effect: '默认收起的两类：工具结果（一轮几十条、"要动手"的概率低）与助手消息（平台本来就不给「编辑」，只有「批注」）。常用三类始终可见：用户消息 / 注入内容 / 技能注入 —— 它们都是"我告诉模型什么"，而且后两类每轮会被宿主重新注入（会漂）。', rev: '随时关掉，只是收起入口，不改任何数据', confirm: '不需要', refs: ['docs/03 R2.1 / R2.5'] },
   'act.edit': { t: '编辑（遮蔽原文）', what: '改写这一条的内容。', effect: '先把改动存成本地草稿（模型还看不到）；确认后才"应用到会话"，届时原文被替换、模型再也看不到原文（但日志里仍在）。', rev: '草稿可放弃；已应用的改动可用"版本历史"恢复', confirm: '提交时要', refs: ['docs/03 R2.2 / R3.3', 'docs/01 F7'] },
   'act.annotate': { t: '批注（保留原文）', what: '不遮蔽原文，追加一条带"作废范围"的更正。', effect: '模型会同时看到原文与更正。', rev: '不可撤销（追加即落地）', confirm: '提交时要', refs: ['docs/03 R2.2', 'docs/01 F6'] },
   'act.pin': { t: '存为不变量', what: '把注入类的这段正文逐字保存为固定块。', effect: '插件不生成、不润色、不改一个字；以后逐字比对就能发现漂移，并可显式重注入。', rev: '可退休（历史保留）', confirm: '保存时要', refs: ['docs/00 G4', 'docs/06 §1'] },
@@ -184,7 +185,7 @@ function markerOf(req) { return markersOfReq(req)[0] || null; }
 
 const initial = () => ({
   explain: false, selfcheck: false,
-  sw: { turnOpen: false, live: true, team: true, drafts: 0, compressBusy: false, pendingState: 'settled', noUser: false },
+  sw: { turnOpen: false, live: true, team: true, drafts: 0, compressBusy: false, pendingState: 'settled', noUser: false, advanced: false },
   /* 趋势区选项（参照参考插件） */
   trendGran: 'turn', trendMode: 'total', trendAdaptive: true, trendCat: null,
   selTurn: RICH_TURN, selSeq: REQUESTS[REQUESTS.length - 1].seq,
@@ -298,7 +299,7 @@ function selectReq(req, why) {
 
 /* ------------------------------------------------------------------ 4. 状态开关 / 说明条 */
 function renderSwitches() {
-  const items = [['turnOpen', '轮次未结束'], ['live', '会话在本进程'], ['team', '官方团队可用'], ['compressBusy', '子会话正忙（压缩会 busy）'], ['noUser', '本轮没有用户消息']];
+  const items = [['turnOpen', '轮次未结束'], ['live', '会话在本进程'], ['team', '官方团队可用'], ['compressBusy', '子会话正忙（压缩会 busy）'], ['noUser', '本轮没有用户消息'], ['advanced', '高级编辑']];
   $('switches').innerHTML =
     items.map(([k, label]) => `<button class="sw" data-sw="${k}" aria-pressed="${!!S.sw[k]}" data-explain="ui.switch"><i></i>${label}</button>`).join('') +
     `<button class="sw" data-act="drafts" aria-pressed="${draftCount() > 0}" data-explain="ui.switch"><i></i>草稿 ${draftCount()} 条</button>` +
@@ -723,6 +724,11 @@ function ability(node) {
   const canRewrite = !inert && !shadowed && type !== 'assistant/message' && !node.compacted;
   return {
     canRewrite, shadowed, isReplacement: repl, canAnnotate: !inert, inert,
+    /* 「高级编辑」：**模型/工具回了什么**那一类（工具结果）。
+     * 判据不是"会不会漂移"（只有每轮被重新注入的注入内容/技能注入才漂），而是"用户需要动手的概率"：
+     * 工具结果一轮几十条、要改的概率低 —— 默认把「编辑」收起来，避免干扰；
+     * 助手消息根本没有编辑按钮（平台互斥），它的批注**始终保留**（那是纠正它的唯一路径）。 */
+    advancedOnly: node.cat === 'tool',
     pinnable: !inert && (node.cat === 'inject' || node.cat === 'skill'),
     isToolResult: type === 'tool/result',
     blockReason: inert ? '系统提示词 / 工具定义由宿主保护：改不了，也不批注'
@@ -783,7 +789,11 @@ function rowHtml(node) {
     ${open ? `<div class="row-body"><div class="meta">#${node.seq} · ${esc(node.type)}${node.err ? ' · 错误结果' : ''}${node.compacted ? ' · 被压缩埋掉' : ''}</div>${esc(node.text)}</div>` : ''}
     ${a.inert ? '' : `<div class="actions" data-rowactions="${node.seq}">
       <span class="seq">#${node.seq}</span>${draft}${tail}${chain.length ? '<span class="chain">（这里被改过）</span>' : ''}
-      ${a.canRewrite ? `<button class="btn sm" data-act="edit" data-seq="${node.seq}" data-explain="act.edit">编辑</button>` : `<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 14))}…</span>`}
+      ${a.canRewrite
+        ? (a.advancedOnly && !S.sw.advanced
+          ? '<span class="chip-soft" title="工具结果的「编辑」属于高级编辑：打开顶部「高级编辑」开关即可看到（避免几十条工具结果把常用动作淹掉）">高级编辑</span>'
+          : `<button class="btn sm" data-act="edit" data-seq="${node.seq}" data-explain="act.edit">编辑</button>`)
+        : `<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 14))}…</span>`}
       ${a.canAnnotate ? `<button class="btn sm" data-act="annotate" data-seq="${node.seq}" data-explain="act.annotate">批注</button>` : ''}
       ${a.pinnable ? `<button class="btn sm" data-act="pin" data-seq="${node.seq}" data-explain="act.pin">存为不变量</button>` : ''}
       ${draftOf(node.seq) ? `<button class="btn sm danger" data-act="apply" data-seq="${node.seq}" data-explain="act.apply">应用到会话</button>` : ''}

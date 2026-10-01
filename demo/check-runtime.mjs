@@ -616,6 +616,27 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.applied = []; S.extraNodes = []; S.drafts = {}; S.editor = null; api.render();
 }
 
+/* ---------------- 「高级编辑」开关：默认收起"模型/工具回了什么"那两类的编辑入口 ----------------
+ * 判据不是"会不会漂移"（注入内容/技能注入每轮被重新注入 → 会漂，属**常用**），
+ * 而是"用户需要动手的概率"：工具结果一轮几十条、要改的概率低 → 默认收起，但**不许凭空消失**（R2.3）。 */
+{
+  const S = api.S();
+  const toolNode = api.NODES.find((n) => n.type === 'tool/result');
+  const editBtn = (seq) => new RegExp('data-act="edit" data-seq="' + seq + '"');
+  S.openCat = 'tool'; S.sw.advanced = false; S.editor = null; api.render();
+  const off = registry.get('cardBrowser').innerHTML;
+  check('高级编辑关：工具结果行不显示「编辑」按钮', !editBtn(toolNode.seq).test(off));
+  check('高级编辑关：但留「高级编辑」标记 + 说明在哪打开（R2.3 不许凭空消失）', /高级编辑/.test(off) && /打开顶部「高级编辑」开关/.test(off));
+  check('高级编辑关：批注仍然在（助手消息只能靠批注纠正）', /data-act="annotate"/.test(off));
+  S.sw.advanced = true; api.render();
+  check('高级编辑开：工具结果的「编辑」出现', editBtn(toolNode.seq).test(registry.get('cardBrowser').innerHTML));
+  S.sw.advanced = false; S.openCat = 'inject'; api.render();
+  check('高级编辑关：注入内容的「编辑」不受影响（常用类始终可见）', /data-act="edit"/.test(registry.get('cardBrowser').innerHTML));
+  S.openCat = 'skill'; api.render();
+  check('高级编辑关：技能注入的「编辑」也不受影响（它与注入内容同族：每轮重注入、会漂）', /data-act="edit"/.test(registry.get('cardBrowser').innerHTML));
+  S.sw.advanced = false; S.openCat = 'user'; api.render();
+}
+
 /* ---------------- 汇报 ---------------- */
 const bad = results.filter((r) => !r.ok);
 for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);

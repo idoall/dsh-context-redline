@@ -169,6 +169,13 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (!/function editTurnInject/.test(js)) problems.push('「改这一轮的注入内容」入口没了（R1.16）——注入类不该只有用户消息那条快捷入口');
 }
 
+/* 12) 「高级编辑」开关必须存在，且**只能收起"高级"那一类**（不许把常用类的编辑入口一起收掉） */
+{
+  if (!/'advanced', '高级编辑'/.test(js)) problems.push('状态开关里必须保留「高级编辑」（否则工具结果的编辑入口无处可开）');
+  if (!/advancedOnly: node\.cat === 'tool'/.test(js)) problems.push('「高级编辑」只应收起工具结果这一类；用户消息/注入内容/技能注入必须始终可见');
+  if (!/打开顶部「高级编辑」开关/.test(js)) problems.push('收起时不许让按钮凭空消失（R2.3）：必须留标记 + 说明在哪打开');
+}
+
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
  * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
  * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */
