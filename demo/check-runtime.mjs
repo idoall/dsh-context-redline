@@ -839,6 +839,19 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.snapshots = []; S.children = []; api.render();
 }
 
+/* ---------------- 「快照与子会话」按内容块分区（用户 2026-10-01：「整块挤成一个大竖条、看着乱」） ----------------
+ * 四块：冻结 / 子会话索引 / 待处理的结果 / 官方团队。宽屏两列（冻结左列跨行、团队跨两列），窄屏单列但每块有边框与标题。 */
+{
+  const S = api.S();
+  S.snapshots = []; S.children = []; api.render();
+  const card = registry.get('cardOrch').innerHTML;
+  const blocks = [...card.matchAll(/data-block="([a-z]+)"/g)].map((m) => m[1]);
+  check('快照卡：分成 4 个内容块（冻结 / 子会话索引 / 待处理 / 官方团队），顺序固定',
+    JSON.stringify(blocks) === JSON.stringify(['freeze', 'children', 'pending', 'team']), blocks.join(','));
+  check('快照卡：每块都有自己的标题（.blocktitle）', (card.match(/class="subhead blocktitle"/g) || []).length === 4,
+    `标题数=${(card.match(/class="subhead blocktitle"/g) || []).length}`);
+}
+
 /* ---------------- 汇报 ---------------- */
 const bad = results.filter((r) => !r.ok);
 for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);

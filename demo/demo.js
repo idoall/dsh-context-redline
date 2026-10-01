@@ -1123,6 +1123,14 @@ function renderOrch() {
   $('cardOrch').innerHTML = `
     <div class="card-title">快照与子会话 <span class="hint">A′：只做快照化子会话 + 对接官方；不自己造协作层</span></div>
 
+    ${/* 用户 2026-10-01：「整块挤成一个大竖条、看着乱」→ 按**内容块**分区：
+         冻结 / 子会话索引 / 待处理的结果 / 官方团队。宽屏两块并排（冻结一列，索引+待处理一列，团队跨两列），
+         窄屏单列堆叠但每块有自己的边框与标题（不许再挤成一片）。 */''}
+    <div class="orchgrid">
+
+    <section class="orchblock" data-block="freeze">
+    <div class="subhead blocktitle">冻结 <span class="hint">先钉一个出发点；开子会话就在下面某一条记录上点</span></div>
+
     <div class="orch-toolbar">
       <input id="snapNote" placeholder="人写备注（插件不生成摘要）" />
       <button class="btn sm" data-act="freeze" data-explain="orch.freeze" ${!S.sw.live || draftCount() > 0 ? 'disabled' : ''}>冻结当前位置</button>
@@ -1153,7 +1161,10 @@ function renderOrch() {
       </div>`).join('')
       : '<div class="cap">还没有冻结记录。建议：先把草稿清零 → 冻结 → 再开子会话。</div>'}
 
-    <div class="subhead">子会话 / 成员索引 <span class="hint">活跃 ${active} / 8 · 官方 teammate 也占同一份额度</span></div>
+    </section>
+
+    <section class="orchblock" data-block="children">
+    <div class="subhead blocktitle">子会话 / 成员索引 <span class="hint">活跃 ${active} / 8 · 官方 teammate 也占同一份额度</span></div>
     ${c.length === 0 ? '<div class="cap">（还没有子会话）</div>' : c.map((x, i) => {
       const [stCls, stText] = stateOf(x.state);
       return `
@@ -1184,7 +1195,10 @@ function renderOrch() {
       </div>`;
     }).join('')}
 
-    <div class="subhead">待处理的结果 <span class="hint" data-explain="pending.view">结算通知由平台尽力投递，投不到就说投不到</span></div>
+    </section>
+
+    <section class="orchblock" data-block="pending">
+    <div class="subhead blocktitle">待处理的结果 <span class="hint" data-explain="pending.view">结算通知由平台尽力投递，投不到就说投不到</span></div>
     ${S.sw.pendingState === 'settled' ? `
       <div class="orch-row">
         <div class="orch-id">
@@ -1207,7 +1221,10 @@ function renderOrch() {
         </div>
       </div>`}
 
-    <div class="subhead">官方团队 <span class="hint" data-explain="team.read">只读 —— 显示的就是官方那份数据</span></div>
+    </section>
+
+    <section class="orchblock" data-block="team">
+    <div class="subhead blocktitle">官方团队 <span class="hint" data-explain="team.read">只读 —— 显示的就是官方那份数据</span></div>
     ${S.sw.team ? `
       <div class="cap list-label">成员</div>
       <div class="roster">${S.members.map((m) => `<span class="member"><i class="mstat ${m.st}"></i>${esc(m.name)}</span>`).join('')}</div>
@@ -1224,7 +1241,11 @@ function renderOrch() {
         <button class="btn sm ghost" data-act="teamOpen" data-explain="team.read">去官方面板</button>
         <span class="cap">成员导航复用官方，我们不在面板里重画对话</span>
       </div>`
-      : '<div class="cap">本机未启用官方智能体团队 → 派活 / 建成官方任务 / 成员式打断全部不出现（不是报错）。</div>'}`;
+      : '<div class="cap">本机未启用官方智能体团队 → 派活 / 建成官方任务 / 成员式打断全部不出现（不是报错）。</div>'}
+    </section>
+
+    </div>
+  `;
   $('cardOrch').querySelectorAll('[data-act]').forEach((b) => { b.onclick = (e) => { e.preventDefault(); orchAct(b); }; });
   wireHelpButtons();
 }

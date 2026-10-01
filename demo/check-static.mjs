@@ -200,6 +200,17 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (htmlStrings.length) problems.push(`这些行把 markdown 的 ** 直接写进了 HTML（会原样显示星号）：${htmlStrings[0].trim().slice(0, 60)}`);
 }
 
+/* 16) 「快照与子会话」的排布契约：宽屏两列（冻结左列跨行、团队跨两列）、窄屏单列、块与块要能区分 */
+{
+  if (!/\.orchgrid\s*\{/.test(css)) problems.push('缺少 .orchgrid（快照卡的分块网格）');
+  if (!/grid-template-areas:\s*"freeze children"\s*"freeze pending"\s*"team team"/.test(css)) {
+    problems.push('宽屏排布契约变了：应为 freeze 一列跨两行、children+pending 一列、team 跨两列');
+  }
+  if (!/@media \(min-width: 1040px\)/.test(css)) problems.push('缺少宽屏断点（≥1040px 才两列，窄屏必须单列）');
+  if (!/\.orchblock\s*\{[^}]*bg-layer-3/.test(css)) problems.push('块底色必须比卡片底深一档（光靠边框不够"明显区分"）');
+  if (!/\.orchblock > \.blocktitle/.test(css)) problems.push('每块标题必须有独立样式（块身份要一眼可见）');
+}
+
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
  * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
  * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */

@@ -355,6 +355,34 @@ body {
 .list-label { margin: 8px 0 2px; }
 
 /* ---------- 官方团队区块（只读） ---------- */
+/* ---------- 「快照与子会话」卡：按内容块分区 ----------
+ * 用户 2026-10-01：「整块挤成一个大竖条、看着乱；宽屏应该横排，窄屏竖排但每块要明显区分」。
+ * 宽屏（≥1040px）：冻结一列（跨两行）、子会话索引 + 待处理一列、官方团队跨两列。
+ * 窄屏：单列堆叠，靠 .orchblock 的边框/底色/标题把四块分开（不许挤成一片）。 */
+.orchgrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.orchblock {
+  min-width: 0; padding: 6px 8px 8px; border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-3);   /* 比卡片底再深一档：光靠边框区分不够"明显" */
+}
+.orchblock > .blocktitle {
+  margin: 2px 0 4px; padding-bottom: 4px;
+  border-bottom: 1px dashed var(--dsw-alias-border-l1);   /* 标题下一道虚线，块身份一眼可见 */
+}
+.orchblock:has(.warn-text) { border-color: var(--ds-color-amber); }
+.orchblock > .subhead + .subhead { margin-top: 6px; }
+@media (min-width: 1040px) {
+  .orchgrid {
+    grid-template-columns: minmax(0, 1.02fr) minmax(0, 1fr);
+    grid-template-areas: "freeze children" "freeze pending" "team team";
+    align-items: start;
+  }
+  .orchblock[data-block="freeze"] { grid-area: freeze; }
+  .orchblock[data-block="children"] { grid-area: children; }
+  .orchblock[data-block="pending"] { grid-area: pending; }
+  .orchblock[data-block="team"] { grid-area: team; }
+}
+
 .subhead { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 12px; font-weight: 600; margin: 10px 0 4px; color: var(--dsw-alias-label-secondary); }
 .subhead .hint { font-weight: 400; color: var(--dsw-alias-label-caption); }
 .roster { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0; }
