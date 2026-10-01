@@ -68,7 +68,7 @@
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | `git log -1`：`demo(M0.5)+docs: 浏览器实测（1440/880/879/390）+ 修自测面板 undefined`（哈希不写死，避免"改完文件哈希就变"的自指） |
-| 进度 | `docs/10`：**DONE 75 / 共 209** |
+| 进度 | `docs/10`：**DONE 76 / 共 209**（DOING 4 · TODO 121 · WAIT🙋 8） |
 | 当前卡点 | **M05-15 交互定稿（等用户按 R 编号提意见）**；其后 `M1-01 授权包①（等用户重启）` |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store） |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 6 张截图） |
@@ -81,3 +81,28 @@
 所以跨会话只能靠**这段可复制的交接文本**；它的可靠性来自两点：
 ① 真相写在仓库文件里（`AGENTS.md` + `docs/10`），不依赖某一轮对话的记忆；
 ② 交接文本只写"现状 + 第一件事 + 两条路"，细节让新会话自己读文件。
+
+---
+
+## 实施共识（2026-10-01 用户拍板 · 实施前必须遵守）
+
+| 议题 | 结论 |
+|---|---|
+| **打法** | **先垂直切片跑通再补齐**：M1 骨架 → M2 编辑核心 → M3 一个"能显示上下文"的只读面板（能构建、能装、能看）跑通一次完整链路，再横向补 M4 / M4.5 / M5 / M6 |
+| **装 profile + 重启** | **等 M1+M2 构建全绿后**再装进 `web` profile；**重启 `dsh web` 仍由用户本人执行** |
+| **依赖版本** | 对齐本机运行时 **0.2.0-rc.2**（签名以安装树 `.d.ts` 为准）；peer 上界按既有策略写 `<0.3.0` 或显式枚举 |
+| **Agent Teams 权限** | teammate **只写 Lead 指定的写作用域**；**不 commit / 不装依赖 / 不跑 `dsh` / 不碰 `~/.dsh` 与 DSH 安装目录**；构建、依赖安装、git 提交、最终验收**全归 Lead** |
+| **技能注入的动作集合** | **按底层事件类型**给「编辑」（底层 `user/message`/`tool/result` → 可编辑；底层 `assistant/message` → 只批注）＋ `批注` ＋ `钉住这一段`（合 `docs/03` R2.1/R4.6） |
+
+**随之生效的技术约定**（Lead 定，写代码时必须遵守）：
+
+1. **测试目录 = `tests/`（复数）+ `*.spec.ts`**（跟随上游惯例）；vitest 分 lane：`edit` / `channel` / `client`。
+2. **lane 边界 = `src/redline/**`（纯逻辑：禁 `node:*`、禁 DOM、禁 React）+ `src/shared/**`**；
+   `docs/05` 里旧的 `src/edit/pure/**` 是归档线命名，已废弃。
+3. **不设路径别名**：测试用相对 ESM 导入（`../../src/redline/xxx.js`）；`moduleResolution: Bundler` 可解析到 `.ts`。
+4. **`tsconfig.json` 的 `include` 必须含 `tests/**`** —— 否则护栏测试不进 `tsc --noEmit`，等于半个护栏。
+5. **稳定错误码表放 `src/shared/redline-errors.ts`**（两半共用的对外契约），`src/redline/**` 只 import。
+6. **「已遮蔽的 assistant 消息」两个原因同时命中时，assistant 判定优先**：按钮集合同为「只批注」，
+   差异只在给用户看的原因与徽章；单测锁定这个优先级。
+7. **每完成一条任务：在 `docs/10` 把该条验收标准打勾并附原始输出**；进度随时可用
+   `node scripts/progress.mjs` 查看（哪些已完成 / 哪些未完成）。

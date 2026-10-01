@@ -15,7 +15,7 @@
 
 | lane | 目录 | 可依赖的运行时 import | 能不能稳定跑 | 跑什么 |
 |---|---|---|---|---|
-| `edit`（自有护栏·纯逻辑） | `tests/edit/` | **只允许** `src/edit/pure/**` 与 `src/shared/**` | ✅ 必须永远绿 | 资格判定、行投影、漂移逐字判定、范围校验、快照/血缘序列化、`plan.next` 判定次序、能力开关组合 |
+| `edit`（自有护栏·纯逻辑） | `tests/edit/` | **只允许** `src/redline/**` 与 `src/shared/**` | ✅ 必须永远绿 | 资格判定、行投影、漂移逐字判定、范围校验、快照/血缘序列化、`plan.next` 判定次序、能力开关组合 |
 | `channel`（自有护栏·真实路由级） | `tests/channel/` | 允许 `src/host/redline-channel.ts` 与 `src/edit/**`；**禁止** `src/client/**` | ✅ 必须永远绿 | 捕获宿主注册的**精确 Fetch 路由** → 按真实 RPC 信封调用 → 读回 SQLite/草稿文件断言 |
 | `host`（上游带的） | `tests/host/` | 上游 | ⚠️ 环境依赖，可能整片失败 | 上游 fold/投影。**不作为门禁**，但改动上游文件时要跑一次做对照 |
 | `client`（上游带的） | `tests/client/` | 上游客户端 | ⚠️ 同上 | 上游客户端组件。**不作为门禁** |
