@@ -25,9 +25,9 @@ const EXPLAIN = {
   'trend.adaptive': { t: '自适应刻度', what: '打开时，纵轴最大值按"当前可见的那几根柱"算；关闭时按整段历史算。', effect: '长会话里远处的尖峰不会把眼前的柱子压成一条线。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.5', '参考插件 trendChart: adaptive'] },
   'trend.cat': { t: '聚焦某一类', what: '点右侧分类树里的某一类，趋势图只画那一类的量（纵轴重新缩放）。', effect: '再点一次"全部"恢复。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.6', '参考插件 trendChart: focusCat'] },
   'trend.jump': { t: '回到当前', what: '把趋势条滚回最右端（最新一次请求）。', effect: '只滚动视图。', rev: '不需要', confirm: '不需要', refs: ['docs/03 R1.7'] },
-  'trend.pick': { t: '点一根柱子', what: '按轮次模式：选中这一轮（右侧切到该轮**末步**）；按步骤模式：选中那一步。', effect: '右侧浏览器的分类树、条数、token 全部跟着变。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.1 / R1.2'] },
+  'trend.pick': { t: '点一根柱子', what: '按轮次模式：选中这一轮（右侧切到该轮**末步**）；按步骤模式：选中那一步。**整列都可点**（不只是色块那一截）：移上去有底色与虚线框预览，点中后是实线框 + 底色，同一轮的其它柱子也会带整轮底色。', effect: '右侧浏览器的分类树、条数、token 全部跟着变。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.1 / R1.2'] },
   'trend.mark': { t: '✂ 压缩 / 剪枝标记', what: '表示这一刻上下文被压过：压缩（历史被摘要替换）或剪枝（工具输出被丢弃）。', effect: '每个事件只标在它之后的第一个请求上；按轮次时标在包含它的那一轮，一轮里有多个事件就显示 ✂×N。鼠标移上去看详情，点它可以跳到那一次。', rev: '只读', confirm: '不需要', refs: ['docs/03 R1.12', '参考插件 attachMarkers'] },
-  'trend.strip': { t: '轮次分组条', what: '按步骤模式下，柱子下面按轮分组的刻度带（每格标轮号，宽度 = 该轮步数）。', effect: '点一格 = 选中该轮末步。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.8'] },
+  'trend.strip': { t: '轮次分组条', what: '按步骤模式下，柱子下面按轮分组的刻度带（每格标轮号，宽度 = 该轮步数）。', effect: '点一格 = 选中该轮末步。讲解模式下**只标第一格**，每一格行为都一样。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.8'] },
 
   'turn.pick': { t: '选择某一轮', what: '点轮次条 = 让右侧浏览器切到该轮最后一步。', effect: '右侧标题变成"第 T 轮（共 N 步，显示末步）"，分类条数/token/占比跟着变。', rev: '随时可切别的轮', confirm: '不需要', refs: ['docs/03 R1.1'] },
   'step.pick': { t: '步级选择', what: '选某一步（或回到"当前（下一次请求）"）。', effect: '右侧展示该步的上下文构成；与轮次入口交叉比对应当逐项一致。', rev: '随时可切', confirm: '不需要', refs: ['docs/03 R1.2'] },
@@ -1001,11 +1001,30 @@ function renderSelfcheck() {
 }
 
 /* ------------------------------------------------------------------ 10. 讲解模式 */
+/**
+ * 讲解模式下要标编号的元素。
+ * ⚠️ **同类重复元素只标一个**：趋势柱体（按步骤模式 72 根）与轮次刻度格如果每根都标，
+ * 图表会被 100+ 个编号糊满（2026-10-01 实测：#trendScroll 里挂了 102 个编号），
+ * 用户的原话是"我以为讲解模式只是加个编号，不会影响原来的样式"。
+ * 柱体优先标**当前选中的那根**（用户正看着哪根，编号就落在哪根上）；刻度格标第一格。
+ */
+function explainTargets() {
+  const all = [...document.querySelectorAll('[data-explain]')];
+  const bars = [...document.querySelectorAll('#trendScroll .tbar')];
+  const cells = [...document.querySelectorAll('#trendScroll .tcell')];
+  if (!bars.length && !cells.length) return all;
+  const keep = new Set();
+  const bar = bars.find((b) => b.classList && b.classList.contains('sel')) || bars[0];
+  if (bar) keep.add(bar);
+  if (cells[0]) keep.add(cells[0]);
+  return all.filter((el) => (!bars.includes(el) && !cells.includes(el)) || keep.has(el));
+}
 function applyExplain() {
   document.body.classList.toggle('explain', S.explain);
   // 每次渲染都重建序号：先清旧的，避免残留（DOM 会被 render() 整体替换）
   document.querySelectorAll('.exnum').forEach((el) => el.remove());
-  const nodes = document.querySelectorAll('[data-explain]');
+  document.querySelectorAll('.explain-num').forEach((el) => el.classList.remove('explain-num'));
+  const nodes = explainTargets();
   let bar = document.querySelector('.explainbar');
 
   if (S.explain) {
@@ -1018,6 +1037,7 @@ function applyExplain() {
        *   · 点按钮本身 → 照常走它自己的交互（不被拦截）
        * 之前我在捕获阶段拦了所有 [data-explain] 的点击，导致开着讲解模式就没法试按钮、只能刷新。
        */
+      el.classList.add('explain-num');   // 高亮（::after 虚线环）只跟着有编号的元素走
       const badge = document.createElement('span');
       badge.className = 'exnum' + (el.closest && el.closest('.trendscroll') ? ' exnum-in' : '');
       badge.textContent = String(idx + 1);
@@ -1034,7 +1054,7 @@ function applyExplain() {
       el.appendChild(badge);
     });
     if (!bar) { bar = document.createElement('div'); bar.className = 'explainbar'; document.body.appendChild(bar); }
-    bar.innerHTML = `讲解模式已开：共 <b>${nodes.length}</b> 个可交互元素 · 点**左上角序号**看它是做什么的；**按钮本身照常可用**（<span class="muted">Esc 关闭面板</span>）`;
+        bar.innerHTML = `讲解模式已开：共 <b>${nodes.length}</b> 个序号 · 点**左上角序号**看它是做什么的；**按钮本身照常可用**（<span class="muted">Esc 关闭面板</span>）<span class="muted"> · 重复的同类元素（如趋势柱体、轮次刻度）只标一个，行为一样</span>`;
   } else if (bar) bar.remove();
 }
 

@@ -42,6 +42,23 @@ const getById = (id) => {
 };
 // 三个"假的可讲解元素"：用来验证序号节点的注入与点击行为
 const explainHosts = Array.from({ length: 3 }, () => { const el = makeEl(); el.dataset.explain = 'act.edit'; return el; });
+/* 趋势区：3 根柱子（中间那根是选中态）+ 2 个轮次刻度格 ——
+ * 用来锁住"同类重复元素在讲解模式下只标一个编号"（真实页面里按步骤有 72 根柱子，
+ * 每根都标就成了 102 个编号糊满图表，2026-10-01 实测）。 */
+const trendScroll = makeEl('div');
+const trendBars = Array.from({ length: 3 }, (_, i) => {
+  // ⚠️ classList 与 className 在桩里是两套东西，必须都设上：实现是用 classList.contains('sel')
+  //    找"当前选中的那根"的（第一版只设了 className，导致守卫误判）
+  const el = makeEl('button'); el.className = 'tbar' + (i === 1 ? ' sel' : '');
+  el.classList.add('tbar'); if (i === 1) el.classList.add('sel');
+  el.dataset.explain = 'trend.pick'; el.closest = (s) => (s === '.trendscroll' ? trendScroll : null);
+  return el;
+});
+const trendCells = Array.from({ length: 2 }, () => {
+  const el = makeEl('button'); el.className = 'tcell';
+  el.dataset.explain = 'trend.strip'; el.closest = (s) => (s === '.trendscroll' ? trendScroll : null);
+  return el;
+});
 const document = {
   documentElement: Object.assign(makeEl('html'), { scrollWidth: 1200, clientWidth: 1200 }),
   body: makeEl('body'),
@@ -49,8 +66,17 @@ const document = {
   createElement: (t) => makeEl(t),
   querySelector: () => null,
   querySelectorAll: (sel) => {
-    if (sel === '[data-explain]') return explainHosts;
-    if (sel === '.exnum') return explainHosts.flatMap((h) => h.children.filter((c) => String(c.className).startsWith('exnum')));
+    if (sel === '[data-explain]') return explainHosts.concat(trendBars, trendCells);
+    if (sel === '.exnum') {
+      // 清理要覆盖**所有**宿主（含趋势柱体/刻度格），否则编号会在桩里累积，掩盖真实行为
+      return explainHosts.concat(trendBars, trendCells)
+        .flatMap((h) => (h.children || []).filter((c) => String(c.className).startsWith('exnum')));
+    }
+    if (sel === '.explain-num') {
+      return explainHosts.concat(trendBars, trendCells).filter((el) => el.classList.contains('explain-num'));
+    }
+    if (sel === '#trendScroll .tbar') return trendBars;
+    if (sel === '#trendScroll .tcell') return trendCells;
     return [];
   },
   __on: {},
@@ -303,6 +329,28 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('趋势柱体：每根柱子都有内层色块 .tbar-fill', bars.length > 0 && fills.length === bars.length, `柱子 ${bars.length} 根 · 色块 ${fills.length} 个`);
   const outerHasHeight = /class="tbar(?=[ "])[^"]*"[^>]*style="[^"]*height:/.test(html);
   check('趋势柱体：高度不再写在外层按钮上（外层是整列命中区）', !outerHasHeight, outerHasHeight ? '外层仍带 height' : '');
+}
+
+/* ---------------- 讲解模式：同类重复元素只标一个编号，且不改变元素自身样式 ----------------
+ * 用户 2026-10-01：「我以为讲解模式只是加个编号，不会影响原来的样式」→ 实测在趋势区影响很大：
+ * ① 72 根柱子各挂一个编号 = 102 个编号糊满图表；② 讲解高亮用 outline 且特异性更高，
+ *    把柱体的 hover/选中整片盖掉（详见 check-static 的第 5 条契约）。 */
+{
+  const S = api.S();
+  S.explain = true; api.render();
+  const badgesOf = (el) => (el.children || []).filter((c) => String(c.className).startsWith('exnum')).length;
+  check('讲解模式：3 个普通可讲解元素仍然各有一个编号', explainHosts.every((h) => badgesOf(h) === 1), explainHosts.map(badgesOf).join(','));
+  check('讲解模式：柱子**不是每根都标**（3 根里只标 1 根）', trendBars.reduce((n, b) => n + badgesOf(b), 0) === 1, `柱子上的编号：${trendBars.map(badgesOf).join(',')}`);
+  check('讲解模式：标记在**当前选中的那根**柱子上', badgesOf(trendBars[1]) === 1 && badgesOf(trendBars[0]) === 0 && badgesOf(trendBars[2]) === 0);
+  check('讲解模式：轮次刻度格同样只标 1 个', trendCells.reduce((n, c) => n + badgesOf(c), 0) === 1, `刻度格上的编号：${trendCells.map(badgesOf).join(',')}`);
+  /* 高亮（虚线环）必须**跟着编号走**：只有带编号的元素才该被标亮。
+   * 否则柱子这类重复元素会各自带一个虚线环 —— 图表照样不像原样（用户就是为此提的意见）。 */
+  const marked = (el) => (el.classList && el.classList.contains('explain-num') ? 1 : 0);
+  check('讲解模式：只有带编号的元素被标亮（重复柱体不加环）', trendBars.reduce((n, b) => n + marked(b), 0) === 1, `带环的柱子：${trendBars.map(marked).join(',')}`);
+  check('讲解模式：普通可讲解元素都带编号也都被标亮', explainHosts.every((h) => badgesOf(h) === 1 && marked(h) === 1));
+  S.explain = false; api.render();
+  check('关掉讲解模式后，柱子与刻度格上的编号都被清理', trendBars.concat(trendCells).every((el) => badgesOf(el) === 0));
+  check('关掉讲解模式后，标亮状态也被清理', trendBars.concat(trendCells).every((el) => marked(el) === 0));
 }
 
 /* ---------------- 汇报 ---------------- */

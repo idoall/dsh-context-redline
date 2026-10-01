@@ -62,7 +62,7 @@
 
 ---
 
-## 2. M0.5 · 交互 demo（**27 / 28 DONE**，剩定稿）
+## 2. M0.5 · 交互 demo（**28 / 29 DONE**，剩定稿）
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
@@ -93,6 +93,7 @@
 | M05-26 | 用户报"又打不开了" → 根因：demo 服务原本是**用 shell 后台任务**起的，寿命跟着父进程走，父进程一收工服务就没了（实测：端口 5180 无监听、`pgrep` 无 python 进程、`job_list` 空）。改成**守护进程**：`serve.py --daemon` 双 fork + setsid（PPID=1、无控制终端）；**先绑定端口成功才写 pidfile**（pidfile 存在 ⇒ 真的起来了，失败不误报成功）；日志 `/tmp/redline-demo-5180.log`；`serve.sh` 支持 `start/fg/status/stop`，`stop` 按 pidfile 并回退按端口查（修好以前失效的 stop）。**注意**：`--daemon` 的父进程用 `os._exit` 退出 → 报状态那行必须 `flush=True`，否则什么都看不到（已踩） | DONE → `ps`：`PID 98728 PPID 1 TTY ??`；**跨两次独立 shell 调用**仍 `在跑 (pid 98728)`；`curl 127.0.0.1 → 200`、`curl 10.0.0.30 → 200`、`Cache-Control: no-store`；浏览器走局域网地址：页头 `单文件版 2f0ecb0`、84 热区、溢出 0px、console **0 条** | `demo/serve.py`、`demo/serve.sh`、`demo/README.md` |
 | M05-27 | 用户反馈「快照与子会话这部分的排列，没有其他几个部分好看」→ 按**其他卡片同一套行语法**重排（`docs/03` R5.1 的内容一个字没改，只改排布）：① 小节一律 `.subhead` 标题 + `.hint` 说明（原来把括号说明混在标题里）；② 每个子会话/成员行统一成**两行** —— 上行身份（`id` / 来源徽章 / 状态徽章 / 描述，超宽省略号），下行动作（缩进 22px，与浏览器卡片 `.actions` 同款），不再出现"`打开` 孤零零挂右上角、其余按钮换行后还带悬挂缩进"，同一张卡两行子会话排布也不再各不相同；③ 状态用**圆点 + 徽章**取代 ✅/⚠️ emoji（`docs/03` V5 本来就禁止 emoji，顺带纠规范）；④ 冻结记录收成一行（id + 元信息 + 人写备注）；⑤ 任务板 owner 右对齐、roster 做成 chips、`去官方面板` 从一行灰字改成真按钮；⑥ 说明文字挨着按钮，不顶到最右。**同一轮发现并修掉一个真 bug**：团队不可用时 `派活` 只是**置灰**、`建成官方任务`/`去官方面板` 照旧在 —— 而 R5.1 要求"**不出现**（不是报错）"，demo 自己的 README 也这么写；现在只剩 `打开 / 压缩 / 打断`（裸子会话通道），并按**按钮属性**（`data-act`）补了 7 条护栏 | DONE → 先写红护栏（按 `data-act` 判定）→ **2 红**；修后 **65/65 绿**；反向验证（把判断改回"置灰"）→ 又 **2 红**，改回即绿；静态契约 `41 id / 84 class / 29 讲解键` 绿。截图：`orch-before-1440.png`(633px) → `orch-after-1440.png`(683px)、`orch-team-off.png`、`orch-after-390.png`（390 整页溢出 0px、`.actions` 不溢出）、`orch-in-context-1440.png` | `demo/demo.js`、`demo/demo.css`、`demo/check-runtime.mjs`、`demo/README.md`、`demo/redline-panel.standalone.html` |
 | M05-28 | 用户反馈「上下文趋势的柱状图，鼠标移过没有 hover 样式、点中了也没有和其它柱体不一样的样子，看不出移到/点了哪一根；参考插件 dsh-context 做得好」→ 对照参考插件 `src/client/styles/trendChart.css` 与 `src/client/components/trendChart.tsx` 实测出三处实质差异并逐条补齐：① **命中区**：参考的 `.lc-bar` 是 `height:100%` 整列可点、色块画在子元素里，我们的柱体只有色块本身（实测 bar0 = 69px，柱子上方空白命中不到）→ 改成整列 `<button class="tbar">` + 内层 `<i class="tbar-fill">`；② **hover**：参考有列底色 + 1px 虚线框，我们只有一根 1px 虚线（实测 `1px dashed rgb(139,139,245)`、无底色）→ 加列底色 + 色块 `brightness(1.25)`；③ **选中**：参考是 2px 实线框 + 整轮 `lc-bar-in-turn` 底色，且**规则声明在 hover 之后**（参考源码专门注释了这个顺序陷阱），我们只有 2px 白框 → 加 20% 品牌底色 + 同轮其它柱子 10% 底色，并把 `.tbar.sel` 排在 `.tbar:hover` 之后 | DONE → **先红后绿**：新增 5 条 CSS 契约（整列高度 / hover 要有底色 / 选中要有框+底色 / `.sel` 必须排在 `:hover` 之后 / 必须存在 `.tbar-fill` 与 `.tbar.in-turn`）+ 2 条结构契约（每根柱子都有色块、高度不写在外层）→ 修前 **7 红**（`柱子 72 根 · 色块 0 个` 等）；修后 **67/67 绿**、`check-static` 绿。浏览器实测：`elementFromPoint` 在柱子上方 5% 处命中 `button.tbar`（整列可点）；悬停计算值 `1px dashed #8b8bf5 + bg rgba(255,255,255,.07) + fill brightness(1.25)`；点中 `2px solid #f4f4f5 + bg brand 20%`，按步骤模式另 1 根同轮柱子得 `in-turn` 10% 底色；console **0 条**。截图 `trend-hover-1440.png`、`trend-selected-step-1440.png` | `demo/demo.css`、`demo/demo.js`、`demo/check-static.mjs`、`demo/check-runtime.mjs`、`demo/redline-panel.standalone.html` |
+| M05-29 | 用户反馈「我以为讲解模式只是加个左上角数字编号的注解，不会影响原来的样式；实测在趋势柱体那里影响还比较多」→ 实测坐实两条：① 讲解高亮写在 `body.explain [data-explain] { outline: … }` 上，特异性 **(0,2,1)** 高于柱体自己的 `.tbar:hover` / `.tbar.sel`（都是 0,2,0）→ 实测"普通柱 outline = `1px dashed rgba(139,139,245,.518)`、选中柱 = `1px dashed rgb(189,189,245)`"，**选中那根的 2px 实线框被整片盖掉**，这才让用户以为柱体没有 hover/选中反馈；② 每根柱子各挂一个编号 → `#trendScroll` 里 **102 个编号**糊满图表。修法三条硬规矩（已写进 `docs/03` §7 引言）：高亮只画在 `::after` 伪元素上（不占用元素的 outline/background/border）；高亮**跟着编号走**（加 `.explain-num` 类）；**同类重复元素只标一个编号**（柱体标当前选中的那根、轮次刻度标第一格） | DONE → **先红后绿**：新增 5 条运行时护栏（3 个普通元素各 1 个编号 / 柱子只标 1 根且是选中那根 / 刻度格只标 1 个 / 只有带编号的元素被标亮 / 关掉后编号与标亮都清理）+ 2 条 CSS 契约（讲解规则不许给元素自身设 outline·background·border、高亮必须挂在 `.explain-num` 上、不许有针对 `.tbar` 的讲解覆盖规则）→ 修前 **3 静态红 + 3 运行时红**；修后 **静态绿 + 75/75 绿**。浏览器实测（讲解模式开着）：趋势区编号 **102 → 2**、28 根柱子里**只有 1 根带环**、选中柱仍为 `2px solid rgb(244,244,245)`、悬停柱 `1px dashed #8b8bf5 + bg rgba(255,255,255,.07) + fill brightness(1.25)`、console **0 条**；截图 `trend-explain-hover-1440.png`。踩坑记录：CSS 注释里为解释病因写了 `body.explain … .tbar` 字样，被自己的正则当成真实规则（已改成先剥注释再检查）；桩里 `classList` 与 `className` 是两套东西，导致"选中那根"判定误红（已同步） | `demo/demo.css`、`demo/demo.js`、`demo/check-static.mjs`、`demo/check-runtime.mjs`、`docs/03-ui-spec.md` §7 引言、`demo/redline-panel.standalone.html` |
 | M05-15 | 🙋 **交互定稿**：你逐条按 R 编号确认 → 结论回写 `docs/03` | WAIT🙋 | `docs/03-ui-spec.md`（只改对应 R 各条） |
 
 ---
@@ -285,7 +286,7 @@
 |---|---|---|---|---|---|
 | X 横切 | 8 | **2** | 4 | 1 | 1 |
 | M0 文档集 | 20 | **20** | 0 | 0 | 0 |
-| M0.5 交互 demo | 28 | **27** | 0 | 0 | 1 |
+| M0.5 交互 demo | 29 | **28** | 0 | 0 | 1 |
 | M1 骨架与身份 | 14 | 0 | 0 | 13 | 1 |
 | M2 编辑面 | 28 | 0 | 0 | 28 | 0 |
 | M3 右侧界面 | 22 | 0 | 0 | 21 | 1 |
@@ -294,7 +295,7 @@
 | M5 编排 | 26 | 0 | 0 | 25 | 1 |
 | M6 入口与发布 | 10 | 0 | 0 | 10 | 0 |
 | M7+ 后续 | 4 | 0 | 0 | 4 | 0 |
-| **合计** | **182** | **49** | **4** | **121** | **8** |
+| **合计** | **183** | **50** | **4** | **121** | **8** |
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
 > 当前卡点：**M05-15 交互定稿（等你）**；其后 **M1-01 授权包①（等你重启）**。

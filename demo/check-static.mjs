@@ -59,7 +59,9 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
  *   · `.tbar.sel` 的规则必须声明在 `.tbar:hover` **之后** —— 参考插件源码专门注释过这个顺序陷阱：
  *     反了的话，鼠标停在刚点过的柱子上时虚线 hover 会盖掉实线选中，只有移开才看得见选中。 */
 {
-  const flat = css.replace(/\s+/g, ' ');
+  // ⚠️ 先剥掉 CSS 注释：注释里为了解释病因会写出 `body.explain … .tbar` 这样的字样，
+  //    不剥的话会被当成真实规则误报（第一版就是这么白红了一次）
+  const flat = css.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\s+/g, ' ');
   const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const ruleAt = (sel) => { const m = new RegExp(escRe(sel) + '\\s*\\{([^}]*)\\}').exec(flat); return m ? { body: m[1], index: m.index } : null; };
   const tbar = ruleAt('.tbar'), hover = ruleAt('.tbar:hover'), sel = ruleAt('.tbar.sel');
@@ -75,6 +77,28 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (hover && sel && sel.index < hover.index) problems.push('趋势柱体：.tbar.sel 必须声明在 .tbar:hover 之后（顺序反了 → 鼠标停在刚点过的柱子上时看不清选中）');
   if (!ruleAt('.tbar-fill')) problems.push('趋势柱体：色块必须画在内层 .tbar-fill 上，柱子本体留作整列命中区');
   if (!ruleAt('.tbar.in-turn')) problems.push('趋势柱体：选中那一轮里的其它柱子要给整轮底色（照参考插件的 lc-bar-in-turn）');
+}
+
+/* 5) 讲解模式**不许改被测元素自身的样式**（用户 2026-10-01 实测：开着讲解模式，柱体的 hover/选中全看不见）
+ * 病因：`body.explain [data-explain] { outline: … }` 的特异性是 (0,2,1)，高于柱体自己的
+ * `.tbar:hover` / `.tbar.sel`（都是 0,2,0）→ 所有柱子被同一条虚线框盖住，选中那根也分不出来。
+ * 规矩：讲解高亮只能画在**伪元素**上（不占用 outline / background / border 三条通道），
+ * 也不许出现专门针对 .tbar 的几何覆盖规则（旧遗留 `body.explain .trendscroll .tbar { min-height }`）。 */
+{
+  const flat = css.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\s+/g, ' ');
+  const el = /body\.explain \[data-explain\](?!::)[^{]*\{([^}]*)\}/.exec(flat);
+  // 高亮必须**跟着编号走**（.explain-num）：只给"有编号的元素"画环。
+  // 若对全部 [data-explain] 画环，趋势图里 28~72 根柱子会各自带一个虚线框，图表就不像原样了。
+  const after = /body\.explain \[data-explain\]\.explain-num::after\s*\{([^}]*)\}/.exec(flat);
+  if (!el) problems.push('讲解模式：找不到 body.explain [data-explain] 规则');
+  else if (/\b(outline|background|border)\s*:/.test(el[1])) {
+    problems.push(`讲解模式：不许给元素自身设 outline/background/border（会盖掉柱体的 hover/选中）→ 画到 ::after 上；当前：${el[1].trim().slice(0, 70)}`);
+  }
+  if (!after) problems.push('讲解模式：高亮必须画在 body.explain [data-explain].explain-num::after 上（伪元素 + 只标有编号的元素）');
+  else if (!/border\s*:/.test(after[1])) problems.push('讲解模式：::after 高亮必须有可见边框');
+  if (/body\.explain [^{}]*\.tbar[^{}]*\{/.test(flat)) {
+    problems.push('讲解模式：不许出现专门针对 .tbar 的覆盖规则（旧的 body.explain .trendscroll .tbar { min-height } 会让柱体几何变化）');
+  }
 }
 
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
