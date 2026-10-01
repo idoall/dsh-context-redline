@@ -74,6 +74,20 @@ const EXPLAIN = {
     rev: '可以删除这条记录',
     confirm: '要（短警示会说清"只写插件本地、不写会话"）',
     refs: ['docs/00 S5.2', 'docs/03 R5.1'] },
+  'orch.seed': {
+    t: '分叉起点（选哪一条冻结记录当种子）',
+    what: '**一句话**：开子会话时，种子**取自你在这里选的那条冻结记录**（不是"总是从现在"）。\n'
+      + '**冻结记录为什么会有多条**：它是**一个可选的分叉起点**，不是书签。切点决定"从哪一刻的日志做种子"、\n'
+      + '条目数是当时的规模、固定块版本是当时在生效的口径 —— 这三样都是种子的输入。\n'
+      + '所以：昨晚口径 v1 冻一条、今天口径 v2 再冻一条，你就有了**两个**可选起点；\n'
+      + '要补一个"仍按 v1 干"的子会话，就选早的那条（只有一条记录时做不到这件事）。\n'
+      + '**为什么参数不能改**：改了就等于声称"这个子会话是从某个你从没冻结过的时刻分出来的"（伪造凭证）。\n'
+      + '备注是给你看的 → 可改；切点/条目数/固定块版本是给种子用的 → 只读，不想要就整条删。\n'
+      + '**还没冻结过怎么办**：开子会话时会自动补记一条（界面上标明"开子会话时自动记录"）。',
+    effect: '只影响"下一次开子会话从哪一刻取种子"。不改会话、不改模型可见内容。',
+    rev: '换一条选即可（记录本身可删，但子会话已经在跑的话，它的起点记录建议留着）',
+    confirm: '不需要',
+    refs: ['docs/03 R5.1', 'docs/06 §2'] },
   'orch.spawn': {
     t: '开子会话（把这件事交给一个新会话来干）',
     what: '**一句话**：拿当前会话"已经聊完的部分"当**起点**，开一个**真的新会话**去干一件具体的活，首条任务由你写。\n'
@@ -1128,6 +1142,21 @@ function renderOrch() {
     ${S.invariants.filter((b) => !b.retired).length === 0 ? '<span class="cap">建议先把目标 / 约束（尤其是每轮被重新注入的那几条）存为固定块，否则子会话里没人守漂移。</span>' : ''}
     </div>
 
+    <div class="subhead">分叉起点 <span class="hint">开子会话时，种子就取自这一条冻结记录</span></div>
+    <div class="cap" style="margin-bottom:6px">
+      冻结记录不是书签，而是<b>一个可选的分叉起点</b>：切点决定"从哪一刻的日志做种子"、条目数是当时的规模、
+      固定块版本是当时在生效的口径。<b>多条 = 多个可选的起点</b>（例如今天按 v2 分叉、但要补一个按 v1 干的子会话，
+      就选最早那条）。参数只读 —— 它们是种子的输入，改了就等于伪造"从哪一刻分出来"。
+    </div>
+    <div class="efoot" style="margin-bottom:6px">
+      <label class="cap" for="seedPick">从这一刻分叉：</label>
+      <span class="pickwrap" data-explain="orch.seed"><select class="btn sm" id="seedPick">
+        ${S.snapshots.length
+          ? [...S.snapshots].reverse().map((x, k) => `<option value="${esc(x.id)}">${k === 0 ? '（最新）' : ''}${esc(x.id)} · 第 ${x.turn} 轮末 · ${x.items} 条 · ${esc(x.inv === undefined ? '—' : (x.inv === 'none' ? '无固定块' : x.inv))}</option>`).join('')
+          : '<option value="">（现在这一刻 —— 还没有冻结记录，开子会话时会自动补记一条）</option>'}
+      </select></span>
+    </div>
+
     <div class="subhead">冻结记录 <span class="hint">只写本地，不写会话 · <b>一条记录 = 一个「切点 + 当时的固定块版本」</b>；同一身份再点不新增（只问你要不要改备注）；备注可改、其余字段只能删</span></div>
     ${S.snapshots.length
       ? S.snapshots.map((s, i) => `
@@ -1326,6 +1355,24 @@ function doApply(seq) {
   delete S.drafts[seq];
   render(); toast(`已应用：#${seq} 被遮蔽 → 新条目 #${ns}（原文仍在日志里；可用版本历史恢复）`);
 }
+/** 当前选中的分叉起点（冻结记录）；没有记录时**自动补一条**（界面上标明"开子会话时自动记录"）。
+ *  这就是"冻结多条"的用途：**它们是多个可选的分叉起点**（种子 = 切点 + 条目数 + 当时在效的固定块版本）。 */
+function seedOf() {
+  const pick = $('seedPick');
+  const id = pick ? pick.value : '';
+  const hit = id ? S.snapshots.find((x) => x.id === id) : null;
+  if (hit) return hit;
+  const cut = `${reqOf().turn}·${reqOf().step}`;
+  const auto = { id: 'snap-20260930-' + String(120000 + S.snapshots.length * 137).slice(0, 6), cut,
+    inv: invariantsVersion(), turn: reqOf().turn, items: surfaceOf().length,
+    time: '12:1' + (S.snapshots.length % 9), note: '（开子会话时自动记录）', auto: true };
+  S.snapshots.push(auto);
+  return auto;
+}
+function seedLabel() {
+  const x = seedOf();
+  return `${x.id}${x.auto ? '（开子会话时自动记录）' : ''} · 第 ${x.turn} 轮末 · ${x.items} 条 · 固定块版本：${x.inv === 'none' ? '无' : x.inv}`;
+}
 function orchAct(b) {
   const act = b.dataset.act, i = Number(b.dataset.i);
   if (act === 'cprompt') {
@@ -1394,10 +1441,11 @@ function orchAct(b) {
     return;
   }
   if (act === 'spawn') {
+    const seed = seedOf();
     confirmModal({
       title: '允许创建子会话',
       warn: '会用这个会话「已完成的轮次」做种子新建一个子会话（种子是一次性的：之后本会话的新轮次不会进去）。',
-      rows: [['① 种子范围', `第 ${reqOf().turn} 轮末（cutSeq = 最后一个 turn/end）`],
+      rows: [['① 分叉起点', seedLabel()],
              ['② 首条任务', '（见下方理由栏 —— 必须由你写）'],
              ['③ 继承范围', '✅ 继承：已完成的对话历史（含你已应用的编辑）｜❌ 不继承：父会话的工具授权/权限；父会话也不会自动收到子会话的 transcript / 工具输出 / 思考'],
              ['④ 副作用', S.sw.team ? '走官方 spawnTeammate(context:"fork") → 进官方名册（任务板/成员导航/派活都有）' : '团队不可用 → 退化为"裸可续接子会话"（没有任务板与官方派活）'],
@@ -1405,8 +1453,9 @@ function orchAct(b) {
       needReason: true, okText: '确认创建',
       onOk: (reason) => {
         const id = '00' + (49000 + S.children.length * 771).toString(16).slice(0, 6);
-        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), from: S.snapshots.length ? S.snapshots[S.snapshots.length - 1].id : 'snap-（当前）' });
-        render(); toast(`已创建 ${id}（看索引行；来源徽章 = 本项目发起）`);
+        // 子会话的"来源快照"必须是**你选的那条分叉起点**（不是"列表里最新那条"）
+        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), from: seed.id });
+        render(); toast(`已创建 ${id}（起点 ${seed.id}；来源徽章 = 本项目发起）`);
       }
     }); return;
   }
@@ -1632,7 +1681,7 @@ document.addEventListener('keydown', (e) => {
 
 /* 预置：两条冻结记录 + 一个成员与任务，让首屏就有内容可点 */
 (function seed() {
-  S.snapshots.push({ id: 'snap-20260930-120412', turn: 27, items: 41, time: '12:04', note: '改完注入漂移，准备开子会话' });
+  S.snapshots.push({ id: 'snap-20260930-120412', cut: '27·3', inv: 'none', turn: 27, items: 41, time: '12:04', note: '改完注入漂移，准备开子会话' });
   S.children.push({ id: '004c37a5', src: 'own', state: 'running', label: '把 README 双语改完并跑测试', from: 'snap-20260930-120412' });
   S.children.push({ id: '00a1b2c3', src: 'team', state: 'idle', label: 'reviewer（官方 teammate）' });
   S.members.push({ name: 'lead（当前会话）', st: 's-run' }, { name: 'reviewer', st: 's-idle' }, { name: 'tester', st: 's-done' });

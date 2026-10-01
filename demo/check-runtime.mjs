@@ -805,6 +805,29 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.invariants = []; S.snapshots = []; S.children = []; S.selTurn = api.TOTAL_TURNS; S.selSeq = late; api.render();
 }
 
+/* ---------------- 冻结记录的**用途**：多个可选的分叉起点（用户 2026-10-01："多条的作用是什么？"） ----------------
+ * 规格 R5.1：开子会话要"选一条冻结记录（或当前）"；demo 原先硬编码"现在"，所以多条看着没意义。
+ * 现在：面板有「分叉起点」选择器 → 种子取自**你选的那条**；没有记录时自动补记一条并标明。 */
+{
+  const S = api.S();
+  S.snapshots = []; S.children = []; S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.selTurn = api.TOTAL_TURNS; api.render();
+  check('分叉起点：面板里有选择器（默认"还没有记录 → 开子会话时自动补记"）', /id="seedPick"/.test(registry.get('cardOrch').innerHTML) && /自动补记/.test(registry.get('cardOrch').innerHTML));
+  // 造两条起点（不同切点）→ 选早的那条开子会话，子会话的 from 必须是**选中的那一条**
+  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; api.orchAct({ dataset: { act: 'freeze' } });
+  const first = S.snapshots[0].id;
+  S.selSeq = api.REQUESTS[0].seq; S.selTurn = api.REQUESTS[0].turn; api.orchAct({ dataset: { act: 'freeze' } });
+  check('分叉起点：不同切点 → 两条记录（= 两个可选起点）', S.snapshots.length === 2, `条数=${S.snapshots.length}`);
+  api.render();
+  document.getElementById('seedPick').value = first;      // 选**早**的那条
+  api.orchAct({ dataset: { act: 'spawn' } });
+  const rows = registry.get('modalList').innerHTML;
+  check('开子会话：① 分叉起点写的是**所选那条记录**的客观字段（不是硬编码"现在"）', rows.includes(first) && /第 \d+ 轮末/.test(rows) && /固定块版本/.test(rows), rows.slice(0, 90));
+  document.getElementById('modalReason').value = '按 v1 的口径补一轮';
+  document.getElementById('modalOk').onclick();
+  check('开子会话：建出来的子会话来源 = 选中的那条起点', S.children.length === 1 && S.children[0].from === first, `from=${S.children[0] && S.children[0].from} 期望 ${first}`);
+  S.snapshots = []; S.children = []; api.render();
+}
+
 /* ---------------- 汇报 ---------------- */
 const bad = results.filter((r) => !r.ok);
 for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);
