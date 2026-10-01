@@ -582,7 +582,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 82698aa</span>
+    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 6d1125b</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -1427,8 +1427,7 @@ function renderStep() {
 }
 function renderEvents() {
   $('cardEvents').innerHTML = `
-    <div class="card-title">上下文事件 <span class="hint">（压缩 / 裁剪，会标在趋势图上）</span>
-      <span class="bmeta">共 ${EVENTS.length} 次 · 不可逆</span></div>
+    <div class="card-title">上下文事件 <span class="hint">（压缩 / 裁剪，会标在趋势图上 · 一旦发生不可逆）</span></div>
     ${(() => {
       /* 用户 2026-10-01（两条）：「内容不变、不拟真」+「会变的和不变的都挤在一起、都是浅灰、不醒目」
        * ⟹ ① 事件随当前这一步变化；② **会变的内容做成事件行**（已发生＝有色条+实心标记，尚未发生＝虚线灰），
@@ -1790,7 +1789,9 @@ function renderOrch() {
 
     <section class="orchblock" data-block="freeze">
     <div class="subhead blocktitle">冻结 <span class="hint">先钉一个出发点；开子会话就在下面某一条记录上点</span>
-      <span class="bmeta">${S.snapshots.length ? `最新 ${esc(S.snapshots[S.snapshots.length - 1].id)} · 第 ${S.snapshots[S.snapshots.length - 1].turn} 轮末 · ${S.snapshots[S.snapshots.length - 1].items} 条` : '还没有记录'}</span></div>
+      <span class="bmeta">${S.snapshots.length
+        ? `${S.snapshots.length} 条记录 · 最近 ${esc(S.snapshots[S.snapshots.length - 1].time)}`
+        : '还没有记录'}</span></div>
 
     <div class="orch-toolbar">
       <input id="snapNote" placeholder="人写备注（插件不生成摘要）" />

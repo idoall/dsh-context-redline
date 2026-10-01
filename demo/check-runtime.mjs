@@ -869,9 +869,40 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
 /* ---------------- 全页统一语言：卡片标题也要有右读数（与块标题一致） ---------------- */
 {
   api.render();
-  const titled = ['cardStats', 'cardStep', 'cardEvents', 'cardBlocks', 'cardOrch'];
+  // 事件卡**例外**：它的读数按新规矩不许放（静态）；动态信息在卡内 evsum（已发生 / 还没发生）
+  const titled = ['cardStats', 'cardStep', 'cardBlocks', 'cardOrch'];
   const missing = titled.filter((id) => !/class="bmeta"/.test(registry.get(id).innerHTML));
-  check('卡片标题：非工具栏类卡片都有右侧读数（与块标题同一套语言）', missing.length === 0, missing.join(','));
+  check('卡片标题：会变的读数该有的都有（工具卡与事件卡除外）', missing.length === 0, missing.join(','));
+  check('卡片标题：事件卡不许有标题读数（它的读数是静态的，已挪进卡内）', !/class="bmeta"/.test(registry.get('cardEvents').innerHTML));
+}
+
+/* ---------------- 标题右读数必须"会变"（用户 2026-10-01：「这一行字一直是不变的，是否被去掉」） ----------------
+ * 规矩：**不会随操作/位置变化的读数不许放标题右侧**（宁缺勿假）；要放就放"看完就知道该干什么"的那种。 */
+{
+  const S = api.S();
+  S.snapshots = []; S.children = []; S.selSeq = api.REQUESTS[0].seq; S.selTurn = api.REQUESTS[0].turn; api.render();
+  const readFreeze = () => {
+    const html = registry.get('cardOrch').innerHTML;
+    const at = html.indexOf('data-block="freeze"');           // ⚠️ 卡片标题里也有一个 bmeta，必须定位到块内
+    const seg = at >= 0 ? html.slice(at) : '';
+    const m = seg.match(/class="bmeta">([^<]*)</);
+    return m ? m[1] : '';
+  };
+  const empty = readFreeze();
+  check('冻结块读数：没有记录时是"还没有记录"（不是一串死 id）', /还没有记录/.test(empty), empty);
+  // 冻一次 → 读数必须变（条数 + 最近时刻）
+  api.orchAct({ dataset: { act: 'freeze' } });
+  const one = readFreeze();
+  check('冻结块读数：冻一次后变成"N 条记录 · 最近 HH:MM"（会变，不是死字符串）', /1 条记录 · 最近/.test(one), one);
+  // 换个位置再冻 → 条数变 2
+  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.selTurn = api.TOTAL_TURNS; api.render();
+  api.orchAct({ dataset: { act: 'freeze' } });
+  const two = readFreeze();
+  check('冻结块读数：再冻一次 → 条数跟着变（2 条记录）', /2 条记录 · 最近/.test(two), two);
+  check('冻结块读数：**不再**重复列表里已有的 id/轮次/条数', !/snap-/.test(two), two);
+  // 事件卡：静态读数（"共 N 次 · 不可逆"）必须撤掉
+  check('上下文事件卡：标题不再放"不会变"的读数', !/class="bmeta"/.test(registry.get('cardEvents').innerHTML));
+  S.snapshots = []; api.render();
 }
 
 /* ---------------- 汇报 ---------------- */

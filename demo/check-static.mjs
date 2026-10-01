@@ -231,6 +231,13 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (!/\.btn\.block\s*\{/.test(css)) problems.push('块底需要整宽次级按钮样式（.btn.block）');
 }
 
+/* 18) 标题右读数的纪律（用户 2026-10-01）：不会变的不许放 */
+{
+  if (!/冻结块读数|条记录 · 最近/.test(js)) {
+    problems.push('冻结块读数必须用会变的量（条数 + 最近时刻），不许回到"最新 <id> · 第 N 轮末 · M 条"那种死字符串');
+  }
+}
+
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
  * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
  * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */
