@@ -62,7 +62,7 @@
 
 ---
 
-## 2. M0.5 · 交互 demo（**29 / 30 DONE**，剩定稿）
+## 2. M0.5 · 交互 demo（**30 / 31 DONE**，剩定稿）
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
@@ -95,6 +95,7 @@
 | M05-28 | 用户反馈「上下文趋势的柱状图，鼠标移过没有 hover 样式、点中了也没有和其它柱体不一样的样子，看不出移到/点了哪一根；参考插件 dsh-context 做得好」→ 对照参考插件 `src/client/styles/trendChart.css` 与 `src/client/components/trendChart.tsx` 实测出三处实质差异并逐条补齐：① **命中区**：参考的 `.lc-bar` 是 `height:100%` 整列可点、色块画在子元素里，我们的柱体只有色块本身（实测 bar0 = 69px，柱子上方空白命中不到）→ 改成整列 `<button class="tbar">` + 内层 `<i class="tbar-fill">`；② **hover**：参考有列底色 + 1px 虚线框，我们只有一根 1px 虚线（实测 `1px dashed rgb(139,139,245)`、无底色）→ 加列底色 + 色块 `brightness(1.25)`；③ **选中**：参考是 2px 实线框 + 整轮 `lc-bar-in-turn` 底色，且**规则声明在 hover 之后**（参考源码专门注释了这个顺序陷阱），我们只有 2px 白框 → 加 20% 品牌底色 + 同轮其它柱子 10% 底色，并把 `.tbar.sel` 排在 `.tbar:hover` 之后 | DONE → **先红后绿**：新增 5 条 CSS 契约（整列高度 / hover 要有底色 / 选中要有框+底色 / `.sel` 必须排在 `:hover` 之后 / 必须存在 `.tbar-fill` 与 `.tbar.in-turn`）+ 2 条结构契约（每根柱子都有色块、高度不写在外层）→ 修前 **7 红**（`柱子 72 根 · 色块 0 个` 等）；修后 **67/67 绿**、`check-static` 绿。浏览器实测：`elementFromPoint` 在柱子上方 5% 处命中 `button.tbar`（整列可点）；悬停计算值 `1px dashed #8b8bf5 + bg rgba(255,255,255,.07) + fill brightness(1.25)`；点中 `2px solid #f4f4f5 + bg brand 20%`，按步骤模式另 1 根同轮柱子得 `in-turn` 10% 底色；console **0 条**。截图 `trend-hover-1440.png`、`trend-selected-step-1440.png` | `demo/demo.css`、`demo/demo.js`、`demo/check-static.mjs`、`demo/check-runtime.mjs`、`demo/redline-panel.standalone.html` |
 | M05-29 | 用户反馈「我以为讲解模式只是加个左上角数字编号的注解，不会影响原来的样式；实测在趋势柱体那里影响还比较多」→ 实测坐实两条：① 讲解高亮写在 `body.explain [data-explain] { outline: … }` 上，特异性 **(0,2,1)** 高于柱体自己的 `.tbar:hover` / `.tbar.sel`（都是 0,2,0）→ 实测"普通柱 outline = `1px dashed rgba(139,139,245,.518)`、选中柱 = `1px dashed rgb(189,189,245)`"，**选中那根的 2px 实线框被整片盖掉**，这才让用户以为柱体没有 hover/选中反馈；② 每根柱子各挂一个编号 → `#trendScroll` 里 **102 个编号**糊满图表。修法三条硬规矩（已写进 `docs/03` §7 引言）：高亮只画在 `::after` 伪元素上（不占用元素的 outline/background/border）；高亮**跟着编号走**（加 `.explain-num` 类）；**同类重复元素只标一个编号**（柱体标当前选中的那根、轮次刻度标第一格） | DONE → **先红后绿**：新增 5 条运行时护栏（3 个普通元素各 1 个编号 / 柱子只标 1 根且是选中那根 / 刻度格只标 1 个 / 只有带编号的元素被标亮 / 关掉后编号与标亮都清理）+ 2 条 CSS 契约（讲解规则不许给元素自身设 outline·background·border、高亮必须挂在 `.explain-num` 上、不许有针对 `.tbar` 的讲解覆盖规则）→ 修前 **3 静态红 + 3 运行时红**；修后 **静态绿 + 75/75 绿**。浏览器实测（讲解模式开着）：趋势区编号 **102 → 2**、28 根柱子里**只有 1 根带环**、选中柱仍为 `2px solid rgb(244,244,245)`、悬停柱 `1px dashed #8b8bf5 + bg rgba(255,255,255,.07) + fill brightness(1.25)`、console **0 条**；截图 `trend-explain-hover-1440.png`。踩坑记录：CSS 注释里为解释病因写了 `body.explain … .tbar` 字样，被自己的正则当成真实规则（已改成先剥注释再检查）；桩里 `classList` 与 `className` 是两套东西，导致"选中那根"判定误红（已同步） | `demo/demo.css`、`demo/demo.js`、`demo/check-static.mjs`、`demo/check-runtime.mjs`、`docs/03-ui-spec.md` §7 引言、`demo/redline-panel.standalone.html` |
 | M05-30 | 用户在趋势区一次提 4 条，逐条处置：① **柱体按类别分色堆叠**（总计 = 各段按该类占比自下往上堆；增量 = **围绕零线**正差向上 / 负差向下，颜色仍是类别）—— 照参考插件 `trendChart.tsx` 的 `lc-cat-seg` 与它的原注释 "positive category deltas pile UP from the zero line, negative ones hang DOWN from it, both in category colors"，零线按 `maxUp:maxDown` **成比例**分割（`deltaScale = CHART_H / span`）；②③ **讲解编号必须稳定**：改成按"元素类别"（讲解词典里的固定序号）编号 + 同类只标一个 → 切换粒度/内容都不再变号；④ **删掉趋势卡底部的步级快捷片与顺序导航**（用户原话：hover 就报第几轮第几步、点一下就选中，那排只是重复信息还抢注意力），轮号刻度带保留（它是坐标轴） | DONE → 先红后绿：新增 6 条结构护栏（柱子有内层图形 / 段带 `data-cat` / 段用类别色 / 总计模式不渲染零线与两臂 / 增量模式有零线与两臂且**两臂总高 ≤ 112px** / 底部已无快捷片与导航）+ 1 条静态类名撞车护栏 → 修前 **3 红**（`段 0 个`、两臂总高超 112、`.seg` 规则 2 条）→ 修后 **静态绿 + 88/88 绿**；反向验证两条（去掉正负号筛选 → 1 红；类别段改回 `.seg` → 2 红）。浏览器实测：总计 28 柱 × 4~6 段、7 种类别色、末柱段高之和 111 ≈ 柱高 112；增量模式 `红色段 0`、上臂 `assistant:1 tool:2` / 下臂 `user:1`、零线 `bottom:30px`、轴 `+4.5k / −1.6k`；**编号稳定性实测**（按轮次 vs 按步骤）`trend.gran=6 / mode=7 / adaptive=8 / jump=10 / mark=12 / pick=11` 两模式**完全一致**，步骤模式只多一个 `trend.strip=13`；底部"上一轮/下一步"已消失；console 0 条。截图 `trend-total-cats-1440.png`、`trend-delta-1440.png`。**顺带修掉两个自己引入的 bug**：类别段类名 `.seg` 与分段控件按钮撞名（会把按钮撑成整行）、增量两臂未按正负筛选导致内容重复渲染 | `demo/demo.js`、`demo/demo.css`、`demo/check-static.mjs`、`demo/check-runtime.mjs`、`docs/03-ui-spec.md`（R1.6 / R1.11 / R1.13 / R1.15 / §7）、`demo/README.md` |
+| M05-31 | 用户四条续评：① **深色/浅色按钮不要了，跟随系统** → 删按钮，`demo.js` 依据 `prefers-color-scheme` 给 `body` 设 `data-ds-dark-theme`（正是 DSH 自己的深色选择器，demo 与真机走同一条通道），`?theme=dark\|light` 仅作验证钩子；② **自测面板是干什么的** → 它是自报尺寸/溢出的**验证工具**，改为 `?dev=1` 打开、不再占顶栏；③ **编号不连续**（用户问"13、15、16、17、22、23、25 在哪里"）→ 编号同时满足"连续"与"稳定"：取当前**存在的类别**按词典顺序排，依次编 1..N（既无空号，切粒度时柱子编号也不变）；④ **柱体颜色与分类树对不上** → 实测两边 computed 色值**本来就完全一致**（如注入内容都是 `rgb(192,132,252)`），真正的元凶是我给选中/悬停柱子加的 `filter: brightness(1.15/1.25)` —— 它把整根柱子的类别色提亮了；已删除该滤镜，反馈只走"列底色 + 框"，并加护栏锁死 | DONE → 实测：颜色一致性逐类**全部"一致"**（浅色 7 类 / 深色 6 类，含 no-filter 校验）；编号 **空号 0**（按轮次 max 25、按步骤 max 26），柱体编号两模式都是 **8**；顶栏只剩 `讲解模式 / 重置原型`；`?theme=dark` → `data-ds-dark-theme` 生效、body 令牌 `#8b8bf5`/`#f4f4f5`、卡底色 `rgb(35,35,36)`；`?dev=1` → 自测面板可见且无 `undefined`。护栏：新增/改写 8 条（编号连续、编号顺序按类别、主题挂 `body[data-ds-dark-theme]`、不许回 `html[data-theme]`、顶栏不许有那两个按钮、必须保留 `?dev=1`、柱体与分类树共用 `CATS` 色值、柱体不许 `filter:brightness`）→ 修前 2 红 + 反向验证 3 红（加回 brightness / 改回 html[data-theme]）→ 修后 **静态绿 + 91/91 绿**。截图 `trend-light-1440.png`、`trend-dark-1440.png` | `demo/demo.js`、`demo/demo.css`、`demo/redline-panel.html`、`demo/check-static.mjs`、`demo/check-runtime.mjs`、`docs/03-ui-spec.md`（V2/§7）、`demo/README.md` |
 | M05-15 | 🙋 **交互定稿**：你逐条按 R 编号确认 → 结论回写 `docs/03` | WAIT🙋 | `docs/03-ui-spec.md`（只改对应 R 各条） |
 
 ---
@@ -287,7 +288,7 @@
 |---|---|---|---|---|---|
 | X 横切 | 8 | **2** | 4 | 1 | 1 |
 | M0 文档集 | 20 | **20** | 0 | 0 | 0 |
-| M0.5 交互 demo | 30 | **29** | 0 | 0 | 1 |
+| M0.5 交互 demo | 31 | **30** | 0 | 0 | 1 |
 | M1 骨架与身份 | 14 | 0 | 0 | 13 | 1 |
 | M2 编辑面 | 28 | 0 | 0 | 28 | 0 |
 | M3 右侧界面 | 22 | 0 | 0 | 21 | 1 |
@@ -296,7 +297,7 @@
 | M5 编排 | 26 | 0 | 0 | 25 | 1 |
 | M6 入口与发布 | 10 | 0 | 0 | 10 | 0 |
 | M7+ 后续 | 4 | 0 | 0 | 4 | 0 |
-| **合计** | **184** | **51** | **4** | **121** | **8** |
+| **合计** | **185** | **52** | **4** | **121** | **8** |
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
 > 当前卡点：**M05-15 交互定稿（等你）**；其后 **M1-01 授权包①（等你重启）**。

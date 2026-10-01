@@ -36,7 +36,11 @@
   --dsh-scrollbar-width: 8px;
 }
 
-html[data-theme="dark"] {
+/* 深色：**跟随系统**（用户 2026-10-01 要求去掉切换按钮）。
+ * 选择器刻意用 `body[data-ds-dark-theme]` —— 这正是 DSH 自己的深色选择器（docs/03 V2），
+ * 由 demo.js 依据 `prefers-color-scheme` 设置；`?theme=dark|light` 是验证用的调试钩子。
+ * 好处：demo 与真机走同一条通道，不再各写一套开关。 */
+body[data-ds-dark-theme] {
   --dsw-alias-bg-layer-1: #232324;
   --dsw-alias-bg-layer-2: #2c2c2e;
   --dsw-alias-bg-layer-3: #1b1b1c;
@@ -211,9 +215,11 @@ body {
 .arm-down { flex-direction: column; }
 .arm-down > .cseg:last-child { border-radius: 0 0 2px 2px; }
 .zeroline { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--dsw-alias-border-l2); pointer-events: none; }
-/* ① 悬停预览：整列底色 + 虚线框 + 色块提亮 */
+/* ① 悬停预览：整列底色 + 虚线框。
+ * ⚠️ **不许**用 `filter: brightness()` 提亮柱子 —— 那会把类别色整体改掉，
+ * 于是"柱体的紫/橙/黄和右侧分类树的色块对不上"（用户 2026-10-01 实测反馈）。
+ * 反馈一律走**列底色 + 框**这两条不改变色值的通道。 */
 .tbar:hover { background: var(--dsw-alias-interactive-bg-hover); outline-color: var(--dsw-alias-brand); }
-.tbar:hover .tbar-fill { filter: brightness(1.25); }
 /* ② 选中那一轮里的其它柱子：整轮底色（照参考插件的 lc-bar-in-turn）——按步骤模式下一轮多根，靠它才认得出是哪一轮 */
 .tbar.in-turn { background: color-mix(in srgb, var(--dsw-alias-brand) 10%, transparent); }
 /* ③ 选中的柱子：实线框 + 底色（声明在 hover 之后，鼠标停在它身上也看得清） */
@@ -221,7 +227,6 @@ body {
   background: color-mix(in srgb, var(--dsw-alias-brand) 20%, transparent);
   outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 1px;
 }
-.tbar.sel .tbar-fill { filter: brightness(1.15); }
 .strip { display: flex; align-items: stretch; gap: 3px; margin-top: 2px; }
 .tcell {
   flex: none; height: 22px; padding: 0; cursor: pointer; overflow: hidden; white-space: nowrap;

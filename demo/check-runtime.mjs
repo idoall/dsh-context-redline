@@ -92,7 +92,7 @@ const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
-  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN };`;
+  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme };`;
 
 /**
  * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
@@ -384,11 +384,19 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.explain = true; api.render();
   const badgesOf = (el) => (el.children || []).filter((c) => String(c.className).startsWith('exnum')).length;
   const noOf = (el) => { const b = (el.children || []).find((c) => String(c.className).startsWith('exnum')); return b ? b.textContent : null; };
-  const expectNo = (key) => String(Object.keys(api.EXPLAIN).indexOf(key) + 1);
+  const dictIdx = (key) => Object.keys(api.EXPLAIN).indexOf(key);
   check('讲解模式：同类元素共用一个编号，只标一个', badgesOf(explainHosts[0]) === 1 && explainHosts.slice(1).every((h) => badgesOf(h) === 0), explainHosts.map(badgesOf).join(','));
-  check('讲解模式：编号 = 该类别在讲解词典里的固定序号（不随出现顺序变）',
-    noOf(explainHosts[0]) === expectNo('act.edit'), `实际 ${noOf(explainHosts[0])} · 应为 ${expectNo('act.edit')}`);
-  check('讲解模式：趋势柱体的编号同样是固定的类别序号', noOf(trendBars[1]) === expectNo('trend.pick'), `实际 ${noOf(trendBars[1])} · 应为 ${expectNo('trend.pick')}`);
+  /* 编号规则（用户 2026-10-01 两轮反馈后定死）：
+   *   ① 连续（不许留空号）；② 顺序由**类别**决定（词典顺序），不由"谁先出现在 DOM 里"决定。
+   * 桩里的三个类别：trend.pick(词典 11) < trend.strip(13) < act.edit(20)，
+   * 而 DOM 顺序恰恰是 act.edit 在最前 → 若实现退回"按出现顺序现数"，act.edit 会变成 1，这里就会红。 */
+  {
+    const nums = [noOf(explainHosts[0]), noOf(trendBars[1]), noOf(trendCells[0])].map(Number).sort((a, b) => a - b);
+    check('讲解模式：编号连续（1..N，没有空号）', JSON.stringify(nums) === JSON.stringify([1, 2, 3]), `实际 ${nums.join(',')}`);
+    check('讲解模式：编号顺序 = 类别的词典顺序（不随出现顺序变）',
+      Number(noOf(trendBars[1])) < Number(noOf(trendCells[0])) && Number(noOf(trendCells[0])) < Number(noOf(explainHosts[0])) && dictIdx('trend.pick') < dictIdx('act.edit'),
+      `pick=${noOf(trendBars[1])} strip=${noOf(trendCells[0])} edit=${noOf(explainHosts[0])}`);
+  }
   check('讲解模式：柱子**不是每根都标**（3 根里只标 1 根）', trendBars.reduce((n, b) => n + badgesOf(b), 0) === 1, `柱子上的编号：${trendBars.map(badgesOf).join(',')}`);
   check('讲解模式：标记在**当前选中的那根**柱子上', badgesOf(trendBars[1]) === 1 && badgesOf(trendBars[0]) === 0 && badgesOf(trendBars[2]) === 0);
   check('讲解模式：轮次刻度格同样只标 1 个', trendCells.reduce((n, c) => n + badgesOf(c), 0) === 1, `刻度格上的编号：${trendCells.map(badgesOf).join(',')}`);
@@ -400,6 +408,23 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.explain = false; api.render();
   check('关掉讲解模式后，柱子与刻度格上的编号都被清理', trendBars.concat(trendCells).every((el) => badgesOf(el) === 0));
   check('关掉讲解模式后，标亮状态也被清理', trendBars.concat(trendCells).every((el) => marked(el) === 0));
+}
+
+/* ---------------- 主题与自检入口：都不再占顶栏（用户 2026-10-01） ---------------- */
+{
+  const html = registry.get('__html') ? '' : '';
+  check('主题：跟随系统 —— 深色走 body[data-ds-dark-theme]（DSH 自己的选择器）', typeof api.applyTheme === 'function');
+  check('主题：applyTheme 可被调用且不抛错', (() => { try { api.applyTheme(); return true; } catch (e) { return String(e); } })() === true);
+}
+
+/* ---------------- 趋势柱体与分类树必须同色（用户："柱体颜色和上下文浏览器不一样"） ----------------
+ * 两边都从 CATS[].color 取色，所以只要没人再往柱子上加 filter/opacity 之类的色彩处理，就是同一个色。 */
+{
+  const S = api.S(); S.trendMode = 'total'; S.trendCat = null; api.render();
+  const html = registry.get('cardTrend').innerHTML;
+  const colors = [...html.matchAll(/background:([^;"]+)/g)].map((m) => m[1].trim());
+  const catVars = new Set(api.CATS.map((c) => c.color));
+  check('趋势柱体：段色直接取自 CATS（与分类树同一份）', colors.length > 0 && colors.every((v) => catVars.has(v)), `色值 ${[...new Set(colors)].join(' ')}`);
 }
 
 /* ---------------- 汇报 ---------------- */

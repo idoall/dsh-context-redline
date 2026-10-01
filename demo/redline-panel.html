@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -17,8 +17,8 @@
   <div class="switches" id="switches" aria-label="状态开关"></div>
   <div class="top-actions">
     <button class="btn" id="btnExplain" data-explain="ui.explain">讲解模式</button>
-    <button class="btn" id="btnTheme" data-explain="ui.theme">深色 / 浅色</button>
-    <button class="btn" id="btnSelfcheck" data-explain="ui.selfcheck">自测面板</button>
+    <!-- 深色/浅色**不再给按钮**：跟随系统（用户 2026-10-01）。调试可用 ?theme=dark|light 覆盖。
+         自测面板也不再占顶栏位置：?dev=1 打开（它是量尺寸的自检工具，不是给用户的功能）。 -->
     <button class="btn ghost" id="btnReset" data-explain="ui.reset">重置原型</button>
   </div>
 </header>

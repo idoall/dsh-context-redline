@@ -112,6 +112,28 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (!/\.cseg\s*\{/.test(flat)) problems.push('类别色段必须有 .cseg 规则（颜色=类别、段高=该类占比）');
 }
 
+/* 7) 主题与自检入口（用户 2026-10-01）：
+ *  · 深色**跟随系统** → DOM 上落到 `body[data-ds-dark-theme]`（DSH 自己的选择器），
+ *    不许再回到 `html[data-theme="dark"]` 那套自带开关；
+ *  · 顶栏不再有「深色 / 浅色」与「自测面板」两个按钮（自测面板改由 `?dev=1` 打开）。 */
+{
+  const flat = css.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\s+/g, ' ');
+  if (!/body\[data-ds-dark-theme\]\s*\{/.test(flat)) problems.push('主题：深色必须挂在 body[data-ds-dark-theme]（DSH 的选择器；demo 要与真机同一条通道）');
+  if (/data-theme="dark"/.test(html) || /html\[data-theme/.test(flat)) problems.push('主题：不许再用 html[data-theme="dark"] 这套自带开关（应跟随系统）');
+  if (/id="btnTheme"/.test(html)) problems.push('主题：顶栏不该再有「深色 / 浅色」按钮');
+  if (/id="btnSelfcheck"/.test(html)) problems.push('自检：顶栏不该再有「自测面板」按钮（它是自检工具，改由 ?dev=1 打开）');
+  if (!/queryFlag\('dev'\)/.test(js)) problems.push('自检：必须保留 ?dev=1 打开自测面板的入口（否则没浏览器时没法量尺寸）');
+}
+
+/* 8) 柱体颜色必须与右侧分类树**同源同色**（用户 2026-10-01："柱体颜色和上下文浏览器不一样"）
+ * 两边都从 CATS[].color 取；柱子上不许再加 brightness/opacity 这类会改色的处理。 */
+{
+  const flat = css.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\s+/g, ' ');
+  const uses = (js.match(/background:\$\{c\.color\}/g) || []).length;
+  if (uses < 2) problems.push(`柱体与分类树必须共用 CATS 的色值（应有 2 处 background:\${c.color}，实际 ${uses} 处）`);
+  if (/\.tbar[^{]*\{[^}]*filter:\s*brightness/.test(flat)) problems.push('柱体：不许用 filter:brightness() 提亮（会改掉类别色，就是在这一步和分类树对不上的）');
+}
+
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
  * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
  * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */

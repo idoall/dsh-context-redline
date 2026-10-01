@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="dark">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -44,7 +44,11 @@
   --dsh-scrollbar-width: 8px;
 }
 
-html[data-theme="dark"] {
+/* 深色：**跟随系统**（用户 2026-10-01 要求去掉切换按钮）。
+ * 选择器刻意用 `body[data-ds-dark-theme]` —— 这正是 DSH 自己的深色选择器（docs/03 V2），
+ * 由 demo.js 依据 `prefers-color-scheme` 设置；`?theme=dark|light` 是验证用的调试钩子。
+ * 好处：demo 与真机走同一条通道，不再各写一套开关。 */
+body[data-ds-dark-theme] {
   --dsw-alias-bg-layer-1: #232324;
   --dsw-alias-bg-layer-2: #2c2c2e;
   --dsw-alias-bg-layer-3: #1b1b1c;
@@ -219,9 +223,11 @@ body {
 .arm-down { flex-direction: column; }
 .arm-down > .cseg:last-child { border-radius: 0 0 2px 2px; }
 .zeroline { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--dsw-alias-border-l2); pointer-events: none; }
-/* ① 悬停预览：整列底色 + 虚线框 + 色块提亮 */
+/* ① 悬停预览：整列底色 + 虚线框。
+ * ⚠️ **不许**用 `filter: brightness()` 提亮柱子 —— 那会把类别色整体改掉，
+ * 于是"柱体的紫/橙/黄和右侧分类树的色块对不上"（用户 2026-10-01 实测反馈）。
+ * 反馈一律走**列底色 + 框**这两条不改变色值的通道。 */
 .tbar:hover { background: var(--dsw-alias-interactive-bg-hover); outline-color: var(--dsw-alias-brand); }
-.tbar:hover .tbar-fill { filter: brightness(1.25); }
 /* ② 选中那一轮里的其它柱子：整轮底色（照参考插件的 lc-bar-in-turn）——按步骤模式下一轮多根，靠它才认得出是哪一轮 */
 .tbar.in-turn { background: color-mix(in srgb, var(--dsw-alias-brand) 10%, transparent); }
 /* ③ 选中的柱子：实线框 + 底色（声明在 hover 之后，鼠标停在它身上也看得清） */
@@ -229,7 +235,6 @@ body {
   background: color-mix(in srgb, var(--dsw-alias-brand) 20%, transparent);
   outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 1px;
 }
-.tbar.sel .tbar-fill { filter: brightness(1.15); }
 .strip { display: flex; align-items: stretch; gap: 3px; margin-top: 2px; }
 .tcell {
   flex: none; height: 22px; padding: 0; cursor: pointer; overflow: hidden; white-space: nowrap;
@@ -481,14 +486,14 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 f176717</span>
+    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 3ce5b44</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
   <div class="top-actions">
     <button class="btn" id="btnExplain" data-explain="ui.explain">讲解模式</button>
-    <button class="btn" id="btnTheme" data-explain="ui.theme">深色 / 浅色</button>
-    <button class="btn" id="btnSelfcheck" data-explain="ui.selfcheck">自测面板</button>
+    <!-- 深色/浅色**不再给按钮**：跟随系统（用户 2026-10-01）。调试可用 ?theme=dark|light 覆盖。
+         自测面板也不再占顶栏位置：?dev=1 打开（它是量尺寸的自检工具，不是给用户的功能）。 -->
     <button class="btn ghost" id="btnReset" data-explain="ui.reset">重置原型</button>
   </div>
 </header>
@@ -721,7 +726,7 @@ function markersOfBar(item) {
 function markerOf(req) { return markersOfReq(req)[0] || null; }
 
 const initial = () => ({
-  theme: 'dark', explain: false, selfcheck: false,
+  explain: false, selfcheck: false,
   sw: { turnOpen: false, live: true, team: true, drafts: 0, compressBusy: false, pendingState: 'settled' },
   /* 趋势区选项（参照参考插件） */
   trendGran: 'turn', trendMode: 'total', trendAdaptive: true, trendCat: null,
@@ -1625,12 +1630,23 @@ function renderSelfcheck() {
  * 用户的原话是"我以为讲解模式只是加个编号，不会影响原来的样式"。
  * 柱体优先标**当前选中的那根**（用户正看着哪根，编号就落在哪根上）；刻度格标第一格。
  */
-/** 编号 = 该元素**类别**（data-explain 键）在讲解词典里的固定序号。
- *  为什么不用"第几个出现就编几号"：那是**按出现顺序现数**，而两种粒度下前面的元素个数并不一样
- *  （按步骤时多一个 ✂ 标记、按轮次时轮次刻度格又没有 data-explain）→ 用户实测"点轮次时第 1 步是 18、
- *  点按步骤时变成 20"。改成按类别固定后，切换粒度编号**永远不变**（同类元素共用一个编号）。 */
+/**
+ * 编号规则（2026-10-01 两次实测后才定下来的）：
+ *   ① **连续**：取当前页面上"真实存在的类别"，按讲解词典里的先后顺序排好，依次编 1..N。
+ *      —— 不能直接用"词典序号"当编号：那会留下空号（用户问"13、15、16、17…在哪里？"）。
+ *   ② **稳定**：顺序由**类别**决定，不由"第几个出现"决定 ——
+ *      按出现顺序现数的话，切按轮次/按步骤时前面的元素个数会变（步骤模式多一个 ✂ 标记、
+ *      轮次模式的刻度格又没有 data-explain），实测"点轮次时第 1 步是 18、点按步骤时变成 20"。
+ *   ③ 同类元素共用一个编号、只标一个（见 explainTargets）。
+ */
 const EXPLAIN_ORDER = Object.keys(EXPLAIN);
-const explainNo = (key) => EXPLAIN_ORDER.indexOf(key) + 1;
+/** 当前页面上存在的类别 → 1..N 的编号（顺序 = 讲解词典顺序）。 */
+function explainNumbering(nodes) {
+  const present = [...new Set(nodes.map((el) => el.dataset.explain))]
+    .filter((k) => EXPLAIN_ORDER.includes(k))
+    .sort((a, b) => EXPLAIN_ORDER.indexOf(a) - EXPLAIN_ORDER.indexOf(b));
+  return new Map(present.map((k, i) => [k, i + 1]));
+}
 function explainTargets() {
   const all = [...document.querySelectorAll('[data-explain]')];
   // 趋势区里同类元素成百上千（72 根柱、28 格刻度、若干 ✂），那里**每类只标一个**：
@@ -1662,8 +1678,9 @@ function applyExplain() {
   let bar = document.querySelector('.explainbar');
 
   if (S.explain) {
+    const numbering = explainNumbering(nodes);
     nodes.forEach((el) => {
-      const no = explainNo(el.dataset.explain);
+      const no = numbering.get(el.dataset.explain);
       el.dataset.exnum = String(no);
       /**
        * ⚠️ 关键：讲解的触达点是**这个序号本身**，不是被讲解的元素。
@@ -1695,7 +1712,7 @@ function applyExplain() {
 
 /* ------------------------------------------------------------------ 11. 渲染 + 事件 */
 function render() {
-  document.documentElement.dataset.theme = S.theme;
+  applyTheme();
   renderSwitches(); renderNotice();
   renderStats(); renderTrend(); renderStep(); renderEvents();
   renderBrowser();
@@ -1715,9 +1732,32 @@ function render() {
   renderOrch(); applyExplain(); renderSelfcheck();
 }
 
-$('btnTheme').onclick = () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; render(); };
+/**
+ * 主题**跟随系统**（用户 2026-10-01：不要那个切换按钮）。
+ * 深色落到 `body[data-ds-dark-theme]` —— 这正是 DSH 自己的深色选择器（docs/03 V2），
+ * 所以 demo 与真机上的表现是同一条通道；`?theme=dark|light` 是给验证用的调试钩子。
+ */
+/** 读 URL 上的调试开关（?dev=1 / ?theme=dark|light）。
+ *  用 window.location + try 包住：冒烟测试的 DOM 桩里没有 location，不能让整个页面挂掉。 */
+function queryFlag(k) {
+  try { return new URLSearchParams((window.location && window.location.search) || '').get(k); }
+  catch (e) { return null; }
+}
+function applyTheme() {
+  const forced = queryFlag('theme');
+  const dark = forced === 'dark' || (forced !== 'light' && !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+  if (dark) document.body.setAttribute('data-ds-dark-theme', '');
+  else document.body.removeAttribute('data-ds-dark-theme');
+}
+{
+  const mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  if (mq && mq.addEventListener) {
+    mq.addEventListener('change', () => { if (!queryFlag('theme')) { applyTheme(); render(); } });
+  }
+}
 $('btnExplain').onclick = () => { S.explain = !S.explain; if (!S.explain) closeDrawer(); $('btnExplain').setAttribute('aria-pressed', String(S.explain)); render(); toast(S.explain ? '讲解模式：点任一高亮元素看说明' : '讲解模式已关'); };
-$('btnSelfcheck').onclick = () => { S.selfcheck = !S.selfcheck; render(); };
+// 自测面板是**自检工具**，不再占顶栏：?dev=1 直接打开（见 demo/README）
+if (queryFlag('dev') === '1') S.selfcheck = true;
 $('btnReset').onclick = () => { S = initial(); render(); toast('原型已重置'); };
 $('drawerClose').onclick = () => closeDrawer();
 $('modalCancel').onclick = () => { $('modalWrap').hidden = true; };

@@ -172,7 +172,7 @@ function markersOfBar(item) {
 function markerOf(req) { return markersOfReq(req)[0] || null; }
 
 const initial = () => ({
-  theme: 'dark', explain: false, selfcheck: false,
+  explain: false, selfcheck: false,
   sw: { turnOpen: false, live: true, team: true, drafts: 0, compressBusy: false, pendingState: 'settled' },
   /* 趋势区选项（参照参考插件） */
   trendGran: 'turn', trendMode: 'total', trendAdaptive: true, trendCat: null,
@@ -1076,12 +1076,23 @@ function renderSelfcheck() {
  * 用户的原话是"我以为讲解模式只是加个编号，不会影响原来的样式"。
  * 柱体优先标**当前选中的那根**（用户正看着哪根，编号就落在哪根上）；刻度格标第一格。
  */
-/** 编号 = 该元素**类别**（data-explain 键）在讲解词典里的固定序号。
- *  为什么不用"第几个出现就编几号"：那是**按出现顺序现数**，而两种粒度下前面的元素个数并不一样
- *  （按步骤时多一个 ✂ 标记、按轮次时轮次刻度格又没有 data-explain）→ 用户实测"点轮次时第 1 步是 18、
- *  点按步骤时变成 20"。改成按类别固定后，切换粒度编号**永远不变**（同类元素共用一个编号）。 */
+/**
+ * 编号规则（2026-10-01 两次实测后才定下来的）：
+ *   ① **连续**：取当前页面上"真实存在的类别"，按讲解词典里的先后顺序排好，依次编 1..N。
+ *      —— 不能直接用"词典序号"当编号：那会留下空号（用户问"13、15、16、17…在哪里？"）。
+ *   ② **稳定**：顺序由**类别**决定，不由"第几个出现"决定 ——
+ *      按出现顺序现数的话，切按轮次/按步骤时前面的元素个数会变（步骤模式多一个 ✂ 标记、
+ *      轮次模式的刻度格又没有 data-explain），实测"点轮次时第 1 步是 18、点按步骤时变成 20"。
+ *   ③ 同类元素共用一个编号、只标一个（见 explainTargets）。
+ */
 const EXPLAIN_ORDER = Object.keys(EXPLAIN);
-const explainNo = (key) => EXPLAIN_ORDER.indexOf(key) + 1;
+/** 当前页面上存在的类别 → 1..N 的编号（顺序 = 讲解词典顺序）。 */
+function explainNumbering(nodes) {
+  const present = [...new Set(nodes.map((el) => el.dataset.explain))]
+    .filter((k) => EXPLAIN_ORDER.includes(k))
+    .sort((a, b) => EXPLAIN_ORDER.indexOf(a) - EXPLAIN_ORDER.indexOf(b));
+  return new Map(present.map((k, i) => [k, i + 1]));
+}
 function explainTargets() {
   const all = [...document.querySelectorAll('[data-explain]')];
   // 趋势区里同类元素成百上千（72 根柱、28 格刻度、若干 ✂），那里**每类只标一个**：
@@ -1113,8 +1124,9 @@ function applyExplain() {
   let bar = document.querySelector('.explainbar');
 
   if (S.explain) {
+    const numbering = explainNumbering(nodes);
     nodes.forEach((el) => {
-      const no = explainNo(el.dataset.explain);
+      const no = numbering.get(el.dataset.explain);
       el.dataset.exnum = String(no);
       /**
        * ⚠️ 关键：讲解的触达点是**这个序号本身**，不是被讲解的元素。
@@ -1146,7 +1158,7 @@ function applyExplain() {
 
 /* ------------------------------------------------------------------ 11. 渲染 + 事件 */
 function render() {
-  document.documentElement.dataset.theme = S.theme;
+  applyTheme();
   renderSwitches(); renderNotice();
   renderStats(); renderTrend(); renderStep(); renderEvents();
   renderBrowser();
@@ -1166,9 +1178,32 @@ function render() {
   renderOrch(); applyExplain(); renderSelfcheck();
 }
 
-$('btnTheme').onclick = () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; render(); };
+/**
+ * 主题**跟随系统**（用户 2026-10-01：不要那个切换按钮）。
+ * 深色落到 `body[data-ds-dark-theme]` —— 这正是 DSH 自己的深色选择器（docs/03 V2），
+ * 所以 demo 与真机上的表现是同一条通道；`?theme=dark|light` 是给验证用的调试钩子。
+ */
+/** 读 URL 上的调试开关（?dev=1 / ?theme=dark|light）。
+ *  用 window.location + try 包住：冒烟测试的 DOM 桩里没有 location，不能让整个页面挂掉。 */
+function queryFlag(k) {
+  try { return new URLSearchParams((window.location && window.location.search) || '').get(k); }
+  catch (e) { return null; }
+}
+function applyTheme() {
+  const forced = queryFlag('theme');
+  const dark = forced === 'dark' || (forced !== 'light' && !!(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+  if (dark) document.body.setAttribute('data-ds-dark-theme', '');
+  else document.body.removeAttribute('data-ds-dark-theme');
+}
+{
+  const mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  if (mq && mq.addEventListener) {
+    mq.addEventListener('change', () => { if (!queryFlag('theme')) { applyTheme(); render(); } });
+  }
+}
 $('btnExplain').onclick = () => { S.explain = !S.explain; if (!S.explain) closeDrawer(); $('btnExplain').setAttribute('aria-pressed', String(S.explain)); render(); toast(S.explain ? '讲解模式：点任一高亮元素看说明' : '讲解模式已关'); };
-$('btnSelfcheck').onclick = () => { S.selfcheck = !S.selfcheck; render(); };
+// 自测面板是**自检工具**，不再占顶栏：?dev=1 直接打开（见 demo/README）
+if (queryFlag('dev') === '1') S.selfcheck = true;
 $('btnReset').onclick = () => { S = initial(); render(); toast('原型已重置'); };
 $('drawerClose').onclick = () => closeDrawer();
 $('modalCancel').onclick = () => { $('modalWrap').hidden = true; };
