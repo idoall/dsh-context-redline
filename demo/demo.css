@@ -418,6 +418,22 @@ body { transition: padding-right .18s ease-out; }
  * （<select> 只能装 option，塞进去的编号会被浏览器丢掉 —— 用户实测"编号看不见"就是这个） */
 .pickwrap { position: relative; display: inline-flex; align-items: center; }
 
+/* 「?」帮助按钮：给**动态出现**的按钮用（编辑器里的提交/取消、确认框里的确认）——
+ * 讲解模式的编号是按"元素类别"固定编号的，动态才出现的按钮拿不到稳定编号，所以给它一个问号。 */
+.qmark {
+  width: 18px; height: 18px; min-height: 0; padding: 0; line-height: 1;
+  border-radius: 999px; border: 1px solid var(--dsw-alias-border-l2); background: transparent;
+  color: var(--dsw-alias-label-caption); font-size: 11px; cursor: help;
+}
+.qmark:hover, .qmark:focus-visible { border-color: var(--dsw-alias-brand); color: var(--dsw-alias-label-primary); outline: none; }
+/* 编辑器里的「高级」折叠（思考文本这类多数消息没有的字段） */
+.adv { margin: 4px 0 8px 22px; }
+.adv summary { cursor: pointer; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+/* 批注的"作废范围"选择器：默认就这一条，要扩大才选 */
+.pickone { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.pickone input { width: auto; min-height: 0; }
+.esteps { margin: 6px 0 0; }
+
 /* ---------- 讲解模式 ----------
  * ⚠️ 硬规矩：讲解高亮**只能画在伪元素上**，不许占用元素自身的 outline / background / border。
  * 原因（用户 2026-10-01 实测）：`body.explain [data-explain]` 的特异性是 (0,2,1)，高于

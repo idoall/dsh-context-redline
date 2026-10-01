@@ -682,6 +682,37 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.children = []; api.render();
 }
 
+/* ---------------- 界面说人话（用户 2026-10-01 四条） ----------------
+ * ① 思考文本收进「高级」折叠、主字段叫「正文」；② 批注的作废范围**不用输数字**；
+ * ③ 动态出现的按钮有「?」；④ 「保存草稿」旁边写清两步流程。 */
+{
+  const S = api.S();
+  const userNode = api.NODES.find((n) => n.cat === 'user' && !n.compacted && n.type === 'user/message');
+  S.editor = { kind: 'edit', seq: userNode.seq, text: userNode.text, reasoning: '', err: false };
+  const eh = api.editorHtml();
+  check('编辑用户消息：主字段叫「正文」', /正文/.test(eh) && /id="edT"/.test(eh));
+  check('编辑用户消息：思考文本收进「高级」折叠（默认不展开）', /<details class="adv">/.test(eh) && /id="edR"/.test(eh));
+  check('编辑用户消息：写清两步流程（保存草稿 → 应用到会话才生效）', /第 1 步/.test(eh) && /应用到会话/.test(eh) && /才会真的生效/.test(eh));
+  check('编辑器：提交按钮旁边有「?」帮助（点它看说明）', /class="qmark" data-help="act.edit"/.test(eh));
+
+  // 批注：不许再出现数字输入框，作废范围改成"就这一条 / 从这条到…"
+  S.editor = { kind: 'annotate', seq: userNode.seq, reason: '演示', voidFrom: String(userNode.seq), voidTo: String(userNode.seq) };
+  const ah = api.editorHtml();
+  check('批注：不再让用户输 seq 数字（没有 type="number"）', !/type="number"/.test(ah));
+  check('批注：作废范围默认「就这一条」，扩大才用下拉选（带正文预览）', /id="voidOne"/.test(ah) && /id="voidRange"/.test(ah) && /id="edTo"/.test(ah) && /#\$\{/.test(ah) === false);
+  check('批注：把"作废范围是什么"解释给用户看', /事件序号区间/.test(ah) && /你不用记数字/.test(ah));
+  check('批注：提交按钮旁边也有「?」', /class="qmark" data-help="act.annotate"/.test(ah));
+
+  // 走一遍：默认"就这一条"→ 确认框里写的是人话范围
+  S.extraNodes = []; S.applied = [];
+  document.getElementById('edWhy').value = '演示理由';
+  api.submitEditor();
+  const rows = registry.get('modalList').innerHTML;
+  check('批注确认框：作废范围显示成「就这一条（#seq）」而不是裸区间', /就这一条（#/.test(rows), rows.slice(0, 80));
+  document.getElementById('modalOk').onclick();
+  S.extraNodes = []; S.applied = []; S.editor = null; api.render();
+}
+
 /* ---------------- 汇报 ---------------- */
 const bad = results.filter((r) => !r.ok);
 for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);

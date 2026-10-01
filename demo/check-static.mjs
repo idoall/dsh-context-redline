@@ -182,6 +182,14 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (!/请求式/.test(js)) problems.push('批注必须说明它是"请求式"的：不遮蔽原文、不保证模型照做（与「编辑」的确定生效相对）');
 }
 
+/* 14) 界面说人话：四条硬要求（用户 2026-10-01） */
+{
+  if (/type="number"/.test(js)) problems.push('批注的作废范围不许再用数字输入框（用户不知道 seq）——应改成"就这一条 / 从这条到…"的选择器');
+  if (!/class="qmark" data-help/.test(js)) problems.push('动态出现的按钮（提交/取消/确认）必须带「?」帮助按钮（讲解模式给不了它们稳定编号）');
+  if (!/<details class="adv">/.test(js)) problems.push('思考文本这类"多数消息没有"的字段必须收进「高级」折叠（R3.2 本来就要求折叠）');
+  if (!/第 1 步/.test(js) || !/应用到会话/.test(js)) problems.push('「保存草稿」旁边必须写清两步流程（否则用户不知道点完还要做什么）');
+}
+
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
  * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
  * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */
