@@ -490,7 +490,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 d4f5dd2</span>
+    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 dd47b02</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -602,7 +602,7 @@ const EXPLAIN = {
 
   'ui.advanced': { t: '高级编辑', what: '打开后，**工具结果**这一类的「编辑」入口才会出现。', effect: '默认收起的两类：工具结果（一轮几十条、"要动手"的概率低）与助手消息（平台本来就不给「编辑」，只有「批注」）。常用三类始终可见：用户消息 / 注入内容 / 技能注入 —— 它们都是"我告诉模型什么"，而且后两类每轮会被宿主重新注入（会漂）。', rev: '随时关掉，只是收起入口，不改任何数据', confirm: '不需要', refs: ['docs/03 R2.1 / R2.5'] },
   'act.edit': { t: '编辑（遮蔽原文）', what: '改写这一条的内容。', effect: '先把改动存成本地草稿（模型还看不到）；确认后才"应用到会话"，届时原文被替换、模型再也看不到原文（但日志里仍在）。', rev: '草稿可放弃；已应用的改动可用"版本历史"恢复', confirm: '提交时要', refs: ['docs/03 R2.2 / R3.3', 'docs/01 F7'] },
-  'act.annotate': { t: '批注（保留原文）', what: '不遮蔽原文，追加一条带"作废范围"的更正。', effect: '模型会同时看到原文与更正。', rev: '不可撤销（追加即落地）', confirm: '提交时要', refs: ['docs/03 R2.2', 'docs/01 F6'] },
+  'act.annotate': { t: '批注（保留原文）', what: '不遮蔽原文，追加一条带「作废范围」的更正（一条普通 user 消息，不是伪造宿主内容）。', effect: '模型会同时看到原文与更正 —— 所以它是**请求式**的：靠措辞让模型照做，平台不保证。它会随快照（fork 种子）进子会话；不会被重新注入（不漂），但**长对话或压缩之后可能被摘要吞掉**。想要"确定生效"要用「编辑」+「应用到会话」。', rev: '不可撤销（追加即落地）', confirm: '提交时要（确认框里会写清它在快照里起什么作用）', refs: ['docs/03 R2.2 / R3.3.1', 'docs/01 F6'] },
   'act.pin': { t: '存为不变量', what: '把注入类的这段正文逐字保存为固定块。', effect: '插件不生成、不润色、不改一个字；以后逐字比对就能发现漂移，并可显式重注入。', rev: '可退休（历史保留）', confirm: '保存时要', refs: ['docs/00 G4', 'docs/06 §1'] },
   'act.apply': { t: '应用到会话', what: '把这条草稿真的写进会话。', effect: '追加一条替换事件；模型此后看到的是改后的内容；原文仍保留在日志里但不再可见。', rev: '不可撤销（可用版本历史恢复某一版）', confirm: '要，且会列出本次清单', refs: ['docs/03 R4.3', 'docs/01 F7.1'] },
   'act.history': { t: '版本历史', what: '看这一条的全部版本：原始 → 每次改写 → 每次回滚（**跨替换体**，按行身份串起来）。', effect: '只读展示；可选中某一版"恢复"。', rev: '只读', confirm: '不需要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
@@ -1368,7 +1368,7 @@ function editorHtml() {
   const node = nodeOf(st.seq);              // 字段要按**底层类型**给（R3.2）：工具结果只给内容文本 + isError
   const title = st.kind === 'edit' ? `编辑 #${st.seq}（遮蔽原文）` : st.kind === 'annotate' ? `批注 #${st.seq}（保留原文）` : `把 #${st.seq} 存为不变量`;
   const note = st.kind === 'pin' ? '固定块逐字保存：插件不生成、不润色、不压缩。'
-    : st.kind === 'annotate' ? '提交后会往会话追加一条更正消息，不可撤销；原文不会被遮蔽，模型两者都看到。'
+    : st.kind === 'annotate' ? '提交后会往会话追加一条更正消息，不可撤销；原文不会被遮蔽，模型两者都看到。它是"请求式"的（不保证模型照做），而且在快照/子会话里同样只是这一条消息。'
     : '这一步只存本地草稿（不进会话）。要生效，提交后还需点「应用到会话」。';
   // docs/03 R3.4：多段文本会被合并为一段 → 编辑器上方常驻一行灰字（仅在原消息确实是多段时出现）
   const multiPara = st.kind === 'edit' && /\n\s*\n/.test(String(st.text || ''));
@@ -1714,11 +1714,29 @@ function submitEditor() {
     const from = Number(($('edFrom') && $('edFrom').value) || ''), to = Number(($('edTo') && $('edTo').value) || '');
     if (reason === '') { S.editorError = '理由不能为空'; render(); return; }
     if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to) || from > to) { S.editorError = '作废范围要两端都给、且起点 ≤ 终点（bad-range）'; render(); return; }
-    const ns = 1500 + S.extraNodes.length;
-    const text = `[redline] 更正目标 seq=${st.seq}\n作废范围 seq=${from}..${to}\n理由：${reason}`;
-    S.extraNodes.push(N(ns, 'inject', 'user/message', text, 60, { requestSeq: reqOf().seq, name: '批注' }));
-    const r = reqOf(); if (!r.surface.includes(ns)) r.surface.push(ns);
-    S.editor = null; render(); toast(`已追加更正 #${ns}（不可撤销）；原文 #${st.seq} 仍在模型可见内容里`); return;
+    /* ⚠️ R3.3.1：凡**写入型**提交按钮都要先出 R4.3 确认框，`提交更正到会话` 不例外
+     *（唯一例外是「保存草稿」——不写会话、可一键放弃）。原先这里直接追加，是漏了这道门。
+     * 框里必须写清"这条更正在**快照/子会话**里起什么作用"（用户 2026-10-01 问的那件事）。 */
+    confirmModal({
+      title: '提交更正到会话（批注）',
+      warn: '会向会话追加一条消息，不可撤销；原文保留，模型两者都能看到。',
+      rows: [
+        ['更正目标', `#${st.seq}`],
+        ['作废范围', `seq=${from}..${to}`],
+        ['理由', reason],
+        ['在快照里', '这条更正会随快照（fork 种子）进子会话 —— 但它只是"请求式"的：不遮蔽原文、不保证模型照做；而且长对话或压缩之后，它可能被摘要吞掉'],
+        ['想要"确定生效"', '用「编辑」+「应用到会话」（遮蔽原文，模型只看到改后的那条）；想长期有效则「存为不变量」']
+      ],
+      needReason: false, okText: '确认提交更正',
+      onOk: () => {
+        const ns = 1500 + S.extraNodes.length;
+        const text = `[redline] 更正目标 seq=${st.seq}\n作废范围 seq=${from}..${to}\n理由：${reason}`;
+        S.extraNodes.push(N(ns, 'inject', 'user/message', text, 60, { requestSeq: reqOf().seq, name: '批注' }));
+        const r = reqOf(); if (!r.surface.includes(ns)) r.surface.push(ns);
+        S.editor = null; render(); toast(`已追加更正 #${ns}（不可撤销）；原文 #${st.seq} 仍在模型可见内容里`);
+      }
+    });
+    return;
   }
   if (st.kind === 'pin') {
     const label = (($('edLabel') && $('edLabel').value.trim()) || '目标'), text = ($('edPin') && $('edPin').value) || '';

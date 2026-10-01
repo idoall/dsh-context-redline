@@ -637,6 +637,33 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.sw.advanced = false; S.openCat = 'user'; api.render();
 }
 
+/* ---------------- 批注：写入型提交**必须先出确认框**（R3.3.1），且框里要写清它在快照里起什么作用 ----------------
+ * 用户 2026-10-01 问："批注以后，在新的会话快照中，这个批注起到什么作用？" ——
+ * 答案必须在确认框里能读到，否则用户只能靠猜（原先这段连确认框都没有，是漏了 R3.3.1）。 */
+{
+  const S = api.S();
+  S.applied = []; S.extraNodes = []; S.drafts = {};
+  const node = api.NODES.find((n) => n.cat === 'user' && !n.compacted && n.type === 'user/message');
+  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq;
+  S.editor = { kind: 'annotate', seq: node.seq, reason: '演示理由', voidFrom: String(node.seq), voidTo: String(node.seq) };
+  document.getElementById('edWhy').value = '演示理由';
+  document.getElementById('edFrom').value = String(node.seq);
+  document.getElementById('edTo').value = String(node.seq);
+  const before = S.extraNodes.length;
+  api.submitEditor();
+  check('批注：提交**先出确认框**，不直接写会话（R3.3.1）', S.extraNodes.length === before && registry.get('modalWrap').hidden === false, `extraNodes=${S.extraNodes.length}`);
+  const rows = registry.get('modalList').innerHTML;
+  check('批注确认框：写明它在**快照/子会话**里的作用', /在快照里/.test(rows) && /fork 种子/.test(rows), '');
+  check('批注确认框：写明它是"请求式"的（不遮蔽原文、不保证模型照做）', /请求式/.test(rows) && /不遮蔽原文/.test(rows));
+  check('批注确认框：给出"想确定生效"的替代路径', /确定生效/.test(rows) && /应用到会话/.test(rows));
+  check('批注确认框：短警示说清"原文保留、两者都能看到"', /不可撤销；原文保留，模型两者都能看到/.test(registry.get('modalWarn').textContent));
+  check('批注确认框：本次清单含更正目标 / 作废范围 / 理由', /更正目标/.test(rows) && /作废范围/.test(rows) && /理由/.test(rows));
+  document.getElementById('modalOk').onclick();
+  const added = S.extraNodes[S.extraNodes.length - 1];
+  check('批注确认后：真的追加了那条更正（带结构化头部）', S.extraNodes.length === before + 1 && /\[redline\] 更正目标 seq=/.test(added.text) && /作废范围 seq=/.test(added.text));
+  S.extraNodes = []; S.applied = []; S.drafts = {}; S.editor = null; api.render();
+}
+
 /* ---------------- 汇报 ---------------- */
 const bad = results.filter((r) => !r.ok);
 for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);
