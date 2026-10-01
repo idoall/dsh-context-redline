@@ -151,6 +151,16 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (!/class="pickwrap" data-explain/.test(jsCode)) problems.push('轮次/步骤下拉必须包在 .pickwrap 里再挂 data-explain');
 }
 
+/* 10) R3.4 的两条硬要求必须在 demo 里有落点（否则门禁第 5 条又变成"没法验"） */
+{
+  if (!/这条消息有多个文本段落；改写后会合并为一段。/.test(js)) {
+    problems.push('R3.4：编辑器缺少"多段会被合并为一段"的提示文案（多段消息时必须出现）');
+  }
+  if (!/editTurnUserMessage/.test(js) || !/LONG_USER_TEXT/.test(js)) {
+    problems.push('R3.4/门禁#5：必须保留一条长且多段的演示消息，并让它成为 R1.4 的目标（否则全文预填验不了）');
+  }
+}
+
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
  * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
  * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */

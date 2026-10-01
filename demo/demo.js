@@ -78,6 +78,12 @@ const NODES = [
   N(3, 'inject', 'user/message', '[AGENTS.md] 本文件是唯一必读入口……（约 6KB，宿主每轮注入）', 1600, { name: 'AGENTS.md' })
 ];
 
+/** 一条**长且分多段**的用户消息（>200 字）。用来演示 docs/03 R3.4 与人工门禁第 5 条：
+ *  · 列表行里只能看到被截断的预览，而编辑器必须预填**宿主全文**；
+ *  · 多段会被合并成一段 —— 这件事要在提交**之前**就写在编辑器里。
+ *  它同时是 R1.4「改这一轮的用户消息」的目标（那一轮的最后一条用户消息）。 */
+const LONG_USER_TEXT = '这轮先把「上下文批改台」的验收标准收紧一点，麻烦你按下面三条逐条来，别一次全做完。\n\n第一条：编辑一条超过两百字、而且分成好几段的用户消息时，编辑器里预填的必须是宿主全文，不能是列表上那种被截断的预览 —— 我上次就是被这个坑过一次，改完才发现只剩前面八十个字。\n\n第二条：多段消息会被合并成一段这件事，要在提交之前就看得见，别等我写完才告诉我。\n\n第三条：哪一条做不到就直接说做不到，别绕过去；这一条也算进验收，我会逐条对。';
+
 /** 富态轮（最后一轮）的节点：故意做全边界态 */
 const RICH = {
   user1: N(1240, 'user', 'user/message', '这条消息我后来发现写错了：我说的是"只改用户消息"，其实要把注入内容也一起管。请以后都按这个来。', 120),
@@ -90,7 +96,8 @@ const RICH = {
   inject2: N(1297, 'inject', 'user/message', '[memory-doc] 项目速览：这是本项目的一句话摘要……（注入类，可编辑，也能存为不变量）', 700, { name: 'memory-doc' }),
   skill: N(1299, 'skill', 'user/message', '[skill-catalog] 可用技能：agent-experience / browser-skill / cordis-plugin-development / editing-cordis-compositions …（底层是 user/message，可编辑）', 900, { name: 'skill-catalog' }),
   repl: N(1301, 'user', 'user/message', '（当前可见的替换体 #1301）请把「上下文」面板的默认档位设成"注入的内容"，并且给我逐条的 #seq。', 110),
-  tail: N(1303, 'inject', 'user/message', '[compaction checkpoint] 早期历史已被压缩成摘要 —— 这一条够不到"改写"，只能批注。', 400, { name: 'compact-checkpoint', compacted: true })
+  tail: N(1303, 'inject', 'user/message', '[compaction checkpoint] 早期历史已被压缩成摘要 —— 这一条够不到"改写"，只能批注。', 400, { name: 'compact-checkpoint', compacted: true }),
+  longUser: N(1305, 'user', 'user/message', LONG_USER_TEXT, 620)
 };
 Object.values(RICH).forEach((n) => NODES.push(n));
 
@@ -142,7 +149,8 @@ const REQUESTS = [
   // 富态轮（3 步）：第 2 步出现"原始 #1287"，第 3 步被 #1301 替换掉
   { seq: 1250, turn: RICH_TURN, step: 1, time: '12:05', surface: [1, 2, 3, 1240, 1241], gone: {} },
   { seq: 1289, turn: RICH_TURN, step: 2, time: '12:07', surface: [1, 2, 3, 1240, 1241, 1243, 1287], gone: {} },
-  { seq: 1310, turn: RICH_TURN, step: 3, time: '12:10', surface: [1, 2, 3, 1240, 1241, 1243, 1287, 1290, 1293, 1295, 1297, 1299, 1301, 1303], gone: { 1287: 1301 } }
+  // 1305 = 那条长且多段的用户消息，放在最后 → 它就是这一轮「最后一条用户消息」（R1.4 的目标）
+  { seq: 1310, turn: RICH_TURN, step: 3, time: '12:10', surface: [1, 2, 3, 1240, 1241, 1243, 1287, 1290, 1293, 1295, 1297, 1299, 1301, 1303, 1305], gone: { 1287: 1301 } }
 ];
 
 /** ✂ 压缩 / 剪枝（prune）事件。语义照参考插件的 attachMarkers：
@@ -773,9 +781,12 @@ function editorHtml() {
   const note = st.kind === 'pin' ? '固定块逐字保存：插件不生成、不润色、不压缩。'
     : st.kind === 'annotate' ? '提交后会往会话追加一条更正消息，不可撤销；原文不会被遮蔽，模型两者都看到。'
     : '这一步只存本地草稿（不进会话）。要生效，提交后还需点「应用到会话」。';
+  // docs/03 R3.4：多段文本会被合并为一段 → 编辑器上方常驻一行灰字（仅在原消息确实是多段时出现）
+  const multiPara = st.kind === 'edit' && /\n\s*\n/.test(String(st.text || ''));
   return `<div class="editor">
     <p class="etitle">${esc(title)}</p>
     <p class="enote">${esc(note)}</p>
+    ${multiPara ? '<p class="enote">这条消息有多个文本段落；改写后会合并为一段。</p>' : ''}
     ${st.kind === 'edit' ? `
       <label class="field"><span>思考文本（可选；留空则沿用原文）</span><textarea rows="2" id="edR">${esc(st.reasoning || '')}</textarea></label>
       <label class="field"><span>可见文本（预填的是宿主全文，不是 80 字预览）</span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>`

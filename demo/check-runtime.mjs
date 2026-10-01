@@ -94,7 +94,7 @@ const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
-  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editTurnUserMessage, turnLastUser };`;
+  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editTurnUserMessage, turnLastUser, editorHtml };`;
 
 /**
  * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
@@ -458,6 +458,30 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('讲解模式：data-explain 落在 <select> 上时，编号挂到父节点（select 里装不下）', badgesIn(wrap) === 1 && badgesIn(sel) === 0, `父节点 ${badgesIn(wrap)} · select 本身 ${badgesIn(sel)}`);
   check('讲解模式：高亮也跟着父节点（否则环也画不出来）', wrap.classList.contains('explain-num'));
   S.explain = false; api.render(); extraHosts.length = 0;
+}
+
+/* ---------------- R3.4：编辑器预填**全文**，多段要给提示；门禁第 5 条要能在 demo 上真验 ----------------
+ * 用户 2026-10-01：「demo 里没有一条 >200 字、多段的用户消息，所以 R3.4（全文/多段合并提示）
+ * 与人工门禁第 5 条在 demo 上验不了」。补一条这样的演示消息，并让它成为 R1.4 的目标。 */
+{
+  const S = api.S();
+  // ⚠️ 前面的用例跑过"草稿 → 应用"，会往最后一轮追加一条 seq=1300 的替换体（它就成了该轮最后一条用户消息）。
+  //    这里先清干净，否则验的不是演示数据的原始状态（第一版就是这么误红的）。
+  S.applied = []; S.extraNodes = []; S.drafts = {}; S.editor = null;
+  const longOnes = api.NODES.filter((n) => n.cat === 'user' && String(n.text || '').length > 200 && /\n\s*\n/.test(n.text));
+  check('演示数据里有一条 >200 字、多段的用户消息（门禁第 5 条才有得验）', longOnes.length >= 1, `条数=${longOnes.length} 最长=${Math.max(...longOnes.map((n) => n.text.length))} 字`);
+  const longNode = longOnes[0];
+  S.selTurn = api.TOTAL_TURNS; S.openCat = null; S.openElem = null; S.editor = null; S.sw.noUser = false;
+  api.editTurnUserMessage(api.TOTAL_TURNS);
+  check('R1.4 的目标就是那条长消息（点一下即可验"全文 + 多段提示"）', !!S.editor && S.editor.seq === longNode.seq, `editor.seq=${S.editor && S.editor.seq} 期望 ${longNode.seq}`);
+  check('R3.4：编辑器里预填的是**全文**（不是 80 字预览）', !!S.editor && S.editor.text.length === longNode.text.length && S.editor.text.length > 200, `编辑器 ${S.editor && S.editor.text.length} 字 / 原文 ${longNode.text.length} 字`);
+  const htmlLong = api.editorHtml();
+  check('R3.4：多段消息在编辑器里给出"会被合并为一段"的提示', /这条消息有多个文本段落；改写后会合并为一段。/.test(htmlLong));
+  const single = api.NODES.find((n) => n.cat === 'user' && !/\n\s*\n/.test(n.text) && String(n.text).length > 10);
+  S.editor = { kind: 'edit', seq: single.seq, text: single.text, reasoning: '' };
+  const htmlSingle = api.editorHtml();
+  check('R3.4：单段消息**不**出现该提示（不许见谁都提示）', !/这条消息有多个文本段落/.test(htmlSingle), `单段样例 #${single.seq}`);
+  S.editor = null; S.openCat = null; S.openElem = null; api.render();
 }
 
 /* ---------------- 汇报 ---------------- */
