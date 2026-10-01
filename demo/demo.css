@@ -179,14 +179,37 @@ body {
 .markers { position: relative; height: 14px; }
 .mark { position: absolute; top: 0; font-size: 11px; color: var(--ds-color-amber); text-align: center; }
 .bars { display: flex; align-items: flex-end; gap: 3px; height: 112px; }
+/* 趋势柱体（用户 2026-10-01 反馈：移上去、点中了都看不出是哪一根）
+ * 照参考插件 dsh-context 的 .lc-bar 定死三件事：
+ *   ① **整列**都是命中区（height:100%），色块画在内层 .tbar-fill 上 —— 短柱子上方的空白也能移中；
+ *   ② hover 给整列底色 + 虚线框 + 色块提亮（原来只有一根 1px 虚线，等于没做）；
+ *   ③ 选中给实线框 + 底色，并且**声明在 hover 之后**。
+ * ⚠️ 顺序陷阱（参考插件源码里专门注释过）：`.sel` 与 `:hover` 同特异性，
+ *    选中规则若排在 hover 前面，鼠标停在刚点过的柱子上时虚线 hover 会盖掉实线选中，
+ *    只有把指针移开才看得见"选中了"。所以下面三段的先后顺序不能改。 */
 .tbar {
-  flex: none; padding: 0; border: 0; border-radius: 2px 2px 0 0; cursor: pointer;
-  background: linear-gradient(to top, var(--dsw-alias-brand), color-mix(in srgb, var(--dsw-alias-brand) 55%, transparent));
-  outline: 1px dashed transparent; outline-offset: 1px;
+  flex: none; height: 100%; padding: 0; border: 0; background: transparent; cursor: pointer;
+  display: flex; align-items: flex-end;
+  border-radius: 2px 2px 0 0; outline: 1px dashed transparent; outline-offset: 1px;
+  transition: background-color .15s ease-in-out, outline-color .15s ease-in-out;
 }
-.tbar.neg { background: linear-gradient(to bottom, var(--ds-color-red), color-mix(in srgb, var(--ds-color-red) 55%, transparent)); }
-.tbar:hover { outline-color: var(--dsw-alias-brand); }
-.tbar.sel { outline: 2px solid var(--dsw-alias-label-primary); }
+.tbar-fill {
+  display: block; width: 100%; border-radius: 2px 2px 0 0;
+  background: linear-gradient(to top, var(--dsw-alias-brand), color-mix(in srgb, var(--dsw-alias-brand) 55%, transparent));
+  transition: filter .15s ease-in-out;
+}
+.tbar.neg .tbar-fill { background: linear-gradient(to bottom, var(--ds-color-red), color-mix(in srgb, var(--ds-color-red) 55%, transparent)); }
+/* ① 悬停预览：整列底色 + 虚线框 + 色块提亮 */
+.tbar:hover { background: var(--dsw-alias-interactive-bg-hover); outline-color: var(--dsw-alias-brand); }
+.tbar:hover .tbar-fill { filter: brightness(1.25); }
+/* ② 选中那一轮里的其它柱子：整轮底色（照参考插件的 lc-bar-in-turn）——按步骤模式下一轮多根，靠它才认得出是哪一轮 */
+.tbar.in-turn { background: color-mix(in srgb, var(--dsw-alias-brand) 10%, transparent); }
+/* ③ 选中的柱子：实线框 + 底色（声明在 hover 之后，鼠标停在它身上也看得清） */
+.tbar.sel {
+  background: color-mix(in srgb, var(--dsw-alias-brand) 20%, transparent);
+  outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 1px;
+}
+.tbar.sel .tbar-fill { filter: brightness(1.15); }
 .strip { display: flex; align-items: stretch; gap: 3px; margin-top: 2px; }
 .tcell {
   flex: none; height: 22px; padding: 0; cursor: pointer; overflow: hidden; white-space: nowrap;
@@ -412,8 +435,10 @@ body.explain .trendscroll .tbar { min-height: 17px; }
  * ==========================================================================*/
 @media (pointer: coarse) {
   :root { --ds-touch: 44px; }
-  .btn, .btn.sm, .seg, .chipstep, .sw, .catrow, .row-main, .tcell, .tbar { min-height: 44px; }
-  .tbar { min-height: 2px; }                         /* 柱子本身保持数据高度，靠外层点击区放大 */
+  /* 注意：这里**不再**给 .tbar 设 min-height —— 柱子本体已经是整列高度（112px），
+   * 命中区本来就远超 44px；旧写法写的 `.tbar { min-height: 2px }` 是"外层只放点击区、
+   * 柱子自身保持数据高度"那套结构的遗留，现在结构反过来了（见上面 .tbar 注释）。 */
+  .btn, .btn.sm, .seg, .chipstep, .sw, .catrow, .row-main, .tcell { min-height: 44px; }
   .actions { gap: 8px; }
   .field textarea, .field input, .modal input { min-height: 44px; }
   .trendscroll { padding-bottom: 14px; }

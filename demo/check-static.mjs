@@ -51,6 +51,32 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   problems.push('讲解模式的点击拦截又回来了：必须只让序号节点触发讲解，不能拦按钮本身');
 }
 
+/* 4) 趋势柱体的「看得见」契约（用户 2026-10-01 反馈：移上去/点中了都看不出是哪一根）
+ * 照参考插件 dsh-context 的 trendChart 定死四条，缺一条就等于没做：
+ *   · 命中区 = **整列**（色块画在内层 .tbar-fill 上）—— 短柱子上方的空白也要能移中；
+ *   · hover 必须有**底色/亮度**变化，不能只给一根 1px 虚线；
+ *   · 选中必须有**实线框 + 底色**；
+ *   · `.tbar.sel` 的规则必须声明在 `.tbar:hover` **之后** —— 参考插件源码专门注释过这个顺序陷阱：
+ *     反了的话，鼠标停在刚点过的柱子上时虚线 hover 会盖掉实线选中，只有移开才看得见选中。 */
+{
+  const flat = css.replace(/\s+/g, ' ');
+  const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const ruleAt = (sel) => { const m = new RegExp(escRe(sel) + '\\s*\\{([^}]*)\\}').exec(flat); return m ? { body: m[1], index: m.index } : null; };
+  const tbar = ruleAt('.tbar'), hover = ruleAt('.tbar:hover'), sel = ruleAt('.tbar.sel');
+  if (!tbar) problems.push('趋势柱体：没有 .tbar 规则');
+  else if (!/height:\s*100%/.test(tbar.body)) problems.push('趋势柱体：.tbar 必须整列高度（height:100%）—— 否则短柱子上方的空白不算命中区，很难移中');
+  if (!hover) problems.push('趋势柱体：没有 .tbar:hover 规则');
+  else if (!/background/.test(hover.body)) problems.push('趋势柱体：hover 必须有可见的底色变化（只给 1px 虚线框等于没做）');
+  if (!sel) problems.push('趋势柱体：没有 .tbar.sel 规则');
+  else {
+    if (!/outline/.test(sel.body)) problems.push('趋势柱体：选中的柱子必须给实线框');
+    if (!/background/.test(sel.body)) problems.push('趋势柱体：选中的柱子必须给底色（多根柱子挤在一起时 2px 框看不出来）');
+  }
+  if (hover && sel && sel.index < hover.index) problems.push('趋势柱体：.tbar.sel 必须声明在 .tbar:hover 之后（顺序反了 → 鼠标停在刚点过的柱子上时看不清选中）');
+  if (!ruleAt('.tbar-fill')) problems.push('趋势柱体：色块必须画在内层 .tbar-fill 上，柱子本体留作整列命中区');
+  if (!ruleAt('.tbar.in-turn')) problems.push('趋势柱体：选中那一轮里的其它柱子要给整轮底色（照参考插件的 lc-bar-in-turn）');
+}
+
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
  * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
  * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */

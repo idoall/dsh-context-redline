@@ -371,7 +371,9 @@ function applyTrendScale() {
   sc.querySelectorAll('.tbar').forEach((el, i) => {
     const v = series[i] || 0;
     const h = Math.max(2, Math.round((Math.abs(v) / max) * CHART_H));
-    el.style.height = h + 'px';
+    // 高度写在**内层色块**上；柱子本体是整列命中区（照参考插件 .lc-bar）
+    const fill = el.querySelector ? el.querySelector('.tbar-fill') : null;
+    if (fill) fill.style.height = h + 'px'; else el.style.height = h + 'px';
     el.classList.toggle('neg', v < 0);
   });
   sc.dataset.max = String(max);
@@ -456,10 +458,14 @@ function renderTrend() {
             ${list.map((r, i) => {
               const v = series[i] || 0;
               const sel = r.seq === S.selSeq;
+              /* 整列都是命中区：色块画在内层 .tbar-fill 上（照参考插件 dsh-context 的 .lc-bar）。
+               * 顺带把"这一轮里的其它柱子"标出来（in-turn）——按步骤模式下一轮有多根，
+               * 光靠一根柱子的框看不出点中的是哪一轮。 */
+              const inTurn = !sel && r.turn === S.selTurn;
               const label = S.trendGran === 'turn' ? `第 ${r.turn} 轮 · 共 ${r.stepCount || turnSteps(r.turn)} 步 · ≈${fmt(Math.abs(v))}` : `第 ${r.turn} 轮 · 第 ${r.step} 步 · ≈${fmt(Math.abs(v))}`;
-              return `<button class="tbar${sel ? ' sel' : ''}" data-i="${i}" data-seq="${r.seq}" data-explain="trend.pick"
+              return `<button class="tbar${sel ? ' sel' : ''}${inTurn ? ' in-turn' : ''}" data-i="${i}" data-seq="${r.seq}" data-explain="trend.pick"
                         aria-label="${esc(label)}"
-                        style="width:${BAR_W}px;height:${Math.max(2, Math.round((Math.abs(v) / maxAll) * CHART_H))}px"></button>`;
+                        style="width:${BAR_W}px"><i class="tbar-fill" style="height:${Math.max(2, Math.round((Math.abs(v) / maxAll) * CHART_H))}px"></i></button>`;
             }).join('')}
           </div>
           <div class="strip">${S.trendGran === 'step'

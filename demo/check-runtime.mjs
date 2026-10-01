@@ -290,6 +290,21 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('团队可用时：派活 / 建成官方任务 / 去官方面板 都回来', /data-act="csend"/.test(html2) && /data-act="ctask"/.test(html2) && /data-act="teamOpen"/.test(html2));
 }
 
+/* ---------------- 趋势柱体：结构契约（整列命中区 + 内层色块） ----------------
+ * 用户 2026-10-01：移上去/点中了都看不出是哪一根。参考插件 dsh-context 的 .lc-bar
+ * 是**整列**（height:100%）可点，色块画在子元素里 —— 短柱子上方的空白也能移中。
+ * 我们的旧实现把高度与色块都放在按钮本身上，命中区只有那 69px 的色块。 */
+{
+  const html = registry.get('cardTrend').innerHTML;
+  // ⚠️ 必须要求 "tbar" 后面紧跟空格或引号 —— 否则 class="tbar-fill" 也会被当成柱子
+  //    （第一版就是这么错的：柱子数虚报成 144，另一条断言也被 fill 的内联 height 误伤）
+  const bars = html.match(/class="tbar(?=[ "])[^"]*"/g) || [];
+  const fills = html.match(/class="tbar-fill"/g) || [];
+  check('趋势柱体：每根柱子都有内层色块 .tbar-fill', bars.length > 0 && fills.length === bars.length, `柱子 ${bars.length} 根 · 色块 ${fills.length} 个`);
+  const outerHasHeight = /class="tbar(?=[ "])[^"]*"[^>]*style="[^"]*height:/.test(html);
+  check('趋势柱体：高度不再写在外层按钮上（外层是整列命中区）', !outerHasHeight, outerHasHeight ? '外层仍带 height' : '');
+}
+
 /* ---------------- 汇报 ---------------- */
 const bad = results.filter((r) => !r.ok);
 for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);
