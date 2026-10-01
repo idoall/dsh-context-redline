@@ -1,64 +1,99 @@
-# 11 · 会话交接（把下面那段贴到新会话）
+# 11 · 会话交接（复制下面任一块贴到新会话）
 
-> **用法**：新开一个会话（新会话才有浏览器工具），把下面代码块**整段复制粘贴**进去即可接着干。
+> **用法**：新开一个会话（新会话才有浏览器工具），按目的**整段复制**下面两个代码块之一：
+> **A = 接着干**（实施/推进）· **B = 新开一轮只读 Review**（评审，不改任何文件）。
 > 每次交接时，我（助手）负责更新这个文件，保证它反映**当前真实状态**。
 > 交接的真相仍在 [`docs/10-execution-checklist.md`](10-execution-checklist.md)（唯一状态源）与 [`AGENTS.md`](../AGENTS.md)（唯一必读入口）。
 
+下面有**两块**：要接着干就用 A，要新开一轮评审就用 B。
+
+---
+
+## A · 接着干（实施/推进用）
+
 ```text
-接着干 dsh-context-redline 这个插件项目（不是新任务，请先读现状再动手）。
+接着干 dsh-context-redline（不是新任务：先读现状，再动手）。
 
-【项目】把参考插件 dsh-context（本机 ~/my_project/_dsh/dsh-context，v0.59.2）的"上下文浏览器"
-改造成"可编辑的上下文批改台"：改条目 → 冻结快照 → 用编辑过的上下文开子会话/官方 teammate
-→ 压缩 → 主会话据此继续；并与官方 Agent Teams 对接（不自己造协作层）。
-仓库：/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline （分支 main，本地提交未 push）
+【仓库】/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline（分支 main，本地提交未 push）
 
-【先读这三份，再动手】
-1) AGENTS.md —— 唯一必读入口：硬约束、平台坑、测试与验证纪律、当前状态
-2) docs/10-execution-checklist.md —— 唯一状态源（细粒度任务表：ID/子任务/状态/文件动作（范围冻结））
-3) docs/03-ui-spec.md —— 界面规格（R 编号；用户提意见就是按这些编号提）
+【项目一句话】把参考插件 dsh-context 的「上下文浏览器」改造成**可编辑的上下文批改台**：
+改条目 → 冻结快照 → 用编辑过的上下文开子会话/官方 teammate → 压缩 → 主会话据此继续；
+与官方 Agent Teams 对接（不自己造协作层）。
 
-【现在在哪】
-- M0 文档集：已完成（docs/00–docs/11，过了 7 轮外部模型评审）
-- M0.5 可交互 demo：已交付（demo/），**浏览器实测已完成**（1440 / 880 / 879 / 390 四种视口，
-  原始数据 + 截图在 demo/screenshots/measure-log.md），修掉了实测抓出的"自测面板显示 undefined"，
-  冒烟测试 **206/206**（`node demo/check-runtime.mjs`；静态契约另跑 `node demo/check-static.mjs`）。**当前卡在等用户按 R 编号提交互意见 → 改到"交互定稿"**
-- M1 及之后：未开工；**插件实现代码仍是零行**（用户没点头前不写）
+【动手前必须先读（按顺序）】
+1) AGENTS.md —— 唯一必读入口（硬约束、平台坑、测试与验证纪律、当前状态）
+2) docs/10-execution-checklist.md —— **唯一状态源**（细粒度任务表：ID / 子任务 / 状态 / 文件动作（范围冻结））
+3) docs/11-session-handoff.md —— 本文件：实施共识 + **文档 Review 裁定 D1–D7**（唯一口径）
+4) docs/03-ui-spec.md —— 界面规格（R 编号；用户就是按 R 编号提意见的）
+5) 需要平台事实时读 docs/01-platform-facts.md（每条都标了 实测 / 推断）
 
-【硬约束（必须遵守）】
-- 只动本仓库；不 push、不开 PR（各自需单独授权）
-- 不改 DSH 安装目录、不改 ~/.dsh（**读**它核实平台事实是允许的）
-- **dsh web 重启一律由用户本人执行**（这台机的 web 实例承载用户会话）
-- 不产生任何 AI 生成内容（进入会话的每个字都必须人写）
-- 界面/交互改动：先在 demo/ 里改，用户确认后再搬进插件
+【现在在哪（2026-10-01）】
+- M0 文档集：完成（过了 7 轮外部模型评审）。
+- M0.5 可交互 demo：已交付且**已浏览器实测**（1440/880/879/390，数据+截图在 demo/screenshots/）；
+  自检：node demo/check-static.mjs（静态契约）+ node demo/check-runtime.mjs（**206/206**）。
+  用户已就"快照与子会话 / 读数的纪律 / 钉住的职责"等多轮细节定稿；**M05-15 交互定稿仍在等他最终点头**。
+- 文档 review 轮：**已收口**（75 项不一致 → 0），并新增机器检查 node scripts/check-docs.mjs（**必须 exit 0**）；
+  7 条裁定见本文件文末。
+- M1 及之后：**未开工**；**插件代码仍是零行**（`src/`、`package.json`、`node_modules` 都不存在）。
 
-【环境现状（2026-09-30 起）】
-- 浏览器工具已恢复，**新会话可用，且已实测跑通**：官方 @deepseek-ai/dsh-browser-use +
-  @deepseek-ai/dsh-experimental-browser-use-playwright-mcp（**现行 0.2.0-rc.2**；历史记录里出现过 rc.1，headless Chromium；
-  chromium rev 1243 已在 ~/Library/Caches/ms-playwright 缓存）。
-  ⚠️ 两条限制：① 只是本机 headless，不是用户的手机/Chrome；② **无触屏** →
-  `(pointer: coarse)` 不命中，44px 触控目标只能把 CSS 规则搬出来模拟验证。
-- demo 本地服务：**给用户看一律用局域网地址** http://10.0.0.30:5180/redline-panel.html （本机自测才用 127.0.0.1）
-  （bash demo/serve.sh 起 = **守护进程**、bash demo/serve.sh status 看、bash demo/serve.sh stop 停、
-  bash demo/serve.sh fg 前台；**电脑重启后要再跑一次**）
-  多文件版资源版本 ?v=5（改过 css/js 要升）；
-  **单文件版** demo/redline-panel.standalone.html（连服务都不用、可 file:// / AirDrop 到手机）
-  页头标签带**打包指纹** `单文件版 <7 位>`：用户报这个指纹就能确认他手上是哪一版。
-  服务由 demo/serve.py 提供并统一发 Cache-Control: no-store（刷新即最新版）。
-- demo 自检（不需要浏览器）：
-  node demo/check-static.mjs   # id/class/讲解词契约 + **单文件版指纹是否最新**
-  node demo/check-runtime.mjs  # 最小 DOM 桩真跑渲染与切换（206 项）
-node scripts/check-docs.mjs   # 文档一致性（版本/目录/命名/计数/表格/重复标题/A17）
-  node demo/build-standalone.mjs  # 改完 css/js 必须重打包单文件版（会打印新指纹）
+【硬约束（不可违反）】
+- 只动本仓库；**不 push、不开 PR**（各自需单独授权）。
+- **不改 DSH 安装目录、不改 ~/.dsh**（只读核实平台事实是允许的）。
+- **`dsh web` 重启一律由用户本人执行**（这台机的实例承载他自己的会话）。
+- 不产生任何 AI 生成内容（进入会话的每个字都必须人写）。
+- 界面/交互改动：**先在 demo/ 里做**，用户确认后再搬进插件。
+- 文档改动后必须 `node scripts/check-docs.mjs` 退出码 0；改了 demo.css/js 必须 `node demo/build-standalone.mjs` 重打包。
 
-【第一件事】
-浏览器实测已经做过了（不用重做）。先问用户：是按 R 编号提交互意见，还是说"开始"进 M1。
-若用户要提意见：用浏览器打开 demo 对着看，按 R 编号改 demo/、跑两个自检、重打包单文件版。
-
-【接下来的两条路，等用户选】
-① 用户给 R 编号意见 → 改 demo → 直到用户说"交互定稿" → 结论回写 docs/03
-② 用户说"开始" → 走授权包①：把本仓库装配进 web profile → 先跑 dsh --profile web --dump-config
-   挡命名空间冲突 → 停下通知用户重启 → 重启后复验 → 再进 M1
+【第一件事（先跑这几条，确认基线没坏）】
+  git log --oneline -3
+  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：211 / 76 / 4 / 123 / 8」
+  node demo/check-static.mjs       # 期望：✅ 静态契约检查通过
+  node demo/check-runtime.mjs      # 期望：共 206 项，失败 0 项
+基线全绿后，问用户选哪条路：① 说"开始" → 在**仓库内**做 M1（骨架 + 命名空间分家，可自验，
+不需要他重启；到收口才请他重启）② 先写用户帮助（M6-11，权威来源已就位：docs/03 R4.7 + R7.1）。
 ```
+
+---
+
+## B · 新开一轮只读 Review（评审用）
+
+```text
+对 dsh-context-redline 这个仓库做一轮**只读**文档/规格评审（不要改任何文件、不要提交）。
+
+【仓库】/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline（分支 main，未 push）
+【唯一必读入口】AGENTS.md；【唯一状态源】docs/10-execution-checklist.md；【已有裁定】docs/11 文末（D1–D7 + 实施共识）
+【规格文档】docs/00–docs/09（00 范围 / 01 平台事实 / 02 架构 / 03 界面规格 / 04 路线图 / 05 测试计划 /
+06 编排 / 08 问答 / 09 追溯）、README 双语、UPSTREAM.md、demo/（交互原型）
+
+【先跑基线（只读命令，约 10 秒）】
+  git log --oneline -3
+  node scripts/check-docs.mjs      # 文档一致性（版本/目录/命名/计数/表格/重复标题/A17/D3.1）
+  node demo/check-static.mjs ; node demo/check-runtime.mjs   # demo 自检（期望 206/206）
+说明：**机器能查的漂移已经查完**（上一轮 75 项已清零，并由 check-docs.mjs 长期把关），
+所以请把力气放在**机器查不到**的地方 —— 语义矛盾、与平台实际不符的断言、不可实施的设计、用户看不懂的地方。
+
+【评审纪律（务必遵守）】
+- **只读**：不写文件、不 commit、不 install、不跑 `dsh` 命令、不碰 ~/.dsh 与 DSH 安装目录。
+- 每条结论必须给**证据**：`文件:行` 或命令 + 原始输出；**不许凭印象**。
+- 能实测的就去实测（例：去安装树 <dsh-install>/node_modules/@deepseek-ai/ 读 .d.ts 核对签名；
+  `git -C <upstream-clone> show <tag>:<path>` 核对上游事实）。**实测与文档冲突时以实测为准，并指出是哪条文档错了。**
+- 拿不准的进「待验证」，**不要编**（docs/01 §6 就是干这个的）。
+
+【请给这样一份报告（按严重度排序）】
+P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或实现者）｜P2（文档卫生）
+每条四栏：**发现** · **证据（文件:行 / 命令输出）** · **风险（会造成什么后果）** · **建议（怎么改，或该由用户裁定什么）**。
+另外单列两节：① **已核对为真、不要动**（避免下一个人改错）② **本轮未验证的**（说明为什么没验）。
+
+【重点方向（上一轮已覆盖的可以跳过）】
+1) 语义级矛盾：同一动作在不同文档里的**含义**不同（不只是措辞），例如授权粒度、派活/发消息、压缩适用范围；
+2) 平台事实：docs/01 里的每条 F/V 是否与**当前运行时 0.2.0-rc.2** 的 `.d.ts` 一致；签名、返回形状、错误码；
+3) 可实施性：M1→M2→M3 的垂直切片是否真的能跑通；测试计划（docs/05）的断言是否**在某个 lane 里真的放得下**；
+4) 用户可理解性：一个不懂实现的人能否只靠 docs/03 与（尚待写的）docs/12 用明白这个工具；
+5) 安全/边界：任何"顺手写 ~/.dsh / 重启 web / push"的路径是否在文档里被写成了允许。
+
+最后：报告交给用户，**等他说改不改**（不要自己动手改）。
+```
+
 
 ---
 
@@ -70,7 +105,7 @@ node scripts/check-docs.mjs   # 文档一致性（版本/目录/命名/计数/�
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**本轮在改文档**：文档 review 裁定见本文末 + `scripts/check-docs.mjs` |
 | 进度 | `docs/10`：**DONE 76 / 共 211**（DOING 4 · TODO 123 · WAIT🙋 8） |
-| 当前卡点 | **M05-15 交互定稿（等用户按 R 编号提意见）**；其后 `M1-01 授权包①（等用户重启）` |
+| 当前卡点 | **M05-15 交互定稿（等用户最终点头）**；文档 review 轮已收口（75 → 0，由 `scripts/check-docs.mjs` 把关）；M1 可在仓库内自验，**授权包①（装配 + 用户重启）是 M1 的收口动作** |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store） |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
 | 浏览器工具 | 已恢复且**本会话已实测跑通**（`navigate/resize/screenshot/evaluate/console_messages`）；限制：headless、无触屏（`pointer:coarse` 不命中） |
@@ -119,9 +154,8 @@ node scripts/check-docs.mjs   # 文档一致性（版本/目录/命名/计数/�
 |---|---|---|
 | **D1** | 运行时版本 | **`0.2.0-rc.2`**（实测：安装树 `@deepseek-ai/dsh` 与 profile 内 `browser-use` 两包都是 rc.2）。peer 写 `>=0.2.0-rc.2 <0.3.0`。提到 rc.1 只允许出现在**显式标注「历史」**的行（如当时装了什么的记录） |
 | **D2** | 参考插件 | **复制基线 = git tag `v0.59.2`**（写法必须带 `v` 前缀或「基线」字样）；**并存对手 = profile 实装 `0.60.0`**（npm 版本声明不许写 0.59.2）。已实测：0.60.0 仍注册同样的三条 `/api/dsh-context/*` 路由与 `contextTimeline/headers/activity` 投影 key ⟹ F1/F2 冲突结论不变 |
-
-| **D3.1** | `src/host/` 下**只放我们自己的接线文件，且必须带 `redline-` 前缀**（`redline-channel.ts` / `redline-command.ts` / `redline-service.ts`）；其余逻辑（编排、冻结、团队桥、草稿、固定块、快照）一律 `src/redline/**`；**上游文件**（`src/host/index.ts`、`settings.ts`、`src/client/*` 等）只在必须接线处改动 |
 | **D3** | 目录定版（**唯一一套**） | 实现 = `src/redline/**`（纯逻辑，禁 `node:*`/DOM/React）+ `src/host/redline-channel.ts`（**唯一**上游接线文件）+ `src/client/**` + `src/shared/**`；测试 = `tests/edit/**`、`tests/channel/**`（`*.spec.ts`）。`src/edit/**`、`src/orchestrate/**`、`src/edit/pure/**`、`tests/redline/**`、`test/**`（单数）**都是归档线旧名**，只允许出现在带「归档/历史/旧」的行 |
+| **D3.1** | `src/host/` 下**只放我们自己的接线文件，且必须带 `redline-` 前缀**（`redline-channel.ts` / `redline-command.ts` / `redline-service.ts`）；其余逻辑（编排、冻结、团队桥、草稿、固定块、快照）一律 `src/redline/**`；**上游文件**（`src/host/index.ts`、`settings.ts`、`src/client/*` 等）只在必须接线处改动 |
 | **D4** | 装配时序 | **授权包① 是 M1 的收口动作，不是第一步**：仓库内骨架 + `tsc`/`tsdown`/`vitest` 全绿 → 装配进 web profile → `dsh --profile web --dump-config` 无冲突 → **停下等用户重启** |
 | **D5** | 授权粒度 | `docs/06 §4` 的 A1–A10 清单是**界面确认框的内容规格**（用户点确认即授权）；**只有 §9 的 4 个包**需要用户本人动作（①装/重启 ②专用会话破坏性验证 ③端到端验收 ④push）。"不再逐动作确认"与"写会话必须有确认框"**不冲突**：前者说不用找人，后者说界面要拦 |
 | **D6** | M2 断言载体 | 「模型看到什么」一律用**纯函数断言**（自写 fold 等价物，edit lane 可跑）；`deriveMessages()` 是 live Session 同步读（AGENTS §2.2 禁新代码调用），**不许进测试计划**（历史记录行除外）；`docs/05 §2` 必须补 **A17 三栏定义**（7 类行 × 按钮集合） |
