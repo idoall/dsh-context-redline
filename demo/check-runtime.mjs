@@ -559,6 +559,63 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.applied = []; S.extraNodes = []; S.drafts = {}; api.render();
 }
 
+/* ---------------- A17：每一种行类型的**按钮集合**按底层事件类型锁定（docs/03 R2.1 / R4.6） ----------------
+ * 这条是"能编辑哪些内容"的机器答案：改 any 一行的按钮集合，这里就会红。 */
+{
+  const S = api.S();
+  const btnsOf = (node) => {
+    const a = api.ability(node);
+    if (a.inert) return '（无动作条）';
+    const out = [];
+    if (a.canRewrite) out.push('编辑');
+    if (a.canAnnotate) out.push('批注');
+    if (a.pinnable) out.push('存为不变量');
+    return out.join('+');
+  };
+  const byType = {};
+  for (const n of api.NODES) {
+    const key = `${n.cat}/${n.type}${n.compacted ? '/compacted' : ''}`;
+    if (!byType[key]) byType[key] = btnsOf(n);
+  }
+  const expect = {
+    'system/system/message': '（无动作条）',
+    'tools': '（这一类没有行）',
+    'user/user/message': '编辑+批注',
+    'inject/user/message': '编辑+批注+存为不变量',
+    'skill/user/message': '编辑+批注+存为不变量',
+    'assistant/assistant/message': '批注',
+    'tool/tool/result': '编辑+批注',
+    'user/user/message/compacted': '批注'
+  };
+  for (const [k, v] of Object.entries(expect)) {
+    if (k === 'tools') { check('按钮集合：工具定义（这一类在演示数据里没有行）', true, ''); continue; }
+    check(`按钮集合：${k} → ${v}`, byType[k] === v, `实际 ${byType[k] === undefined ? '(没有这种行)' : byType[k]}`);
+  }
+  const sh = api.NODES.find((n) => n.seq === 1287);
+  check('按钮集合：已被遮蔽的原文 → 不给「编辑」，并给原因', api.ability(sh).canRewrite === false && /接替/.test(api.ability(sh).blockReason), api.ability(sh).blockReason);
+
+  // R3.2：编辑器字段按底层类型给
+  const toolNode = api.NODES.find((n) => n.type === 'tool/result');
+  S.editor = { kind: 'edit', seq: toolNode.seq, text: toolNode.text, reasoning: '', err: !!toolNode.err };
+  const th = api.editorHtml();
+  check('R3.2：工具结果的编辑器 = 结果文本 + isError（不给思考文本）', /id="edT"/.test(th) && /id="edErr"/.test(th) && !/id="edR"/.test(th));
+  const userNode = api.NODES.find((n) => n.cat === 'user' && !n.compacted && n.type === 'user/message');
+  S.editor = { kind: 'edit', seq: userNode.seq, text: userNode.text, reasoning: '', err: false };
+  const uh = api.editorHtml();
+  check('R3.2：用户消息的编辑器 = 可见文本 + 思考文本（不给 isError）', /id="edT"/.test(uh) && /id="edR"/.test(uh) && !/id="edErr"/.test(uh));
+
+  // 工具结果的 isError 改动要能落进草稿、并带到新条目上
+  S.applied = []; S.extraNodes = []; S.drafts = {};
+  document.getElementById('edT').value = toolNode.text;
+  document.getElementById('edErr').checked = !toolNode.err;
+  S.editor = { kind: 'edit', seq: toolNode.seq, text: toolNode.text, reasoning: '', err: !!toolNode.err };
+  api.submitEditor();
+  check('工具结果：只勾选 isError 也算实质改动（落进草稿）', !!S.drafts[toolNode.seq] && S.drafts[toolNode.seq].err === !toolNode.err, JSON.stringify(S.drafts[toolNode.seq] && { err: S.drafts[toolNode.seq].err }));
+  api.doApply(toolNode.seq);
+  check('工具结果：apply 后新条目带上新的 isError', S.applied.length === 1 && S.extraNodes.some((n) => n.seq === S.applied[0].newSeq && n.err === !toolNode.err));
+  S.applied = []; S.extraNodes = []; S.drafts = {}; S.editor = null; api.render();
+}
+
 /* ---------------- 汇报 ---------------- */
 const bad = results.filter((r) => !r.ok);
 for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);

@@ -668,7 +668,7 @@ function editTurnUserMessage(turn) {
   if (!hit) return false;
   S.selSeq = hit.req.seq; S.selTurn = hit.req.turn;
   S.openCat = 'user'; S.openElem = hit.node.seq;
-  S.editor = { kind: 'edit', seq: hit.node.seq, text: hit.node.text, reasoning: '' };
+  S.editor = { kind: 'edit', seq: hit.node.seq, text: hit.node.text, reasoning: '', err: !!hit.node.err };
   S.editorError = null; S.editorOk = null; S.historyFor = null;
   render();
   const row = document.querySelector ? document.querySelector(`[data-elem="${hit.node.seq}"]`) : null;
@@ -714,10 +714,19 @@ function ability(node) {
   const repl = isReplacement(node.seq);
   const shadowed = gone[node.seq] !== undefined && !repl;
   const type = node.type;
-  const canRewrite = !shadowed && type !== 'assistant/message' && type !== 'system/message' && !node.compacted;
+  /* ⚠️ 三类"不能改"要分清（docs/03 R2.1 / R4.6）：
+   *   · inert（系统提示词 / 工具定义）：**一个动作都不给**，也不渲染空动作区（宿主保护 node 0 的 system）；
+   *   · assistant/message：只给批注；
+   *   · 被遮蔽 / 被压缩埋掉：不给改写。
+   * 「存为不变量」给的是**每轮会被宿主重新注入**的那两类：注入内容 + 技能注入（R2.1 表里的两个 ✅）。 */
+  const inert = node.cat === 'system' || node.cat === 'tools';
+  const canRewrite = !inert && !shadowed && type !== 'assistant/message' && !node.compacted;
   return {
-    canRewrite, shadowed, isReplacement: repl, canAnnotate: true, isInjection: node.cat === 'inject',
-    blockReason: shadowed ? `这一条已被 #${gone[node.seq]} 接替，已不在模型可见内容里`
+    canRewrite, shadowed, isReplacement: repl, canAnnotate: !inert, inert,
+    pinnable: !inert && (node.cat === 'inject' || node.cat === 'skill'),
+    isToolResult: type === 'tool/result',
+    blockReason: inert ? '系统提示词 / 工具定义由宿主保护：改不了，也不批注'
+      : shadowed ? `这一条已被 #${gone[node.seq]} 接替，已不在模型可见内容里`
       : type === 'assistant/message' ? '助手消息在平台上无法改写（两条规则互斥），只能批注'
       : node.compacted ? '这一条被压缩埋掉了，改写够不到它，只能批注'
       : type === 'system/message' ? '系统提示词不可改' : ''
@@ -772,20 +781,21 @@ function rowHtml(node) {
       <span class="tok">≈${fmt(node.tokens)}</span>
     </button>
     ${open ? `<div class="row-body"><div class="meta">#${node.seq} · ${esc(node.type)}${node.err ? ' · 错误结果' : ''}${node.compacted ? ' · 被压缩埋掉' : ''}</div>${esc(node.text)}</div>` : ''}
-    <div class="actions" data-rowactions="${node.seq}">
+    ${a.inert ? '' : `<div class="actions" data-rowactions="${node.seq}">
       <span class="seq">#${node.seq}</span>${draft}${tail}${chain.length ? '<span class="chain">（这里被改过）</span>' : ''}
       ${a.canRewrite ? `<button class="btn sm" data-act="edit" data-seq="${node.seq}" data-explain="act.edit">编辑</button>` : `<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 14))}…</span>`}
-      <button class="btn sm" data-act="annotate" data-seq="${node.seq}" data-explain="act.annotate">批注</button>
-      ${a.isInjection ? `<button class="btn sm" data-act="pin" data-seq="${node.seq}" data-explain="act.pin">存为不变量</button>` : ''}
+      ${a.canAnnotate ? `<button class="btn sm" data-act="annotate" data-seq="${node.seq}" data-explain="act.annotate">批注</button>` : ''}
+      ${a.pinnable ? `<button class="btn sm" data-act="pin" data-seq="${node.seq}" data-explain="act.pin">存为不变量</button>` : ''}
       ${draftOf(node.seq) ? `<button class="btn sm danger" data-act="apply" data-seq="${node.seq}" data-explain="act.apply">应用到会话</button>` : ''}
       ${familyOf(node.seq).length > 1 || node.versions ? `<button class="btn sm ghost" data-act="history" data-seq="${node.seq}" data-explain="act.history">版本历史</button>` : ''}
-    </div>
+    </div>`}
     ${S.historyFor === node.seq ? historyHtml(node) : ''}
     ${S.editor && S.editor.seq === node.seq ? editorHtml() : ''}
   </div>`;
 }
 function editorHtml() {
   const st = S.editor, blocked = S.sw.turnOpen || !S.sw.live;
+  const node = nodeOf(st.seq);              // 字段要按**底层类型**给（R3.2）：工具结果只给内容文本 + isError
   const title = st.kind === 'edit' ? `编辑 #${st.seq}（遮蔽原文）` : st.kind === 'annotate' ? `批注 #${st.seq}（保留原文）` : `把 #${st.seq} 存为不变量`;
   const note = st.kind === 'pin' ? '固定块逐字保存：插件不生成、不润色、不压缩。'
     : st.kind === 'annotate' ? '提交后会往会话追加一条更正消息，不可撤销；原文不会被遮蔽，模型两者都看到。'
@@ -796,9 +806,12 @@ function editorHtml() {
     <p class="etitle">${esc(title)}</p>
     <p class="enote">${esc(note)}</p>
     ${multiPara ? '<p class="enote">这条消息有多个文本段落；改写后会合并为一段。</p>' : ''}
-    ${st.kind === 'edit' ? `
+    ${st.kind === 'edit' ? (node && node.type === 'tool/result' ? `
+      <label class="field"><span>结果文本（工具结果只能改内容文本与错误标记；工具名/参数结构不许动）</span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>
+      <label class="field" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="edErr" style="width:auto;min-height:0" ${node.err ? 'checked' : ''}><span style="margin:0">标记为错误（isError）</span></label>`
+    : `
       <label class="field"><span>思考文本（可选；留空则沿用原文）</span><textarea rows="2" id="edR">${esc(st.reasoning || '')}</textarea></label>
-      <label class="field"><span>可见文本（预填的是宿主全文，不是 80 字预览）</span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>`
+      <label class="field"><span>可见文本（预填的是宿主全文，不是 80 字预览）</span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>`)
     : st.kind === 'annotate' ? `
       <label class="field"><span>理由</span><textarea rows="2" id="edWhy" placeholder="一句话说明为什么更正">${esc(st.reason || '')}</textarea></label>
       <div style="display:flex;gap:8px">
@@ -883,7 +896,7 @@ function editTurnInject(turn) {
   if (!hit) return false;
   S.selSeq = hit.req.seq; S.selTurn = hit.req.turn;
   S.openCat = 'inject'; S.openElem = hit.node.seq;
-  S.editor = { kind: 'edit', seq: hit.node.seq, text: hit.node.text, reasoning: '' };
+  S.editor = { kind: 'edit', seq: hit.node.seq, text: hit.node.text, reasoning: '', err: !!hit.node.err };
   S.editorError = null; S.editorOk = null; S.historyFor = null;
   render();
   const row = document.querySelector ? document.querySelector(`[data-elem="${hit.node.seq}"]`) : null;
@@ -1082,7 +1095,7 @@ function rowAct(btn) {
   const seq = Number(btn.dataset.seq), node = nodeOf(seq);
   if (!node) return;
 
-  if (act === 'edit') { S.editor = { kind: 'edit', seq, text: node.text, reasoning: '' }; S.historyFor = null; render(); toast(`打开 #${seq} 的内联编辑器（预填的是全文，不是 80 字预览）`); }
+  if (act === 'edit') { S.editor = { kind: 'edit', seq, text: node.text, reasoning: '', err: !!node.err }; S.historyFor = null; render(); toast(`打开 #${seq} 的内联编辑器（预填的是全文，不是 80 字预览）`); }
   if (act === 'annotate') { S.editor = { kind: 'annotate', seq, reason: '', voidFrom: String(seq), voidTo: String(seq) }; S.historyFor = null; render(); }
   if (act === 'pin') { S.editor = { kind: 'pin', seq, label: '', text: node.text }; S.historyFor = null; render(); }
   if (act === 'history') { S.historyFor = S.historyFor === seq ? null : seq; S.editor = null; render(); }
@@ -1118,10 +1131,12 @@ function submitEditor() {
   const st = S.editor; if (!st) return;
   const node = nodeOf(st.seq);
   if (st.kind === 'edit') {
-    const text = ($('edT') && $('edT').value) || '', reasoning = ($('edR') && $('edR').value) || '';
+    const isTool = node && node.type === 'tool/result';
+    const text = ($('edT') && $('edT').value) || '', reasoning = isTool ? '' : (($('edR') && $('edR').value) || '');
+    const errBox = $('edErr'), err = isTool ? !!(errBox && errBox.checked) : !!node.err;
     if (text === '' && reasoning === '') { S.editorError = '可见文本与思考文本不能同时为空'; render(); return; }
-    if (text === node.text && reasoning === '') { S.editorError = '没有实质改动 —— 宿主会拒绝这样的提交（no-change）'; render(); return; }
-    S.drafts[st.seq] = { seq: st.seq, text, reasoning, updatedAt: '12:1x', requestSeq: reqOf().seq };
+    if (text === node.text && reasoning === '' && err === !!node.err) { S.editorError = '没有实质改动 —— 宿主会拒绝这样的提交（no-change）'; render(); return; }
+    S.drafts[st.seq] = { seq: st.seq, text, reasoning, err, updatedAt: '12:1x', requestSeq: reqOf().seq };
     S.editor = null; render(); toast('已保存草稿（模型还看不到）→ 行上出现「未生效」，点「应用到会话」才生效'); return;
   }
   if (st.kind === 'annotate') {
@@ -1152,7 +1167,7 @@ function doApply(seq) {
   //    从 1300 起算的话**连改两次就会撞号** —— nodeOf() 会命中演示里那条同名 seq，张冠李戴（2026-10-01 实测）。
   const d = draftOf(seq), node = nodeOf(seq), ns = 1600 + S.applied.length;
   S.applied.push({ replacedSeq: seq, newSeq: ns, requestSeq: reqOf().seq, text: d.text, reason: d.reason || '', time: '12:1' + (S.applied.length % 9) });
-  S.extraNodes.push(N(ns, node.cat, node.type, d.text, node.tokens, { name: node.name, requestSeq: reqOf().seq }));
+  S.extraNodes.push(N(ns, node.cat, node.type, d.text, node.tokens, { name: node.name, requestSeq: reqOf().seq, err: !!d.err }));
   delete S.drafts[seq];
   render(); toast(`已应用：#${seq} 被遮蔽 → 新条目 #${ns}（原文仍在日志里；可用版本历史恢复）`);
 }
