@@ -134,6 +134,23 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (/\.tbar[^{]*\{[^}]*filter:\s*brightness/.test(flat)) problems.push('柱体：不许用 filter:brightness() 提亮（会改掉类别色，就是在这一步和分类树对不上的）');
 }
 
+/* 9) 两个实测踩到的写法，列为禁写：
+ *  · `data-explain` 挂在 <select>/<input>/<textarea> 上 —— 装不下子节点，编号会被浏览器丢掉
+ *    （用户问"编号在哪里？"）；这类元素要包一层 .pickwrap 再挂。
+ *  · 用 `document.querySelector('[data-turn=N]').click()` 这种跨卡片点按 —— [data-turn] 只在
+ *    "按步骤"模式的刻度格里才有，默认的按轮次模式下点了等于没点（用户："按钮点击没有效果"）。 */
+{
+  // ⚠️ 先剥掉注释：注释里为解释病因会把旧写法照样写一遍，不剥就会误报（第二次踩）
+  const jsCode = js.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ');
+  if (/<select[^>]*data-explain/.test(jsCode) || /<input[^>]*data-explain/.test(jsCode) || /<textarea[^>]*data-explain/.test(jsCode)) {
+    problems.push('讲解模式：data-explain 不许直接挂在 select/input/textarea 上（装不下编号）→ 外面包一层 .pickwrap');
+  }
+  if (/querySelector\('\[data-turn=/.test(jsCode)) {
+    problems.push('R1.4：不许再用 `[data-turn]` 跨卡片点按 —— 它只在按步骤模式存在，按轮次模式点了没反应；应直接调 editTurnUserMessage()');
+  }
+  if (!/class="pickwrap" data-explain/.test(jsCode)) problems.push('轮次/步骤下拉必须包在 .pickwrap 里再挂 data-explain');
+}
+
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
  * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
  * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */

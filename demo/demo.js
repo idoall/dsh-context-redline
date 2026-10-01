@@ -173,7 +173,7 @@ function markerOf(req) { return markersOfReq(req)[0] || null; }
 
 const initial = () => ({
   explain: false, selfcheck: false,
-  sw: { turnOpen: false, live: true, team: true, drafts: 0, compressBusy: false, pendingState: 'settled' },
+  sw: { turnOpen: false, live: true, team: true, drafts: 0, compressBusy: false, pendingState: 'settled', noUser: false },
   /* 趋势区选项（参照参考插件） */
   trendGran: 'turn', trendMode: 'total', trendAdaptive: true, trendCat: null,
   selTurn: RICH_TURN, selSeq: REQUESTS[REQUESTS.length - 1].seq,
@@ -287,7 +287,7 @@ function selectReq(req, why) {
 
 /* ------------------------------------------------------------------ 4. 状态开关 / 说明条 */
 function renderSwitches() {
-  const items = [['turnOpen', '轮次未结束'], ['live', '会话在本进程'], ['team', '官方团队可用'], ['compressBusy', '子会话正忙（压缩会 busy）']];
+  const items = [['turnOpen', '轮次未结束'], ['live', '会话在本进程'], ['team', '官方团队可用'], ['compressBusy', '子会话正忙（压缩会 busy）'], ['noUser', '本轮没有用户消息']];
   $('switches').innerHTML =
     items.map(([k, label]) => `<button class="sw" data-sw="${k}" aria-pressed="${!!S.sw[k]}" data-explain="ui.switch"><i></i>${label}</button>`).join('') +
     `<button class="sw" data-act="drafts" aria-pressed="${draftCount() > 0}" data-explain="ui.switch"><i></i>草稿 ${draftCount()} 条</button>` +
@@ -631,18 +631,57 @@ function renderTrend() {
   });
 }
 
+/**
+ * 一轮里**最后一条用户消息**（R1.4 的入口要用它）。
+ * 从该轮最后一步往前找：哪一步里有用户消息，就取那一步里最后一条用户消息。
+ */
+function turnLastUser(turn) {
+  const reqs = reqsOfTurn(turn);
+  for (let i = reqs.length - 1; i >= 0; i--) {
+    const us = nodesOfReq(reqs[i], true).filter((n) => n.cat === 'user');
+    if (us.length) return { req: reqs[i], node: us[us.length - 1] };
+  }
+  return null;
+}
+/**
+ * R1.4「改这一轮的用户消息」：切到该轮的**最后一条用户消息** → 展开「用户消息」类 →
+ * 滚到那一条并把内联编辑器展开（预填全文，不是 80 字预览）。
+ * ⚠️ 旧实现只有一句 `document.querySelector('[data-turn=N]').click()`，而 `[data-turn]`
+ * **只在"按步骤"模式的刻度格里才有** → 默认（按轮次）模式下点了等于没点
+ * （用户 2026-10-01 实测："按钮点击了没有效果？"）。而且它压根没做 R1.4 要求的后两件事。
+ * @returns 是否找到并展开（false = 这一轮没有用户消息，按钮应为置灰态）
+ */
+function editTurnUserMessage(turn) {
+  if (S.sw.noUser) return false;              // 演示"这一轮没有用户消息"的置灰态
+  const hit = turnLastUser(turn);
+  if (!hit) return false;
+  S.selSeq = hit.req.seq; S.selTurn = hit.req.turn;
+  S.openCat = 'user'; S.openElem = hit.node.seq;
+  S.editor = { kind: 'edit', seq: hit.node.seq, text: hit.node.text, reasoning: '' };
+  S.editorError = null; S.editorOk = null; S.historyFor = null;
+  render();
+  const row = document.querySelector ? document.querySelector(`[data-elem="${hit.node.seq}"]`) : null;
+  if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  toast(`已切到第 ${turn} 轮最后一条用户消息 #${hit.node.seq}，编辑器已展开`);
+  return true;
+}
 function renderStep() {
   const r = reqOf();
+  const hasUser = !S.sw.noUser && !!turnLastUser(r.turn);
   $('cardStep').innerHTML = `
     <div class="card-title">第 ${r.turn} 轮 · 第 ${r.step} 步（共 ${turnSteps(r.turn)} 步） <span class="hint">${r.time}${isLive() ? ' · 当前（下一次请求）' : ''}</span></div>
     <div class="cap">这一屏的条数：用户消息 ${visibleOf().filter((n) => n.cat === 'user').length} · 注入内容 ${visibleOf().filter((n) => n.cat === 'inject').length}
       ${markerOf(r) ? `· <b>✂ ${esc(markerOf(r).label)}</b>` : ''}</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-      <button class="btn sm" data-explain="turn.pick" onclick="document.querySelector('[data-turn=\\'${r.turn}\\']')?.click()">改这一轮的用户消息</button>
+      <button class="btn sm" data-act="editTurnUser" data-explain="turn.pick"
+        ${hasUser ? '' : 'disabled title="这一轮没有用户消息"'}
+        title="切到这一轮最后一条用户消息，展开编辑器">改这一轮的用户消息</button>
       <button class="btn sm ghost" data-act="pickLive" data-explain="turn.pick">回到当前</button>
     </div>`;
   const live = $('cardStep').querySelector('[data-act="pickLive"]');
   if (live) live.onclick = () => selectReq(REQUESTS[REQUESTS.length - 1], null);
+  const editUser = $('cardStep').querySelector('[data-act="editTurnUser"]');
+  if (editUser) editUser.onclick = () => { if (!editTurnUserMessage(r.turn)) toast('这一轮没有用户消息'); };
 }
 function renderEvents() {
   $('cardEvents').innerHTML = `
@@ -767,13 +806,13 @@ function renderBrowser() {
   $('cardBrowser').innerHTML = `
     <div class="card-title">上下文浏览器 <span class="hint">DNA 模式</span>
       <span class="grow" style="flex:1"></span>
-      <select class="btn sm" id="turnPick" data-explain="turn.pick" title="选轮次">
+      <span class="pickwrap" data-explain="turn.pick"><select class="btn sm" id="turnPick" title="选轮次">
         ${Array.from({ length: TOTAL_TURNS }, (_, i) => i + 1).map((t) => `<option value="${t}" ${t === S.selTurn ? 'selected' : ''}>第 ${t} 轮（共 ${turnSteps(t)} 步）</option>`).join('')}
-      </select>
-      <select class="btn sm" id="stepPick" data-explain="step.pick" title="选步骤">
+      </select></span>
+      <span class="pickwrap" data-explain="step.pick"><select class="btn sm" id="stepPick" title="选步骤">
         ${reqsOfTurn(S.selTurn).map((x) => `<option value="${x.seq}" ${x.seq === S.selSeq ? 'selected' : ''}>第 ${x.step} 步（共 ${turnSteps(S.selTurn)} 步） · ${x.time}</option>`).join('')}
         <option value="live" ${isLive() ? 'selected' : ''}>当前（下一次请求）</option>
-      </select>
+      </select></span>
     </div>
     <div class="cap" style="margin-bottom:6px">${esc(isLive() ? '当前 · 下一次请求' : `第 ${r.turn} 轮 · 第 ${r.step} 步（共 ${turnSteps(r.turn)} 步）`)} · 估算合计 ≈ ${fmt(total)} tokens${markerOf(r) ? ` · ✂ ${esc(markerOf(r).label)}` : ''}</div>
     <div id="catList">${CATS.map((c) => {
@@ -1135,7 +1174,12 @@ function applyExplain() {
        *   · 点按钮本身 → 照常走它自己的交互（不被拦截）
        * 之前我在捕获阶段拦了所有 [data-explain] 的点击，导致开着讲解模式就没法试按钮、只能刷新。
        */
-      el.classList.add('explain-num');   // 高亮（::after 虚线环）只跟着有编号的元素走
+      /* ⚠️ `select`/`input`/`textarea`/`img` **装不下子节点**：塞进去的 <span> 会被浏览器直接丢掉，
+       *    于是"编号根本看不见"（用户 2026-10-01 问"11 编号在哪里？"就是 <select> 上的那个）。
+       *    这类元素把编号挂到**父节点**上。 */
+      const canHost = !['select', 'input', 'textarea', 'img', 'br', 'hr'].includes(String(el.tagName || '').toLowerCase());
+      const host = canHost ? el : (el.parentElement || el);
+      host.classList.add('explain-num');   // 高亮（::after 虚线环）只跟着有编号的元素走
       const badge = document.createElement('span');
       badge.className = 'exnum' + (el.closest && el.closest('.trendscroll') ? ' exnum-in' : '');
       badge.textContent = String(no);
@@ -1149,7 +1193,7 @@ function applyExplain() {
       };
       badge.addEventListener('click', show);
       badge.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') show(e); });
-      el.appendChild(badge);
+      host.appendChild(badge);
     });
     if (!bar) { bar = document.createElement('div'); bar.className = 'explainbar'; document.body.appendChild(bar); }
         bar.innerHTML = `讲解模式已开：共 <b>${nodes.length}</b> 个序号 · 点<b>左上角序号</b>看它是做什么的；<b>按钮本身照常可用</b>（<span class="muted">Esc 关闭面板</span>）<span class="muted"> · 同类元素共用一个编号、只标一个</span>`;

@@ -42,6 +42,8 @@ const getById = (id) => {
 };
 // 三个"假的可讲解元素"：用来验证序号节点的注入与点击行为
 const explainHosts = Array.from({ length: 3 }, () => { const el = makeEl(); el.dataset.explain = 'act.edit'; return el; });
+// 需要时临时追加（例如模拟"data-explain 直接挂在 <select> 上"这种错误写法）
+const extraHosts = [];
 /* 趋势区：3 根柱子（中间那根是选中态）+ 2 个轮次刻度格 ——
  * 用来锁住"同类重复元素在讲解模式下只标一个编号"（真实页面里按步骤有 72 根柱子，
  * 每根都标就成了 102 个编号糊满图表，2026-10-01 实测）。 */
@@ -67,14 +69,14 @@ const document = {
   createElement: (t) => makeEl(t),
   querySelector: () => null,
   querySelectorAll: (sel) => {
-    if (sel === '[data-explain]') return explainHosts.concat(trendBars, trendCells);
+    if (sel === '[data-explain]') return explainHosts.concat(trendBars, trendCells, extraHosts);
     if (sel === '.exnum') {
       // 清理要覆盖**所有**宿主（含趋势柱体/刻度格），否则编号会在桩里累积，掩盖真实行为
-      return explainHosts.concat(trendBars, trendCells)
+      return explainHosts.concat(trendBars, trendCells, extraHosts)
         .flatMap((h) => (h.children || []).filter((c) => String(c.className).startsWith('exnum')));
     }
     if (sel === '.explain-num') {
-      return explainHosts.concat(trendBars, trendCells).filter((el) => el.classList.contains('explain-num'));
+      return explainHosts.concat(trendBars, trendCells, extraHosts).filter((el) => el.classList.contains('explain-num'));
     }
     if (sel === '#trendScroll .tbar') return trendBars;
     if (sel === '#trendScroll .tcell') return trendCells;
@@ -92,7 +94,7 @@ const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
-  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme };`;
+  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editTurnUserMessage, turnLastUser };`;
 
 /**
  * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
@@ -425,6 +427,37 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   const colors = [...html.matchAll(/background:([^;"]+)/g)].map((m) => m[1].trim());
   const catVars = new Set(api.CATS.map((c) => c.color));
   check('趋势柱体：段色直接取自 CATS（与分类树同一份）', colors.length > 0 && colors.every((v) => catVars.has(v)), `色值 ${[...new Set(colors)].join(' ')}`);
+}
+
+/* ---------------- R1.4「改这一轮的用户消息」必须**真的**做三件事 ----------------
+ * 旧实现只有一句 `document.querySelector('[data-turn=N]').click()`，而 [data-turn] 只在"按步骤"模式的
+ * 刻度格里才有 → 默认（按轮次）模式下点了等于没点（用户 2026-10-01 实测："按钮点击了没有效果？"）。 */
+{
+  const S = api.S();
+  S.selTurn = 1; S.selSeq = api.reqsOfTurn(1)[0].seq; S.openCat = null; S.openElem = null; S.editor = null;
+  const ok = api.editTurnUserMessage(1);
+  const expect = api.turnLastUser(1);
+  check('R1.4：点「改这一轮的用户消息」真的切到该轮最后一条用户消息', ok === true && expect !== null && S.selSeq === expect.req.seq, `selSeq=${S.selSeq} 期望 ${expect && expect.req.seq}`);
+  check('R1.4：并展开「用户消息」类', S.openCat === 'user', `openCat=${S.openCat}`);
+  check('R1.4：并就地展开编辑器（预填的是该条）', !!S.editor && S.editor.seq === expect.node.seq && S.editor.kind === 'edit', JSON.stringify(S.editor && { kind: S.editor.kind, seq: S.editor.seq }));
+  S.sw.noUser = true;
+  check('R1.4：这一轮没有用户消息时返回 false（按钮应为置灰态）', api.editTurnUserMessage(1) === false);
+  S.sw.noUser = false; S.openCat = null; S.openElem = null; S.editor = null; api.render();
+}
+
+/* ---------------- 编号不许塞进装不下子节点的元素（select/input/textarea/img） ----------------
+ * 用户 2026-10-01 问"11 编号在哪里？"—— `step.pick` 当时挂在 <select> 上，而 <select> 只能装 option，
+ * 塞进去的 <span> 被浏览器直接丢掉，编号自然看不见。这类元素要把编号挂到**父节点**上。 */
+{
+  const S = api.S();
+  const sel = makeEl('select'); sel.dataset.explain = 'step.pick';
+  const wrap = makeEl('span'); sel.parentElement = wrap;
+  extraHosts.push(sel);
+  S.explain = true; api.render();
+  const badgesIn = (el) => (el.children || []).filter((c) => String(c.className).startsWith('exnum')).length;
+  check('讲解模式：data-explain 落在 <select> 上时，编号挂到父节点（select 里装不下）', badgesIn(wrap) === 1 && badgesIn(sel) === 0, `父节点 ${badgesIn(wrap)} · select 本身 ${badgesIn(sel)}`);
+  check('讲解模式：高亮也跟着父节点（否则环也画不出来）', wrap.classList.contains('explain-num'));
+  S.explain = false; api.render(); extraHosts.length = 0;
 }
 
 /* ---------------- 汇报 ---------------- */
