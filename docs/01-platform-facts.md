@@ -486,6 +486,60 @@ SpawnTeammateRequest = {
 ⟹ 本插件**不重复造**：沿用官方入口（父会话页头谱系目录 + 右侧 Sidebar）；想在会话行上加"后代 N"这类标记，
    只能用上面那几个 action 插槽，**不能**让子会话出现在会话列表里。要"左侧可见"得走上游产品建议。
 
+### F37 · ★★ 会话之间**互通消息**的官方通道（多轮子会话的答案）· 实测（读安装树类型定义）
+
+用户 2026-10-01 问：能不能在主会话里创建一个新会话来当子会话，**与它互通消息（多轮）**？
+答：**能，而且我们选的"可续接"子会话本来就是多轮的** —— "只能一轮"是对 **one-shot**（`start()`）的印象，
+不是 continuable 的行为。三条公开 API（`$DSH_PKG/dsh-subagent/lib/types/index.d.ts`）：
+
+1. **人写的话 → 子会话的「下一个轮次」**：`ctx.subagents.prompt(request, signal)`
+   —— *"Deliver one **browser-authored** message to a continuable child through the exact live direct parent…
+   **Queue delivery targets a later turn**; steer delivery targets the nearest step"*。
+   ⟹ 每发一条就是它的**一个新轮次**；`steer` 则是插到**最近的步骤边界**（不打断当前这步）。
+   失败码含 `subagent/parent-unavailable`、`subagent/not-resumable`、`subagent/delivery-unavailable`（冷恢复遇容量上限）。
+2. **双向**：`ctx.subagents.sendMessage(sender, targetId, content, options)` ——
+   *"Steer one **model-authored** message to the sender's **direct parent or direct continuable child**.
+   A running target admits it at the nearest step boundary; an idle target **starts a turn**, and
+   **an absent direct child cold-resumes from persistence**."*
+   ⟹ 子 Agent 也能主动给父会话发消息；父忙→最近步骤边界接收、父闲→起一个轮次、**不在进程→冷恢复**。
+3. **可指定模型与推理档 + 短标签**：`SubagentStartRequest.agentOptions`
+   = *"Optional host-Agent **provider, model, reasoning-effort, and output-token** overrides.
+   Requires `SubagentCapabilities.agentOptions`; in-process providers merge them over the parent Agent's options."*；
+   `label` = *"Optional short display label persisted with a session-backed child."*
+
+**约束**（别忽略）：投递要求**直接父子邻接**（direct parent/child）且**发送方是 live Agent**；
+子会话可以冷恢复、父会话不可以。另有一条运行时账目 `subagent-settled`（best-effort：父不在进程就不投递）。
+
+**推论（我们据此决策）**：**不需要**为了"多轮"去造普通会话；反而普通会话**没有父子邻接** ⟹ 没有回程通道
+（`prompt`/`sendMessage` 都会以邻接被拒）。缺的只是**界面入口**（打开子会话 / 给它发消息），这属于我们的面板职责。
+
+### F37 · ★★ 会话之间**互通消息**的官方通道（多轮子会话的答案）· 实测（读安装树类型定义）
+
+用户 2026-10-01 问：能不能在主会话里创建一个新会话来当子会话，**与它互通消息（多轮）**？
+答：**能，而且我们选的"可续接"子会话本来就是多轮的** —— "只能一轮"是对 **one-shot**（`start()`）的印象，
+不是 continuable 的行为。三条公开 API（`$DSH_PKG/dsh-subagent/lib/types/index.d.ts`）：
+
+1. **人写的话 → 子会话的「下一个轮次」**：`ctx.subagents.prompt(request, signal)`
+   —— *"Deliver one **browser-authored** message to a continuable child through the exact live direct parent…
+   **Queue delivery targets a later turn**; steer delivery targets the nearest step"*。
+   ⟹ 每发一条就是它的**一个新轮次**；`steer` 则是插到**最近的步骤边界**（不打断当前这步）。
+   失败码含 `subagent/parent-unavailable`、`subagent/not-resumable`、`subagent/delivery-unavailable`（冷恢复遇容量上限）。
+2. **双向**：`ctx.subagents.sendMessage(sender, targetId, content, options)` ——
+   *"Steer one **model-authored** message to the sender's **direct parent or direct continuable child**.
+   A running target admits it at the nearest step boundary; an idle target **starts a turn**, and
+   **an absent direct child cold-resumes from persistence**."*
+   ⟹ 子 Agent 也能主动给父会话发消息；父忙→最近步骤边界接收、父闲→起一个轮次、**不在进程→冷恢复**。
+3. **可指定模型与推理档 + 短标签**：`SubagentStartRequest.agentOptions`
+   = *"Optional host-Agent **provider, model, reasoning-effort, and output-token** overrides.
+   Requires `SubagentCapabilities.agentOptions`; in-process providers merge them over the parent Agent's options."*；
+   `label` = *"Optional short display label persisted with a session-backed child."*
+
+**约束**（别忽略）：投递要求**直接父子邻接**（direct parent/child）且**发送方是 live Agent**；
+子会话可以冷恢复、父会话不可以。另有一条运行时账目 `subagent-settled`（best-effort：父不在进程就不投递）。
+
+**推论（我们据此决策）**：**不需要**为了"多轮"去造普通会话；反而普通会话**没有父子邻接** ⟹ 没有回程通道
+（`prompt`/`sendMessage` 都会以邻接被拒）。缺的只是**界面入口**（打开子会话 / 给它发消息），这属于我们的面板职责。
+
 ---
 
 ## 5. 其它已核实事实

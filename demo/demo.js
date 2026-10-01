@@ -44,7 +44,7 @@ const EXPLAIN = {
   'act.edit': { t: '编辑（遮蔽原文）', what: '改写这一条的内容。', effect: '先把改动存成本地草稿（模型还看不到）；确认后才"应用到会话"，届时原文被替换、模型再也看不到原文（但日志里仍在）。', rev: '草稿可放弃；已应用的改动可用"版本历史"恢复', confirm: '提交时要', refs: ['docs/03 R2.2 / R3.3', 'docs/01 F7'] },
   'act.annotate': { t: '批注（保留原文）', what: '不遮蔽原文，追加一条带「作废范围」的更正（一条普通 user 消息，不是伪造宿主内容）。', effect: '模型会同时看到原文与更正 —— 所以它是**请求式**的：靠措辞让模型照做，平台不保证。它会随快照（fork 种子）进子会话；不会被重新注入（不漂），但**长对话或压缩之后可能被摘要吞掉**。想要"确定生效"要用「编辑」+「应用到会话」。', rev: '不可撤销（追加即落地）', confirm: '提交时要（确认框里会写清它在快照里起什么作用）', refs: ['docs/03 R2.2 / R3.3.1', 'docs/01 F6'] },
   'act.pin': {
-    t: '存为不变量（把这段话"钉住"）',
+    t: '存为不变量（把这段话"钉住"，**全局**生效）',
     what: '**一句话**：把这一条的正文**逐字抄一份**存在插件本地，当成"标准口径"。\n'
       + '**为什么需要**：注入内容 / 技能注入这两类是**每一轮都由宿主重新塞给模型**的（AGENTS.md、项目约定、技能目录…）。\n'
       + '你这一轮把它改对了，下一轮宿主又塞了一份原文进来 —— 于是"改一轮漂一轮"。钉住一份原文，之后每轮都能**逐字比对**，\n'
@@ -70,15 +70,21 @@ const EXPLAIN = {
       + '冻结记录就是这个起点的书面凭证（出问题时你能说清"我是从哪一刻分出去的、当时有哪些口径在生效"）。\n'
       + '**它不做什么**：不会改模型看到的内容，也不会让模型"记住"什么；它只是一条本地记录。\n'
       + '**什么时候会用**：准备开子会话之前（把口径和进度钉在时间线上）；或者你想给"改到这里为止"留个标记。',
-    effect: '在「冻结记录」里多一行。会话内容与模型可见内容都不变。',
+    effect: '在「冻结记录」里**多加一行**（历史机制，不覆盖上一条；带时间、条目数、你写的备注）。会话内容与模型可见内容都不变。',
     rev: '可以删除这条记录',
     confirm: '要（短警示会说清"只写插件本地、不写会话"）',
     refs: ['docs/00 S5.2', 'docs/03 R5.1'] },
   'orch.spawn': {
     t: '开子会话（把这件事交给一个新会话来干）',
     what: '**一句话**：拿当前会话"已经聊完的部分"当**起点**，开一个**真的新会话**去干一件具体的活，首条任务由你写。\n'
-      + '**它就是你在别处看到的"主会话派活给子会话"**：子会话是独立会话（有自己的日志、自己的上下文）；\n'
-      + '它跑完后，平台会**尽力**往父会话投一条"结算通知"，父会话据此接着往下做（父会话当时不在进程里就不会投递 —— 界面会如实标"回流未确认"）。\n'
+      + '**它就是你在别处看到的"主会话派活给子会话"**：子会话是独立会话（有自己的日志、自己的上下文）。\n'
+      + '**它是多轮的**（这一条最容易误会）：可续接子会话**可以一直接收你的后续消息** —— 每发一条就是它的**一个新轮次**\n'
+      + '（官方 `ctx.subagents.prompt({delivery:"queue"})` = 排成下一个轮次；`steer` = 插到最近的步骤边界）。\n'
+      + '**双向互通**：子会话也能主动给父会话发消息（`ctx.subagents.sendMessage`）；父会话忙就在最近的步骤边界接收，\n'
+      + '空闲就起一个轮次，**父会话不在进程里也会冷恢复**（`docs/01` F37）。子会话收工时另有一条运行时的"结算通知"（best-effort，\n'
+      + '父不在进程就不投递 —— 界面会如实标"回流未确认"）。\n'
+      + '**可以指定模型与推理档**：开子会话时可以给它单独的 `provider / model / reasoningEffort`（`agentOptions`），\n'
+      + '也能给它一个短标签（`label`，例如"跑测试"）—— 在官方谱系目录/右栏里就带着这个标签显示。\n'
       + '**两条路**：团队可用时优先走官方 `spawnTeammate(context:"fork")`（于是它有官方名册/任务板/派活）；\n'
       + '团队不可用时退化成"裸可续接子会话"（没有任务板，界面会如实写出来）。\n'
       + '**种子是一次性的**：子会话只拿到"开它那一刻之前"的历史 —— 之后父会话的新轮次**不会**再进子会话；\n'
@@ -89,6 +95,20 @@ const EXPLAIN = {
     rev: '子会话可以归档，但"种子"不能再重来（历史只取一次）',
     confirm: '要（确认框列五项：种子范围 / 首条任务 / 继承范围 / 副作用走哪条路 / 取消会怎样）',
     refs: ['docs/06 §3.1 / §4.1', 'docs/03 R5.1.3'] },
+  'child.prompt': {
+    t: '给子会话发消息（它会变成它的新轮次）※ 不依赖官方团队',
+    what: '**一句话**：你在主会话里写一句话，直接发给这个子会话，成为它的**一个新轮次**。\n'
+      + '**为什么能多轮**：可续接子会话（continuable）本来就是**可以一直接收后续消息**的 ——\n'
+      + '官方 `ctx.subagents.prompt({delivery:"queue"})` 把**人写的**这条话排成它的下一个轮次；\n'
+      + '`delivery:"steer"` 则是插到它**最近的步骤边界**（不打断当前这步）。\n'
+      + '**它忙怎么办**：忙就排队（到步骤边界接收）；空闲就立刻起一个新轮次；\n'
+      + '**它不在进程里**时官方会冷恢复（容量满则报 `subagent/delivery-unavailable`，界面会翻成人话）。\n'
+      + '**反向也通**：子会话能用 `ctx.subagents.sendMessage` 主动给父会话发消息（父忙→最近步骤边界、父闲→起轮次、父不在进程→冷恢复）。\n'
+      + '**你要说的话由你写**：插件不生成、不润色一个字的正文。',
+    effect: '这条消息进入子会话的收件箱并排成它的下一个轮次。主会话内容不变（不是"把这条也塞进我自己的上下文"）。',
+    rev: '不可撤销（消息一旦被收件箱接受就落地）',
+    confirm: '要（确认框列：发给谁 / 走哪条通道 / 它现在的状态）',
+    refs: ['docs/01 F37', 'docs/06 §2', 'docs/03 R5.1.4'] },
   'child.open': { t: '打开', what: '跳到官方视图看这个子会话/成员的完整过程。', effect: '优先在右侧 Sidebar 打开；本插件不重画对话。**打开之后面板会跟着切到它的上下文** —— 所以子会话的上下文同样能编辑（改条目/批注/存为不变量/冻结/压缩），不需要两套界面。两条前提：① 它**轮次闭合**（正在跑就只能看）；② 它**在本进程**（拿不到它的 live agent 时只剩只读）。', rev: '只读跳转', confirm: '不需要', refs: ['docs/03 R5.1.1 / R5.1.3'] },
   'child.send': { t: '派活（经官方）', what: '给这个成员追加一条任务消息。', effect: '走官方通道（agentTeams.sendMessage），返回 accepted 或 queued；queued 不许重发。', rev: '不可撤销', confirm: '要（收件人/逐字正文/投递方式/理由）', refs: ['docs/06 §3.2', 'docs/01 F32'] },
   'child.totask': { t: '建成官方任务', what: '把这条待办写成官方任务板上的一条任务。', effect: '写进官方任务板——我们显示的就是官方那份数据，不另存一份。', rev: '可在官方任务板更新/关闭', confirm: '要', refs: ['docs/03 R5.1', 'docs/01 F34'] },
@@ -749,7 +769,19 @@ function renderEvents() {
     <div class="cap" style="margin-bottom:4px"><b>这一栏是干什么用的</b>：告诉你"上下文在哪一轮被压掉/剪掉过"。<br>
       为什么重要：<b>被压掉的条目从此改不了</b>（只能批注），而且压缩是<b>不可逆</b>的 —— 所以看到 ✂ 就知道"那之前的条目已经不在模型可见内容里了"。<br>
       <b>✂</b> 每个事件只标在它之后的<b>第一个请求</b>上（鼠标移到 ✂ 上看详情，点它可跳到那一次）。</div>
-    ${EVENTS.map((e) => `<div class="cap">#${e.seq} · ✂ ${KIND_LABEL[e.kind]} · ${esc(e.label)} → 标在第 ${(REQUESTS.find((r) => r.seq >= e.seq) || {}).turn} 轮 · 第 ${(REQUESTS.find((r) => r.seq >= e.seq) || {}).step} 步</div>`).join('')}
+    ${(() => {
+      /* 用户 2026-10-01：「内容是不变的，不拟真」→ 事件必须**随当前位置变化**：
+       * 当前这一步（含）之前发生过的算"已发生"；之后的标成"尚未发生"（灰）—— 那时候它还没被压/剪。 */
+      const cur = reqOf().seq;
+      const done = EVENTS.filter((e) => e.seq <= cur);
+      const later = EVENTS.filter((e) => e.seq > cur);
+      const line = (e, isDone) => {
+        const at = REQUESTS.find((r) => r.seq >= e.seq) || {};
+        return `<div class="cap${isDone ? '' : ' dim'}">${isDone ? '' : '<b>尚未发生</b> · '}#${e.seq} · ✂ ${KIND_LABEL[e.kind]} · ${esc(e.label)} → 发生在第 ${at.turn} 轮 · 第 ${at.step} 步</div>`;
+      };
+      return `<div class="cap" style="margin-top:2px">看的是<b>第 ${reqOf().turn} 轮 · 第 ${reqOf().step} 步</b>这一刻：<b>${done.length} 条已发生</b>${later.length ? ` · ${later.length} 条还没发生（下面灰色那几条）` : ''}</div>`
+        + done.map((e) => line(e, true)).join('') + later.map((e) => line(e, false)).join('');
+    })()}
     <div class="cap" style="margin-top:4px">共 ${TOTAL_TURNS} 轮 / ${REQUESTS.length} 次请求 —— 把趋势条拉宽就能看到全部。</div>`;
 }
 
@@ -1022,8 +1054,10 @@ function renderBlocks() {
     </div>`;
   }).join('');
   box.innerHTML = `
-    <div class="card-title">固定块（不变量） <span class="hint">注入内容每轮会被宿主重新注入 —— 钉住它，才能发现"漂了没有"</span></div>
-    <div class="cap" style="margin-bottom:4px">逐字保存：插件不生成、不润色、不压缩。漂移检查只做<b>逐字包含</b>判断（不含推断）。</div>
+    <div class="card-title">固定块（不变量） <span class="hint"><b>全局</b>：workspace 级，本会话与子会话都看得见</span></div>
+    <div class="cap" style="margin-bottom:4px"><b>这一栏是全局的</b>（不属于某一类条目）：<b>任何一轮、任何会话</b>想钉住的话都汇总到这里，之后每轮逐字比对、发现漂移就标出来。<br>
+      按钮之所以长在<b>条目行上</b>，只是因为"钉哪一段"要在那条上选 —— 钉下来的固定块本身对<b>整个上下文</b>生效。<br>
+      逐字保存：插件不生成、不润色、不压缩。漂移检查只做<b>逐字包含</b>判断（不含推断）。</div>
     ${S.invariants.length ? rows : '<div class="cap">还没有固定块。在<b>注入内容</b>那一类里点某条的「存为不变量」（例如 <b>AGENTS.md</b> / <b>memory-doc</b> / <b>runtime-context</b>）。</div>'}`;
   box.querySelectorAll('[data-act]').forEach((el) => {
     el.onclick = () => blockAct(el.dataset.act, el.dataset.id);
@@ -1085,7 +1119,7 @@ function renderOrch() {
     ${S.invariants.filter((b) => !b.retired).length === 0 ? '<span class="cap">建议先把目标 / 约束（尤其是每轮被重新注入的那几条）存为固定块，否则子会话里没人守漂移。</span>' : ''}
     </div>
 
-    <div class="subhead">冻结记录 <span class="hint">只写本地，不写会话</span></div>
+    <div class="subhead">冻结记录 <span class="hint">只写本地，不写会话 · <b>历史机制：每点一次加一条，不覆盖</b></span></div>
     ${S.snapshots.length
       ? S.snapshots.map((s) => `
       <div class="orch-row">
@@ -1110,6 +1144,8 @@ function renderOrch() {
         </div>
         <div class="orch-actions">
           <button class="btn sm ghost" data-act="copen" data-i="${i}" data-explain="child.open">打开</button>
+          ${x.src === 'own' ? `<button class="btn sm" data-act="cprompt" data-i="${i}" data-explain="child.prompt">发消息</button>
+          ${x.sent ? `<span class="cap">已排队 <b>${x.sent}</b> 条</span>` : ''}` : ''}
           <span class="cap">${x.state === 'running'
             ? '运行中：打开它 = 面板切到它的上下文；<b>轮次闭合前只能看，不能改</b>（要改就先等它空闲或打断）'
             : '打开它 = 面板切到它的上下文，就能像这里一样编辑'}</span>
@@ -1279,6 +1315,22 @@ function doApply(seq) {
 }
 function orchAct(b) {
   const act = b.dataset.act, i = Number(b.dataset.i);
+  if (act === 'cprompt') {
+    const x = S.children[i];
+    /* 官方能力（docs/01 F37）：`ctx.subagents.prompt({delivery:'queue'})` 把**人写的**一条话排成子会话的
+     * **下一个轮次**（steer 则是插到最近的步骤边界）—— 所以子会话是**多轮**的，能一来一回。 */
+    confirmModal({
+      title: '给这个子会话发一条消息',
+      warn: '这条消息会成为它的一个新轮次（子会话是多轮的）；它现在忙就排队，等它空闲或到步骤边界再执行。不可撤销。',
+      rows: [['发给', `${x.id}${x.label ? ' · ' + x.label : ''}`],
+             ['走哪条通道', '官方 ctx.subagents.prompt({delivery:"queue"}) —— 排队成为它的下一个轮次'],
+             ['它现在', x.state === 'running' ? '运行中：会在最近的步骤边界接收' : '空闲：会立刻起一个新轮次'],
+             ['你要说的话', '写在下面的理由框里（插件不生成任何内容）']],
+      needReason: true, okText: '排队发送', helpKey: 'child.prompt',
+      onOk: () => { x.sent = (x.sent || 0) + 1; render(); toast(`已排队给 ${x.id} 的消息（会成为它的新轮次）`); }
+    });
+    return;
+  }
   if (act === 'freeze') {
     const note = ($('snapNote') && $('snapNote').value.trim()) || '';
     const id = 'snap-20260930-' + String(120000 + S.snapshots.length * 137).slice(0, 6);

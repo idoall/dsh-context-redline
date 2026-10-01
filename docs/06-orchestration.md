@@ -134,6 +134,10 @@
 |---|---|---|---|---|
 | A1 | `apply`（遮蔽改写） | 往会话日志追加 replace 事件 | ❌ append-only，**原文永久对模型不可见**（但仍在日志里） | 改哪一条（`#seq`）、原文是什么、改成什么、为什么 |
 | A2 | `annotate`（批注） | 追加一条带作废范围的更正消息 | ❌ | 更正目标 `#seq`、作废范围、理由 |
+| A3 | **给子会话发消息**（会话互通） | 用 `ctx.subagents.prompt({delivery:"queue"\|"steer"})` 把**人写的**一条话排成子会话的**下一个轮次**（`steer`=最近步骤边界） | ❌ | 收件人 childId、正文逐字、投递方式、理由；返回收件箱 id |
+| A4 | 子会话 → 父会话 | 子 Agent 用 `ctx.subagents.sendMessage` 主动发消息（父忙→最近步骤边界、父闲→起轮次、父不在进程→冷恢复）；另有收工时的 `subagent-settled` 账目 | — | `docs/01` F37 |
+| A3 | **给子会话发消息**（会话互通） | 用 `ctx.subagents.prompt({delivery:"queue"\|"steer"})` 把**人写的**一条话排成子会话的**下一个轮次**（`steer`=最近步骤边界） | ❌ | 收件人 childId、正文逐字、投递方式、理由；返回收件箱 id |
+| A4 | 子会话 → 父会话 | 子 Agent 用 `ctx.subagents.sendMessage` 主动发消息（父忙→最近步骤边界、父闲→起轮次、父不在进程→冷恢复）；另有收工时的 `subagent-settled` 账目 | — | `docs/01` F37 |
 | A3 | `invariant.inject`（重注入固定块） | 追加一条固定块消息 | ❌ | 哪一块、正文逐字、为什么现在注入 |
 | A4 | `invariant.save` / `retire` | 写我们的 sqlite | ✅ 可退休（历史保留） | 标签、正文、作用域 |
 | A5 | `snapshot.create` | 写我们的 sqlite | ✅ 可删 | 切点（最后一个 `turn/end`）、条目数 |

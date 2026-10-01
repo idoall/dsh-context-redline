@@ -94,7 +94,7 @@ const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
-  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editTurnUserMessage, turnLastUser, editorHtml, editTurnInject, turnLastInject, blockDrift, blockAct };`;
+  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editTurnUserMessage, turnLastUser, editorHtml, editTurnInject, turnLastInject, blockDrift, blockAct, orchAct };`;
 
 /**
  * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
@@ -730,6 +730,58 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   // 上下文事件卡：必须说明"这一栏是干什么用的"
   const cap = registry.get('cardEvents').innerHTML;
   check('上下文事件卡：说明"这一栏是干什么用的"（不只是图标含义）', /这一栏是干什么用的/.test(cap) && /被压掉的条目从此改不了/.test(cap));
+}
+
+/* ---------------- 用户 2026-10-01「再四问」：全局性 / 随位置变化 / 历史机制 / 多轮子会话 ----------------
+ * ① 固定块是**全局**的（按钮在行上只是"要选钉哪一段"）；
+ * ② 上下文事件必须**随当前位置变化**（已发生 / 尚未发生）；
+ * ③ 冻结是**历史机制**（每点一次加一条，不覆盖）；
+ * ④ 开子会话必须说清"**多轮 + 双向 + 可指定模型与推理档 + 可带标签**"。 */
+{
+  const S = api.S();
+  // ① 全局性
+  S.invariants = []; S.applied = []; S.extraNodes = []; api.render();
+  const blocks = registry.get('cardBlocks').innerHTML;
+  check('固定块面板：写明它是**全局**的（不只属于注入内容/技能注入）', /全局/.test(blocks) && /workspace 级/.test(blocks), '');
+  check('固定块面板：解释"按钮为什么长在条目行上"（要选钉哪一段）', /按钮之所以长在/.test(blocks) && /钉哪一段/.test(blocks));
+
+  // ② 事件随位置变化
+  const early = api.REQUESTS[0].seq, late = api.lastOfTurn(api.TOTAL_TURNS).seq;
+  S.selSeq = early; S.selTurn = api.REQUESTS[0].turn; api.render();
+  const evEarly = registry.get('cardEvents').innerHTML;
+  S.selSeq = late; S.selTurn = api.TOTAL_TURNS; api.render();
+  const evLate = registry.get('cardEvents').innerHTML;
+  check('上下文事件：看早期那一步时，事件标成「尚未发生」', /尚未发生/.test(evEarly) && /条已发生/.test(evEarly));
+  check('上下文事件：看最后一步时，事件全部「已发生」且内容与早期**不一样**', !/尚未发生/.test(evLate) && evEarly !== evLate);
+
+  // ③ 冻结是历史机制
+  S.snapshots = [];
+  api.orchAct({ dataset: { act: 'freeze' } });
+  const afterOne = S.snapshots.length;
+  api.orchAct({ dataset: { act: 'freeze' } });
+  check('冻结：每点一次**加一条**，不覆盖（历史机制）', afterOne === 1 && S.snapshots.length === 2, `第一次=${afterOne} 第二次=${S.snapshots.length}`);
+
+  // ④ 多轮子会话的事实必须写在讲解词里
+  const sp = api.EXPLAIN['orch.spawn'].what;
+  check('开子会话说明：写明**可以多轮**（每发一条 = 一个新轮次）', /多轮的/.test(sp) && /新轮次/.test(sp));
+  check('开子会话说明：写明**双向互通**（子也能给父发，父不在进程会冷恢复）', /双向互通/.test(sp) && /冷恢复/.test(sp));
+  check('开子会话说明：写明可**指定模型与推理档**并给短标签', /reasoningEffort/.test(sp) && /label/.test(sp));
+  // ⑤ 「发消息」：官方通道 = 排成子会话的下一个轮次（多轮）
+  S.children = [{ id: '00aaaaaa', src: 'own', state: 'running', label: '跑测试', from: 'snap-1' }];
+  api.render();
+  api.orchAct({ dataset: { act: 'cprompt', i: 0 } });
+  check('发消息：先出确认框，且写明"会成为它的新轮次 / 忙就排队"', registry.get('modalWrap').hidden === false && /新轮次/.test(registry.get('modalWarn').textContent) && /排队/.test(registry.get('modalWarn').textContent));
+  check('发消息：确认框写明走的是官方通道', /ctx\.subagents\.prompt/.test(registry.get('modalList').innerHTML) && /queue/.test(registry.get('modalList').innerHTML));
+  document.getElementById('modalReason').value = '再跑一遍全量测试';
+  document.getElementById('modalOk').onclick();
+  check('发消息：确认后真的排上一条（行上出现已排队计数）', S.children[0].sent === 1 && /已排队/.test(registry.get('cardOrch').innerHTML));
+
+  S.sw.team = false; api.render();
+  const off = registry.get('cardOrch').innerHTML;
+  check('发消息（子会话通道）**不依赖官方团队**：团队关着它照样在', /data-act="cprompt"/.test(off));
+  check('派活（团队通道）团队关着就**不出现**（不是置灰）', !/data-act="csend"/.test(off));
+  S.sw.team = true;
+  S.invariants = []; S.snapshots = []; S.children = []; S.selTurn = api.TOTAL_TURNS; S.selSeq = late; api.render();
 }
 
 /* ---------------- 汇报 ---------------- */

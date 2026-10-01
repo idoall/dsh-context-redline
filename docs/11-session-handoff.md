@@ -68,7 +68,7 @@
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | `git log -1`：`demo(M0.5)+docs: 浏览器实测（1440/880/879/390）+ 修自测面板 undefined`（哈希不写死，避免"改完文件哈希就变"的自指） |
-| 进度 | `docs/10`：**DONE 62 / 共 195** |
+| 进度 | `docs/10`：**DONE 63 / 共 196** |
 | 当前卡点 | **M05-15 交互定稿（等用户按 R 编号提意见）**；其后 `M1-01 授权包①（等用户重启）` |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store） |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 6 张截图） |
