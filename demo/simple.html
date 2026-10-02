@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>改上下文 → 开新会话（最小版）</title>
+<style>
+  :root{
+    --bg:#fff; --bg2:#f6f7f9; --line:#e3e6ea; --fg:#1b1d21; --cap:#6b7280;
+    --brand:#5b6cff; --warn:#b45309; --ok:#0f766e; --danger:#b91c1c;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#1c1c1e; --bg2:#242426; --line:#33333a; --fg:#e8e8ea; --cap:#9aa0a6; --brand:#8b96ff; --warn:#f59e0b; --ok:#5eead4; --danger:#f87171; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--fg)}
+  header{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--line)}
+  header b{font-size:15px}
+  .sub{color:var(--cap);font-size:12.5px}
+  .fp{margin-left:auto;color:var(--cap);font-size:12px}
+  main{display:flex;flex-wrap:wrap;gap:14px;padding:14px 18px;align-items:flex-start}
+  .col{flex:1 1 min(420px,100%);min-width:0}
+  .card{border:1px solid var(--line);border-radius:10px;background:var(--bg2);overflow:hidden}
+  .card>h2{margin:0;padding:10px 12px;font-size:13px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:baseline}
+  .card>h2 .meta{margin-left:auto;color:var(--cap);font-weight:400;font-size:12px}
+  .cat{padding:6px 12px;color:var(--cap);font-size:12px;border-top:1px solid var(--line);background:var(--bg)}
+  .cat:first-of-type{border-top:0}
+  .row{display:flex;gap:8px;align-items:baseline;padding:8px 12px;border-top:1px dashed var(--line);cursor:pointer}
+  .row:hover{background:var(--bg)}
+  .row.sel{background:var(--bg);box-shadow:inset 3px 0 0 var(--brand)}
+  .id{color:var(--cap);font-size:12px;min-width:52px}
+  .name{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:0 6px;color:var(--cap)}
+  .txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tok{color:var(--cap);font-size:12px}
+  .badge{font-size:11px;border-radius:999px;padding:0 6px;border:1px solid var(--ok);color:var(--ok)}
+  .badge.note{border-color:var(--brand);color:var(--brand)}
+  .badge.lock{border-color:var(--line);color:var(--cap)}
+  .pane{padding:12px}
+  .pane h3{margin:0 0 6px;font-size:13px}
+  .full{white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:13px}
+  .cap{color:var(--cap);font-size:12.5px}
+  textarea{width:100%;min-height:96px;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:10px;font:inherit}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  button{font:inherit;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}
+  button.primary{background:var(--brand);border-color:var(--brand);color:#fff}
+  button.ghost{color:var(--cap)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  footer{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:12px 18px;border-top:1px solid var(--line);background:var(--bg2)}
+  footer .grow{flex:1;min-width:200px}
+  dialog{border:1px solid var(--line);border-radius:12px;background:var(--bg);color:var(--fg);max-width:620px;padding:0}
+  dialog::backdrop{background:rgba(0,0,0,.4)}
+  dialog .dhead{padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600}
+  dialog .dbody{padding:12px 14px}
+  dialog .dfoot{padding:12px 14px;border-top:1px solid var(--line);display:flex;gap:8px;justify-content:flex-end}
+  .kv{display:grid;grid-template-columns:88px 1fr;gap:4px 10px;margin:0}
+  .kv b{font-weight:500;color:var(--cap);font-size:12.5px}
+  .proof{background:var(--bg2);border:1px dashed var(--line);border-radius:8px;padding:10px;margin-top:8px;font-size:13px;white-space:pre-wrap}
+  .tiny{font-size:12px;color:var(--cap)}
+  .warn{color:var(--warn)}
+  #child[hidden]{display:none}
+</style>
+</head>
+<body>
+<header>
+  <b>上下文批改台 · 最小版</b>
+  <span class="sub">这一版只做三件事：<b>看</b>上下文 → <b>改</b>它 → <b>用改好的它开新会话</b>。不冻结、不草稿两步、不钉住、不漂移检查。</span>
+  <span class="fp">simple-1</span>
+</header>
+
+<main>
+  <div class="col">
+    <div class="card">
+      <h2>当前会话里有什么 <span class="meta" id="mHead"></span></h2>
+      <div id="list"></div>
+    </div>
+  </div>
+
+  <div class="col">
+    <div class="card">
+      <h2>选中那一条 <span class="meta">改完立刻写进上下文</span></h2>
+      <div class="pane" id="pane"><div class="cap">在左边点一条看全文。</div></div>
+    </div>
+
+    <div class="card" id="spawnCard" style="margin-top:14px">
+      <h2>改完之后 <span class="meta">这一步才是"用新规划去解决漂移"</span></h2>
+      <div class="pane">
+        <div class="cap" id="chgLine">还没有改过任何一条。</div>
+        <div class="btns">
+          <button class="primary" id="btnSpawn">用改好的上下文开新会话</button>
+          <span class="cap">新会话 = 一个干净的新对话，它带着你现在这份（改过的）上下文开始干活。</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span class="grow tiny" id="footNote">改动<b>保存即生效</b>：写进本会话的日志 —— 本会话与以后开的新会话都会看到（这就是平台唯一的方式：新会话的"开头"就是本会话日志的前缀）。</span>
+</footer>
+
+<dialog id="dlgSpawn">
+  <div class="dhead">用改好的上下文开新会话</div>
+  <div class="dbody">
+    <p class="kv">
+      <b>从哪儿开始</b><span>本会话「最后聊完的那一轮」为止（第 28 轮末）—— 平台自己算的，改不了。</span>
+      <b>会带上</b><span id="dCarry"></span>
+      <b>不会带上</b><span>本会话的工具授权（新会话要重新给）。此后本会话新聊的内容也不会进去。</span>
+      <b>第一步做什么</b><span>你写一句话，就是新会话的第一条消息。</span>
+    </p>
+    <textarea id="task" placeholder="例如：按新的口径把 README 双语改完并跑测试"></textarea>
+  </div>
+  <div class="dfoot">
+    <button class="ghost" id="dCancel">取消</button>
+    <button class="primary" id="dOk" disabled>创建并开始</button>
+  </div>
+</dialog>
+
+<dialog id="dlgChild">
+  <div class="dhead">新会话已开始 —— 它继承到的上下文是这样</div>
+  <div class="dbody" id="childBody"></div>
+  <div class="dfoot"><button class="primary" id="cClose">知道了</button></div>
+</dialog>
+
+<script>
+/* ------------------------------------------------------------------
+ * 需求（就这一句）：上下文漂移了 → 我改它 → 用改好的它开新会话接着干。
+ * 所以这里只有三个动作：
+ *   ① 看：列出这份上下文里有什么（按类分组，带条目数/token）
+ *   ② 改：点一条 → 改它（保存即写进上下文）／对不能改的（宿主保护 / 助手消息）加一句更正
+ *   ③ 开新会话：把"现在这份（改过的）上下文"交给一个新会话
+ * 为了不撒谎，两处平台事实必须写着：
+ *   · 保存 = 写进本会话日志（本会话与以后的新会话都会看到）
+ *   · 新会话的开头 = 本会话「最后聊完的那一轮」之前 —— 没有参数能挑更早的位置
+ * ------------------------------------------------------------------ */
+const DATA = {
+  turn: 28,
+  items: [
+    { id: 'sys1',    cat: '系统提示词', lock: '宿主保护，改不了', text: '你是一个严谨的工程助手，先读 AGENTS.md，再动手。', tok: 2300 },
+    { id: 'u1301',   cat: '用户消息',   text: '帮我把 README 双语改完并跑测试。', tok: 40 },
+    { id: 'u1305',   cat: '用户消息',   text: '依赖用 yarn 装，别用 pnpm。（← 这条要改：项目实际用 pnpm）', tok: 120 },
+    { id: 'inj3',    cat: '注入内容', name: 'AGENTS.md',    text: '本项目：提交前必须先跑全量测试。', tok: 1600, every: true },
+    { id: 'inj2',    cat: '注入内容', name: 'runtime-context', text: '当前环境：cwd=/repo，git 分支 main，Node v24.15.0', tok: 180, every: true },
+    { id: 'inj1297', cat: '注入内容', name: 'memory-doc',   text: '项目速览：把上下文浏览器做成可编辑的批改台。', tok: 700, every: true },
+    { id: 'sk9001',  cat: '技能注入', name: 'skill:run-tests', text: '跑测试用 `pnpm vitest run`（不要直接 node）。', tok: 900, every: true },
+    { id: 'a1293',   cat: '助手消息', annotateOnly: '助手消息改不了，只能加一句更正', text: '收到，我按 yarn 装依赖。', tok: 300 },
+    { id: 't1295',   cat: '工具结果', text: 'tests passed (12 files, 84 tests)', tok: 90 },
+  ],
+  changes: [],   // { id, kind:'edit'|'note', before, after }
+};
+const CATS = ['系统提示词', '工具定义', '用户消息', '注入内容', '技能注入', '助手消息', '工具结果'];
+let sel = null;
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const changedOf = (id) => DATA.changes.filter((c) => c.id === id);
+const effText = (it) => { const e = changedOf(it.id).filter((c) => c.kind === 'edit').pop(); return e ? e.after : it.text; };
+const notesOf = (it) => changedOf(it.id).filter((c) => c.kind === 'note').map((c) => c.after);
+
+function renderList() {
+  const box = $('#list'); box.innerHTML = '';
+  for (const cat of CATS) {
+    const rows = DATA.items.filter((i) => i.cat === cat);
+    const head = document.createElement('div');
+    head.className = 'cat';
+    head.innerHTML = `${cat} <span style="float:right">${rows.length} 条 · ≈${rows.reduce((s, r) => s + r.tok, 0)}</span>`;
+    box.appendChild(head);
+    if (!rows.length) { const e = document.createElement('div'); e.className = 'row'; e.style.cursor = 'default'; e.innerHTML = '<span class="cap">（这一类没有内容）</span>'; box.appendChild(e); continue; }
+    for (const it of rows) {
+      const ch = changedOf(it.id);
+      const r = document.createElement('div');
+      r.className = 'row' + (sel === it.id ? ' sel' : '');
+      r.dataset.id = it.id;
+      r.innerHTML = `<span class="id">${it.id}</span>
+        ${it.name ? `<span class="name">${esc(it.name)}</span>` : ''}
+        <span class="txt">${esc(effText(it).slice(0, 60))}</span>
+        ${ch.some((c) => c.kind === 'edit') ? '<span class="badge">已改</span>' : ''}
+        ${notesOf(it).length ? `<span class="badge note">已加更正${notesOf(it).length > 1 ? ' ×' + notesOf(it).length : ''}</span>` : ''}
+        ${it.lock ? '<span class="badge lock">只读</span>' : (it.annotateOnly && !ch.length ? '<span class="badge lock">只能加更正</span>' : '')}
+        <span class="tok">≈${it.tok}</span>`;
+      r.onclick = () => { sel = it.id; render(); };
+      box.appendChild(r);
+    }
+  }
+  const n = [...new Set(DATA.changes.map((c) => c.id))].length;
+  $('#mHead').textContent = `${DATA.items.length} 条 · ≈${DATA.items.reduce((s, r) => s + r.tok, 0)} tokens · 第 ${DATA.turn} 轮末`;
+  $('#chgLine').innerHTML = n ? `你已经改过 <b>${n}</b> 条（另有 ${DATA.changes.filter((c) => c.kind === 'note').length} 条更正）。` : '还没有改过任何一条。';
+}
+
+function renderPane() {
+  const it = DATA.items.find((i) => i.id === sel);
+  const pane = $('#pane');
+  if (!it) { pane.innerHTML = '<div class="cap">在左边点一条看全文。</div>'; return; }
+  const cur = effText(it);
+  const ch = changedOf(it.id).filter((c) => c.kind === 'edit');
+  pane.innerHTML = `
+    <h3>${esc(it.id)}${it.name ? ' · ' + esc(it.name) : ''} <span class="cap">${esc(it.cat)}</span></h3>
+    <div class="full" id="fullText">${esc(cur)}</div>
+    ${it.lock ? `<p class="cap warn">${esc(it.lock)}（宿主保护：系统提示词/工具定义不在会话里，改它要改装配层）</p>` : ''}
+    ${it.annotateOnly ? `<p class="cap warn">${esc(it.annotateOnly)}</p>` : ''}
+    ${ch.length ? `<p class="cap">原：<span style="text-decoration:line-through">${esc(ch[ch.length - 1].before.slice(0, 80))}</span></p>` : ''}
+    ${notesOf(it).length ? `<p class="cap">已加更正：${notesOf(it).map((t) => '「' + esc(t) + '」').join('、')}</p>` : ''}
+    <div id="editZone"></div>
+    <div class="btns">
+      ${it.lock ? '' : `<button class="primary" id="btnEdit">${ch.length ? '再改一次' : '改这一段'}</button>`}
+      <button id="btnNote">加一句更正</button>
+      ${ch.length ? '<button class="ghost" id="btnUndo">回退到原样</button>' : ''}
+    </div>
+    <p class="cap">保存 = 写进本会话的日志（<b>本会话与以后开的新会话都会看到</b>）。改完还能再改，也能回退。</p>`;
+
+  const zone = $('#editZone');
+  const openEdit = () => {
+    zone.innerHTML = `<textarea id="taEdit">${esc(cur)}</textarea>
+      <div class="btns"><button class="primary" id="saveEdit">保存并写进上下文</button><button class="ghost" id="cancelEdit">取消</button></div>`;
+    $('#cancelEdit').onclick = () => (zone.innerHTML = '');
+    $('#saveEdit').onclick = () => {
+      const v = $('#taEdit').value;
+      if (v === cur) { toast('没有改动'); return; }
+      DATA.changes.push({ id: it.id, kind: 'edit', before: cur, after: v });
+      render(); toast('已写进上下文');
+    };
+  };
+  const openNote = () => {
+    zone.innerHTML = `<textarea id="taNote" placeholder="一句话：这条应该改成什么 / 哪句作废"></textarea>
+      <div class="btns"><button class="primary" id="saveNote">加到它后面</button><button class="ghost" id="cancelNote">取消</button></div>`;
+    $('#cancelNote').onclick = () => (zone.innerHTML = '');
+    $('#saveNote').onclick = () => {
+      const v = $('#taNote').value.trim();
+      if (!v) { toast('写一句再保存'); return; }
+      DATA.changes.push({ id: it.id, kind: 'note', before: effText(it), after: v });
+      render(); toast('已加在它后面（原文保留，模型两者都看到）');
+    };
+  };
+  if ($('#btnEdit')) $('#btnEdit').onclick = openEdit;
+  $('#btnNote').onclick = openNote;
+  if ($('#btnUndo')) $('#btnUndo').onclick = () => {
+    for (let k = DATA.changes.length - 1; k >= 0; k--) if (DATA.changes[k].id === it.id && DATA.changes[k].kind === 'edit') DATA.changes.splice(k, 1);
+    render(); toast('已回退到原样');
+  };
+}
+
+function render() { renderList(); renderPane(); }
+
+/* 开新会话：诚实地只说两件平台事实 */
+$('#btnSpawn').onclick = () => {
+  const edited = DATA.items.filter((i) => changedOf(i.id).some((c) => c.kind === 'edit'));
+  const notes = DATA.items.filter((i) => notesOf(i).length);
+  $('#dCarry').innerHTML = `本会话到「最后聊完的那一轮」为止的内容：${DATA.items.length} 条 ≈${DATA.items.reduce((s, r) => s + r.tok, 0)} tokens`
+    + (edited.length ? `，其中 <b>${edited.length} 条是你改过的</b>（${edited.map((i) => i.id).join('、')}）` : '（你还没改过任何一条）')
+    + (notes.length ? `，另有 <b>${notes.length} 条更正</b>跟在你改的原句后面` : '');
+  $('#dOk').disabled = true; $('#task').value = '';
+  $('#dlgSpawn').showModal();
+};
+$('#task').oninput = (e) => ($('#dOk').disabled = !e.target.value.trim());
+$('#dCancel').onclick = () => $('#dlgSpawn').close();
+$('#dOk').onclick = () => {
+  const task = $('#task').value.trim();
+  $('#dlgSpawn').close();
+  const edited = DATA.items.filter((i) => changedOf(i.id).some((c) => c.kind === 'edit'));
+  const noted = DATA.items.filter((i) => notesOf(i).length);
+  $('#childBody').innerHTML = `
+    <p class="kv"><b>它从哪儿开始</b><span>本会话「最后聊完的那一轮」为止（第 ${DATA.turn} 轮末）—— 平台自己算的。</span>
+    <b>它读到的第一条</b><span>${esc(task)}</span></p>
+    <p style="margin:12px 0 4px"><b>你改过的那几条，它看到的是改后的（逐字）：</b></p>
+    ${edited.length ? edited.map((i) => `<div class="proof"><span class="cap">${i.id}${i.name ? ' · ' + esc(i.name) : ''}</span>\n${esc(effText(i))}</div>`).join('') : '<div class="cap">（这次没有改过任何一条）</div>'}
+    ${noted.length ? `<p style="margin:12px 0 4px"><b>你加的更正，它看到的是「原文 + 你的更正」两条：</b></p>
+      ${noted.map((i) => `<div class="proof"><span class="cap">${i.id} 原文</span>\n${esc(effText(i))}\n<span class="cap">${i.id} 更正</span>\n${esc(notesOf(i).join('\n'))}</div>`).join('')}` : ''}
+    <p class="tiny" style="margin-top:10px">新会话不会自动收到本会话后面的新内容；它的工具授权要重新给。</p>`;
+  $('#dlgChild').showModal();
+};
+$('#cClose').onclick = () => $('#dlgChild').close();
+
+function toast(msg) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:18px;background:var(--brand);color:#fff;padding:8px 14px;border-radius:999px;font-size:13px;z-index:9';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 1600);
+}
+
+render();
+</script>
+</body>
+</html>
