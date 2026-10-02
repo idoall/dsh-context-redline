@@ -196,6 +196,9 @@ tests/
 > 只读 **14**（= 自有读 **12** + 官方团队读 `team.members`/`team.tasks` **2**）；
 > 写入 **13**（表一，含 `child.interrupt`）；官方团队写入 **4**（表二）。合计 **31**。
 > 官方团队服务不存在（团队未启用）时，`team.*` 一律返回 `null`（不是空数组），界面据此**隐藏**对接点。
+>
+> ⚠️ **界面上的「钉住这一段」只写本地、不写会话**（`docs/11` D9）：它落 `invariant.save`（本地逐字基准），**不**落 `invariant.inject`。让它进模型上下文有两条路：① **开子会话时**由 `child.fork` 把当时在效的固定块**逐字拼进子会话的第一句话**（于是只有那个新会话的模型读到）；② 在本会话里手动点 `重注入`（`invariant.inject`，追加一条消息）。
+> —— 用户点一次确认就完成这两件事；**不许**拆成"只存本地、模型看不到"再让用户手动注入（那是用户明确否掉的形态）。
 
 **写入（表一：本插件数据 / 会话日志 / 子会话通道）—— 13 条**
 
@@ -213,7 +216,7 @@ tests/
 | `invariant.retire` | `{id}` | `{id, retired:true}` | 我们的 sqlite | ✅ |
 | `invariant.inject` | `{sessionId, id, reason}` | `{newSeq, flushed}` | **会话日志**（追加 user 消息） | ❌ |
 | `snapshot.create` | `{sessionId, label?, note?}` | `FreezeRecord` | 我们的 sqlite | ✅ 可删 |
-| `child.fork` | `{sessionId, snapshotId?, label, prompt}` | `{childId}` | **创建新会话**（优先 `ctx.agentTeams.spawnTeammate`；兜底 `ctx.subagents.startContinuable({provider:'fork', label, request:{parent, prompt}, signal})`） | 会话可归档，但父会话种子是**一次性**的 |
+| `child.fork` | `{sessionId, recordId?, label, prompt}` —— `recordId` 只用于**来源凭证/备注**（写 `snapshot_links`），**不是种子参数**：平台 fork **没有**任何切点参数（`docs/01` F38） | `{childId}` | **创建新会话**（优先 `ctx.agentTeams.spawnTeammate`；兜底 `ctx.subagents.startContinuable({provider:'fork', label, request:{parent, prompt}, signal})`）。**实际种子 = 平台自算的"当前最后一个 `turn/end` 及其之前"** | 会话可归档，但父会话种子是**一次性**的 |
 | `child.compact` | `{childId}` | `{compacted, items?, reason?}` | **子会话历史被摘要取代** | ❌ **不可逆** |
 | `child.prompt` | `{requestId（**由我们铸造**：`SubagentPromptRequestId`）, parentSessionId, childSessionId, mode:'continuable', delivery:'queue'\|'steer', content: PromptContentPart[]}` | `{messageId}`（`ctx.subagents.prompt(request, signal)` 的回执） | 子会话 inbox（人写的一条话 = 它的**下一个轮次**） | ❌ |
 | `child.interrupt` | `{childId, parentSessionId}` | `{accepted:true}` | 子会话（`ctx.subagents.interruptByParent(childSessionId, parentSessionId, 'continuable')`；**团队成员**走表二 `team.interrupt`） | ❌ 已提交的工作不回滚 |
@@ -262,16 +265,22 @@ $DSH_HOME/dsh-context-redline/
    ├─ invariants(id, session_id, version, created_at, label, text, retired_at, scope)
    ├─ history(id, ts, kind, session_id, category, action, payload)
    ├─ snapshots(id, session_id, created_at, cut_seq, label, note, digest, counts, invariants_json)
+   │     └ invariants_json = 当时在效固定块的快照（**含逐字正文**，不只是版本号 —— docs/11 D9）
    └─ snapshot_links(snapshot_id, child_id, created_at, note)
 ```
 
 > **子会话的权威事实在平台，不在我们这里**：谁是谁的子会话由**父会话日志**里的 `subagent/catalog` 事件决定
 > （投影 `subagentCatalog`）；状态与耗时来自子会话的 `subagentTiming`；完成原因来自父会话日志里的 `subagent-settled` 通知。
-> 我们的 `snapshot_links` **只记平台不知道的那一件事**："这个子会话是从哪条冻结快照开出来的"（+ 人写备注）。
+> 我们的 `snapshot_links` **只记平台不知道的那一件事**："这个子会话是从哪条冻结**记录**开出来的"（+ 人写备注）。
+> ⚠️ **它不是种子来源**：种子由平台 fork provider 自算（= 父会话**当前最后一个 `turn/end` 及其之前**），
+> 我们**没有任何参数**能指定更早的切点（`docs/01` F38）⟹ 这张关联只能表述成"**来源凭证**"，
+> **不许**在界面或文案里写成"种子 = 那条快照"（`docs/03` R5.1 / R4.7）。
 > ⟹ **不要复制一份 children 表**去和平台对账——那必然会漂移（`docs/01` F13.1）。
 
 - **不写** `$DSH_HOME/profiles/*`、不写 DSH 安装目录、不写会话日志（除非用户点了写入类动作）。
 - **`digest` = 内容哈希（`counts` = 条目数等计数）**，**不是**人话摘要：本插件**不生成任何摘要/总结**（N4：不产生 AI 生成内容），冻结记录里也不许出现"摘要"字样。
+- **`invariants_json` 存"当时在效固定块的快照"**（id / 标签 / 版本 / **逐字正文**）：这是"冻结真的冻住了那一刻"的落地方式 ——
+  开子会话时带的是**记录里这份**（块后来被改 / 退休都不影响），不是"现在在效的那份"（`docs/11` D9）。
 - `schema_version` 存在的理由：要**继承**早期那次尝试 时期已经存在的 `invariants` 表（用户已有的固定块不该丢）。
 - 机密性：这里存的是**用户自己的上下文正文**（可能含私密内容），与 DSH 会话日志同等敏感；不做任何外发。
 

@@ -238,6 +238,36 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   }
 }
 
+/* 19) 「点了没反应」的两条硬契约（用户 2026-10-02：「17 点了没有反应」）
+ *   ① 轮次刻度带**必须有选中态**：点完要能看出选了哪一格（原来只有 :hover，点完毫无痕迹）；
+ *   ② 触屏下**讲解序号与 ✂ 标记必须有 ≥44px 命中区**：它们分别是 16×15 / 24×16 的小节点，
+ *      而 .btn 那批早在 coarse 分支里放过 44px —— 序号是真实节点、手指点不到就等于"没反应"。 */
+{
+  const flat = css.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\s+/g, ' ');
+  if (!/\.tcell\.is-sel\s*\{/.test(flat)) {
+    problems.push('轮次刻度带必须有选中态样式（.tcell.is-sel）—— 否则点完看不出选了哪一格（用户 2026-10-02 报的「17 点了没反应」）');
+  }
+  if (!/@media \(pointer: coarse\)[\s\S]*\.exnum::after\s*\{[^}]*inset:\s*-/.test(flat)) {
+    problems.push('触屏下讲解序号（.exnum）必须用透明 ::after 撑出 ≥44px 命中区 —— 它只有 16×15px，手指点不到');
+  }
+  if (!/@media \(pointer: coarse\)[\s\S]*\.mark::after\s*\{[^}]*inset:\s*-/.test(flat)) {
+    problems.push('触屏下 ✂ 标记（.mark）也要撑出 ≥44px 命中区（它只有 24×16px）');
+  }
+}
+
+/* 20) 输入去向标记（`docs/03` R3.3.3）：凡"让你写字"的地方都必须带一个，**只有两种**
+ *   用户 2026-10-02：「整个 Demo 都存在这个问题：哪些编辑了模型能看到、哪些看不到」——
+ *   两种标记必须各自有一套样子（`.dest-model` 琥珀实线 = 会进模型上下文；`.dest-local` 灰虚线 = 只写本地），
+ *   否则"两种"就退化成"一团一样的灰字"，用户还是分不出来。 */
+{
+  if (!/\.dest-model\s*\{/.test(css) || !/\.dest-local\s*\{/.test(css)) {
+    problems.push('输入去向标记必须有两种不同样式（.dest-model = 会进模型上下文 / .dest-local = 只写本地）');
+  }
+  if (!/\.dest-model\s*\{[^}]*ds-color-amber/.test(css)) {
+    problems.push('.dest-model 必须用琥珀色区别于 `.dest-local`（用户要能一眼看出"这句模型会读到"）');
+  }
+}
+
 /* 附加：单文件版是否**真的是最新**（不是"看起来内联过"就行）——
  * 比对打包指纹（demo.css + demo.js 的 sha256 前 7 位）。单文件版内联、没有 ?v=N 查询串，
  * 改完 css/js 忘了重打包的话，外观上看不出任何区别，只能靠指纹抓。 */

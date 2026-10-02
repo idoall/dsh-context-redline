@@ -64,7 +64,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 产物 | `src/redline/`（纯逻辑：草稿存储、`node.read`（**全文**）、`apply`（**`user/message` 与 `tool/result`** 的 surface replace，校验照 `docs/01` F6/F7 写死；**`assistant/message` 一律拒绝**并给稳定原因码）、`rollback`（版本历史 + 恢复）、`annotate`（+ 作废范围）、固定块（逐字/版本/workspace/漂移检查/显式重注入）、sqlite（含 `schema_version` 与**幂等迁移**））；`src/shared/redline-route.ts` + `src/shared/redline-errors.ts`（两半共用的对外契约）；`src/host/redline-channel.ts`（唯一上游接线） |
+| 产物 | `src/redline/`（纯逻辑：草稿存储、`node.read`（**全文**）、`apply`（**`user/message` 与 `tool/result`** 的 surface replace，校验照 `docs/01` F6/F7 写死；**`assistant/message` 一律拒绝**并给稳定原因码）、`rollback`（版本历史 + 恢复）、`annotate`（+ 作废范围）、固定块（逐字/版本/workspace/**钉住只写本地**；**开子会话时把在效固定块逐字拼进首条任务**（`docs/11` D9）；漂移检查**排除我们自己写进会话的消息**；`重注入`＝往本会话再强调一次）、sqlite（含 `schema_version` 与**幂等迁移**））；`src/shared/redline-route.ts` + `src/shared/redline-errors.ts`（两半共用的对外契约）；`src/host/redline-channel.ts`（唯一上游接线） |
 | 依赖 | M1 |
 | 测试 | 自有 lane：纯逻辑（资格判定 / 行投影 / 漂移逐字判定 / 范围校验 / 快照序列化）；**真实路由级端到端**（捕获宿主注册的精确路由 → 按真实 RPC 信封调用 → 读回 SQLite/草稿文件断言） |
 | 验收人 | **代码级自验**（fake ctx + detached 会话）→ 我；**平台语义**（真机会话上的 replace/回滚/历史正文读取）→ **留给 M4.5 复验**，不由 M2 下定论 |
@@ -114,10 +114,10 @@
 | 项 | 内容 |
 |---|---|
 | 产物 | 一份**逐项**的平台能力验证记录（命令 + 原始输出 + 结论），写回 `docs/01` §6（把"待验证"改成"实测"或"不存在"） |
-| 要验的项 | ① `ctx.sessionQuery` 是否挂载 ② `ctx.agents.get(sessionId)` 是否可得 ③ `subagents.getProvider('fork')` 是否存在 ④ `ctx.compaction` 是否挂载 ⑤ **真机会话**上的替换/回滚（V7）⑥ 被遮蔽原文能否读回（V8）⑦ 跨压缩 checkpoint 的区间替换（V9）⑧ 命令/服务注册入口可用 |
+| 要验的项 | ① `ctx.sessionQuery` 是否挂载 ② `ctx.agents.get(sessionId)` 是否可得 ③ `subagents.getProvider('fork')` 是否存在 ④ `ctx.compaction` 是否挂载 ⑤ **真机会话**上的替换/回滚（V7）⑥ 被遮蔽原文能否读回（V8）⑦ 跨压缩 checkpoint 的区间替换（V9）⑧ 命令/服务注册入口可用 ⑨ **有没有受支持的"更早切点"分叉路径**（**V14** —— 决定"多条冻结记录是不是真的多个起点"，见 `docs/01` F38；预期结论 = 没有） |
 | **两个授权包（避免"授权-依赖死锁"）** | **包 A（只读探测，风险为零）**：①–④ + V8 的**读取**部分，可先在**专用测试会话**上跑，随 M1 之后即可进行；<br>**包 B（破坏性验证，需你逐次授权）**：V7/V9 —— 需要**创建并只破坏一个专用的一次性会话**，事前列出精确的 append/replace 范围与"留痕/清理"策略。<br>**包 B 未授权时**：M4.5 不得判 pass；按 §"能力开关"取 `capability=false` 的保守配置**关闭对应按钮**，让其余 M5 子集仍可验收（不许停摆） |
 | 能力开关（代码形态） | M4.5 的结论不是"文档里写一句"，而是**一组可读的能力标志**（例如 `capabilities = { sessionQuery, agents, fork, compaction, rollbackHistory }`），由它**驱动**：① 界面上哪些按钮存在 ② `docs/00` 的 S 条适用哪一档 ③ 哪些测试条件被跳过。**界面上不允许出现"能力为 false 但按钮还在"的组合** |
-| 同步变更表（**M4.5 的 DoD 要求逐项提交 diff**） | 每验完一项，必须同步改这三处并提交 diff：<br>· **V1 失败** → `docs/00` S1/S2/S8 加"冷会话只读"限定；`docs/03` 版本历史/编辑按 live-only 收口<br>· **④ compaction 缺失** → `docs/03` R5.3 只保留"引导 /compact"，**不显示执行按钮**<br>· **② agents 不可得** → `docs/03` R5.1 移除 `派活`/`开子会话`/`打断`；`docs/00` S5 整条改写为"引导用原生工具"，`docs/03` §7 的 19/23 条改为"不存在"<br>· **③ fork provider 缺失** → 同上一档（M5 整块不做，`plan.next` 只留"提交草稿/固定不变量"）<br>· **⑥ V8 失败** → `docs/03` R4.5 全表按"不可预览/不可恢复"；§7 第 15 条改为只验第 16 条的关闭态<br>· **⑦ V9 失败/未验** → 界面上不出现区间替换入口 |
+| 同步变更表（**M4.5 的 DoD 要求逐项提交 diff**） | 每验完一项，必须同步改这三处并提交 diff：<br>· **V1 失败** → `docs/00` S1/S2/S8 加"冷会话只读"限定；`docs/03` 版本历史/编辑按 live-only 收口<br>· **④ compaction 缺失** → `docs/03` R5.3 只保留"引导 /compact"，**不显示执行按钮**<br>· **② agents 不可得** → `docs/03` R5.1 移除 `派活`/`开子会话`/`打断`；`docs/00` S5 整条改写为"引导用原生工具"，`docs/03` §7 的 19/23 条改为"不存在"<br>· **③ fork provider 缺失** → 同上一档（M5 整块不做，`plan.next` 只留"提交草稿/固定不变量"）<br>· **⑥ V8 失败** → `docs/03` R4.5 全表按"不可预览/不可恢复"；§7 第 15 条改为只验第 16 条的关闭态<br>· **⑦ V9 失败/未验** → 界面上不出现区间替换入口<br>· **⑨ V14 不通过（预期结论）** → `docs/03` R5.1 保持"**只有切点 == 当前最后一个 `turn/end` 的记录**才给开子会话入口，更早的记录只给原因与替代路径"；**通过** → 恢复"每行都是可选起点"，同步改写 `docs/01` F38 的结论与 `docs/03` R5.1/R4.7，并关闭 `docs/10` M7-04 |
 | 测试 | 包 A 写成脚本（只读）；包 B 在你在场时跑，并留**原始输出**（命令 + 日志片段） |
 | 验收人 | **自验**（包 A）+ **你**（包 B，逐次授权） |
 | 退出条件 | 每项都有结论（实测 / 不存在）；**每一处"能力为 false"都已在 `docs/00` 的 S 条、`docs/03` 的按钮集合与 `docs/05` 的测试前置里落成真实口径**（三处 diff 已提交）；不存在"文档说降级、按钮还在"的状态 |
@@ -126,9 +126,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 产物 | `src/redline/`（编排判定，纯逻辑）+ `src/client/`（面板）+ `src/host/redline-channel.ts`（唯一上游接线）：冻结记录；**建子会话（A′ 对接官方）**——**优先** `ctx.agentTeams.spawnTeammate(lead, { context:'fork', provider:<forkProvider>, … })`（进 roster 的正式成员，种子=父会话已完成轮次），**兜底** `ctx.subagents.startContinuable({provider:'fork'})`（裸子会话，界面如实标注）；**官方对接**：`team.tasks`/`team.members` 读投影、`createTask`/`updateTask` 写官方任务板、`sendMessage` **经官方**派活、`interrupt`（团队成员）／`interruptByParent`（裸子会话）；`ctx.compaction.compactNow(...)` + 失败码映射；**结果回流可见性**（读父会话 `subagent-settled`）；`plan.next` 判定与面板。**可选注入** `agentTeams`（团队未启用时对接点全部消失） |
-| 依赖 | **M4.5 已逐项给出结论**，且 **V12/V13 必须通过**（服务层调用可用、`spawnTeammate(context:'fork')` 能建出成员） |
-| 测试 | 纯逻辑（`plan.next` 的判定次序与"是否需要授权"）可自验；**真机每一步都要证据**：新成员在**官方 roster**里可见、种子=父会话已完成轮次、父会话新轮次**不进去**、压缩后出现 `compaction/*`、`createTask` 后**官方任务板能看到**、`sendMessage` 返回 `accepted/queued` |
+| 产物 | `src/redline/`（编排判定，纯逻辑）+ `src/client/`（面板）+ `src/host/redline-channel.ts`（唯一上游接线）：冻结记录；**建子会话（A′ 对接官方）**——**优先** `ctx.agentTeams.spawnTeammate(lead, { context:'fork', provider:<forkProvider>, … })`（进 roster 的正式成员，**种子 = 平台自算的"当前最后一个 `turn/end` 及其之前"**，见 `docs/01` F38），**兜底** `ctx.subagents.startContinuable({provider:'fork'})`（裸子会话，界面如实标注）；**官方对接**：`team.tasks`/`team.members` 读投影、`createTask`/`updateTask` 写官方任务板、`sendMessage` **经官方**派活、`interrupt`（团队成员）／`interruptByParent`（裸子会话）；`ctx.compaction.compactNow(...)` + 失败码映射；**结果回流可见性**（读父会话 `subagent-settled`）；`plan.next` 判定与面板。**可选注入** `agentTeams`（团队未启用时对接点全部消失） |
+| 依赖 | **M4.5 已逐项给出结论**，且 **V12/V13 必须通过**（服务层调用可用、`spawnTeammate(context:'fork')` 能建出成员）**、V14 必须有结论**（起点口径：能否指定更早的切点 —— 没有就只能做 `docs/03` R5.1 的降级形态） |
+| 测试 | 纯逻辑（`plan.next` 的判定次序与"是否需要授权"）可自验；**真机每一步都要证据**：新成员在**官方 roster**里可见、**种子 = 平台口径（当前最后一个 `turn/end` 及其之前；不是我们点的那条记录）**、父会话新轮次**不进去**、压缩后出现 `compaction/*`、`createTask` 后**官方任务板能看到**、`sendMessage` 返回 `accepted/queued` |
 | 验收人 | **你在场，逐动作授权** |
 | 授权点（**逐个**） | ① `child.create`（建成员/裸子会话）② `child.compact`（不可逆）③ `派活`（**经官方** `sendMessage`，写成员邮箱）④ `team.task.create`/`update`（写官方任务板）⑤ `invariant.inject`（写会话）⑥ `apply`/`annotate`（写会话） |
 | 降级路径 | 若 V2 失败（压缩后端缺失）→ 压缩改为"引导你在子会话里执行 `/compact`"，插件只做体检与记录 |
@@ -138,7 +138,7 @@
 1. **草稿门槛**：有未提交草稿时「冻结」「开子会话」被阻止并逐条给出处置；清零后放行。
 2. **冻结不写会话**：冻结前后会话事件数不变。
 3. **「允许创建」确认框**（S5.3）：取消 → `child.list` 无新会话；确认 → 新会话存在。
-4. **种子正确**：子会话能看到父会话的**已完成轮次**；父会话**其后**再跑一轮，子会话日志**无变化**（两条都要原始比对）。
+4. **种子正确（按平台口径，不是按我们点的那条记录）**：① 子会话能看到父会话**到"当前最后一个 `turn/end` 为止"**的已完成轮次（**逐字比对**，含我们已应用的编辑）；② 父会话**其后**再跑一轮，子会话日志**无变化**（原文比对）；③ **反向（P0 的回归）**：先冻一条记录 → 在父会话里再跑完一轮 → 从那条更早的记录开子会话 → 子会话**必须**继承到**新的**最后一个 `turn/end`（= 更早的切点**复现不了**），且界面上**没有任何地方**把它说成"那条记录的种子"（`docs/01` F38 / `docs/05` A25/A26）。
 5. **压缩如实报**（S5.4）：执行前列出将被替代的区间与条目数 + 不可逆提示；执行后显示实际范围；`busy` 能被复现并显示人话。
 6. **派活闭环**（S5.5）：人写任务 → 子会话 idle→running 并留下**可核对的任务执行事件** → 主会话显示状态 → **打断**后状态可见。
 7. **不膨胀可观测**（S9）：记录派活前后的父会话**事件数**与**字节增量**，并逐条说明增量来源；若用 token 则说明口径，若不可靠就只用事件数/字节。

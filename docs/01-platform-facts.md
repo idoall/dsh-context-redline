@@ -541,6 +541,28 @@ SpawnTeammateRequest = {
 **推论（我们据此决策）**：**不需要**为了"多轮"去造普通会话；反而普通会话**没有父子邻接** ⟹ 没有回程通道
 （`prompt`/`sendMessage` 都会以邻接被拒）。缺的只是**界面入口**（打开子会话 / 给它发消息），这属于我们的面板职责。
 
+### F38 · ★★ 起点**不可选**：调用方无法指定"更早的切点"做种子（读安装树类型定义 + provider 源码）
+
+> 存在理由（2026-10-01 另一模型只读评审 P0）：我们按用户要求把"每条冻结记录行上都能开子会话"写成界面结构
+> （`docs/03` R5.1），文案写成"**种子 = 这一条**" —— **这与平台能力不符**。这一条把边界钉死，实现期不许再猜。
+
+| # | 事实 | 证据（本机安装树 `$DSH_PKG`） |
+|---|---|---|
+| ① | fork 种子 = 父会话日志里**最后一个 `turn/end` 及其之前**的全部事件；一轮都没完成过就从**空上下文**起 | `dsh-subagent-fork-in-process/lib/index.js:23-28`（`completedTurnPrefix`：`events.findLast(e => e.type === "turn/end")` → `slice(0, lastEnd.seq + 1)`） |
+| ② | **两条创建路径都用它**：`start` 与 `prepareContinuable` 各调一次，**没有任何分支看别的切点** | 同上 `:48-55`（`start` → `:49`、`prepareContinuable` → `:53`） |
+| ③ | 调用方**没有参数能传种子**：`startContinuable(spec)` 的 `spec.request` = `Omit<SubagentStartRequest,'label'\|'signal'\|'outputSchema'>`，其中**没有** `seed` / `cutSeq` / `snapshotId` | `dsh-subagent/lib/types/types.d.ts:26-44`（`ContinuableStartSpec`）；`dsh-subagent/lib/types/index.d.ts:142` |
+| ④ | 交给 provider 的"创建请求"只有 `{ sessionId, parent, signal }` —— **种子完全由 provider 自算** | `dsh-subagent/lib/types/types.d.ts:208-218`（`ContinuableCreateRequest`） |
+| ⑤ | 但**数据契约**本身允许"更早的闭合前缀"（连续、从 seq 0、无损、平衡）⟹ 这是**接口缺口**，不是数据不可能 | `dsh-subagent/lib/types/types.d.ts:225-231`（`ContinuableCreateSpec.seed`） |
+| ⑥ | 官方团队同样只有二选一：`context: 'fresh' \| 'fork'`，**没有**切点/快照/seed 参数；实现转手时只传 `{ childId, provider, label, request:{ prompt, parent: root }, signal }` | `dsh-experimental-agent-team/lib/types/types.d.ts:32-50`；`.../lib/index.js:573-580`、`:1764`（`spawnTeammate`） |
+
+**⟹ 设计结论（裁定 = `docs/11` D8）**
+1. **实际种子由平台决定** = "**当前最后一个已完成轮次末**"；我们只能传**首条任务**（`request.prompt`）。
+2. **冻结记录是凭证（审计 + 备注），不是可选种子**：它的三条客观字段记录"我在这一刻冻过什么"；
+   **只有切点 == 当前最后一个轮次末**的那条记录才与现实种子重合；**更早的记录平台复现不了**（不是我们不做）。
+3. 因此界面**不许**再写"种子 = 这一条"，也**不许**在更早的记录上给「从这里开子会话」入口 ——
+   按 `docs/03` R2.3 / R4.7：**入口不出现 + 写明原因 + 给替代路径**。
+4. 想要"从更早的切点分叉"必须**平台先给出可指定的种子**：待验证项见 §6 **V14**，排期见 `docs/10` **M7-04**。
+
 ---
 
 ## 5. 其它已核实事实
@@ -568,7 +590,7 @@ SpawnTeammateRequest = {
 
 | # | 待验证项 | 怎么验 | 影响 |
 |---|---|---|---|
-| V1 | `ctx.sessionQuery` 在本机 web profile 是否**真的挂载**（它在 base bundle 里） | `dsh --profile web --dump-config` + 在插件里 `ctx.inject(['sessionQuery'], …)` | 若不挂载，读路径要退回 live Session（并接受"只能读 live 会话"的降级） |
+| V1 | `ctx.sessionQuery` 在本机 web profile 是否**真的挂载**（它在 base bundle 里） | `dsh --profile web --dump-config` + 在插件里 `ctx.inject(['sessionQuery'], …)` | 若不挂载：**只有在我们另有"已核实的非废弃异步 live 读路径"时才允许退回 live Session**；否则按 `docs/00` S10 收口为"不提供读取/编辑入口，只显示不可用说明"。**任何情况下都不许**调用 `eventAt` / `snapshotEvents` / `ownEvents`（`AGENTS.md` §2.2） |
 | V2 | `dsh-subagent-fork-in-process` 与 `dsh-compaction-basic` 是否都在 web profile 挂载 | 同上；本会话有 `subagent_fork` 工具 = fork 侧已挂载（强证据，但仍需确认 `fork` provider 名） | 若压缩后端缺失 → 压缩降级为"人在子会话执行 `/compact`" |
 | V3 | `ctx.agents.get(sessionId)` 对**用户当前正在看的那个会话**是否总能拿到（尤其是没在跑轮次时） | 真机调用 + 日志 | 拿不到就不能 fork/派活，只能引导用户用原生工具 |
 | V4 | 上游 `v0.59.2` 的投影 `stateVersion`（我们的基线复制后必须**改名**，因此不受其值影响，但要知道） | `git show v0.59.2:src/host/timeline.ts` | 只影响"万一不改名"的失败模式 |
@@ -581,3 +603,4 @@ SpawnTeammateRequest = {
 | V11 | `startContinuable({provider:'fork', …})` 在**真机**上端到端跑通，且**把失败情形也验掉**：① 子会话初始消息里**确实含**返回指引且 `send_message` 可用；② 父会话**在进程里**时 settle → 父日志出现 `subagent-settled`；③ 父会话**不在进程里**时 → 确认"不投递"这一行为（别期待有通知）；④ 父会话**正忙**时 → 确认走 steer 而不是立刻开新轮；⑤ 投递异常时只有 warn | 真机（包 B 授权后）：建专用会话 + 续存 fork 子会话，逐情形跑 | 决定"主会话能否接着干"这条主线的**真实**边界；若 ② 不稳或 ③ 常见 → M5 必须在面板上给"未确认/需人工查看"，并提供"让主会话接着做"的人工入口 |
 | V12 | **官方 Agent Teams 启用时，我们的服务层调用是否仍可用**：① `ctx.subagents.getProvider('fork')` 是否仍在册；② `ctx.subagents.startContinuable({provider:'fork'})` 是否仍能建；③ 会话里到底还有没有 `subagent` / `subagent_fork` 工具（bundle 声明禁用了它们，但**以会话工具表实测为准**） | ① `dsh --profile web --dump-config` 看 `tool-subagent*` 是否为 `disabled`；② 真机调一次 `getProvider('fork')`（只读） | ⚠️ 这是 M5 的**地基**：官方禁的是**工具**、我们用的是**服务**。若服务也受影响 → M5 主线改为"引导用户走官方团队"，我们的面板只保留"编辑 + 快照" |
 | V13 | **对接面在真机上可用**：① 插件**可选注入** `agentTeams` 能否成功（团队启用/未启用两种情形都不该让插件加载失败）；② `ctx.agents.get(sessionId)` 拿到的 Agent 能否通过 `tryMembership` 判定为 Lead；③ `spawnTeammate(lead, {context:'fork'})` 能否建出一个**进 roster、种子=父会话已完成轮次**的成员；④ `listTasks` / `createTask` / `sendMessage` 能否按名册名调用；⑤ 客户端能否读到 `agentTeam` 投影 | 真机（包 B 授权后）：在**专用会话**里逐项调；同时看官方面板是否出现该成员与任务 | 决定 A′（对接官方）是否成立。**若 `spawnTeammate` 不可用** → 降级为裸 `startContinuable` + 只读跳转（不再提供派活/任务板对接） |
+| V14 | **有没有受支持的"更早切点"分叉路径**（决定"多条冻结记录"到底是不是多个起点）：① `startContinuable` / `spawnTeammate` 是否新增了可传 seed / 切点 / 快照的参数；② `ctx.agents` 那侧能否用 `CreateAgentOptions.seed` 造出"带更早闭合前缀"的会话，且**父子邻接与回程通道仍在**（不在 ⟹ 等于 `docs/08` §8.5 已被否掉的普通会话方案） | 先读 `$DSH_PKG` 类型定义 + `$DSH_SRC` 源码（只读）；真机再各调一次 | 决定 `docs/03` R5.1 是"每行都是可选起点"还是"**只有最新切点可选起点**"（**当前一律按后者**，见 `docs/01` F38）；不通过就**不许**在界面上承诺历史分叉（`docs/10` M7-04） |

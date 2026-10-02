@@ -238,6 +238,11 @@ body {
   background: transparent; color: var(--dsw-alias-label-caption);
 }
 .tcell:hover { background: var(--dsw-alias-interactive-bg-hover); }
+/* ⚠️ 用户 2026-10-02：「（那排轮号）17 点了没有反应」—— 原来这排格子**没有选中态**，
+ * 点完看不出哪一格被选中（按轮次模式又恰好不弹提示）⟹ 现在给当前轮那一格描边。
+ * 只改这一格的外观，不动坐标轴宽度（宽度跟着轮长走，改了就与柱子对不齐）。 */
+.tcell.is-sel { border-color: var(--dsw-alias-brand); color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover); font-weight: 600; }
 
 /* 步级快捷片 */
 .stepchips { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
@@ -288,6 +293,13 @@ body {
 .chip-soft { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px dashed var(--dsw-alias-border-l2); color: var(--dsw-alias-label-caption); }
 .chip-draft { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--ds-color-amber); color: var(--ds-color-amber); }
 .chip-shadow { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-caption); }
+/* 输入去向标记（`docs/03` R3.3.3）：**只有两种**，界面上凡"让你写字"的地方都必须带一个。
+ *   `.dest-local` = 只写本地（灰虚线，与「尚无固定块」同一套语言）
+ *   `.dest-model` = 会进模型上下文（琥珀实线：提醒"模型会读到这段话，写清楚 —— 别写给自己看的备忘"）
+ * 字段标签里的标记要跟文字同排（`.field span` 默认是 block）→ 单独给 inline-block。 */
+.dest-model { border-style: solid; border-color: var(--ds-color-amber); color: var(--ds-color-amber); }
+.dest-local { opacity: .85; }
+.field span > .chip-soft, .orch-toolbar .chip-soft { display: inline-block; margin-left: 4px; }
 .chain { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 
 /* ---------- 上下文事件（会变的做成行，不变的收成小字） ---------- */
@@ -563,6 +575,16 @@ body.explain [data-explain].explain-num::after {
    * 命中区本来就远超 44px；旧写法写的 `.tbar { min-height: 2px }` 是"外层只放点击区、
    * 柱子自身保持数据高度"那套结构的遗留，现在结构反过来了（见上面 .tbar 注释）。 */
   .btn, .btn.sm, .seg, .chipstep, .sw, .catrow, .row-main, .tcell { min-height: 44px; }
+  /* ⚠️ 讲解序号（`.exnum`）是 16×15px 的小圆标，**是真实节点**（只有点它才出讲解）——
+   * 手指根本点不到 ⟹ 手机上就是"点了没反应"（用户 2026-10-02 报的现象之一）。
+   * 做法：粗指针下序号本体放大到 24px，再用透明 ::after 把命中区撑到 ≥44×44；**下方多留**
+   * （序号贴在宿主左上角，上方是上一行的元素，撑上去会被别人挡住）。
+   * 实测（把这两条临时提到全局、用 elementFromPoint 逐像素扫）：命中区 **48 × 44**。
+   * 代价（已知并接受）：命中区会盖住宿主按钮左上角一小块 —— 只在**讲解模式 + 触屏**下发生。 */
+  .exnum { min-width: 24px; line-height: 24px; font-size: 12px; top: -11px; left: -10px; }
+  .exnum::after { content: ''; position: absolute; inset: -8px -12px -20px; }
+  /* ✂ 标记同理（24×16 → 命中区高度 ≥44） */
+  .mark::after { content: ''; position: absolute; inset: -14px -10px; }
   .actions { gap: 8px; }
   .field textarea, .field input, .modal input { min-height: 44px; }
   .trendscroll { padding-bottom: 14px; }

@@ -2,7 +2,8 @@
 
 > A **DeepSeek Harness plugin** that turns the context panel from a **read-only dashboard** into a
 > **workbench a human can redline** — and wires **edit → snapshot → child session → compaction →
-> parent-steers-child** into one workflow, to fight both **context bloat** and **instruction drift**.
+> parent-steers-child** into one workflow that **cuts context bloat** and **surfaces instruction drift for a
+> human to fix** (detection + explicit re-injection — **never** an automatic "drift is prevented" promise).
 
 **Status: documentation only — no code yet.** The repository is at **M0 (docs first)**:
 scope, platform facts, architecture, UI spec, roadmap and test plan are written; implementation starts
@@ -19,7 +20,7 @@ only after review and sign-off. Rationale: agreeing on *what* to build, *on what
 | **Injection drift** | the harness re-injects `runtime-context` / AGENTS.md / skill catalog every turn, so a human edit comes back next turn | **Verbatim pinned blocks + drift check + explicit re-inject** |
 | **Nothing is editable** | the upstream context browser can only be read | **Edit on the right**, with "which item, what changed, did it take effect" always visible |
 
-**In one line**: a snapshot cuts off the *past*, pinned blocks guard the *future*, and editing fixes the *present*.
+**In one line**: a snapshot cuts off the *past*, pinned blocks let you check and re-assert the *future*, and editing fixes the *present*.
 
 ## What it looks like
 
@@ -31,9 +32,12 @@ What we add on top is **editing** and **orchestration**:
 - **Right**: the category accordion (system prompt / tool schemas / user messages / injected content /
   skill injection / assistant messages / tool results). Each row shows `#seq` plus actions:
   **Edit** (shadow the original) / **Annotate** (keep the original + a void range) /
-  **Pin this passage** (`钉住这一段`) / **Apply to session**. The editor expands **inline under that row** (never a modal),
+  **Pin this passage** (`钉住这一段` — stored locally; carried verbatim into the first message of a **new child session**) / **Apply to session**. The editor expands **inline under that row** (never a modal),
   and is prefilled with the **full text**. A sticky banner shows "N changes not yet applied".
 - **Below**: snapshots and child sessions (freeze → fork → compact → dispatch / status / interrupt).
+  A freeze record is **evidence** (cut point / item count / pinned-block version **and the verbatim text of the pinned blocks then in effect** — that is what gets carried into a new child session), **not a selectable seed**:
+  the fork seed is always the parent's **last completed turn**, so a record older than that cannot be branched from
+  (see [`docs/01`](docs/01-platform-facts.md) F38).
 
 ## Four rules a user must grasp at a glance
 
@@ -71,7 +75,7 @@ What we add on top is **editing** and **orchestration**:
 | [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **Requirement traceability**: every original request and every capability from the WeChat screenshots → which goal → done / not done / downgraded |
 | [`demo/`](demo/README.md) | **Clickable interaction prototype** (M0.5 gate): fake data, real interactions, and a "what does this button do" explain mode |
 | [`docs/11-session-handoff.md`](docs/11-session-handoff.md) | **Session handoff**: a copy-paste block plus the fields to refresh at each wrap-up |
-| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, 211 items; steps needing you are marked `WAIT🙋` |
+| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, 221 items; steps needing you are marked `WAIT🙋` |
 | [`AGENTS.md`](AGENTS.md) | Working agreement: hard constraints, platform pitfalls, testing discipline |
 | [`UPSTREAM.md`](UPSTREAM.md) / [`NOTICE`](NOTICE) | Upstream provenance, license compliance, list of our modifications |
 

@@ -27,7 +27,7 @@ const EXPLAIN = {
   'trend.jump': { t: '回到当前', what: '把趋势条滚回最右端（最新一次请求）。', effect: '只滚动视图。', rev: '不需要', confirm: '不需要', refs: ['docs/03 R1.7'] },
   'trend.pick': { t: '点一根柱子', what: '按轮次模式：选中这一轮（右侧切到该轮**末步**）；按步骤模式：选中那一步。**整列都可点**（不只是色块那一截）：移上去有底色与虚线框预览，点中后是实线框 + 底色，同一轮的其它柱子也会带整轮底色。', effect: '右侧浏览器的分类树、条数、token 全部跟着变。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.1 / R1.2'] },
   'trend.mark': { t: '✂ 压缩 / 剪枝标记', what: '表示这一刻上下文被压过：压缩（历史被摘要替换）或剪枝（工具输出被丢弃）。', effect: '每个事件只标在它之后的第一个请求上；按轮次时标在包含它的那一轮，一轮里有多个事件就显示 ✂×N。鼠标移上去看详情，点它可以跳到那一次。', rev: '只读', confirm: '不需要', refs: ['docs/03 R1.12', '参考插件 attachMarkers'] },
-  'trend.strip': { t: '轮次分组条', what: '按步骤模式下，柱子下面按轮分组的刻度带（每格标轮号，宽度 = 该轮步数）。', effect: '点一格 = 选中该轮末步。讲解模式下**只标第一格**，每一格行为都一样。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.8'] },
+  'trend.strip': { t: '轮次刻度带（趋势图下面那排轮号）', what: '就是图下面那排 1…28 的号码格。**按轮次**模式：一格 = 一轮；**按步骤**模式：一格 = 一轮，格子的宽度 = 这一轮有几步。', effect: '点一格 = 选中那一轮的末步（选中的格子会描边，并弹一句提示）。⚠️ 手机上这排格子很窄（它是坐标轴，宽度跟着轮长走），要稳定选轮次请用上面的 `轮次` 下拉。讲解模式下**每类只标一个编号**（只标第一格），其余每格行为一样。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.10'] },
 
   'turn.pick': { t: '选择某一轮', what: '点轮次条 = 让右侧浏览器切到该轮最后一步。', effect: '右侧标题变成"第 T 轮（共 N 步，显示末步）"，分类条数/token/占比跟着变。', rev: '随时可切别的轮', confirm: '不需要', refs: ['docs/03 R1.1'] },
   'turn.inject': { t: '改这一轮的注入内容', what: '切到这一轮**最后一条注入内容**（AGENTS.md / memory-doc / runtime-context 这类每轮由宿主重新注入的东西），就地展开编辑器。', effect: '注入内容才是最容易让模型理解错的那一半；而且它每轮会被重新注入 —— 改一轮漂一轮，所以改完通常还要「存为不变量」把口径钉住。', rev: '只切视图与展开编辑器，不改任何内容', confirm: '不需要', refs: ['docs/03 R1.16'] },
@@ -44,19 +44,23 @@ const EXPLAIN = {
   'act.edit': { t: '编辑（遮蔽原文）', what: '改写这一条的内容。', effect: '先把改动存成本地草稿（模型还看不到）；确认后才"应用到会话"，届时原文被替换、模型再也看不到原文（但日志里仍在）。', rev: '草稿可放弃；已应用的改动可用"版本历史"恢复', confirm: '提交时要', refs: ['docs/03 R2.2 / R3.3', 'docs/01 F7'] },
   'act.annotate': { t: '批注（保留原文）', what: '不遮蔽原文，追加一条带「作废范围」的更正（一条普通 user 消息，不是伪造宿主内容）。', effect: '模型会同时看到原文与更正 —— 所以它是**请求式**的：靠措辞让模型照做，平台不保证。它会随快照（fork 种子）进子会话；不会被重新注入（不漂），但**长对话或压缩之后可能被摘要吞掉**。想要"确定生效"要用「编辑」+「应用到会话」。', rev: '不可撤销（追加即落地）', confirm: '提交时要（确认框里会写清它在快照里起什么作用）', refs: ['docs/03 R2.2 / R3.3.1', 'docs/01 F6'] },
   'act.pin': {
-    t: '钉住这一段（成为全局固定块）',
-    what: '**一句话**：把这一条的正文**逐字抄一份**存在插件本地，当成"标准口径"。\n'
-      + '**为什么需要**：注入内容 / 技能注入这两类是**每一轮都由宿主重新塞给模型**的（AGENTS.md、项目约定、技能目录…）。\n'
-      + '你这一轮把它改对了，下一轮宿主又塞了一份原文进来 —— 于是"改一轮漂一轮"。钉住一份原文，之后每轮都能**逐字比对**，\n'
-      + '一旦发现"我钉的那句话不在注入里了"，右下角「固定块（不变量）」那张卡片会直接把状态标成**漂移**。\n'
+    t: '钉住这一段（存起来，给新会话用）',
+    what: '**一句话**：把这一条的正文**逐字**存成"新规范"（只存插件本地）。**它不在本会话生效** ——\n'
+      + '等你在这一刻**冻结**（新快照）、并开一个**新子会话**时，它才会**逐字带进那个新会话的第一句话**，\n'
+      + '那个新会话的模型才读到它，并以此为准（与此冲突的此前理解作废）。\n'
+      + '**为什么需要**：注入内容 / 技能注入这两类**每轮都由宿主重新塞给模型**（AGENTS.md、项目约定、技能目录…）。\n'
+      + '你这一轮把它改对了，下一轮宿主又塞回原文 —— 于是"改一轮漂一轮"。钉住的这段就是**新的标准**：\n'
+      + '之后每轮都能**逐字比对**，一旦"我钉的那句不在宿主注入里了"，「固定块（不变量）」卡会把状态标成**漂移**；\n'
+      + '要当场再强调一次，就点 `重注入`（那是往会话追加一条逐字消息，那个会话的模型看得到）。\n'
       + '**你什么时候会用它**：这条注入是"模型必须一直遵守的口径"（例如"不许自动提交"、"必须先读 AGENTS.md"），\n'
-      + '你不想每次发现漂了就再改一遍。\n'
-      + '**它不做什么**：不改会话、不遮蔽原文、不生成任何内容（我们只做逐字复制）；它也**不会自动进子会话的种子** ——\n'
-      + '要让它重新出现在模型可见内容里，得点「重注入」（那是往会话追加一条逐字消息）。',
-    effect: '只是**在插件本地存一份逐字原文**（带标签、版本、保存时间）+ 从下一轮起参与逐字比对。会话内容一个字都不改。',
-    rev: '可以退休（退休后不再参与比对，历史版本保留）',
-    confirm: '要（确认框会列出：要钉住的正文逐字 + 保存到哪里）',
-    refs: ['docs/00 G4', 'docs/03 R2.4', 'docs/06 §1'] },
+      + '而你要**开一个新子会话去干活** —— 让它一开工就按新口径，而不是带着旧理解。\n'
+      + '**它不做什么**：① 不改本会话（本会话的模型看不到它，会话日志里没有它）；\n'
+      + '② 不会删掉宿主注入的旧文本（那要改装配层，本轮不做）；③ 不生成任何内容（只做逐字复制）。',
+    effect: '**只在插件本地多一块基准**（逐字 + 标签 + 版本 + workspace 级）。本会话一字不动；'
+      + '**下次冻结 + 开子会话**时，它被逐字附进那个新会话的第一句话。',
+    rev: '可以退休 / 删除那块基准（已经开出去的子会话不受影响）',
+    confirm: '要（确认框会列：正文逐字 + 只存本地 + 谁会读到它 / 什么时候读到）',
+    refs: ['docs/03 R2.4', 'docs/11 D9'] },
   'act.apply': { t: '应用到会话', what: '把这条草稿真的写进会话。', effect: '追加一条替换事件；模型此后看到的是改后的内容；原文仍保留在日志里但不再可见。', rev: '不可撤销（可用版本历史恢复某一版）', confirm: '要，且会列出本次清单', refs: ['docs/03 R4.3', 'docs/01 F7.1'] },
   'act.history': { t: '版本历史', what: '看这一条的全部版本：原始 → 每次改写 → 每次回滚（**跨替换体**，按行身份串起来）。', effect: '只读展示；可选中某一版"恢复"。', rev: '只读', confirm: '不需要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
   'act.restore': { t: '恢复这一版', what: '把"模型看到的内容"变回你选的那一版。', effect: '再追加一条替换事件——不是删除，错的那版仍在日志里但不再可见。', rev: '再次替换即可换别的版本', confirm: '要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
@@ -64,10 +68,10 @@ const EXPLAIN = {
   'orch.freeze': {
     t: '冻结当前位置（给"现在这一刻"拍个记号）',
     what: '**一句话**：给当前这个会话"现在这一刻"记一笔账，**只写在插件本地**。\n'
-      + '**记下什么**：切点（最后一个已闭合轮次的末尾）、这一刻的条目数、时间、你写的那句备注，\n'
+      + '**记下什么**：这一刻在哪儿（= 最后聊完的那一轮的末尾）、这一刻的条目数、时间、你写的那句备注，\n'
       + '以及**当时还在生效的固定块版本**。\n'
-      + '**为什么需要**：之后你「开子会话」或「压缩」时，子会话/摘要要有个明确的起点 ——\n'
-      + '冻结记录就是这个起点的书面凭证（出问题时你能说清"我是从哪一刻分出去的、当时有哪些口径在生效"）。\n'
+      + '**为什么需要**：之后你「开子会话」或「压缩」时，要能说清"我是从哪一刻分出去的、当时有哪些口径在生效"——\n'
+      + '这条记录就是那句话的留档凭据。\n'
       + '**它不做什么**：不会改模型看到的内容，也不会让模型"记住"什么；它只是一条本地记录。\n'
       + '**什么时候会用**：准备开子会话之前（把口径和进度钉在时间线上）；或者你想给"改到这里为止"留个标记。',
     effect: '在「冻结记录」里**多加一行**（历史机制，不覆盖上一条；带时间、条目数、你写的备注）。会话内容与模型可见内容都不变。',
@@ -76,10 +80,12 @@ const EXPLAIN = {
     refs: ['docs/00 S5.2', 'docs/03 R5.1'] },
   'orch.spawn': {
     t: '从这里开子会话（把这件事交给一个新会话来干）',
-    what: '**一句话**：拿当前会话"已经聊完的部分"当**起点**，开一个**真的新会话**去干一件具体的活，首条任务由你写。\n'
-      + '**你点的是哪一行，种子就取自哪一条冻结记录**（切点决定"从哪一刻的日志做种子"、条目数是当时的规模、\n'
-      + '固定块版本是当时在生效的口径）—— "想从哪一刻分叉"这件事靠**你在哪一行点**来回答，不需要去别处再选一遍。\n'
-      + '冻结记录为什么可能有多条：**不同时刻的出发点**（昨晚按 v1 分出去、今天按 v2 分出去）。\n'
+    what: '**一句话**：把当前会话"已经聊完的部分"交给一个新会话，让它接着干一件具体的活；第一句话由你写。\n'
+      + '**新会话从哪儿开始，由平台决定，不由你选**：它会带上"本会话最后聊完的那一轮"之前的全部内容。\n'
+      + '（这不是我们偷懒：平台只提供"从最后聊完的那一轮接着往下"这一种开法，**没有**挑更早位置的开关。）\n'
+      + '**冻结记录是留档凭据**：它记下"我在这一刻冻过什么"（当时的轮次末、当时的条数、当时在效的固定块版本）。\n'
+      + '**只有"正好冻在最后聊完那一轮"的那条记录**才与平台的实际开头一致 ⟹ 只有它行上有 `从这里开子会话`；\n'
+      + '**更早的记录点不了**，只留一个标记和一句替代建议（想按当时的口径干，就用那条记录里记下的固定块版本）。\n'
       + '**它就是你在别处看到的"主会话派活给子会话"**：子会话是独立会话（有自己的日志、自己的上下文）。\n'
       + '**它是多轮的**（这一条最容易误会）：可续接子会话**可以一直接收你的后续消息** —— 每发一条就是它的**一个新轮次**\n'
       + '（官方 `ctx.subagents.prompt({delivery:"queue"})` = 排成下一个轮次；`steer` = 插到最近的步骤边界）。\n'
@@ -90,13 +96,13 @@ const EXPLAIN = {
       + '也能给它一个短标签（`label`，例如"跑测试"）—— 在官方谱系目录/右栏里就带着这个标签显示。\n'
       + '**两条路**：团队可用时优先走官方 `spawnTeammate(context:"fork")`（于是它有官方名册/任务板/派活）；\n'
       + '团队不可用时退化成"裸可续接子会话"（没有任务板，界面会如实写出来）。\n'
-      + '**种子是一次性的**：子会话只拿到"开它那一刻之前"的历史 —— 之后父会话的新轮次**不会**再进子会话；\n'
+      + '**只切一次（种子是一次性的）**：子会话只拿到"开它那一刻之前"的历史 —— 之后父会话的新轮次**不会**再进子会话；\n'
       + '所以**草稿必须先「应用到会话」**再开（草稿只在插件本地，不是会话内容，进不了种子）。\n'
       + '**子会话在界面上怎么找**：官方把子会话**排除在左侧会话列表之外**，入口在**父会话页头的谱系目录**和**右侧 Sidebar**；\n'
       + '打开它之后，本插件的面板会跟着切到它的上下文（于是它的上下文也能编辑，见 R5.1.3）。',
     effect: '新建一个真会话（独立 sessionId）。父会话**此刻不会**被写入任何内容；子会话跑完后才有结算通知回流。',
-    rev: '子会话可以归档，但"种子"不能再重来（历史只取一次）',
-    confirm: '要（确认框列五项：种子范围 / 首条任务 / 继承范围 / 副作用走哪条路 / 取消会怎样）',
+    rev: '子会话可以归档，但"开头切到哪儿"不能再重来（历史只取一次）',
+    confirm: '要（确认框列五项：从哪儿开始 / 首条任务 / 它会带上什么 / 走哪条路 / 取消会怎样）',
     refs: ['docs/06 §3.1 / §4.1', 'docs/03 R5.1.3'] },
   'child.prompt': {
     t: '给子会话发消息（它会变成它的新轮次）※ 不依赖官方团队',
@@ -344,6 +350,15 @@ function confirmModal(o) {
   $('modalWarn').textContent = o.warn;
   $('modalList').innerHTML = '<ul class="list">' + o.rows.map((r) => `<li><b>${esc(r[0])}</b>${esc(r[1])}</li>`).join('') + '</ul>';
   $('modalReasonWrap').hidden = !o.needReason;
+  /* ⚠️ 用户 2026-10-02 问：「弹出窗里的备注，是仅给人看的，还是会进 agent 下一次会话的内容？」
+   * 答：**两种都有，取决于哪个框** —— 所以**每个框必须自己写明去向**，不许所有框共用一句
+   * 「理由（会写进记录）」（那种写法对"只写本地"与"会进模型上下文"是同一句话，等于没说）。
+   * 四档去向（`docs/03` R3.3 的硬要求）：
+   *   ① 只写插件本地（模型看不到）  ② 写进会话（模型看得到）
+   *   ③ 成为子会话的第一句话 / 新轮次（子会话的模型看得到）  ④ 写进官方成员的收件箱（那位 agent 看得到） */
+  const rl = $('modalReasonLabel');
+  if (rl) rl.textContent = o.reasonLabel || '理由（去向见上面清单）';
+  $('modalReason').placeholder = o.reasonPlaceholder || '一句话说明为什么这样改';
   $('modalReason').value = '';
   $('modalOk').textContent = o.okText || '确认';
   // 动态弹出的按钮在讲解模式下拿不到稳定编号 → 按用户建议给一个「?」（点它看说明）
@@ -352,7 +367,7 @@ function confirmModal(o) {
   $('modalWrap').hidden = false;
   $('modalOk').onclick = () => {
     const reason = o.needReason ? $('modalReason').value.trim() : '';
-    if (o.needReason && reason === '') { toast('理由不能为空（会写进记录）', 'err'); return; }
+    if (o.needReason && reason === '') { toast('这一栏不能空着', 'err'); return; }
     $('modalWrap').hidden = true;
     o.onOk(reason);
   };
@@ -362,6 +377,18 @@ function selectReq(req, why) {
   S.selSeq = req.seq; S.selTurn = req.turn; S.openElem = null;
   render();
   if (why) toast(why);
+}
+/** 点了趋势图下面刻度带的一格（用户 2026-10-02：「（那排轮号）17 点了没有反应」）。
+ *  修复前：按轮次模式下这里传 `why = null` ⟹ **不弹任何提示**，而刻度带又没有选中态
+ *  ⟹ 点完看不出发生过什么（手机上尤其像坏了）。现在两条分支都给一句人话提示。 */
+function trendCellAct(b) {
+  if (b.dataset.seq) {                      // 按轮次模式：一格 = 一轮（data-seq = 该轮末步）
+    const r = REQUESTS.find((x) => x.seq === Number(b.dataset.seq));
+    if (r) selectReq(r, `已选第 ${r.turn} 轮（该轮末步）`);
+    return;
+  }
+  const t = Number(b.dataset.turn);         // 按步骤模式：一格 = 一轮，宽度 = 步数
+  selectReq(lastOfTurn(t), `已选第 ${t} 轮（该轮末步）`);
 }
 
 /* ------------------------------------------------------------------ 4. 状态开关 / 说明条 */
@@ -640,7 +667,7 @@ function renderTrend() {
                 const k = turnSteps(t);
                 return `<button class="tcell" data-turn="${t}" style="width:${k * (BAR_W + BAR_GAP)}px" title="第 ${t} 轮（共 ${k} 步）→ 选中末步" data-explain="trend.strip">${t}</button>`;
               }).join('')
-            : list.map((r) => `<button class="tcell" data-seq="${r.seq}" style="width:${BAR_W + BAR_GAP}px" title="第 ${r.turn} 轮 · 共 ${r.stepCount} 步">${r.turn}</button>`).join('')}
+            : list.map((r) => `<button class="tcell${r.turn === S.selTurn ? ' is-sel' : ''}" data-seq="${r.seq}" data-explain="trend.strip" style="width:${BAR_W + BAR_GAP}px" title="第 ${r.turn} 轮 · 共 ${r.stepCount} 步 → 选中末步">${r.turn}</button>`).join('')}
           </div>
         </div>
       </div>
@@ -683,13 +710,7 @@ function renderTrend() {
   });
   const wrap = c.querySelector('.trendpos');
   if (wrap) { wrap.onmouseleave = () => hideTrendTip(); }
-  c.querySelectorAll('.tcell').forEach((b) => {
-    b.onclick = () => {
-      if (b.dataset.seq) { selectReq(REQUESTS.find((r) => r.seq === Number(b.dataset.seq)), null); return; }
-      const t = Number(b.dataset.turn);
-      selectReq(lastOfTurn(t), `已选第 ${t} 轮（该轮末步）`);
-    };
-  });
+  c.querySelectorAll('.tcell').forEach((b) => { b.onclick = () => trendCellAct(b); });
   c.querySelectorAll('[data-act]').forEach((b) => {
     b.onclick = () => {
       const a = b.dataset.act;
@@ -902,13 +923,25 @@ function nodeWhere(n) {
 }
 const nodeExcerpt = (n, len = 26) => `“${String(n.text || '').replace(/\s+/g, ' ').slice(0, len)}…”`;
 
+/* 输入去向标记（`docs/03` R3.3.3）：**界面上每一处"让你写字"的地方都必须带一个**，只有两种取值。
+ * 用户 2026-10-02：「整个 Demo 都存在这个问题：哪些编辑了模型能看到、哪些看不到……给人类可能简单一些，
+ * 如果给 Agent，就要写清楚，避免漂移」⟹ 给模型看的那一档**必须提醒怎么写**。 */
+const DEST_LOCAL = '<span class="chip-soft dest-local" title="这段字只存在插件本地（我们自己的库）：模型看不到，也不会随快照进子会话">只写本地 · 模型看不到</span>';
+const DEST_MODEL = '<span class="chip-soft dest-model" title="这段字会进模型上下文：请写清楚它要对模型说什么（别写给自己看的备忘）—— 写含糊就是下一次漂移的源头">会进模型上下文</span>';
+/** 有门槛的"会进模型"：编辑草稿要**点「应用到会话」之后**模型才看得到（两步语义，R3.3）。 */
+const DEST_MODEL_GATED = '<span class="chip-soft dest-model" title="这段字会进模型上下文 —— 但要等你点「应用到会话」之后；在那之前只有插件本地有">会进模型上下文（点「应用到会话」之后）</span>';
+/** 钉住这一档：**本会话看不到**，但会在"新快照 + 新子会话启动"时逐字带进那个新会话（`docs/11` D9）。
+ *  用户 2026-10-02 二次纠正：「不是钉住了以后模型立刻就能读到它，而是钉住了以后，在新快照、并且在新子会话启动的时候，才会读到它」。 */
+const DEST_PIN_CARRY = '<span class="chip-soft dest-model" title="这段字本会话的模型看不到 —— 但你冻结并开新子会话时，它会逐字带进那个新会话的第一句话（那边的模型才读到）">开新会话时会带进新会话（本会话看不到）</span>';
+
 function editorHtml() {
   const st = S.editor, blocked = S.sw.turnOpen || !S.sw.live;
   const node = nodeOf(st.seq);              // 字段要按**底层类型**给（R3.2）：工具结果只给内容文本 + isError
   const title = st.kind === 'edit' ? `编辑第 ${reqOf().turn} 轮 · 第 ${reqOf().step} 步的这一条`
     : st.kind === 'annotate' ? `批注第 ${reqOf().turn} 轮 · 第 ${reqOf().step} 步的这一条`
-    : `把这一条存为不变量`;
-  const note = st.kind === 'pin' ? '固定块逐字保存：插件不生成、不润色、不压缩。'
+    : `钉住这一段（存起来，给新会话用）`;
+  const note = st.kind === 'pin'
+    ? '钉住 = 把这段正文逐字存成"新规范"（只存插件本地 —— 本会话的模型看不到）。等你在这一刻冻结、并开一个新子会话时，它会逐字附在那个新会话的第一句话前面 ⟹ 那个新会话的模型才读到它，并以此为准（冲突的旧理解作废）。'
     : st.kind === 'annotate' ? '提交后会往会话追加一条更正消息，不可撤销；原文不会被遮蔽，模型两者都看到。它是"请求式"的（不保证模型照做）。'
     : '这一步只把改动存在插件本地，模型还看不到；要让模型看到，还要做下面第 2 步。';
   const multiPara = st.kind === 'edit' && /\n\s*\n/.test(String(st.text || ''));
@@ -927,26 +960,26 @@ function editorHtml() {
     <p class="enote">${esc(note)}</p>
     ${multiPara ? '<p class="enote">这条消息有多个文本段落；改写后会合并为一段。</p>' : ''}
     ${st.kind === 'edit' ? (node && node.type === 'tool/result' ? `
-      <label class="field"><span>结果文本（工具结果只能改内容文本与错误标记）</span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>
-      <label class="field" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="edErr" style="width:auto;min-height:0" ${node.err ? 'checked' : ''}><span style="margin:0">标记为错误</span></label>`
+      <label class="field"><span>结果文本${DEST_MODEL}<span class="cap">（工具结果只能改内容文本与错误标记）</span></span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>
+      <label class="field" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="edErr" style="width:auto;min-height:0" ${node.err ? 'checked' : ''}><span style="margin:0">标记为错误${DEST_MODEL}</span></label>`
     : `
-      <label class="field"><span>正文<span class="cap">（模型看到的就是这一段；这里预填的是宿主全文，不是列表里那种 80 字预览）</span></span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>
+      <label class="field"><span>正文${DEST_MODEL_GATED}<span class="cap">（模型看到的就是这一段；这里预填的是宿主全文，不是列表里那种 80 字预览）</span></span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>
       <details class="adv"><summary>高级：思考文本（可选，多数消息没有）</summary>
         <p class="cap">思考文本是模型的 reasoning 块；用户自己发的消息通常没有。留空即沿用原文。</p>
-        <label class="field"><textarea rows="2" id="edR">${esc(st.reasoning || '')}</textarea></label>
+        <label class="field"><span>思考文本${DEST_MODEL_GATED}</span><textarea rows="2" id="edR">${esc(st.reasoning || '')}</textarea></label>
       </details>`)
     : st.kind === 'annotate' ? `
-      <label class="field"><span>理由（会写进那条更正消息，模型看得到）</span><textarea rows="3" id="edWhy" placeholder="一句话说明为什么更正">${esc(st.reason || '')}</textarea></label>
+      <label class="field"><span>理由${DEST_MODEL}<span class="cap">（会跟着这条更正写进会话：模型看得到。所以写具体 —— "作废哪些、改成什么"；这段就是模型读到的全部）</span></span><textarea rows="3" id="edWhy" placeholder="一句话说明为什么更正">${esc(st.reason || '')}</textarea></label>
       <p class="cap">这条批注<b>只针对上面那一条</b>。如果你要作废的范围不止这一条，就直接写在理由里（例如"上面第 3、4 条都作废"）—— 模型读的正是这段理由，不需要你去选范围或记编号。</p>`
     : `
-      <label class="field"><span>标签</span><input type="text" id="edLabel" value="${esc(st.label || '')}" placeholder="例如「目标」「约束」"></label>
-      <label class="field"><span>正文（逐字保存）</span><textarea rows="4" id="edPin">${esc(st.text)}</textarea></label>`}
+      <label class="field"><span>标签${DEST_LOCAL}<span class="cap">（只用来在列表里认这块）</span></span><input type="text" id="edLabel" value="${esc(st.label || '')}" placeholder="例如「目标」「约束」"></label>
+      <label class="field"><span>正文（逐字为准）${DEST_PIN_CARRY}<span class="cap">—— 只存本地；<b>本会话看不到</b>，它会在"冻结出新快照 + 新子会话启动"时逐字带进那个新会话</span></span><textarea rows="4" id="edPin">${esc(st.text)}</textarea></label>`}
     ${blocked ? `<p class="eblocked">${S.sw.turnOpen ? '当前轮次还没结束 —— 改动只能在轮次边界提交。' : '这个会话不在本进程里，只能查看，不能编辑。'}</p>` : ''}
     ${S.editorError ? `<p class="emsg-err">${esc(S.editorError)}</p>` : ''}
     ${S.editorOk ? `<p class="emsg-ok">${esc(S.editorOk)}</p>` : ''}
     ${st.kind === 'edit' ? '<p class="cap esteps"><b>第 1 步</b> 保存草稿 → 只存在插件本地（模型还看不到）· <b>第 2 步</b> 行上出现「未生效」→ 点<b>「应用到会话」</b>才会真的生效（那时原文被遮蔽、模型只看到改后的）</p>' : ''}
     <div class="efoot">
-      <span class="qwrap"><button class="btn sm" data-act="esubmit" ${blocked ? 'disabled' : ''}>${st.kind === 'pin' ? '保存为固定块' : st.kind === 'annotate' ? '提交更正到会话' : '保存草稿'}</button>${q(st.kind === 'pin' ? 'act.pin' : st.kind === 'annotate' ? 'act.annotate' : 'act.edit', '这个按钮')}</span>
+      <span class="qwrap"><button class="btn sm" data-act="esubmit" ${blocked ? 'disabled' : ''}>${st.kind === 'pin' ? '钉住这一段（存起来）' : st.kind === 'annotate' ? '提交更正到会话' : '保存草稿'}</button>${q(st.kind === 'pin' ? 'act.pin' : st.kind === 'annotate' ? 'act.annotate' : 'act.edit', '这个按钮')}</span>
       <span class="qwrap"><button class="btn sm ghost" data-act="ecancel">取消（Esc）</button></span>
       <span class="cap">Cmd/Ctrl + Enter 提交</span>
     </div>
@@ -1033,7 +1066,9 @@ function editTurnInject(turn) {
  * 只做**逐字包含**判断（不含推断、不含模糊匹配），与 docs/03 S4 的口径一致。
  */
 function blockDrift(b) {
-  const here = nodesOfReq(reqOf(), true).filter((n) => n.cat === 'inject');
+  /* ⚠️ 必须排除**我们自己**写进会话的消息（批注、重注入）：钉住的正文只存本地（`docs/11` D9），
+   * 但 `重注入` 会把正文逐字追加进会话 —— 若不排除，那条就会自己命中自己 ⟹ 漂移永远报不出来。 */
+  const here = nodesOfReq(reqOf(), true).filter((n) => n.cat === 'inject' && !n.ours);
   if (b.retired) return { ok: false, code: 'retired', why: '已退休：不再生效（历史版本保留）' };
   const hit = here.find((n) => String(n.text || '').includes(b.text));
   if (hit) return { ok: true, code: 'pinned', seq: hit.seq, why: `逐字命中 #${hit.seq}${hit.name ? '（' + hit.name + '）' : ''}` };
@@ -1102,10 +1137,12 @@ function blockAct(act, id) {
              ['正文逐字', b.text],
              ['为什么现在注入', b.id]],
       needReason: true, okText: '确认重注入',
+      reasonLabel: '理由（会跟着这条消息写进会话 —— 模型看得到）',
+      reasonPlaceholder: '一句话说明为什么现在重注入',
       onOk: (reason) => {
         const live = REQUESTS[REQUESTS.length - 1];
         S.extraNodes.push(N(1400 + S.extraNodes.length, 'inject', 'user/message', b.text, Math.round(b.text.length * 1.6),
-          { name: b.label }));
+          { name: b.label, ours: true }));   // ours：这条是**我们**写进去的，漂移检查要排除它（见 blockDrift）
         S.extraNodes[S.extraNodes.length - 1].requestSeq = live.seq;
         render();
         toast(`已重注入「${b.label}」（逐字追加；理由：${reason || '（未填）'}）`);
@@ -1145,41 +1182,52 @@ function renderOrch() {
     <div class="orchgrid">
 
     <section class="orchblock" data-block="freeze">
-    <div class="subhead blocktitle">冻结 <span class="hint">先钉一个出发点；开子会话就在下面某一条记录上点</span>
+    <div class="subhead blocktitle">冻结 <span class="hint">先冻一条记录（当时的留档凭据）；开子会话只有最新那条能点</span>
       <span class="bmeta">${S.snapshots.length
         ? `${S.snapshots.length} 条记录 · 最近 ${esc(S.snapshots[S.snapshots.length - 1].time)}`
         : '还没有记录'}</span></div>
 
     <div class="orch-toolbar">
-      <input id="snapNote" placeholder="人写备注（插件不生成摘要）" />
+      <input id="snapNote" placeholder="备注（只写本地，模型看不到）" />
+      ${DEST_LOCAL}
       <button class="btn sm" data-act="freeze" data-explain="orch.freeze" ${!S.sw.live || draftCount() > 0 ? 'disabled' : ''}>冻结当前位置</button>
-      <span class="cap">冻完在下面出记录 → <b>在那条上点「从这里开子会话」</b></span>
+      <span class="cap">冻完在下面多一条记录 → <b>在那条上点「从这里开子会话」（只有最新那条能点）</b></span>
       ${S.invariants.filter((b) => !b.retired).length === 0
         ? '<span class="chip-soft" title="建议先把目标 / 约束（尤其是每轮被重新注入的那几条）存为固定块，否则子会话里没人守漂移">尚无固定块</span>'
         : ''}
 
-      ${draftCount() > 0 ? `<span class="cap warn-text">还有 ${draftCount()} 条草稿没提交 —— 草稿不在 fork 种子里，也不在冻结记录里，它只存在插件本地。</span>` : ''}
+      ${draftCount() > 0 ? `<span class="cap warn-text">还有 ${draftCount()} 条草稿没提交 —— 草稿不在新会话里，也不在这条记录里；它只存在插件本地。</span>` : ''}
     </div>
 
-    <div class="subhead">冻结记录（每一条 = 一个出发点）<span class="hint">只写本地，不写会话 · <b>一条记录 = 一个「切点 + 当时的固定块版本」</b>；同一身份再点不新增（只问你要不要改备注）；备注可改、其余字段只能删</span></div>
+    <div class="subhead">冻结记录（每一条 = 当时的留档凭据）<span class="hint">只存在本地，不写会话 · <b>新会话从哪儿开始由平台定 = 最后聊完的那一轮</b>，所以只有最新那条能点；同一条再冻不新增（只问你改不改备注）；备注能改，其余字段只能删</span></div>
     ${S.snapshots.length
-      ? S.snapshots.map((s, i) => `
+      ? S.snapshots.map((s, i) => ({ s, i })).reverse().map(({ s, i }) => {
+        /* 用户 2026-10-01 定的**结构**：开子会话挂在**这一条**记录行上（不挂在冻结按钮那一行）。
+         * 但**从哪儿开始由平台定**（= 最后聊完的那一轮，`docs/01` F38）⟹ 只有切点等于它的那条
+         * 才与平台实际开头一致，才给按钮；更早的记录只给一句原因 + 替代建议（R2.3 / R4.7）。
+         * ⚠️ **列表按时间倒序**（`docs/03` R5.1 第 1 条："列表按时间倒序"）—— 最新冻的那条在最上面，
+         * 也就是贴着「冻结当前位置」按钮的那一条；否则用户最容易点到最旧、甚至没冻住规范的那条。
+         * 注意 `data-i` 仍用**数组下标**（`{s,i}` 保留原索引），否则点行会张冠李戴。 */
+        const ok = isBranchable(s);
+        const fields = `第 ${s.turn} 轮末 · ${s.items} 条 · 固定块版本 ${esc(s.inv === undefined ? '—' : (s.inv === 'none' ? '无' : s.inv))}`;
+        return `
       <div class="orch-row">
         <div class="orch-id">
           <span class="snapid">${esc(s.id)}</span>
-          <span class="cap">第 ${s.turn} 轮末 · ${s.items} 条 · ${s.time} · 固定块版本：${esc(s.inv === undefined ? '—' : (s.inv === 'none' ? '无' : s.inv))}</span>
+          <span class="cap">第 ${s.turn} 轮末 · ${s.items} 条 · ${s.time} · 固定块版本：${esc(s.inv === undefined ? '—' : (s.inv === 'none' ? '无' : s.inv))}${s.blocks && s.blocks.length ? ` · <b>冻住 ${s.blocks.length} 条规范正文</b>` : ' · 没冻住规范正文'}</span>
           <span class="orch-note orch-desc">人写备注：${esc(s.note || '（无）')}</span>
         </div>
         <div class="orch-actions">
-          ${/* 用户 2026-10-01：想分叉就在**这一条**后面点 —— 别把"开子会话"挂在冻结按钮那一行，
-               那样子会话跟冻结看着是同一条，用户不知道自己在哪一条上分叉。 */''}
-          <button class="btn sm" data-act="spawn" data-i="${i}" data-explain="orch.spawn"
+          ${ok
+            ? `<button class="btn sm" data-act="spawn" data-i="${i}" data-explain="orch.spawn"
             ${!S.sw.live || draftCount() > 0 ? 'disabled title="先处理草稿 / 会话不在本进程"' : ''}>从这里开子会话</button>
-          <span class="cap">种子 = 这一条（第 ${s.turn} 轮末 · ${s.items} 条 · 固定块版本 ${esc(s.inv === undefined ? '—' : (s.inv === 'none' ? '无' : s.inv))}）</span>
+          <span class="cap">新会话从<b>最后聊完的那一轮</b>往下接着干（${fields}）</span>`
+            : `<span class="chip-soft" title="开子会话时，新会话只会从「本会话最后聊完的那一轮」接着往下，不能往前挑更早的位置。这条记录比那儿更早，所以点不了；它留着当凭据。">这条更早，只能从最新那条开</span>
+          <span class="cap">更早的记录（${fields}）—— 只作<b>凭据</b>；想按当时的口径干，就用这里记下的固定块版本</span>`}
           <button class="btn sm ghost" data-act="snote" data-i="${i}" data-explain="orch.freeze">改备注</button>
           <button class="btn sm ghost" data-act="sdel" data-i="${i}" data-explain="orch.freeze">删除</button>
         </div>
-      </div>`).join('')
+      </div>`; }).join('')
       : '<div class="cap">还没有冻结记录。建议：先把草稿清零 → 冻结 → 再开子会话。</div>'}
 
     </section>
@@ -1195,7 +1243,7 @@ function renderOrch() {
           <span class="snapid">${esc(x.id)}</span>
           <span class="${x.src === 'own' ? 'badge-src-own' : 'badge-src-team'}">${x.src === 'own' ? '本项目发起' : '来自 Agent Teams'}</span>
           <span class="badge-state"><i class="mstat ${stCls}"></i>${stText}</span>
-          <span class="cap orch-desc">${esc(x.label)}${x.from ? ' · 来自快照 ' + esc(x.from) : ''}</span>
+          <span class="cap orch-desc">${esc(x.label)}${x.from ? ' · 来源记录 ' + esc(x.from) : ''}${x.norms ? ` · <span class="chip-soft">带 ${x.norms} 条新规范启动</span>` : ''}</span>
           <span class="chev" title="打开它（去官方视图）">›</span>
         </div>
         <div class="orch-actions">
@@ -1346,14 +1394,14 @@ function submitEditor() {
         ['更正目标', rangeText],   // 人话：第 N 轮 · 第 M 步 · 类别 “正文…”（#seq）—— 只有这一条
         ['范围', '只针对上面这一条；要更大范围请写在理由里'],
         ['理由', reason],
-        ['在快照里', '这条更正会随快照（fork 种子）进子会话 —— 但它只是"请求式"的：不遮蔽原文、不保证模型照做；而且长对话或压缩之后，它可能被摘要吞掉'],
-        ['想要"确定生效"', '用「编辑」+「应用到会话」（遮蔽原文，模型只看到改后的那条）；想长期有效则「存为不变量」']
+        ['在快照里', '这条更正会跟着快照进子会话 —— 但它只是"请求式"的：不遮蔽原文、不保证模型照做；长对话或压缩之后，它可能被摘要吞掉'],
+        ['想要"确定生效"', '用「编辑」+「应用到会话」（遮蔽原文，模型只看到改后的那条）；想长期有效就把它 `钉住这一段`']
       ],
       needReason: false, okText: '确认提交更正',
       onOk: () => {
         const ns = 1500 + S.extraNodes.length;
         const text = `[redline] 更正目标 seq=${st.seq}\n作废范围 seq=${from}..${to}\n理由：${reason}`;
-        S.extraNodes.push(N(ns, 'inject', 'user/message', text, 60, { requestSeq: reqOf().seq, name: '批注' }));
+        S.extraNodes.push(N(ns, 'inject', 'user/message', text, 60, { requestSeq: reqOf().seq, name: '批注', ours: true }));
         const r = reqOf(); if (!r.surface.includes(ns)) r.surface.push(ns);
         S.editor = null; render(); toast(`已追加更正 #${ns}（不可撤销）；原文 #${st.seq} 仍在模型可见内容里`);
       }
@@ -1363,13 +1411,29 @@ function submitEditor() {
   if (st.kind === 'pin') {
     const label = (($('edLabel') && $('edLabel').value.trim()) || '目标'), text = ($('edPin') && $('edPin').value) || '';
     if (text.trim() === '') { S.editorError = '固定块正文不能为空'; render(); return; }
-    const version = S.invariants.filter((x) => x.label === label).length + 1;
-    S.invariants.push({
-      id: 'inv-' + label.replace(/\s+/g, '-').slice(0, 16) + '-' + version,
-      label, text, version, retired: false, scope: 'workspace',
-      savedAt: '12:1' + (S.invariants.length % 9)
+    /* ⚠️ 语义（用户 2026-10-02 **二次纠正**，`docs/11` D9）：钉住**不在当前会话生效** ——
+     * 它只存本地；**读到它的时机 = 新快照（冻结）+ 新子会话启动时**：开子会话时把这条新规范
+     * **逐字附在子会话的第一句话前面**。所以这里**不写会话**（本会话的模型看不到它）。 */
+    confirmModal({
+      title: '钉住这一段（存起来，给新会话用）',
+      warn: '钉住 = 把这段正文逐字存成"新规范"（只存插件本地，本会话的模型看不到）。等你在这一刻冻结、并开一个新子会话时，它会逐字带进那个新会话的第一句话前面 —— 那个新会话的模型才读到它，并以此为准（冲突的旧理解作废）。',
+      rows: [['这段正文（逐字为准）', text.slice(0, 140) + (text.length > 140 ? '…' : '')],
+             ['它现在去哪', '只存插件本地 —— 本会话的模型看不到（会话日志不写）'],
+             ['谁会读到它', '新子会话启动时读到（逐字附在它的第一句话前面）；本会话与其它旧会话都读不到'],
+             ['什么时候读到', '先冻结（新快照记下"当时的固定块版本"）→ 再从那一条记录开子会话']],
+      needReason: false, okText: '钉住（存起来）', helpKey: 'act.pin',
+      onOk: () => {
+        const version = S.invariants.filter((x) => x.label === label).length + 1;
+        S.invariants.push({
+          id: 'inv-' + label.replace(/\s+/g, '-').slice(0, 16) + '-' + version,
+          label, text, version, retired: false, scope: 'workspace',
+          savedAt: '12:1' + (S.invariants.length % 9)
+        });
+        S.editor = null; render();
+        toast(`已钉住「${label}」v${version} —— 只存本地（本会话看不到）；下次冻结 + 开子会话时，它会逐字带进那个新会话的第一句话`);
+      }
     });
-    S.editor = null; render(); toast(`已存为固定块「${label}」（逐字，插件不改一个字）；换会话仍可见 → 每轮逐字比对即可发现漂移`);
+    return;
   }
 }
 function doApply(seq) {
@@ -1381,11 +1445,17 @@ function doApply(seq) {
   delete S.drafts[seq];
   render(); toast(`已应用：#${seq} 被遮蔽 → 新条目 #${ns}（原文仍在日志里；可用版本历史恢复）`);
 }
-/** 分叉起点 = **你点的那一行冻结记录**（行内按钮 `data-i`）。
- *  用户 2026-10-01 定的结构：「想分叉就在冻结的那一条后面点『从这里开子会话』」——
- *  所以这里不接受"当前"或"默认最新"，必须是**一条真实存在的记录**（没有记录就不能点，按钮不存在）。 */
+/** 平台种子切点 = 父会话日志里**最后一个** `turn/end`（`docs/01` F38，读安装树类型定义 + provider 源码的结论）。
+ *  fork provider **永远**取"最后一个 turn/end 及其之前"，调用方**没有任何参数**能指定更早的切点
+ *  ⟹ 只有切点正好等于它的那条冻结记录，才与平台实际种子重合；更早的记录**复现不了**。 */
+const headCut = () => { const r = REQUESTS[REQUESTS.length - 1]; return `${r.turn}·${r.step}`; };
+const isBranchable = (s) => !!s && s.cut === headCut();
+/** 起点 = **你点的那一行冻结记录**（行内按钮 `data-i`）—— 用户 2026-10-01 定的**结构**保留。
+ *  但只有"可作起点"的那条（切点 == 当前最后一个轮次末）会渲染出按钮；这里再挡一次：
+ *  记录不存在、或它比当前最后一个轮次末更早 → **拒绝建会话**（不许拿别的记录顶上）。 */
 function seedAt(i) {
-  return S.snapshots[i] || null;
+  const s = S.snapshots[i];
+  return isBranchable(s) ? s : null;
 }
 const seedLabel = (x) => `${x.id} · 第 ${x.turn} 轮末 · ${x.items} 条 · 固定块版本：${x.inv === undefined ? '—' : (x.inv === 'none' ? '无' : x.inv)}`;
 function orchAct(b) {
@@ -1400,8 +1470,10 @@ function orchAct(b) {
       rows: [['发给', `${x.id}${x.label ? ' · ' + x.label : ''}`],
              ['走哪条通道', '官方 ctx.subagents.prompt({delivery:"queue"}) —— 排队成为它的下一个轮次'],
              ['它现在', x.state === 'running' ? '运行中：会在最近的步骤边界接收' : '空闲：会立刻起一个新轮次'],
-             ['你要说的话', '写在下面的理由框里（插件不生成任何内容）']],
+             ['你要说的话', '写在下面那一栏 —— 它就是这条消息的正文（插件不生成任何内容）']],
       needReason: true, okText: '排队发送', helpKey: 'child.prompt',
+      reasonLabel: '要说的话（会成为子会话的一个新轮次 —— 它的模型看得到）',
+      reasonPlaceholder: '一句话说清要它做什么（这句就是消息正文）',
       onOk: () => { x.sent = (x.sent || 0) + 1; render(); toast(`已排队给 ${x.id} 的消息（会成为它的新轮次）`); }
     });
     return;
@@ -1417,21 +1489,29 @@ function orchAct(b) {
     if (same) {
       confirmModal({
         title: '这一刻已经冻过了',
-        warn: '同一个切点 + 同一批在效固定块只保留一条记录（否则就是重复的废记录）。要更新那条的备注吗？',
+        warn: '同一个位置 + 同一批固定块只留一条记录（重复的没有意义）。要更新那条的备注吗？',
         rows: [['已有记录', `${same.id} · 第 ${same.turn} 轮末 · ${same.items} 条 · ${same.time}`],
                ['原来的备注', same.note || '（无）'],
                ['这次要写的备注', note || '（空 —— 确认后保持原备注不变）'],
-               ['不会变的字段', '切点 / 条目数 / 冻结时刻 / 当时的固定块版本（客观读数，改了就不是凭证了）']],
+               ['不能改的字段', '第几轮末 / 条目数 / 冻结时间 / 当时的固定块版本与它们的逐字正文（都是当时冻住的东西，改了就不算凭据了）']],
         needReason: false, okText: '更新备注', helpKey: 'orch.freeze',
         // 确认时**再读一次**输入框：先写备注再点、或点完再写，两种顺序都成立
         onOk: () => { const t = ($('snapNote') && $('snapNote').value.trim()) || note; if (t) same.note = t; render(); toast(`已更新 ${same.id} 的备注（没有新增记录）`); }
       });
       return;
     }
+    /* ⚠️ **冻结冻住的是"那一刻的东西"**（用户 2026-10-02 定，`docs/11` D9）：
+     * 除了切点/条目数/备注/版本号，还要把**当时在效固定块的逐字正文**一起冻进这条记录。
+     * 之后那块被改 / 退休**都不影响这条记录** —— 开子会话带的是**记录里这份**，
+     * 不是"现在在效的那份"（否则"冻结"就只是张空收据）。 */
+    const frozen = S.invariants.filter((b) => !b.retired)
+      .map((b) => ({ id: b.id, label: b.label, version: b.version, text: b.text }));
     const id = 'snap-20260930-' + String(120000 + S.snapshots.length * 137).slice(0, 6);
-    const row = { id, cut, inv, turn: reqOf().turn, items: surfaceOf().length, time: '12:1' + (S.snapshots.length % 9), note };
+    const row = { id, cut, inv, turn: reqOf().turn, items: surfaceOf().length, time: '12:1' + (S.snapshots.length % 9), note, blocks: frozen };
     S.snapshots.push(row);
-    render(); toast('已冻结（只写插件本地：切点 / 条目数 / 时间 / 人写备注 / 固定块版本 —— 不写会话）'); return;
+    render();
+    toast(`已冻结（第 ${row.turn} 轮末 · ${row.items} 条${frozen.length ? ` · 冻住 ${frozen.length} 条规范正文` : ''}）—— 只写插件本地，不写会话`);
+    return;
   }
   if (act === 'gotoPin') {
     S.openCat = 'inject'; S.selSeq = reqOf().seq; render();
@@ -1444,9 +1524,11 @@ function orchAct(b) {
     if (act === 'snote') {
       confirmModal({
         title: '改这条冻结记录的备注',
-        warn: '只有你写的备注能改；切点 / 条目数 / 时刻 / 固定块版本是客观读数，不改。',
+        warn: '只有你写的备注能改；第几轮末 / 条目数 / 时间 / 当时的固定块版本是当时的客观读数，不能改。',
         rows: [['记录', `${x.id} · 第 ${x.turn} 轮末 · ${x.items} 条 · ${x.time}`], ['现在的备注', x.note || '（无）']],
         needReason: true, okText: '保存备注', helpKey: 'orch.freeze',
+        reasonLabel: '备注（只写插件本地 —— 模型看不到，也不会进子会话）',
+        reasonPlaceholder: '一句话提醒自己：当时为什么冻在这儿',
         onOk: (t) => { x.note = t; render(); toast('备注已更新'); }
       });
       return;
@@ -1462,21 +1544,37 @@ function orchAct(b) {
   }
   if (act === 'spawn') {
     const seed = seedAt(i);
-    if (!seed) { toast('这条冻结记录已经不在了（可能被删了）', 'err'); return; }
+    if (!seed) { toast('这条记录更早（或已经被删）—— 开子会话只能从「最后聊完的那一轮」开始', 'err'); return; }
+    /* ⚠️ **钉住的"新规范"就在这里生效**（用户 2026-10-02 二次纠正，`docs/11` D9）：
+     * 它不在本会话生效，而是在**新子会话启动时**逐字带进子会话的**第一句话**。
+     * 所以：① 确认框要列出"这次会带上哪几条新规范"；② 确认后把规范块逐字拼在首条任务前面。
+     * ⚠️ **带的是"这条记录冻住的那份"**（`seed.blocks`），不是"现在在效的那份" ——
+     * 块后来被改 / 退休都不影响这条记录（用户 2026-10-02 定，`docs/11` D9）。 */
+    const carry = seed.blocks || [];
+    const normHead = '[redline] 新规范（以此为准）\n以下逐段逐字为准；与此冲突的此前理解一律作废。\n';
+    const normBody = carry.map((x) => `【${x.label} · v${x.version}】\n${x.text}`).join('\n\n');
     confirmModal({
       title: '允许创建子会话',
-      warn: '会用这个会话「已完成的轮次」做种子新建一个子会话（种子是一次性的：之后本会话的新轮次不会进去）。',
-      rows: [['① 分叉起点', seedLabel(seed)],
-             ['② 首条任务', '（见下方理由栏 —— 必须由你写）'],
-             ['③ 继承范围', '✅ 继承：已完成的对话历史（含你已应用的编辑）｜❌ 不继承：父会话的工具授权/权限；父会话也不会自动收到子会话的 transcript / 工具输出 / 思考'],
-             ['④ 副作用', S.sw.team ? '走官方 spawnTeammate(context:"fork") → 进官方名册（任务板/成员导航/派活都有）' : '团队不可用 → 退化为"裸可续接子会话"（没有任务板与官方派活）'],
-             ['⑤ 取消', '取消 = 什么都不发生（不建会话、不写日志）']],
+      warn: '会新建一个会话，把这个会话「已经聊完的内容」当作它的开头。开头到哪儿，由平台决定（= 最后聊完的那一轮），我们挑不了更早的位置；开出去之后，这个会话后面新聊的内容不会再进去。',
+      rows: [['① 从哪儿开始', `本会话「最后聊完的那一轮」为止（第 ${seed.turn} 轮末 · 共 ${seed.items} 条）—— 平台自己算的，改不了；这条记录正好冻在这儿，所以两者一致`],
+             ['① 这条记录（留档用）', seedLabel(seed)],
+             ['① 会带上的新规范', carry.length
+               ? `${carry.length} 条（${carry.map((x) => x.label + ' v' + x.version).join('、')}）—— 逐字附在它的第一句话前面（本会话看不到，只有那个新会话的模型读到）。来自这条记录冻结时存下的逐字正文：那块后来被改 / 退休都不影响`
+               : '（这条记录冻结时没有在效的固定块 —— 想带上规范，请先「钉住这一段」，再重新「冻结当前位置」，然后从新记录开子会话）'],
+             ['② 首条任务', '（写在下面那一栏 —— 必须你写；插件不生成任何内容）'],
+             ['③ 它会带上什么', '✅ 会带上：已经聊完的对话（包含你已经改过的内容）+ 上面那些新规范｜❌ 不会带上：这个会话的工具授权；它也不会自动把干活的过程（工具输出、思考）送回本会话。注意：对话历史取的是"最后聊完的那一轮"之前的全部日志 —— 比这条记录更晚应用的改动也会一起进去（平台只给这一个起点，没有参数可选更早）'],
+             ['④ 走哪条路', S.sw.team ? '走官方团队：它会成为官方名册里的一名成员（任务板、成员导航、派活都有）' : '团队不可用 → 变成一个"裸子会话"（没有任务板，也没有官方派活）'],
+             ['⑤ 取消', '取消 = 什么都不发生（不建会话、不写记录）']],
       needReason: true, okText: '确认创建',
+      reasonLabel: '首条任务（会成为子会话的第一句话 —— 它的模型看得到；本会话的模型看不到）',
+      reasonPlaceholder: '一句话说清这次要它干什么',
       onOk: (reason) => {
         const id = '00' + (49000 + S.children.length * 771).toString(16).slice(0, 6);
-        // 子会话的"来源快照"必须是**你选的那条分叉起点**（不是"列表里最新那条"）
-        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), from: seed.id });
-        render(); toast(`已创建 ${id}（起点 ${seed.id}；来源徽章 = 本项目发起）`);
+        // 首条任务 = （有规范时）逐字规范块 + 人写的一句话；规范块来自用户自己钉住的正文（插件只做逐字复制）
+        const prime = (carry.length ? normHead + normBody + '\n---\n' : '') + reason;
+        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), from: seed.id, prime, norms: carry.length });
+        render();
+        toast(`已创建 ${id}（来源记录 ${seed.id}${carry.length ? `；已带上 ${carry.length} 条新规范` : ''}；来源徽章 = 本项目发起）`);
       }
     }); return;
   }
@@ -1484,8 +1582,11 @@ function orchAct(b) {
   if (act === 'teamOpen') { toast('（演示）这里会跳到官方团队面板：成员导航与任务板都复用官方那一份'); return; }
   if (act === 'csend') {
     confirmModal({ title: '派活（经官方通道）', warn: '会向子会话写入一条任务消息，不可撤销。',
-      rows: [['收件人', S.children[i].id], ['逐字任务正文', '（见理由栏）'], ['投递方式', '排队下一轮（queue）'], ['理由', '（见理由栏）']],
-      needReason: true, okText: '确认发送', onOk: (reason) => toast(`已发送（模拟官方返回 accepted）：${reason.slice(0, 30)}`) }); return;
+      rows: [['收件人', S.children[i].id], ['逐字任务正文', '（写在下面那一栏）'], ['投递方式', '排队下一轮（queue）']],
+      needReason: true, okText: '确认发送',
+      reasonLabel: '任务正文（写进那位成员的收件箱 —— 那个 agent 看得到）',
+      reasonPlaceholder: '一句话说清要它做什么（这句就是任务正文）',
+      onOk: (reason) => toast(`已发送（模拟官方返回 accepted）：${reason.slice(0, 30)}`) }); return;
   }
   if (act === 'ctask') { S.tasks.push({ subject: `跟进 ${S.children[i] ? S.children[i].id : ''} 的产出`, owner: '', blocked: false, st: 's-idle' }); render(); toast('已建成官方任务（写进官方任务板 —— 官方面板现在也能看到它）'); return; }
   if (act === 'ccompact') {
@@ -1702,7 +1803,10 @@ document.addEventListener('keydown', (e) => {
 
 /* 预置：两条冻结记录 + 一个成员与任务，让首屏就有内容可点 */
 (function seed() {
-  S.snapshots.push({ id: 'snap-20260930-120412', cut: '27·3', inv: 'none', turn: 27, items: 41, time: '12:04', note: '改完注入漂移，准备开子会话' });
+  /* 首屏那条记录**故意冻在最新切点**（28·3 = 当前最后一个轮次末）⟹ 它可与平台实际种子重合，按钮可用。
+   * 更要紧的是：一旦父会话又跑完一轮，它的切点就**不再是**最新 ⟹ 按 `docs/01` F38 它立刻变成"更早的记录"，
+   * 按钮消失、只留原因标记 —— 这正是评审 P0 要求界面对用户如实交代的那件事。 */
+  S.snapshots.push({ id: 'snap-20260930-120412', cut: '28·3', inv: 'none', turn: 28, items: 41, time: '12:04', note: '改完注入漂移，准备开子会话', blocks: [] });
   S.children.push({ id: '004c37a5', src: 'own', state: 'running', label: '把 README 双语改完并跑测试', from: 'snap-20260930-120412' });
   S.children.push({ id: '00a1b2c3', src: 'team', state: 'idle', label: 'reviewer（官方 teammate）' });
   S.members.push({ name: 'lead（当前会话）', st: 's-run' }, { name: 'reviewer', st: 's-idle' }, { name: 'tester', st: 's-done' });
