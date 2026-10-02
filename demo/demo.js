@@ -431,7 +431,6 @@ function renderSwitches() {
   const items = [['turnOpen', '轮次未结束'], ['live', '会话在本进程'], ['team', '官方团队可用'], ['compressBusy', '子会话正忙（压缩会 busy）'], ['noUser', '本轮没有用户消息'], ['advanced', '高级编辑']];
   $('switches').innerHTML =
     items.map(([k, label]) => `<button class="sw" data-sw="${k}" aria-pressed="${!!S.sw[k]}" data-explain="ui.switch"><i></i>${label}</button>`).join('') +
-    `<button class="sw" data-act="drafts" aria-pressed="${draftCount() > 0}" data-explain="ui.switch"><i></i>草稿 ${draftCount()} 条</button>` +
     `<button class="sw" data-sw="pendingState" aria-pressed="${S.sw.pendingState === 'unconfirmed'}"><i></i>回流未确认</button>`;
   $('switches').querySelectorAll('[data-sw]').forEach((b) => {
     b.onclick = () => {
@@ -441,7 +440,8 @@ function renderSwitches() {
       render();
     };
   });
-  // 防御：querySelector 取不到就不要硬赋 onclick（冒烟测试抓到的脆弱点）
+  // 用户 2026-10-02：草稿两步去掉 —— 编辑器里「保存」就是「写进上下文」，顶栏不再有草稿开关。
+
   const draftBtn = $('switches').querySelector('[data-act="drafts"]');
   if (draftBtn) draftBtn.onclick = (e) => {
     e.preventDefault();
@@ -470,7 +470,6 @@ function renderStats() {
       <div class="stat"><b>${vis.length}</b><span>模型可见条目${all.length > vis.length ? `（另 ${all.length - vis.length} 条被遮蔽）` : ''}</span></div>
       <div class="stat"><b>${vis.filter((n) => n.cat === 'user').length}</b><span>用户消息</span></div>
       <div class="stat"><b>${vis.filter((n) => n.cat === 'inject').length}</b><span>注入内容</span></div>
-      <div class="stat"><b>${draftCount()}</b><span>未生效改动</span></div>
     </div>`;
 }
 
@@ -1027,9 +1026,9 @@ function editorHtml() {
     ${blocked ? `<p class="eblocked">${S.sw.turnOpen ? '当前轮次还没结束 —— 改动只能在轮次边界提交。' : '这个会话不在本进程里，只能查看，不能编辑。'}</p>` : ''}
     ${S.editorError ? `<p class="emsg-err">${esc(S.editorError)}</p>` : ''}
     ${S.editorOk ? `<p class="emsg-ok">${esc(S.editorOk)}</p>` : ''}
-    ${st.kind === 'edit' ? '<p class="cap esteps"><b>第 1 步</b> 保存草稿 → 只存在插件本地（模型还看不到）· <b>第 2 步</b> 行上出现「未生效」→ 点<b>「应用到会话」</b>才会真的生效（那时原文被遮蔽、模型只看到改后的）</p>' : ''}
+    ${st.kind === 'edit' ? '<p class="cap esteps">点<b>「保存并写进上下文」</b> → 确认后立刻生效：原文被遮蔽，模型之后只看到改后的内容（原文仍在日志里，可回退）。</p>' : ''}
     <div class="efoot">
-      <span class="qwrap"><button class="btn sm" data-act="esubmit" ${blocked ? 'disabled' : ''}>${st.kind === 'pin' ? '钉住这一段（存起来）' : st.kind === 'annotate' ? '提交更正到会话' : '保存草稿'}</button>${q(st.kind === 'pin' ? 'act.pin' : st.kind === 'annotate' ? 'act.annotate' : 'act.edit', '这个按钮')}</span>
+      <span class="qwrap"><button class="btn sm" data-act="esubmit" ${blocked ? 'disabled' : ''}>${st.kind === 'annotate' ? '提交更正到会话' : '保存并写进上下文'}</button>${q(st.kind === 'pin' ? 'act.pin' : st.kind === 'annotate' ? 'act.annotate' : 'act.edit', '这个按钮')}</span>
       <span class="qwrap"><button class="btn sm ghost" data-act="ecancel">取消（Esc）</button></span>
       <span class="cap">Cmd/Ctrl + Enter 提交</span>
     </div>
@@ -1390,8 +1389,9 @@ function rowAct(btn) {
 
   if (act === 'apply') {
     const d = draftOf(seq);
+    S._pendingDraftSeq = null;
     confirmModal({
-      title: '应用到会话',
+      title: '写进上下文',
       warn: '会向会话追加一条替换记录，之后无法删除；原文对模型永久不可见，但仍保留在日志里。当前可见的那一条之后还能继续改，也能从版本历史里恢复某一版。',
       rows: [['目标', `#${seq}（当前可见节点）`], ['原文', (node.text || '').slice(0, 120)], ['改后', (d.text || '').slice(0, 120)], ['理由', d.reason || '（未填）']],
       needReason: false, okText: '确认应用',
@@ -1424,8 +1424,13 @@ function submitEditor() {
     const errBox = $('edErr'), err = isTool ? !!(errBox && errBox.checked) : !!node.err;
     if (text === '' && reasoning === '') { S.editorError = '可见文本与思考文本不能同时为空'; render(); return; }
     if (text === node.text && reasoning === '' && err === !!node.err) { S.editorError = '没有实质改动 —— 宿主会拒绝这样的提交（no-change）'; render(); return; }
+    /* 用户 2026-10-02：「保存后发现问题还能改」「没必要存草稿」⟹ **一步**：
+     * 保存 = 立刻走「写进上下文」确认框（确认后进日志）；取消则这次改动不留痕。 */
     S.drafts[st.seq] = { seq: st.seq, text, reasoning, err, updatedAt: '12:1x', requestSeq: reqOf().seq };
-    S.editor = null; render(); toast('已保存草稿（模型还看不到）→ 行上出现「未生效」，点「应用到会话」才生效'); return;
+    S.editor = null; render();
+    S._pendingDraftSeq = st.seq;            // 取消确认时用它把这次临时草稿丢掉
+    rowAct({ dataset: { act: 'apply', seq: String(st.seq) } });
+    return;
   }
   if (st.kind === 'annotate') {
     const reason = ($('edWhy') && $('edWhy').value.trim()) || '';
@@ -1707,25 +1712,34 @@ function applyExplain() {
 }
 
 /* ------------------------------------------------------------------ 11. 渲染 + 事件 */
+/** 用户 2026-10-02 的减法：把点名要去掉的交互从界面上摘掉（真实现里不生成这些按钮）。 */
+function pruneRemovedUI() {
+  const blocksCard = $('cardBlocks') && $('cardBlocks').closest('.card');
+  if (blocksCard) blocksCard.hidden = true;                       // 固定块（不变量）那一整卡
+  const orch = $('cardOrch');
+  if (orch) {
+    const team = orch.querySelector('[data-block="team"]');
+    if (team) team.remove();                                      // 官方团队（名册/任务板）
+    orch.querySelectorAll('[data-act="csend"],[data-act="ctask"],[data-act="teamOpen"],[data-act="copen"],[data-act="cprompt"]')
+      .forEach((b) => b.remove());                                // 派活 / 建成官方任务 / 去官方面板 / 打开 / 发消息
+  }
+  const browser = $('cardBrowser');
+  if (browser) browser.querySelectorAll('[data-act="pin"],[data-act="gotoPin"]').forEach((b) => b.remove());  // 钉住这一段
+}
 function render() {
   applyTheme();
+  /* ⚠️ 用户 2026-10-02 的**减法**（原话：「之前那个 UI 是可以的，只是你 UI 上面的很多多余交互去掉就可以」）：
+   * 在 demo 层把下面这些交互**从界面上摘掉**（真实现里它们根本不会生成）：
+   *   · 固定块（不变量）整卡 + 行上的「钉住这一段」
+   *   · 官方团队整块 + 「派活」「建成官方任务」「去官方面板」
+   *   · 子会话行上的「打开」「发消息」
+   * 保留：整体布局、轮次/趋势/事件卡、浏览器的编辑/批注、版本历史、开启子会话、压缩、打断。 */
   renderSwitches(); renderNotice();
   renderStats(); renderTrend(); renderStep(); renderEvents();
   renderBrowser();
-  $('stickyDrafts').hidden = draftCount() === 0;
-  $('stickyDrafts').innerHTML = `<span>还有 <b>${draftCount()}</b> 条改动未生效</span>
-    <button class="btn sm" data-act="applyAll" data-explain="act.applyAll">逐条应用到会话</button>
-    <button class="btn sm ghost" data-act="discardAll" data-explain="act.discardAll">放弃未应用的改动</button>`;
-  $('stickyDrafts').querySelectorAll('[data-act]').forEach((b) => {
-    b.onclick = () => {
-      if (b.dataset.act === 'discardAll') {
-        confirmModal({ title: '放弃未应用的改动', warn: '只清本地草稿，不影响会话；未保存的输入会丢失。', rows: [['将丢弃', Object.keys(S.drafts).map((s) => '#' + s).join(' · ')]], needReason: false, okText: '确认放弃', onOk: () => { S.drafts = {}; render(); toast('已清空本地草稿（会话未动）'); } });
-      } else {
-        confirmModal({ title: '逐条应用到会话', warn: '会向会话追加替换记录，之后无法删除；原文对模型永久不可见（日志里仍在）。', rows: Object.keys(S.drafts).map((s) => ['#' + s, (draftOf(Number(s)).text || '').slice(0, 90)]), needReason: false, okText: '确认逐条应用', onOk: () => { Object.keys(S.drafts).forEach((s) => doApply(Number(s))); } });
-      }
-    };
-  });
+  /* 草稿两步已删除（用户 2026-10-02）：不再有「还有 N 条未生效 / 逐条应用 / 放弃未应用的改动」横幅。 */
   renderBlocks(); renderOrch(); applyExplain(); renderSelfcheck();
+  pruneRemovedUI();   // ⚠️ 必须最后跑：上面那些 render* 会把 HTML 重写一遍
 }
 
 /**
@@ -1756,7 +1770,11 @@ $('btnExplain').onclick = () => { S.explain = !S.explain; if (!S.explain) closeD
 if (queryFlag('dev') === '1') S.selfcheck = true;
 $('btnReset').onclick = () => { S = initial(); render(); toast('原型已重置'); };
 $('drawerClose').onclick = () => closeDrawer();
-$('modalCancel').onclick = () => { $('modalWrap').hidden = true; };
+$('modalCancel').onclick = () => {
+  $('modalWrap').hidden = true;
+  /* 编辑器「保存」弹出来的那个确认框，取消 = 这次改动不留痕（不再有"未生效"这一档）。 */
+  if (S._pendingDraftSeq != null) { delete S.drafts[S._pendingDraftSeq]; S._pendingDraftSeq = null; render(); }
+};
 // 捕获阶段**只做一件事**：窄屏（遮罩式）时点面板外关闭。
 // ⚠️ 绝不再拦截 [data-explain] 的点击 —— 那会让讲解模式把按钮本身的交互全部吃掉。
 document.addEventListener('click', (e) => {

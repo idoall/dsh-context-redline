@@ -236,7 +236,7 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
       const m = cols[1] && /`([^`]{6,200})`/.exec(cols[1]);
       if (m) r43.push([cols[0].replace(/\*\*/g, '').slice(0, 20), m[1]]);
     }
-    if (r43.length < 8) problems.push(`R4.3 短警示只抽到 ${r43.length} 条（应 ≥8：表格结构或反引号被改动了？）`);
+    if (r43.length < 6) problems.push(`R4.3 短警示只抽到 ${r43.length} 条（应 ≥6：减法后剩 6 条；表格结构或反引号被改动了？）`);
     for (const [action, txt] of r43) {
       if (!js.includes(txt)) problems.push(`R4.3 短警示与 demo 不一致：${action} → 文档写「${txt.slice(0, 40)}…」但 demo.js 里找不到`);
     }

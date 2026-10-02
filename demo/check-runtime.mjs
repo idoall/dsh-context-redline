@@ -741,7 +741,8 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   const eh = api.editorHtml();
   check('编辑用户消息：主字段叫「正文」', /正文/.test(eh) && /id="edT"/.test(eh));
   check('编辑用户消息：思考文本收进「高级」折叠（默认不展开）', /<details class="adv">/.test(eh) && /id="edR"/.test(eh));
-  check('编辑用户消息：写清两步流程（保存草稿 → 应用到会话才生效）', /第 1 步/.test(eh) && /应用到会话/.test(eh) && /才会真的生效/.test(eh));
+  check('编辑用户消息：写清"保存即写进上下文"（用户 2026-10-02 去掉草稿两步）',
+    /保存并写进上下文/.test(eh) && /保存并写进上下文/.test(registry.get('cardBrowser').innerHTML + eh) && /回退|恢复/.test(eh));
   check('编辑器：提交按钮**左上角飘一个「?」**（与讲解模式序号同一种做法，不是按钮后面挂一个）', /class="qfloat"[^>]*data-help="act.edit"/.test(eh) && /class="qwrap"/.test(eh));
 
   // 批注：不许再出现数字输入框，作废范围改成"就这一条 / 从这条到…"
