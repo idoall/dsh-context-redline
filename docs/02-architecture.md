@@ -25,7 +25,7 @@
 │          ＋ 行内动作条（编辑/批注/钉住这一段/应用到会话）                     │
 │          ＋ 行下内联编辑器（kind-aware，不弹窗）                             │
 │          ＋ 常驻「还有 N 条未生效」                                        │
-│          ＋ 快照 / 子会话 面板（冻结 → 开子会话 → 压缩 → 派活）               │
+│          ＋ 子会话面板（开子会话 → 压缩 → 派活）                             │
 └────────────────────────────────────────────────────────────────────────────┘
                                    ▲ ▼  RPC（/api/dsh-context-redline/redline）
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -40,7 +40,6 @@
                                    ▲ ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
 │ L2  编排面  src/redline/orchestrate/                                       │
-│  freeze      冻结点记录（cutSeq = 最后一个 turn/end；不写会话）              │
 │  child       子会话（startContinuable({ provider:'fork', label, request:{parent,prompt}, signal })│
 │              ——种子由平台 fork provider 自算；**可续接** → 收工由平台自动回流结算通知（docs/06 §3.1）│
 │  compact     子会话压缩（ctx.compaction.compactNow(childAgent, signal)）     │
@@ -89,7 +88,6 @@
 ```
 ① 草稿全部提交（否则改动不在日志里 → 不会进种子）      ← 最易错的一条
 ② （建议）目标/约束存成 workspace 级固定块             ← 子会话要靠它守住漂移
-③ 冻结：写一条 freeze 记录（cutSeq / 条目数 / digest（内容哈希与计数，**不是**人话摘要）/ 在效固定块版本 / 时间 / 备注）
         ——只写我们自己的库，**不写会话**
 ④ 开子会话（**可续接**，必须）——**以安装树 `.d.ts` 的签名为准**（`ContinuableStartSpec`，实测）：
         ctx.subagents.startContinuable({
@@ -122,7 +120,7 @@ src/
 │   └─ ...
 ├─ client/          ← 上游 tag v0.59.2（复制）
 │   ├─ components/browser.tsx     ★ 我们改：动作条 / 内联编辑器 / 轮次选择 prop
-│   ├─ components/contextView.tsx ★ 我们改：编辑 hook 接线 / 轮次联动 / 快照面板
+│   ├─ components/contextView.tsx ★ 我们改：编辑 hook 接线 / 轮次联动 / 子会话面板
 │   ├─ i18n.ts                    ★ 我们改：新文案 + 补齐上游缺的 key
 │   └─ ...
 ├─ redline/         ← 我们新增：**全部纯逻辑**（禁 `node:*` / DOM / React；edit lane 直接单测）
@@ -133,7 +131,6 @@ src/
 │   ├─ eligibility.ts   能力判定（**按底层事件类型**给按钮，docs/01 F7.2）
 │   ├─ invariants.ts    逐字固定块（版本 / workspace 作用域 / 漂移判定）
 │   ├─ orchestrate/     ← 编排面的纯逻辑（只装配请求与判定，**不直接调平台服务**）
-│   │   ├─ freeze.ts        冻结点记录
 │   │   ├─ child.ts         建子会话 / 建团队成员的请求装配（真正执行在 host 通道）
 │   │   ├─ compact.ts       压缩体检 + 失败码 → 人话
 │   │   ├─ steer.ts         发消息 / 打断的请求装配（转发官方）
@@ -186,7 +183,6 @@ tests/
 | `invariant.history` | `{id}` | `InvariantBlock[]` | 全部版本（含退休） |
 | `invariant.drift` | `{sessionId}` | `{id, label, present, firstSeenSeq?}[]` | 漂移检查（逐字比对当前 surface） |
 | `plan.next` | `{sessionId}` | `NextStep` | 「下一步该做什么 + 是否需要确认框（点确认即授权）+ 理由」 |
-| `snapshot.list` | `{sessionId}` | `FreezeRecord[]` | 冻结记录 |
 | `child.list` | `{sessionId}` | `ChildRow[]` | **读平台投影**：父会话的 `subagentCatalog` / `agentTeam` + 各子会话的 `subagentTiming` / 用量。**不自建 children 表**、不推断状态（`docs/01` F13.1/F24/F34）；用 `tryMembership` 标来源 |
 | `team.members` | `{sessionId}` | `TeamMemberView[]` \| `null` | 转发官方 `ctx.agentTeams.listMembers(lead)`；**服务不存在 → 返回 `null`**（不是空数组，界面据此隐藏对接点） |
 | `team.tasks` | `{sessionId}` | `TeamTaskView[]` \| `null` | 读官方 `agentTeam` 投影 / `listTasks(lead)`——**同一份数据**，不复制、不缓存（`docs/01` F34） |
@@ -215,7 +211,6 @@ tests/
 | `invariant.save` | `{sessionId, label, text, scope, id?}` | `InvariantBlock` | 我们的 sqlite | ✅ 可退休（历史保留） |
 | `invariant.retire` | `{id}` | `{id, retired:true}` | 我们的 sqlite | ✅ |
 | `invariant.inject` | `{sessionId, id, reason}` | `{newSeq, flushed}` | **会话日志**（追加 user 消息） | ❌ |
-| `snapshot.create` | `{sessionId, label?, note?}` | `FreezeRecord` | 我们的 sqlite | ✅ 可删 |
 | `child.fork` | `{sessionId, recordId?, label, prompt}` —— `recordId` 只用于**来源凭证/备注**（写 `snapshot_links`），**不是种子参数**：平台 fork **没有**任何切点参数（`docs/01` F38） | `{childId}` | **创建新会话**（优先 `ctx.agentTeams.spawnTeammate`；兜底 `ctx.subagents.startContinuable({provider:'fork', label, request:{parent, prompt}, signal})`）。**实际种子 = 平台自算的"当前最后一个 `turn/end` 及其之前"** | 会话可归档，但父会话种子是**一次性**的 |
 | `child.compact` | `{childId}` | `{compacted, items?, reason?}` | **子会话历史被摘要取代** | ❌ **不可逆** |
 | `child.prompt` | `{requestId（**由我们铸造**：`SubagentPromptRequestId`）, parentSessionId, childSessionId, mode:'continuable', delivery:'queue'\|'steer', content: PromptContentPart[]}` | `{messageId}`（`ctx.subagents.prompt(request, signal)` 的回执） | 子会话 inbox（人写的一条话 = 它的**下一个轮次**） | ❌ |
@@ -239,7 +234,6 @@ tests/
 
 | 子命令 | 行为 | 是否写会话 |
 |---|---|---|
-| `/redline snapshot [备注]` | 冻结当前会话（记录 `turn/end` 切点） | 否（只写我们的库） |
 | `/redline children` | 列出子会话与状态 | 否 |
 | `/redline compact <childId>` | 压缩指定子会话（先体检） | **是（不可逆）** |
 | `/redline invariants` | 列出固定块与漂移状态 | 否 |
@@ -250,7 +244,7 @@ tests/
 
 ### 5.4 内部服务
 
-导出 cordis Service（`ctx.redline` 之类的命名），把 `inspect / apply / annotate / invariants.* / freeze / plan` 暴露给其它插件与命令复用。
+导出 cordis Service（`ctx.redline` 之类的命名），把 `inspect / apply / annotate / invariants.* / plan` 暴露给其它插件与命令复用。
 **这是图 2 里"内部服务"入口的对应物**；工具入口见 `docs/00` N6 与 `docs/08`。
 
 ---
@@ -264,23 +258,17 @@ $DSH_HOME/dsh-context-redline/
    ├─ schema_version(version)            我们的格式版本（**只备将来升级用**；首启即空库，无旧数据可迁，见 `docs/08` Q8）
    ├─ invariants(id, session_id, version, created_at, label, text, retired_at, scope)
    ├─ history(id, ts, kind, session_id, category, action, payload)
-   ├─ snapshots(id, session_id, created_at, cut_seq, label, note, digest, counts, invariants_json)
-   │     └ invariants_json = 当时在效固定块的快照（**含逐字正文**，不只是版本号 —— docs/11 D9）
-   └─ snapshot_links(snapshot_id, child_id, created_at, note)
 ```
 
 > **子会话的权威事实在平台，不在我们这里**：谁是谁的子会话由**父会话日志**里的 `subagent/catalog` 事件决定
 > （投影 `subagentCatalog`）；状态与耗时来自子会话的 `subagentTiming`；完成原因来自父会话日志里的 `subagent-settled` 通知。
-> 我们的 `snapshot_links` **只记平台不知道的那一件事**："这个子会话是从哪条冻结**记录**开出来的"（+ 人写备注）。
-> ⚠️ **它不是种子来源**：种子由平台 fork provider 自算（= 父会话**当前最后一个 `turn/end` 及其之前**），
-> 我们**没有任何参数**能指定更早的切点（`docs/01` F38）⟹ 这张关联只能表述成"**来源凭证**"，
-> **不许**在界面或文案里写成"种子 = 那条快照"（`docs/03` R5.1 / R4.7）。
+> **不再有 `snapshot_links`**（`docs/11` D10 删掉冻结后，"来源记录"这个概念也一起删了）。
+> ⚠️ 平台 fork 的种子恒为"父会话**当前最后一个 `turn/end` 及其之前**"，**没有任何参数**能指定更早的切点（`docs/01` F38）；
+> 所以界面上**不许**出现"从某条记录 / 某个更早位置开始"的说法（`docs/03` R5.1）。
 > ⟹ **不要复制一份 children 表**去和平台对账——那必然会漂移（`docs/01` F13.1）。
 
 - **不写** `$DSH_HOME/profiles/*`、不写 DSH 安装目录、不写会话日志（除非用户点了写入类动作）。
-- **`digest` = 内容哈希（`counts` = 条目数等计数）**，**不是**人话摘要：本插件**不生成任何摘要/总结**（N4：不产生 AI 生成内容），冻结记录里也不许出现"摘要"字样。
-- **`invariants_json` 存"当时在效固定块的快照"**（id / 标签 / 版本 / **逐字正文**）：这是"冻结真的冻住了那一刻"的落地方式 ——
-  开子会话时带的是**记录里这份**（块后来被改 / 退休都不影响），不是"现在在效的那份"（`docs/11` D9）。
+- **`digest` = 内容哈希（`counts` = 条目数等计数）**，**不是**人话摘要：本插件**不生成任何摘要/总结**（N4：不产生 AI 生成内容），人写备注里也不许出现"摘要"字样。
 - `schema_version` 存在的理由：要**继承**早期那次尝试 时期已经存在的 `invariants` 表（用户已有的固定块不该丢）。
 - 机密性：这里存的是**用户自己的上下文正文**（可能含私密内容），与 DSH 会话日志同等敏感；不做任何外发。
 
@@ -292,7 +280,7 @@ $DSH_HOME/dsh-context-redline/
 |---|---|
 | 会话不在本进程（冷会话/别人的会话） | `turnState.known=false` → 界面前事禁用所有写入类动作，文案说明"这个会话不在本进程里，只能看" |
 | 轮次未闭合 | `apply`/`annotate`/`inject` 事前禁用 + 理由；**不靠点击后报错** |
-| 目标已被遮蔽 | 行上不出现「编辑」，并显式给原因（"原文已被遮蔽（#N）；要再改请用批注，或走快照+子会话"） |
+| 目标已被遮蔽 | 行上不出现「编辑」，并显式给原因（"原文已被遮蔽（#N）；要再改请用批注"） |
 | 草稿不存在 / 无实质改动 | 宿主拒绝并给原文（`redline/no-draft`、`no uncommitted edit`） |
 | 作废范围非法 | 只给一端 / `from > to` → 拒绝（`redline/bad-range`） |
 | 压缩 `busy` | "子会话正在跑或轮次未闭合，等它空闲再压缩" |

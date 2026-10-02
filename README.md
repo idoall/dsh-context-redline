@@ -16,7 +16,7 @@ only after review and sign-off. Rationale: agreeing on *what* to build, *on what
 
 | Problem | Symptom | Answer |
 |---|---|---|
-| **Context bloat** | every request resends the whole history; sessions grow without bound | **Snapshot + child session**: a clean, short starting point |
+| **Context bloat** | every request resends the whole history; sessions grow without bound | **Child session + explicit compaction**: the child inherits the completed history, then you compact it |
 | **Injection drift** | the harness re-injects `runtime-context` / AGENTS.md / skill catalog every turn, so a human edit comes back next turn | **Verbatim pinned blocks + drift check + explicit re-inject** |
 | **Nothing is editable** | the upstream context browser can only be read | **Edit on the right**, with "which item, what changed, did it take effect" always visible |
 
@@ -35,7 +35,7 @@ What we add on top is **editing** and **orchestration**:
   **Pin this passage** (`钉住这一段` — stored locally; carried verbatim into the first message of a **new child session**) / **Apply to session**. The editor expands **inline under that row** (never a modal),
   and is prefilled with the **full text**. A sticky banner shows "N changes not yet applied".
 - **Below**: snapshots and child sessions (freeze → fork → compact → dispatch / status / interrupt).
-  A freeze record is **evidence** (cut point / item count / pinned-block version **and the verbatim text of the pinned blocks then in effect** — that is what gets carried into a new child session), **not a selectable seed**:
+  A child session always starts at the parent's **last completed turn** — there is **no parameter** to pick an earlier cut point
   the fork seed is always the parent's **last completed turn**, so a record older than that cannot be branched from
   (see [`docs/01`](docs/01-platform-facts.md) F38).
 
@@ -75,7 +75,7 @@ What we add on top is **editing** and **orchestration**:
 | [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **Requirement traceability**: every original request and every capability from the WeChat screenshots → which goal → done / not done / downgraded |
 | [`demo/`](demo/README.md) | **Clickable interaction prototype** (M0.5 gate): fake data, real interactions, and a "what does this button do" explain mode |
 | [`docs/11-session-handoff.md`](docs/11-session-handoff.md) | **Session handoff**: a copy-paste block plus the fields to refresh at each wrap-up |
-| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, 221 items; steps needing you are marked `WAIT🙋` |
+| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, 223 items; steps needing you are marked `WAIT🙋` |
 | [`AGENTS.md`](AGENTS.md) | Working agreement: hard constraints, platform pitfalls, testing discipline |
 | [`UPSTREAM.md`](UPSTREAM.md) / [`NOTICE`](NOTICE) | Upstream provenance, license compliance, list of our modifications |
 

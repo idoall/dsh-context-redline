@@ -405,10 +405,10 @@ body {
 @media (min-width: 1040px) {
   .orchgrid {
     grid-template-columns: minmax(0, 1.02fr) minmax(0, 1fr);
-    grid-template-areas: "freeze children" "freeze pending" "team team";
+    grid-template-areas: "spawnone children" "spawnone pending" "team team";
     align-items: start;
   }
-  .orchblock[data-block="freeze"] { grid-area: freeze; }
+  .orchblock[data-block="spawnone"] { grid-area: spawnone; }
   .orchblock[data-block="children"] { grid-area: children; }
   .orchblock[data-block="pending"] { grid-area: pending; }
   .orchblock[data-block="team"] { grid-area: team; }

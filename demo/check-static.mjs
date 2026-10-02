@@ -200,11 +200,11 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (htmlStrings.length) problems.push(`这些行把 markdown 的 ** 直接写进了 HTML（会原样显示星号）：${htmlStrings[0].trim().slice(0, 60)}`);
 }
 
-/* 16) 「快照与子会话」的排布契约：宽屏两列（冻结左列跨行、团队跨两列）、窄屏单列、块与块要能区分 */
+/* 16) 「子会话」卡的排布契约：宽屏两列（第一列跨行、团队跨两列）、窄屏单列、块与块要能区分 */
 {
   if (!/\.orchgrid\s*\{/.test(css)) problems.push('缺少 .orchgrid（快照卡的分块网格）');
-  if (!/grid-template-areas:\s*"freeze children"\s*"freeze pending"\s*"team team"/.test(css)) {
-    problems.push('宽屏排布契约变了：应为 freeze 一列跨两行、children+pending 一列、team 跨两列');
+  if (!/grid-template-areas:\s*"spawnone children"\s*"spawnone pending"\s*"team team"/.test(css)) {
+    problems.push('宽屏排布契约变了：应为 开子会话 一列跨两行、children+pending 一列、team 跨两列（冻结已删，spawnone 占原位置）');
   }
   if (!/@media \(min-width: 1040px\)/.test(css)) problems.push('缺少宽屏断点（≥1040px 才两列，窄屏必须单列）');
   if (!/\.orchblock\s*\{[^}]*bg-layer-3/.test(css)) problems.push('块底色必须比卡片底深一档（光靠边框不够"明显区分"）');
@@ -213,7 +213,7 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
 
 /* 16.5) 全页统一语言（2026-10-01 一致性 pass）：卡片标题与块标题同一套（下细虚线 + 右读数） + 行间细虚线 */
 {
-  if (!/\.card-title\s*\{[^}]*border-bottom:\s*1px dashed/.test(css)) problems.push('卡片标题下必须有细虚线（与「快照与子会话」的块标题同一套语言）');
+  if (!/\.card-title\s*\{[^}]*border-bottom:\s*1px dashed/.test(css)) problems.push('卡片标题下必须有细虚线（与「子会话」卡的块标题同一套语言）');
   if (!/\.card-title \.bmeta\s*\{/.test(css)) problems.push('卡片标题要有右读数样式（.card-title .bmeta）');
   if (!/#cardBrowser \.row \+ \.row/.test(css) || !/\.catbody \.row \+ \.row/.test(css)) {
     problems.push('分类树/浏览器行之间要有细虚线分隔（与块内行分隔一致）');
@@ -233,8 +233,8 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
 
 /* 18) 标题右读数的纪律（用户 2026-10-01）：不会变的不许放 */
 {
-  if (!/冻结块读数|条记录 · 最近/.test(js)) {
-    problems.push('冻结块读数必须用会变的量（条数 + 最近时刻），不许回到"最新 <id> · 第 N 轮末 · M 条"那种死字符串');
+  if (!/开子会话块读数|还没开过/.test(js)) {
+    problems.push('开子会话块读数必须用会变的量（还没开过 / 已开 N 个），不许回到"最新 <id> · 第 N 轮末 · M 条"那种死字符串');
   }
 }
 

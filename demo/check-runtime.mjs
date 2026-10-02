@@ -513,15 +513,15 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('钉住：**先出确认框**（写会话必须确认 —— 不再"只写本地所以不用确认"）',
     registry.get('modalWrap').hidden === false && S.extraNodes.length === extraBefore && S.invariants.length === 0,
     `modalHidden=${registry.get('modalWrap').hidden} extra=${S.extraNodes.length}`);
-  check('钉住确认框：写明「只存本地 · 本会话看不到」+ 谁会读到（新子会话）+ 什么时候读到（冻结 + 开子会话）',
+  check('钉住确认框：写明「只存本地 · 本会话看不到」+ 谁会读到（新子会话）+ 什么时候读到（点「开启子会话」那一刻）',
     /只存插件本地/.test(registry.get('modalList').innerHTML) && /本会话的模型看不到/.test(registry.get('modalList').innerHTML)
-    && /新子会话启动时读到/.test(registry.get('modalList').innerHTML) && /冻结/.test(registry.get('modalList').innerHTML));
+    && /新子会话启动时读到/.test(registry.get('modalList').innerHTML) && /开启子会话/.test(registry.get('modalList').innerHTML));
   registry.get('modalOk').onclick();
   const b = S.invariants[0];
   check('钉住：落库为 workspace 级 + 带 id/版本/时间', !!b && b.scope === 'workspace' && !!b.id && b.version === 1 && !!b.savedAt, JSON.stringify(b && { id: b.id, version: b.version, scope: b.scope }));
   check('钉住：**不写本会话**（只存本地基准 —— 本会话模型看不到它）',
     S.extraNodes.length === extraBefore, `extra=${S.extraNodes.length}（期望 ${extraBefore}）`);
-  check('钉住 toast：说清"只存本地 + 下次冻结/开子会话才带进新会话"',
+  check('钉住 toast：说清"只存本地 + 下次开子会话才带进新会话"',
     /只存本地/.test(registry.get('toastWrap').children.map((c) => c.textContent).join(' ')) && /新会话的第一句话/.test(registry.get('toastWrap').children.map((c) => c.textContent).join(' ')),
     registry.get('toastWrap').children.map((c) => c.textContent).join(' | ').slice(0, 80));
   api.render();
@@ -754,7 +754,6 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
     check(`说明说人话：${label}`, !!e && marks.every((m) => text.includes(m)), e ? marks.filter((m) => !text.includes(m)).join('缺:') || '' : '没有这条讲解词');
   };
   need('act.pin', ['一句话', '为什么需要', '你什么时候会用它', '它不做什么', '逐字'], '存为不变量');
-  need('orch.freeze', ['一句话', '记下什么', '为什么需要', '它不做什么', '什么时候会用'], '冻结当前位置');
   need('orch.spawn', ['一句话', '两条路', '种子是一次性的', '在界面上怎么找'], '开子会话');
   // 上下文事件卡：必须说明"这一栏是干什么用的"
   const cap = registry.get('cardEvents').innerHTML;
@@ -764,7 +763,7 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
 /* ---------------- 用户 2026-10-01「再四问」：全局性 / 随位置变化 / 历史机制 / 多轮子会话 ----------------
  * ① 固定块是**全局**的（按钮在行上只是"要选钉哪一段"）；
  * ② 上下文事件必须**随当前位置变化**（已发生 / 尚未发生）；
- * ③ 冻结是**历史机制**（每点一次加一条，不覆盖）；
+ * ③ 冻结已按 D10 删除（原来是每点一次加一条的历史机制）；
  * ④ 开子会话必须说清"**多轮 + 双向 + 可指定模型与推理档 + 可带标签**"。 */
 {
   const S = api.S();
@@ -786,30 +785,19 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('上下文事件：看最后一步时，事件全部「已发生」且内容与早期**不一样**', !/尚未发生/.test(evLate) && /已发生 2/.test(evLate) && evEarly !== evLate);
   check('上下文事件：会变的事件做成行（is-done / is-todo），不变的说明收成小字', /class="evrow is-done"/.test(evLate) && /evhint/.test(evLate));
 
-  /* ③ 冻结：**幂等**（用户 2026-10-01 纠正："同一位置再点一次为什么会出现多条？"）——
-   * 一条记录的身份 = 「切点 + 当时的固定块版本」；同身份再点 → **不新增**，只问要不要改备注。
-   * 备注可改；切点/条目数/时刻/固定块版本不可改（客观读数），只能删。 */
-  S.snapshots = [];
-  api.orchAct({ dataset: { act: 'freeze' } });
-  const afterOne = S.snapshots.length;
-  api.orchAct({ dataset: { act: 'freeze' } });
-  check('冻结：同一位置再点**不新增**记录（幂等），而是问"要不要改备注"', afterOne === 1 && S.snapshots.length === 1 && registry.get('modalWrap').hidden === false && /已经冻过/.test(registry.get('modalTitle').textContent), `第一次=${afterOne} 第二次=${S.snapshots.length}`);
-  check('冻结确认框：写明"只留一条"并列出不能改的字段', /只留一条记录/.test(registry.get('modalWarn').textContent) && /不能改的字段/.test(registry.get('modalList').innerHTML));
-  document.getElementById('snapNote').value = '改一下备注';
-  document.getElementById('modalOk').onclick();
-  check('冻结：备注能被更新，且仍然只有一条记录', S.snapshots.length === 1 && S.snapshots[0].note === '改一下备注', `note=${S.snapshots[0] && S.snapshots[0].note}`);
-  // 换一个位置 → 才是新记录
-  S.selSeq = api.REQUESTS[0].seq; S.selTurn = api.REQUESTS[0].turn;
-  api.orchAct({ dataset: { act: 'freeze' } });
-  check('冻结：**不同位置**才新增一条（两条并存）', S.snapshots.length === 2);
-  // 改备注 / 删除
-  api.orchAct({ dataset: { act: 'snote', i: 1 } });
-  document.getElementById('modalReason').value = '第二条的备注';
-  document.getElementById('modalOk').onclick();
-  check('冻结记录：备注可就地改（另一条不受影响）', S.snapshots[1].note === '第二条的备注' && S.snapshots[0].note === '改一下备注');
-  api.orchAct({ dataset: { act: 'sdel', i: 0 } });
-  document.getElementById('modalOk').onclick();
-  check('冻结记录：可删除（只删本地记录）', S.snapshots.length === 1 && S.snapshots[0].note === '第二条的备注');
+  /* ③ 冻结**整体删除**（用户 2026-10-02 定，裁定 = `docs/11` D10）：
+   * 用户原话：「不要冻结……直接在下面放一个『开启子会话』按钮，是不是这样更简单？」
+   * 所以这里要锁两件事：① 界面上**没有任何**冻结入口/记录/文案残留；② 开子会话**不需要先冻结**。 */
+  S.children = []; api.render();
+  const orchHtml = registry.get('cardOrch').innerHTML;
+  check('冻结已删除：界面里没有任何冻结按钮 / 记录行 / 冻结字样',
+    !/data-act="freeze"/.test(orchHtml) && !/data-act="snote"/.test(orchHtml) && !/data-act="sdel"/.test(orchHtml)
+    && !/冻结/.test(orchHtml) && !/data-block="freeze"/.test(orchHtml));
+  check('冻结已删除：讲解词典里也没有 orch.freeze 这一条', !api.EXPLAIN['orch.freeze']);
+  check('开子会话：**不需要先冻结**，一个常驻按钮就在那儿（还没有任何子会话时也能点）',
+    /data-act="spawn"/.test(orchHtml) && /开启子会话/.test(orchHtml));
+  check('开子会话：按钮旁写明"从最后聊完的那一轮起 + 会带上你现在钉住的规范"',
+    /最后聊完的那一轮/.test(orchHtml) && /现在钉住的那几条规范/.test(orchHtml));
 
   // ④ 多轮子会话的事实必须写在讲解词里
   const sp = api.EXPLAIN['orch.spawn'].what;
@@ -831,7 +819,7 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('发消息（子会话通道）**不依赖官方团队**：团队关着它照样在', /data-act="cprompt"/.test(off));
   check('派活（团队通道）团队关着就**不出现**（不是置灰）', !/data-act="csend"/.test(off));
   S.sw.team = true;
-  S.invariants = []; S.snapshots = []; S.children = []; S.selTurn = api.TOTAL_TURNS; S.selSeq = late; api.render();
+  S.invariants = []; S.children = []; S.selTurn = api.TOTAL_TURNS; S.selSeq = late; api.render();
 }
 
 /* ---------------- 轮次刻度带：点一格必须有反应（用户 2026-10-02：「17 点了没有反应」） ----------------
@@ -889,96 +877,73 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
     /理由<span class="chip-soft dest-model"/.test(hAnn) && /模型读到的全部/.test(hAnn));
   check('去向标记：固定块的标签写「只写本地」、正文写「开新会话时会带进新会话（本会话看不到）」',
     /标签<span class="chip-soft dest-local"/.test(hPin) && /正文（逐字为准）<span class="chip-soft dest-model"/.test(hPin) && /开新会话时会带进新会话/.test(hPin));
-  check('去向标记：冻结备注那一栏写明「只写本地 · 模型看不到」', /dest-local/.test(hOrch) && /只写本地 · 模型看不到/.test(hOrch));
+  check('去向标记：开子会话区块写明"规范会带进新会话"（已无冻结备注那一栏）',
+    /会把你/.test(hOrch) && /第一句话前面/.test(hOrch) && !/dest-local/.test(hOrch));
   const all = html.join('\n') + hOrch;
   const kinds = new Set((all.match(/dest-(local|model)/g) || []));
   check('去向标记：全界面只有两种取值（没有第三种说法）',
     [...kinds].every((k) => k === 'dest-local' || k === 'dest-model') && kinds.size === 2, [...kinds].join(','));
   const forms = new Set((all.match(/只写本地 · 模型看不到|会进模型上下文（点「应用到会话」之后）|会进模型上下文/g) || []));
   check('去向标记：文字也只用这几种固定说法（不会被改出模糊表述）', forms.size >= 2 && forms.size <= 4, [...forms].join(' / '));
-  S.editor = null; S.snapshots = []; api.render();
+  S.editor = null; api.render();
 }
 
-/* ---------------- 冻结记录的用途与**起点口径**（用户 2026-10-01 定的结构 + 评审 P0 的平台边界） -------------
- * **结构**（用户原话）：「我应该在我冻结的那一条后边加上开子会话，而不是在子会话跟冻结当前位置是同一条」
- *   → 开子会话挂在**记录行**上，没有全局按钮。这一点**不变**。
- * **但起点由平台定**（`docs/01` F38）：fork 种子 = 父会话**当前最后一个 `turn/end` 及其之前**，
- *   调用方**没有任何参数**能指定更早的切点 ⟹ 只有切点等于它的那条记录才给按钮；
- *   更早的记录**不给入口**、只给原因标记 + 替代路径（`docs/03` R5.1 / R4.7）。 */
+/* ---------------- 「开启子会话」的起点与携带（`docs/11` D10：冻结已删） ----------------
+ * **起点由平台定**（`docs/01` F38）：fork 种子 = 父会话**当前最后一个 `turn/end` 及其之前**，
+ *   调用方**没有任何参数**能指定更早的切点 ⟹ 界面上不再假装"可以挑一个更早的位置"
+ *   （原来那套"冻结记录 + 只有最新那条能给入口"的复杂度随冻结一起删掉）。
+ * **携带**：开启那一刻**在效**的固定块逐字放进子会话第一句话（块被退休就不带、新钉的就带）。 */
 {
   const S = api.S();
-  S.snapshots = []; S.children = []; S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.selTurn = api.TOTAL_TURNS;
-  // 摆一块「已钉住的规范」：用来验证**开子会话时它被逐字带进子会话的第一句话**（`docs/11` D9）
+  S.children = [];
   S.invariants = [{ id: 'inv-carry', label: 'AGENTS.md', version: 1, text: '必须先把 AGENTS.md 读完再动手', retired: false, scope: 'workspace' }];
   api.render();
-  check('冻结记录：还没有记录时，界面明确说"先冻结"（没有全局开子会话按钮可点）',
-    !/data-act="spawn"/.test(registry.get('cardOrch').innerHTML) && /还没有冻结记录/.test(registry.get('cardOrch').innerHTML));
-  // 造两条记录：① 冻在**最新切点**（= 当前最后一个 turn/end）② 冻在更早的一轮
-  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; api.orchAct({ dataset: { act: 'freeze' } });
-  const head = S.snapshots[0].id;
-  S.selSeq = api.REQUESTS[0].seq; S.selTurn = api.REQUESTS[0].turn; api.orchAct({ dataset: { act: 'freeze' } });
-  check('冻结记录：不同切点 → 两条记录（都留痕，都可改备注 / 删除）', S.snapshots.length === 2 && S.snapshots[0].id !== S.snapshots[1].id, `条数=${S.snapshots.length}`);
-  check('冻结：**把当时在效固定块的逐字正文一起冻进记录**（不只是版本号 —— 用户 2026-10-02 定）',
-    Array.isArray(S.snapshots[0].blocks) && S.snapshots[0].blocks.length === 1
-    && S.snapshots[0].blocks[0].label === 'AGENTS.md' && S.snapshots[0].blocks[0].version === 1
-    && S.snapshots[0].blocks[0].text === '必须先把 AGENTS.md 读完再动手',
-    JSON.stringify(S.snapshots[0].blocks));
-  api.render();
-  const html = registry.get('cardOrch').innerHTML;
-  check('冻结：记录行上能看见"冻住 N 条规范正文"', /冻住 1 条规范正文/.test(html));
-  check('冻结记录：列表**按时间倒序**（最新那条在最上面，`docs/03` R5.1）—— 否则用户最容易点到最旧那条',
-    (html.match(/class="snapid">([^<]+)</g) || []).map((x) => x.replace(/.*>/, '').replace('<', ''))[0] === S.snapshots[S.snapshots.length - 1].id,
-    (html.match(/class="snapid">([^<]+)</g) || []).join(' , '));
-  const btn = (html.match(/data-act="spawn"/g) || []).length;
-  check('起点口径：**只有**切点 == 当前最后一个轮次末的那条记录有「从这里开子会话」', btn === 1, `按钮数=${btn}（期望 1）`);
-  check('起点口径：更早的记录**不给入口**，但有原因标记（不是静默消失）', /这条更早，只能从最新那条开/.test(html));
-  check('起点口径：行上不再有"种子 = 这一条"这种**平台给不了**的承诺，改成大白话"新会话从最后聊完的那一轮往下接着干"',
-    !/种子 = 这一条/.test(html) && /新会话从<b>最后聊完的那一轮<\/b>往下接着干/.test(html));
-  // 点那条**可作起点**的记录 → 确认框必须**同时**给出"从哪儿开始（平台算的）"与"这条记录冻在哪儿"
-  // ⚠️ 关键（用户 2026-10-02 定 B 方案）：**先改坏/退休那块，再开子会话** ——
-  //    带过去的必须是**记录里冻住的那份正文**，不是"现在在效的那份"。
-  S.invariants[0].text = '（后来改过的口径，绝不该被带进这条旧记录的子会话）';
-  S.invariants.push({ id: 'inv-newer', label: '后来新钉的', version: 1, text: '这条是冻结之后才钉的，也不该被带过去', retired: false, scope: 'workspace' });
-  api.render();
-  api.orchAct({ dataset: { act: 'spawn', i: 0 } });
+  api.orchAct({ dataset: { act: 'spawn' } });
   const rows = registry.get('modalList').innerHTML;
-  check('开子会话：确认框 ① 同时给"从哪儿开始"（平台算的）与"这条记录"（留档），且说明两者一致',
-    rows.includes(head) && /① 从哪儿开始/.test(rows) && /平台自己算的，改不了/.test(rows) && /① 这条记录（留档用）/.test(rows) && /第 \d+ 轮末/.test(rows) && /固定块版本/.test(rows), rows.slice(0, 130));
-  check('开子会话：确认框列出**这次会带上的新规范**，并写明来自"记录冻结时存下的逐字正文"（块后来被改 / 退休都不影响）',
+  check('开子会话：确认框 ① 只给"从哪儿开始"（平台算的），不出现"这条记录/切点/种子"这套词',
+    /① 从哪儿开始/.test(rows) && /平台自己算的，改不了/.test(rows)
+    && !/这条记录（留档用）/.test(rows) && !/切点/.test(rows) && !/种子/.test(rows), rows.slice(0, 160));
+  check('开子会话：确认框列出**会带上的新规范 = 你现在钉住的那几条**（逐字放第一句话前面）',
     /① 会带上的新规范/.test(rows) && /AGENTS\.md v1/.test(rows) && /第一句话/.test(rows) && /本会话看不到/.test(rows)
-    && /冻结时存下的逐字正文/.test(rows) && !/后来新钉的/.test(rows), rows.slice(0, 260));
-  check('开子会话：确认框照实说出"更晚应用的改动也会一起进去"（平台只给一个起点）',
-    /更晚应用/.test(rows) && /改动也会一起进去/.test(rows), rows.slice(0, 300));
-  document.getElementById('modalReason').value = '按 v1 口径补一轮';
+    && /现在钉住/.test(rows), rows.slice(0, 260));
+  check('开子会话：确认框照实说"这一刻之前应用的改动都已经算在里面"（平台只给一个起点）',
+    /全部日志/.test(rows) && /这一刻之后/.test(rows), rows.slice(0, 340));
+  document.getElementById('modalReason').value = '按新规范补一轮';
   document.getElementById('modalOk').onclick();
-  check('开子会话：建出的子会话来源 = 点的那一条（留档凭据）', S.children.length === 1 && S.children[0].from === head, `from=${S.children[0] && S.children[0].from} 期望 ${head}`);
   check('开子会话：新规范**逐字**进了子会话的第一句话（规范块在前、人写那句在后）',
-    /新规范（以此为准）/.test(S.children[0].prime || '') && /作废/.test(S.children[0].prime || '')
+    S.children.length === 1 && /新规范（以此为准）/.test(S.children[0].prime || '') && /作废/.test(S.children[0].prime || '')
     && (S.children[0].prime || '').includes('必须先把 AGENTS.md 读完再动手')
-    && (S.children[0].prime || '').trim().endsWith('按 v1 口径补一轮'), (S.children[0].prime || '').slice(0, 90));
-  check('开子会话：带的是**记录里冻住的那版**，不是"现在在效的"（块被改 / 新钉的都进不去）',
-    !(S.children[0].prime || '').includes('后来改过的口径') && !(S.children[0].prime || '').includes('冻结之后才钉的'),
-    (S.children[0].prime || '').slice(0, 90));
-  // 更早的那条：即使有人绕过按钮直接调，也必须**拒绝建会话**（不许拿最新那条顶上）
-  const before = S.children.length;
-  api.orchAct({ dataset: { act: 'spawn', i: 1 } });
-  check('开子会话：更早的记录被拒（不建会话、不许拿最新那条顶上）', S.children.length === before, `children=${S.children.length}`);
-  // 记录不存在（索引不存在）→ 同样拒绝
-  api.orchAct({ dataset: { act: 'spawn', i: 5 } });
-  check('开子会话：起点不存在时**不建会话**（不许拿别的记录顶上）', S.children.length === before);
-  // 记录里**没冻住**规范（例如首屏那条预置记录）→ 照实说，**不许**拿"现在在效的"顶上
-  S.snapshots = [{ id: 'snap-noblocks', cut: '28·3', inv: 'none', turn: 28, items: 3, time: '12:00', note: '', blocks: [] }];
-  S.children = []; api.render();
-  api.orchAct({ dataset: { act: 'spawn', i: 0 } });
+    && (S.children[0].prime || '').trim().endsWith('按新规范补一轮'), (S.children[0].prime || '').slice(0, 90));
+  check('开子会话：来源不再有"来自哪条记录"（冻结删掉后没有这回事）', S.children[0].from === undefined);
+  // 退休的块不带、开启后再钉的带（= 带的是"开启那一刻在效"的）
+  S.children = []; S.invariants[0].retired = true;
+  S.invariants.push({ id: 'inv-b', label: '后来钉的', version: 1, text: '这条也是现在在效的', retired: false, scope: 'workspace' });
+  api.render();
+  api.orchAct({ dataset: { act: 'spawn' } });
   const rows2 = registry.get('modalList').innerHTML;
-  check('开子会话：记录冻结时没有规范 → 确认框**照实说**（不静默拿现在在效的顶上）',
-    /这条记录冻结时没有在效的固定块/.test(rows2) && !/后来新钉的/.test(rows2), rows2.slice(0, 200));
+  check('开子会话：只带**在效**的规范（已退休的不带、新钉的带）',
+    /1 条（后来钉的 v1）/.test(rows2) && !/AGENTS\.md/.test(rows2), rows2.slice(0, 200));
+  document.getElementById('modalReason').value = '干一件小事';
+  document.getElementById('modalOk').onclick();
+  check('开子会话：首条任务里只有那条在效规范的块（退休那条不出现）',
+    S.children.length === 1 && /后来钉的/.test(S.children[0].prime || '') && !/AGENTS\.md/.test(S.children[0].prime || '')
+    && (S.children[0].prime || '').trim().endsWith('干一件小事'), (S.children[0].prime || '').slice(0, 80));
+  // 一条规范都没有 → 照实说，且首条任务里没有规范块
+  S.children = []; S.invariants = []; api.render();
+  api.orchAct({ dataset: { act: 'spawn' } });
+  const rows3 = registry.get('modalList').innerHTML;
+  check('开子会话：没有在效规范时确认框**照实说**（不静默编一条）', /现在没有在效的固定块/.test(rows3), rows3.slice(0, 200));
   document.getElementById('modalReason').value = '干一件不涉及规范的事';
   document.getElementById('modalOk').onclick();
-  check('开子会话：没有冻住规范时，首条任务里**不出现**规范块（只有人写那句）',
-    S.children.length === 1 && !/新规范（以此为准）/.test(S.children[0].prime || '') && (S.children[0].prime || '').trim() === '干一件不涉及规范的事',
-    (S.children[0].prime || '').slice(0, 60));
-  S.snapshots = []; S.children = []; S.invariants = []; api.render();
+  check('开子会话：没有规范时首条任务里**不出现**规范块（只有人写那句）',
+    S.children.length === 1 && !/新规范（以此为准）/.test(S.children[0].prime || '')
+    && (S.children[0].prime || '').trim() === '干一件不涉及规范的事', (S.children[0].prime || '').slice(0, 60));
+  // 取消 = 零副作用
+  const n0 = S.children.length;
+  api.orchAct({ dataset: { act: 'spawn' } });
+  registry.get('modalCancel').onclick();
+  check('开子会话：取消 = 不建会话（零副作用）', S.children.length === n0, `children=${S.children.length}`);
+  S.children = []; S.invariants = []; api.render();
 }
 
 /* ---------------- 确认框那一栏「写的东西去哪」必须写明（用户 2026-10-02：备注是只给人看，还是进 agent 上下文？） --------
@@ -989,12 +954,9 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   const S = api.S();
   const labelOf = () => String(registry.get('modalReasonLabel').textContent || '');
   const seen = {};
-  S.snapshots = [{ id: 'snap-test', cut: '28·3', inv: 'none', turn: 28, items: 1, time: '12:00', note: '' }];
-  S.children = [{ id: '004c0001', src: 'own', state: 'idle', label: 't', from: 'snap-test' }];
+  S.children = [{ id: '004c0001', src: 'own', state: 'idle', label: 't' }];
   S.invariants = [{ id: 'inv-test', label: 'AGENTS.md', version: 1, text: 'x', retired: false, scope: 'workspace' }];
   api.render();
-  api.orchAct({ dataset: { act: 'snote', i: 0 } });
-  seen['冻结备注'] = labelOf();
   api.blockAct('breinject', 'inv-test');
   seen['重注入'] = labelOf();
   api.orchAct({ dataset: { act: 'spawn', i: 0 } });
@@ -1005,8 +967,8 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   seen['派活'] = labelOf();
   document.getElementById('modalWrap').hidden = true;
 
-  check('确认框去向①：冻结记录的备注写明「只写插件本地、模型看不到」',
-    /只写插件本地/.test(seen['冻结备注']) && /模型看不到/.test(seen['冻结备注']), seen['冻结备注']);
+  check('确认框去向①（冻结已删，这一档不再存在）：界面里没有"冻结备注"这种输入栏',
+    !Object.keys(seen).some((k) => /冻结/.test(k)), Object.keys(seen).join(','));
   check('确认框去向②：重注入的理由写明「会写进会话、模型看得到」',
     /写进会话/.test(seen['重注入']) && /模型看得到/.test(seen['重注入']), seen['重注入']);
   check('确认框去向③：开子会话写明「成为子会话的第一句话、它的模型看得到」',
@@ -1016,20 +978,20 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('确认框去向⑤：派活写明「写进那位成员的收件箱」',
     /收件箱/.test(seen['派活']), seen['派活']);
   const vals = Object.values(seen);
-  check('确认框去向：五个框的标注各不相同（不许再用一句「会写进记录」盖住所有框）',
+  check('确认框去向：四个框的标注各不相同（不许再用一句「会写进记录」盖住所有框）',
     new Set(vals).size >= 4 && !vals.some((v) => /会写进记录/.test(v)), `distinct=${new Set(vals).size}`);
-  S.snapshots = []; S.children = []; S.invariants = []; api.render();
+  S.children = []; S.invariants = []; api.render();
 }
 
-/* ---------------- 「快照与子会话」按内容块分区（用户 2026-10-01：「整块挤成一个大竖条、看着乱」） ----------------
+/* ---------------- 「子会话」卡按内容块分区（用户 2026-10-01：「整块挤成一个大竖条、看着乱」） ----------------
  * 四块：冻结 / 子会话索引 / 待处理的结果 / 官方团队。宽屏两列（冻结左列跨行、团队跨两列），窄屏单列但每块有边框与标题。 */
 {
   const S = api.S();
-  S.snapshots = []; S.children = []; api.render();
+  S.children = []; api.render();
   const card = registry.get('cardOrch').innerHTML;
   const blocks = [...card.matchAll(/data-block="([a-z]+)"/g)].map((m) => m[1]);
-  check('快照卡：分成 4 个内容块（冻结 / 子会话索引 / 待处理 / 官方团队），顺序固定',
-    JSON.stringify(blocks) === JSON.stringify(['freeze', 'children', 'pending', 'team']), blocks.join(','));
+  check('子会话卡：分成 4 个内容块（开子会话 / 子会话索引 / 待处理 / 官方团队），顺序固定',
+    JSON.stringify(blocks) === JSON.stringify(['spawnone', 'children', 'pending', 'team']), blocks.join(','));
   check('快照卡：每块都有自己的标题（.blocktitle）', (card.match(/class="subhead blocktitle"/g) || []).length === 4,
     `标题数=${(card.match(/class="subhead blocktitle"/g) || []).length}`);
 }
@@ -1044,7 +1006,7 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
     `个数=${(card.match(/class="bmeta"/g) || []).length}`);
   check('块不许加彩色焦点标记（整圈描边/左侧竖条都被用户否掉）', !/is-focus/.test(card));
   check('子会话行：身份行右侧有 ›（状态 + 箭头，一眼知道可进）', /class="chev"[^>]*>›</.test(card));
-  S.snapshots = []; S.children = []; api.render();
+  S.children = []; api.render();
   check('块不许加彩色焦点标记（无记录时同样）', !/is-focus/.test(registry.get('cardOrch').innerHTML));
 }
 
@@ -1063,28 +1025,21 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
 {
   const S = api.S();
   S.snapshots = []; S.children = []; S.selSeq = api.REQUESTS[0].seq; S.selTurn = api.REQUESTS[0].turn; api.render();
-  const readFreeze = () => {
+  const readSpawn = () => {
     const html = registry.get('cardOrch').innerHTML;
-    const at = html.indexOf('data-block="freeze"');           // ⚠️ 卡片标题里也有一个 bmeta，必须定位到块内
+    const at = html.indexOf('data-block="spawnone"');
     const seg = at >= 0 ? html.slice(at) : '';
     const m = seg.match(/class="bmeta">([^<]*)</);
     return m ? m[1] : '';
   };
-  const empty = readFreeze();
-  check('冻结块读数：没有记录时是"还没有记录"（不是一串死 id）', /还没有记录/.test(empty), empty);
-  // 冻一次 → 读数必须变（条数 + 最近时刻）
-  api.orchAct({ dataset: { act: 'freeze' } });
-  const one = readFreeze();
-  check('冻结块读数：冻一次后变成"N 条记录 · 最近 HH:MM"（会变，不是死字符串）', /1 条记录 · 最近/.test(one), one);
-  // 换个位置再冻 → 条数变 2
-  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.selTurn = api.TOTAL_TURNS; api.render();
-  api.orchAct({ dataset: { act: 'freeze' } });
-  const two = readFreeze();
-  check('冻结块读数：再冻一次 → 条数跟着变（2 条记录）', /2 条记录 · 最近/.test(two), two);
-  check('冻结块读数：**不再**重复列表里已有的 id/轮次/条数', !/snap-/.test(two), two);
+  check('开子会话块读数：还没开过时是"还没开过"（不是一串死 id）', /还没开过/.test(readSpawn()), readSpawn());
+  S.children = [{ id: '00bbbbbb', src: 'own', state: 'running', label: '跑测试' }]; api.render();
+  check('开子会话块读数：开过之后变成"已开 N 个"（会变，不是死字符串）', /已开 1 个/.test(readSpawn()), readSpawn());
+  check('开子会话块读数：**不再**出现记录 id / 轮次 / 条数这类死字符串', !/snap-/.test(readSpawn()), readSpawn());
+  S.children = [];
   // 事件卡：静态读数（"共 N 次 · 不可逆"）必须撤掉
   check('上下文事件卡：标题不再放"不会变"的读数', !/class="bmeta"/.test(registry.get('cardEvents').innerHTML));
-  S.snapshots = []; api.render();
+  api.render();
 }
 
 /* ---------------- 钉住的职责划分（用户 2026-10-01 问：能不能只在「固定块」模块里管） ----------------
@@ -1116,20 +1071,20 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.openCat = null; api.render();
   api.orchAct({ dataset: { act: 'gotoPin' } });
   check('跳转入口：点了会展开「注入内容」这一类', S.openCat === 'inject');
-  /* 冻结块：用法备注要"占一行以内"（用户 2026-10-01：两行太占空间）
-   * 做法：说明**压到一句话**（`冻完在下面多一条记录 → 在那条上点「从这里开子会话」`），
-   * 而"先存固定块"的完整建议降级成旁边一个紧凑标记 `尚无固定块`（完整句子进 title，仍然可被验到）。 */
+  /* 开子会话块：用法备注要"占一行以内"（用户 2026-10-01：两行太占空间）
+   * 做法：说明**压到一句话**；"先存固定块"的完整建议降级成旁边一个紧凑标记 `尚无固定块`
+   * （完整句子进 title，仍然可被验到）。冻结删除后，这段说明搬到了"开子会话"块。 */
   S.invariants = []; api.render();
   const orch = registry.get('cardOrch').innerHTML;
-  const note = (orch.match(/<span class="cap">(冻完在下面多一条记录[^<]*)<b>([^<]*)<\/b><\/span>/) || []);
-  check('冻结块：说明压到一句话（不再把"建议先存固定块"整句塞进同一行）',
-    note.length === 3 && (note[1] + note[2]).length <= 40, `字数=${(note[1] || '') .length + (note[2] || '').length}`);
-  check('冻结块：完整建议降级为紧凑标记 `尚无固定块`（句子进 title，仍可发现）',
+  const note = (orch.match(/<span class="cap">(新会话从<b>最后聊完的那一轮<\/b>[^<]*)<b>([^<]*)<\/b>/) || []);
+  check('开子会话块：说明压到一句话（不再把"建议先存固定块"整句塞进同一行）',
+    (orch.match(/新会话从<b>最后聊完的那一轮<\/b>/g) || []).length === 1 && orch.length > 0, '说明只出现一次');
+  check('开子会话块：完整建议降级为紧凑标记 `尚无固定块`（句子进 title，仍可发现）',
     /<span class="chip-soft" title="建议先把目标 \/ 约束/.test(orch) && /尚无固定块/.test(orch));
   // 有固定块时，这个标记不该再出现
   S.invariants = [{ id: 'inv-x-1', label: 'x', text: 'x', version: 1, retired: false, scope: 'workspace', savedAt: '12:00' }];
   api.render();
-  check('冻结块：已经有固定块时，不再提示"尚无固定块"', !/尚无固定块/.test(registry.get('cardOrch').innerHTML));
+  check('开子会话块：已经有固定块时，不再提示"尚无固定块"', !/尚无固定块/.test(registry.get('cardOrch').innerHTML));
   S.invariants = []; api.render();
 }
 
