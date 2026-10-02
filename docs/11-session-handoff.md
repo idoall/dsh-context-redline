@@ -30,7 +30,7 @@
 【现在在哪（2026-10-01）】
 - M0 文档集：完成（过了 7 轮外部模型评审）。
 - M0.5 可交互 demo：已交付且**已浏览器实测**（1440/880/879/390，数据+截图在 demo/screenshots/）；
-  自检：node demo/check-static.mjs（静态契约）+ node demo/check-runtime.mjs（**229/229**）。
+  自检：node demo/check-static.mjs（静态契约）+ node demo/check-runtime.mjs（**233/233**）。
   用户已就"快照与子会话 / 读数的纪律 / 钉住的职责"等多轮细节定稿；**M05-15 交互定稿仍在等他最终点头**。
 - 文档 review 轮：**已收口**（75 项不一致 → 0），并新增机器检查 node scripts/check-docs.mjs（**必须 exit 0**）；
   8 条裁定见本文件文末（D1–D7 + **D8 起点口径**）。另：另一模型的**只读评审（R8）**已落地 ——
@@ -51,7 +51,7 @@
   git log --oneline -3
   node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：221 / 83 / 4 / 125 / 9」
   node demo/check-static.mjs       # 期望：✅ 静态契约检查通过
-  node demo/check-runtime.mjs      # 期望：共 229 项，失败 0 项
+  node demo/check-runtime.mjs      # 期望：共 233 项，失败 0 项
 基线全绿后，问用户选哪条路：① 说"开始" → 在**仓库内**做 M1（骨架 + 命名空间分家，可自验，
 不需要他重启；到收口才请他重启）② 先写用户帮助（M6-11，权威来源已就位：docs/03 R4.7 + R7.1）。
 ```
@@ -71,7 +71,7 @@
 【先跑基线（只读命令，约 10 秒）】
   git log --oneline -3
   node scripts/check-docs.mjs      # 文档一致性（版本/目录/命名/计数/表格/重复标题/A17/D3.1）
-  node demo/check-static.mjs ; node demo/check-runtime.mjs   # demo 自检（期望 229/229）
+  node demo/check-static.mjs ; node demo/check-runtime.mjs   # demo 自检（期望 233/233）
 说明：**机器能查的漂移已经查完**（上一轮 75 项已清零，并由 check-docs.mjs 长期把关），
 所以请把力气放在**机器查不到**的地方 —— 语义矛盾、与平台实际不符的断言、不可实施的设计、用户看不懂的地方。
 
@@ -107,7 +107,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**本轮在改文档**：文档 review 裁定 D1–D8 见本文末 + `scripts/check-docs.mjs`（机器把关） |
-| 进度 | `docs/10`：**DONE 88 / 共 223**（DOING 4 · TODO 123 · WAIT🙋 8） |
+| 进度 | `docs/10`：**DONE 89 / 共 224**（DOING 4 · TODO 123 · WAIT🙋 8） |
 | 当前卡点 | **M05-15 交互定稿** 与 **M5-28 起点口径确认**（都等用户点头）；文档 review 轮已收口（75 → 0，由 `scripts/check-docs.mjs` 把关）；M1 可在仓库内自验，**授权包①（装配 + 用户重启）是 M1 的收口动作** |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |

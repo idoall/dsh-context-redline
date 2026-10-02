@@ -94,7 +94,7 @@ const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendCellAct, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
-  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editTurnUserMessage, turnLastUser, editorHtml, editTurnInject, turnLastInject, blockDrift, blockAct, orchAct };`;
+  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editTurnUserMessage, turnLastUser, editorHtml, editTurnInject, turnLastInject, blockDrift, blockAct, orchAct, nodeOf, rowHtml };`;
 
 /**
  * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
@@ -264,6 +264,26 @@ check('行身份链跨替换体：#1287 → #1301', JSON.stringify(api.familyOf(
 check('应用后 draft 被清空', Object.keys(api.S().drafts).length === 0);
 check('应用后产生新条目并记账', api.S().applied.length === 1 && api.S().extraNodes.length === 1);
 check('应用后链变 3 段', api.familyOf(1301).length === 3, JSON.stringify(api.familyOf(1301)));
+
+/* ⚠️ 用户 2026-10-02 实测报的两个原型 bug（截图：注入内容里同一条 `#1600` 出现两次；原文行灰掉后没有出路）：
+ * ① `nodesOfReq` 把 `S.applied` 与 `S.extraNodes` **各算一次** → 同一条替换体渲染两遍、token 也算两遍；
+ * ② 被遮蔽的原文行只堆了三句灰字（`已被 #1600 接替` / `（这里被改过）` / 截断的原因），
+ *    **没有**规格要求的"跳过去改当前可见那条"的入口（`docs/03` R4.6 / §7 #7）→ 人卡在灰行上。
+ * 这两条先写红，再修。 */
+{
+  const S = api.S();
+  api.render();
+  const inj = api.nodesOfReq(api.lastOfTurn(28), true).filter((n) => n.seq === 1600);
+  check('应用后：同一条替换体只算一次（applied 与 extraNodes 不许重复计入）', inj.length === 1, `命中 ${inj.length} 次`);
+  const seqs = api.nodesOfReq(api.lastOfTurn(28), true).map((n) => n.seq);
+  check('应用后：列表里没有重复的 #seq', new Set(seqs).size === seqs.length, seqs.join(','));
+  const shHtml = api.rowHtml(api.nodeOf(1301));
+  check('被遮蔽的原文行：给「去改现在这条（#N）」的跳转入口（不许只留一句灰字；依据 docs/03 R4.6 / §7 #7）',
+    /data-act="gotoCurrent"/.test(shHtml) && /去改现在这条/.test(shHtml), shHtml.slice(0, 120));
+  check('被遮蔽的原文行：只留**一句**原因，不再堆三个重复标记',
+    (shHtml.match(/已被 #\d+ 接替/g) || []).length === 1 && !/（这里被改过）/.test(shHtml), shHtml.slice(0, 160));
+}
+
 
 /* 走一遍切换：轮 / 步 / 粒度 / 模式，确认渲染路径不抛错 */
 let threw = null;

@@ -604,7 +604,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 d70d386</span>
+    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 740be46</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -739,6 +739,17 @@ const EXPLAIN = {
     confirm: '要（确认框会列：正文逐字 + 只存本地 + 谁会读到它 / 什么时候读到）',
     refs: ['docs/03 R2.4', 'docs/11 D9'] },
   'act.apply': { t: '应用到会话', what: '把这条草稿真的写进会话。', effect: '追加一条替换事件；模型此后看到的是改后的内容；原文仍保留在日志里但不再可见。', rev: '不可撤销（可用版本历史恢复某一版）', confirm: '要，且会列出本次清单', refs: ['docs/03 R4.3', 'docs/01 F7.1'] },
+  'act.gotoCurrent': {
+    t: '去改现在这条',
+    what: '**一句话**：你点的那条**原文已经被遮蔽**（改不动了），这个按钮把你带到"**现在可见的那一条**"并直接打开编辑器。\n'
+      + '**为什么会有两条**：改写不是把原文改掉，而是**追加一条替换**（原文仍在日志里）——\n'
+      + '所以列表里会出现"原文（灰、改不了）"与"替换后的新条目（能改）"两条，它们属于**同一行身份**。\n'
+      + '**它做什么**：跳到当前可见节点 + 就地展开编辑器（预填宿主全文）。\n'
+      + '**它不做什么**：不会去掉灰行、也不会改历史（原文永远留在日志里，可用 `版本历史` 回看/恢复）。',
+    effect: '切到「替换后的新条目」那一行并打开编辑器；**不影响任何数据**。',
+    rev: '再点一次就是普通编辑（可取消、不写会话）',
+    confirm: '不需要（只是切视图 + 开编辑器）',
+    refs: ['docs/03 R4.6', 'docs/01 F7'] },
   'act.history': { t: '版本历史', what: '看这一条的全部版本：原始 → 每次改写 → 每次回滚（**跨替换体**，按行身份串起来）。', effect: '只读展示；可选中某一版"恢复"。', rev: '只读', confirm: '不需要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
   'act.restore': { t: '恢复这一版', what: '把"模型看到的内容"变回你选的那一版。', effect: '再追加一条替换事件——不是删除，错的那版仍在日志里但不再可见。', rev: '再次替换即可换别的版本', confirm: '要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
 
@@ -950,10 +961,15 @@ function goneMapOf(req) {
 }
 function nodesOfReq(req, visibleOnly) {
   const gone = goneMapOf(req);
-  return req.surface
-    .concat(S.applied.filter((a) => a.requestSeq === req.seq).map((a) => a.newSeq))
-    .concat(S.extraNodes.filter((n) => n.requestSeq === req.seq).map((n) => n.seq))
-    .map(nodeOf).filter(Boolean)
+  /* ⚠️ 同一个 seq 会从**两个索引**同时出现：`S.applied` 的 `newSeq` 与 `S.extraNodes` 里的同一条。
+   * 各算一次 → **同一条替换体渲染两遍、token 也算两遍**（2026-10-02 用户截图实测：
+   * 注入内容里 `#1600` 出现两次、条数 5 项变 7 项）。⟹ 先按 seq 去重（保持原顺序），再映射成节点。 */
+  const seqs = [...new Set(
+    req.surface
+      .concat(S.applied.filter((a) => a.requestSeq === req.seq).map((a) => a.newSeq))
+      .concat(S.extraNodes.filter((n) => n.requestSeq === req.seq).map((n) => n.seq))
+  )];
+  return seqs.map(nodeOf).filter(Boolean)
     .filter((n) => !visibleOnly || gone[n.seq] === undefined || isReplacement(n.seq));
 }
 const goneMap = () => goneMapOf(reqOf());
@@ -1549,8 +1565,11 @@ function rowHtml(node) {
   const isNew = isReplacement(node.seq);
   const open = S.openElem === node.seq;
   const draft = draftOf(node.seq) ? '<span class="chip-draft">未生效</span>' : '';
+  /* 被遮蔽的原文行：**只留一句原因**（原来叠了三句："已被 #K 接替" + "（这里被改过）" + 截断的原因词），
+   * 并且必须给"跳过去改当前可见那条"的入口 —— 用户 2026-10-02 实测："编辑并应用之后整条变灰、没法再改"。 */
   const tail = isNew ? '<span class="chain">（这是替换后的新条目）</span>'
     : (gone[node.seq] !== undefined ? `<span class="chip-shadow">已被 #${gone[node.seq]} 接替</span>` : '');
+  const chainChip = (a.shadowed || !chain.length) ? '' : '<span class="chain">（这里被改过）</span>';
   return `<div class="row${a.shadowed ? ' shadowed' : ''}">
     <button class="row-main" data-elem="${node.seq}" data-explain="row.toggle">
       <i class="catsq" style="background:${catColor(node.cat)}" title="点色块 = 趋势图聚焦这一类" data-focus="${node.cat}"></i>
@@ -1560,12 +1579,15 @@ function rowHtml(node) {
     </button>
     ${open ? `<div class="row-body"><div class="meta">#${node.seq} · ${esc(node.type)}${node.err ? ' · 错误结果' : ''}${node.compacted ? ' · 被压缩埋掉' : ''}</div>${esc(node.text)}</div>` : ''}
     ${a.inert ? '' : `<div class="actions" data-rowactions="${node.seq}">
-      <span class="seq">#${node.seq}</span>${draft}${tail}${chain.length ? '<span class="chain">（这里被改过）</span>' : ''}
-      ${a.canRewrite
-        ? (a.advancedOnly && !S.sw.advanced
-          ? '<span class="chip-soft" title="工具结果的「编辑」属于高级编辑：打开顶部「高级编辑」开关即可看到（避免几十条工具结果把常用动作淹掉）">高级编辑</span>'
-          : `<button class="btn sm" data-act="edit" data-seq="${node.seq}" data-explain="act.edit">编辑</button>`)
-        : `<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 14))}…</span>`}
+      <span class="seq">#${node.seq}</span>${draft}${tail}${chainChip}
+      ${a.shadowed
+        ? `<button class="btn sm" data-act="gotoCurrent" data-seq="${gone[node.seq]}" data-explain="act.gotoCurrent"
+             title="被遮蔽的原文不能再当改写目标（平台拒）；要接着改就对**现在可见的那条**操作 —— 点它就地打开编辑器">去改现在这条（#${gone[node.seq]}）</button>`
+        : (a.canRewrite
+          ? (a.advancedOnly && !S.sw.advanced
+            ? '<span class="chip-soft" title="工具结果的「编辑」属于高级编辑：打开顶部「高级编辑」开关即可看到（避免几十条工具结果把常用动作淹掉）">高级编辑</span>'
+            : `<button class="btn sm" data-act="edit" data-seq="${node.seq}" data-explain="act.edit">编辑</button>`)
+          : `<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 14))}…</span>`)}
       ${a.canAnnotate ? `<button class="btn sm" data-act="annotate" data-seq="${node.seq}" data-explain="act.annotate">批注</button>` : ''}
       ${a.pinnable ? (pinnedVersionOf(node)
         ? `<span class="chip-soft" title="这一段已经钉住了（逐字基准见「固定块」那一栏）；要换基准就在新的那条注入上再钉一次">已钉住 · v${pinnedVersionOf(node)}</span>`
@@ -1963,6 +1985,14 @@ function rowAct(btn) {
   if (act === 'annotate') { S.editor = { kind: 'annotate', seq, reason: '', voidFrom: String(seq), voidTo: String(seq) }; S.historyFor = null; render(); }
   if (act === 'pin') { S.editor = { kind: 'pin', seq, label: '', text: node.text }; S.historyFor = null; render(); }
   if (act === 'history') { S.historyFor = S.historyFor === seq ? null : seq; S.editor = null; render(); }
+  if (act === 'gotoCurrent') {
+    /* 被遮蔽的原文 → 跳到"现在可见的那条"并**就地打开它的编辑器**（`docs/03` R4.6 / §7 #7：
+     * 不给"点了才知道不行"的死路；撤销/续改永远作用于当前可见节点）。 */
+    S.openCat = node.cat; S.openElem = seq; S.historyFor = null;
+    S.editor = { kind: 'edit', seq, text: node.text, reasoning: '', err: !!node.err };
+    render();
+    toast(`已跳到现在可见的 #${seq} 并打开编辑器 —— 接着改它就行（被遮蔽的那条原文改不了）`);
+  }
 
   if (act === 'apply') {
     const d = draftOf(seq);
