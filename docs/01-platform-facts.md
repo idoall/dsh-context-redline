@@ -529,14 +529,14 @@ SpawnTeammateRequest = {
    *"Steer one **model-authored** message to the sender's **direct parent or direct continuable child**.
    A running target admits it at the nearest step boundary; an idle target **starts a turn**, and
    **an absent direct child cold-resumes from persistence**."*
-   ⟹ 子 Agent 也能主动给父会话发消息；父忙→最近步骤边界接收、父闲→起一个轮次、**不在进程→冷恢复**。
+   ⟹ 子 Agent 也能主动给父会话发消息；父忙→最近步骤边界接收、父闲→起一个轮次；**冷恢复只适用于"目标是不在进程的直接子会话"** —— **父会话自己不在进程时不可以**（见下条约束：结算通知不投递）。
 3. **可指定模型与推理档 + 短标签**：`SubagentStartRequest.agentOptions`
    = *"Optional host-Agent **provider, model, reasoning-effort, and output-token** overrides.
    Requires `SubagentCapabilities.agentOptions`; in-process providers merge them over the parent Agent's options."*；
    `label` = *"Optional short display label persisted with a session-backed child."*
 
 **约束**（别忽略）：投递要求**直接父子邻接**（direct parent/child）且**发送方是 live Agent**；
-子会话可以冷恢复、父会话不可以。另有一条运行时账目 `subagent-settled`（best-effort：父不在进程就不投递）。
+**冷恢复方向**：目标**子会话**可以冷恢复；目标**父会话不可以**（父不在进程 → 结算通知**不投递**，界面给"回流未确认"）。另有一条运行时账目 `subagent-settled`（best-effort：父不在进程就不投递）。
 
 **推论（我们据此决策）**：**不需要**为了"多轮"去造普通会话；反而普通会话**没有父子邻接** ⟹ 没有回程通道
 （`prompt`/`sendMessage` 都会以邻接被拒）。缺的只是**界面入口**（打开子会话 / 给它发消息），这属于我们的面板职责。

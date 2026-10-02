@@ -175,7 +175,7 @@ ctx.subagents.prompt({
 | A1 | `apply`（遮蔽改写） | 往会话日志追加 replace 事件 | ❌ append-only，**原文永久对模型不可见**（但仍在日志里） | 改哪一条（`#seq`）、原文是什么、改成什么、为什么 |
 | A2 | `annotate`（批注） | 追加一条带作废范围的更正消息 | ❌ | 更正目标 `#seq`、作废范围、理由 |
 | A3 | **`child.prompt`：给人写的一条话排成子会话的下一个轮次**（会话互通） | `ctx.subagents.prompt({ requestId（**我们铸造**）, parentSessionId, childSessionId, mode:'continuable', delivery:'queue'\|'steer', content })`（`steer` = 最近步骤边界；实测签名见 §3.1.1） | ❌ | 收件人 `childSessionId`、正文逐字、投递方式、理由；回执 `messageId` |
-| A4 | 子会话 → 父会话（**平台能力，不是我们的动作**） | 子 Agent 用 `ctx.subagents.sendMessage` 主动发消息（父忙→最近步骤边界、父闲→起轮次、父不在进程→冷恢复）；另有收工时的 `subagent-settled` 账目 | — | **无确认框**：我们只做可见性（`docs/01` F37） |
+| A4 | 子会话 → 父会话（**平台能力，不是我们的动作**） | 子 Agent 用 `ctx.subagents.sendMessage` 主动发消息（父忙→最近步骤边界、父闲→起轮次）；**冷恢复只对"目标子会话"成立** —— 父会话不在进程时**不投递**结算通知（界面给"回流未确认"）；另有收工时的 `subagent-settled` 账目 | — | **无确认框**：我们只做可见性（`docs/01` F37） |
 | A5 | `invariant.inject`（重注入固定块 —— **本会话**要用到这段口径时才点） | 追加一条固定块消息 | ❌ | 哪一块、正文逐字、为什么现在注入 |
 | A6 | `invariant.save` / `retire`（= 界面上的「钉住这一段」，**只写本地**） | 写我们的 sqlite | ✅ 可退休（历史保留） | 标签、正文、作用域；**并写明"只存本地 —— 本会话模型看不到；开新子会话时才逐字带过去"**（`docs/11` D9） |
 | A7 | ~~`snapshot.create`~~（**已删除**，`docs/11` D10 —— 没有冻结这一步） | — | — | — |

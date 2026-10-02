@@ -20,7 +20,7 @@ only after review and sign-off. Rationale: agreeing on *what* to build, *on what
 | **Injection drift** | the harness re-injects `runtime-context` / AGENTS.md / skill catalog every turn, so a human edit comes back next turn | **Verbatim pinned blocks + drift check + explicit re-inject** |
 | **Nothing is editable** | the upstream context browser can only be read | **Edit on the right**, with "which item, what changed, did it take effect" always visible |
 
-**In one line**: a snapshot cuts off the *past*, pinned blocks let you check and re-assert the *future*, and editing fixes the *present*.
+**In one line**: a child session carries the *completed* past forward (then **explicit compaction** is what actually shortens it), pinned blocks let you check and re-assert the *future*, and editing fixes the *present*.
 
 ## What it looks like
 
@@ -45,7 +45,7 @@ What we add on top is **editing** and **orchestration**:
 2. Two kinds of change, different consequences:
    - **Edit = shadow the original** — the model never sees it again (the original stays in the log, and **you can roll back**).
    - **Annotate = keep the original** — append a correction with an explicit *void range*; the model sees both.
-3. Every change is **two steps**: save a draft (local, **not yet in effect**) → **apply to session** (actually writes).
+3. **Only an edit is two steps**: save a draft (local, **not yet in effect**) → **apply to session** (actually writes). An **annotation** writes as soon as you confirm, and **pinning** is one action (stored locally; carried into a new child session).
 4. **What is editable is decided by the platform, not by preference** (measured):
    - Editable: **user messages**, injected content, skill injection (when the underlying event is a user/tool event), tool results.
    - **Not editable: assistant messages** (two platform rules are mutually exclusive) → annotate only, and the UI says why.
@@ -75,7 +75,7 @@ What we add on top is **editing** and **orchestration**:
 | [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **Requirement traceability**: every original request and every capability from the WeChat screenshots → which goal → done / not done / downgraded |
 | [`demo/`](demo/README.md) | **Clickable interaction prototype** (M0.5 gate): fake data, real interactions, and a "what does this button do" explain mode |
 | [`docs/11-session-handoff.md`](docs/11-session-handoff.md) | **Session handoff**: a copy-paste block plus the fields to refresh at each wrap-up |
-| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, 225 items; steps needing you are marked `WAIT🙋` |
+| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, 226 items; steps needing you are marked `WAIT🙋` |
 | [`AGENTS.md`](AGENTS.md) | Working agreement: hard constraints, platform pitfalls, testing discipline |
 | [`UPSTREAM.md`](UPSTREAM.md) / [`NOTICE`](NOTICE) | Upstream provenance, license compliance, list of our modifications |
 

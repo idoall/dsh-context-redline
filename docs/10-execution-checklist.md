@@ -61,6 +61,7 @@
 | M0-18 | 编排规格：快照→成员→压缩→派活语义、授权清单 A1–A11、失败码人话、`plan.next` 次序 | DONE | `docs/06-orchestration.md` §1–§7 |
 | M0-19 | 开放问题 Q1–Q12（选项/推荐/阻塞阶段）+ 评审附录 R1–R7（58 条全部采纳） | DONE | → 逐条处置表 `docs/08-open-questions.md` |
 | M0-20 | 需求追溯：U1–U8 + 图 2①–⑥ / 图 3 / 图 4-1…4-5 → 落到哪条目标 | DONE | `docs/09-requirements-traceability.md` |
+| M0-22 | **只读 review 剩余项清零**（7 条 P1 + 5 条 P2 中未随语义变更自动消解的部分）：① V1 失败降级改**双分支**（有已核实异步读路径 → live-only；没有 → 按 S10 **关闭读取/编辑入口**）；② 父离线**不能冷恢复**（改 `docs/01` 531-539 与 `docs/06` A4：冷恢复只对"目标子会话"成立；父不在进程 → 结算通知不投递 → 界面给"回流未确认"）；③ M5 门禁**拆两档**（完整 A′ / 降级档，降级档通过 ≠ A′ 已验证）+ DoD 4③ 拆成"产品回归（负例）+ 平台探针"；④ V8 降级口径统一（采 `docs/03` R4.5/R4.7"只显示关系链"；A′ 本地台账作废）；⑤ 去向标记措辞改成"**两色四说法**"（灰 1 + 琥珀 3）；⑥ README 双语"所有改动都是两步"→"只有编辑是两步"；⑦ README 双语"快照切断过去/历史短"→"开子会话承接已完成历史，真正变短靠显式压缩" | DONE | → `docs/01-platform-facts.md`、`docs/03-ui-spec.md`、`docs/04-roadmap.md`、`docs/06-orchestration.md`、`docs/08-open-questions.md`（Q11）、`docs/11-session-handoff.md`（D11-a/b）、`README.md`、`README.zh.md`；三件套绿（check-docs exit 0 · 静态契约 ✅ · 运行时 239/0） |
 | M0-21 | **R8 只读评审落地**（另一模型：P0×2 / P1×2 / P2×2）：新增平台事实 **F38**（起点**不可选** —— `startContinuable` / `spawnTeammate` 没有种子参数）+ 待验证 **V14**；`docs/03` R5.1 起点口径重写（记录 = **凭证**；**只有切点 == 当前最后一个 `turn/end`** 的记录给入口）+ R4.7 新增一条不可用态 + §7-19 门禁；`docs/00` S5.2/S5.3/S10、`docs/02` op 表 `snapshotId?` → `recordId?`、`docs/04` M4.5/M5 DoD、`docs/05` 新增 §2.7 A25/A26 + E21、`docs/06` §2/§4.1/A8、`docs/08` 新增 Q13 + R8 处置明细、`docs/09` 图4-1 与 D8；删掉"无记录时自动补记一条"的自相矛盾段 | DONE | → `node scripts/check-docs.mjs` exit 0（`docs/10 计数自洽：216 / 78 / 4 / 125 / 9`）+ `node demo/check-static.mjs` 绿 + `node demo/check-runtime.mjs` `共 208 项，失败 0 项` `docs/01-platform-facts.md`、`docs/00-scope.md`、`docs/02-architecture.md`、`docs/03-ui-spec.md`、`docs/04-roadmap.md`、`docs/05-test-plan.md`、`docs/06-orchestration.md`、`docs/08-open-questions.md`、`docs/09-requirements-traceability.md`、`docs/11-session-handoff.md` |
 
 ---
@@ -329,7 +330,7 @@
 | 阶段 | 项数 | DONE | DOING | TODO | WAIT🙋 |
 |---|---|---|---|---|---|
 | X 横切 | 8 | **2** | 4 | 1 | 1 |
-| M0 文档集 | 21 | **21** | 0 | 0 | 0 |
+| M0 文档集 | 22 | **22** | 0 | 0 | 0 |
 | M0.5 交互 demo | 65 | **64** | 0 | 0 | 1 |
 | M1 骨架与身份 | 14 | **0** | 0 | 13 | 1 |
 | M2 编辑面 | 28 | **1** | 0 | 27 | 0 |
@@ -339,7 +340,7 @@
 | M5 编排 | 28 | **1** | 0 | 26 | 1 |
 | M6 入口与发布 | 12 | **0** | 0 | 12 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **225** | **90** | **4** | **123** | **8** |
+| **合计** | **226** | **91** | **4** | **123** | **8** |
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
 > 当前卡点：**M05-15 交互定稿（等你）** 与 **M5-28 起点口径确认（等你点头：接不接受"更早的冻结记录不能当起点"）**。
