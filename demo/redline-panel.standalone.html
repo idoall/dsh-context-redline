@@ -606,7 +606,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 fcfa5cf</span>
+    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 32f135e</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -741,6 +741,41 @@ const EXPLAIN = {
     confirm: '要（确认框会列：正文逐字 + 只存本地 + 谁会读到它 / 什么时候读到）',
     refs: ['docs/03 R2.4', 'docs/11 D9'] },
   'act.apply': { t: '应用到会话', what: '把这条草稿真的写进会话。', effect: '追加一条替换事件；模型此后看到的是改后的内容；原文仍保留在日志里但不再可见。', rev: '不可撤销（可用版本历史恢复某一版）', confirm: '要，且会列出本次清单', refs: ['docs/03 R4.3', 'docs/01 F7.1'] },
+  'act.applyAll': {
+    t: '逐条应用到会话',
+    what: '**一句话**：把**所有**草稿一次提交（不是一条条点）。\n'
+      + '**它会做什么**：对每一条草稿走一次"应用到会话"（各自追加一条替换记录），**逐条**列出清单后请你确认一次。\n'
+      + '**它不做什么**：不会跳过任何一条、也不会把"放弃"混进来；想只提交其中一条就用行上的 `应用到会话`。',
+    effect: '会话日志里为每条草稿各追加一条替换记录；原文都还在日志里（可回滚）。',
+    rev: '不可撤销（但每条都能再改 / 回滚）',
+    confirm: '要（清单里逐条列：目标 #seq / 原文 / 改后 / 理由）',
+    refs: ['docs/03 R4.3', 'docs/03 R3.2'] },
+  'act.discardAll': {
+    t: '放弃未应用的改动',
+    what: '**一句话**：把所有**还没应用**的草稿从本地清掉。\n'
+      + '**它不做什么**：不碰会话、不碰已应用的改动、不影响模型看到的内容。\n'
+      + '**什么时候会用**：改了一半又不想改了（草稿只在插件本地，清了就没了）。',
+    effect: '只清本地草稿（插件数据目录）；会话与模型可见内容一字不动。',
+    rev: '不可撤销（草稿没保存过就找不回来）',
+    confirm: '要（列出将丢弃的草稿条数与 #seq）',
+    refs: ['docs/03 R4.3', 'docs/03 R3.2'] },
+  'act.pendingSeen': {
+    t: '标记已查看',
+    what: '**一句话**：把"待处理的结果"里这条结算通知标成**你已经看过了**。\n'
+      + '**它不做什么**：不改子会话、不改父会话日志，也不代表"主会话已经接着干了"。',
+    effect: '只记在插件本地（重启后从父会话日志重扫重建）。',
+    rev: '可以再看（只是标记）',
+    confirm: '不需要（只写本地，随时可重看）',
+    refs: ['docs/03 R5.1', 'docs/01 F12.1'] },
+  'act.pendingHand': {
+    t: '让主会话接着做',
+    what: '**一句话**：把"该接着做什么"写成一句话，交给**主会话**继续（替代你手动回来催它）。\n'
+      + '**为什么需要**：结算通知是"尽力而为"的（父会话不在进程里就不投递），所以界面必须给你一个人工入口。\n'
+      + '**它不做什么**：不伪造子会话的结论、不自动改父会话；它只是在父会话里追加一条**人写的**消息。',
+    effect: '父会话日志里多一条人写的 user 消息（模型看得到）。',
+    rev: '不可撤销（追加即落地）',
+    confirm: '要（写明这条消息的正文与去向）',
+    refs: ['docs/03 R5.1', 'docs/06 §3'] },
   'act.gotoCurrent': {
     t: '去改现在这条',
     what: '**一句话**：你点的那条**原文已经被遮蔽**（改不动了），这个按钮把你带到"**现在可见的那一条**"并直接打开编辑器。\n'
@@ -1939,7 +1974,7 @@ function renderOrch() {
           <span class="cap orch-desc">子会话 #004c37a5 已结束：「改完了 3 处，测试全绿」</span>
         </div>
         <div class="orch-actions">
-          <button class="btn sm ghost" data-act="pendingSeen">标记已查看</button>
+          <button class="btn sm ghost" data-act="pendingSeen" data-explain="act.pendingSeen">标记已查看</button>
         </div>
       </div>` : `
       <div class="orch-row">
@@ -1949,7 +1984,7 @@ function renderOrch() {
           <span class="cap orch-desc">没收到平台的结算通知 —— 子会话结束了，但父会话没收到回流</span>
         </div>
         <div class="orch-actions">
-          <button class="btn sm" data-act="pendingHand">让主会话接着做</button>
+          <button class="btn sm" data-act="pendingHand" data-explain="act.pendingHand">让主会话接着做</button>
         </div>
       </div>`}
 
@@ -2358,8 +2393,8 @@ function render() {
   renderBrowser();
   $('stickyDrafts').hidden = draftCount() === 0;
   $('stickyDrafts').innerHTML = `<span>还有 <b>${draftCount()}</b> 条改动未生效</span>
-    <button class="btn sm" data-act="applyAll">逐条应用到会话</button>
-    <button class="btn sm ghost" data-act="discardAll">放弃未应用的改动</button>`;
+    <button class="btn sm" data-act="applyAll" data-explain="act.applyAll">逐条应用到会话</button>
+    <button class="btn sm ghost" data-act="discardAll" data-explain="act.discardAll">放弃未应用的改动</button>`;
   $('stickyDrafts').querySelectorAll('[data-act]').forEach((b) => {
     b.onclick = () => {
       if (b.dataset.act === 'discardAll') {

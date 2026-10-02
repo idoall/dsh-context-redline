@@ -200,6 +200,19 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (htmlStrings.length) problems.push(`这些行把 markdown 的 ** 直接写进了 HTML（会原样显示星号）：${htmlStrings[0].trim().slice(0, 60)}`);
 }
 
+/* 15.8) 每个 `data-act` 按钮都必须有讲解词（`data-explain`）—— 否则用户点了不知道会发生什么，
+ *        而"照 demo 实施"的人也会漏掉这个动作的说明（2026-10-02 审计查出 4 个：顶部横幅 2 个 + 待处理结果 2 个）。
+ * 白名单：编辑器里的 `esubmit`/`ecancel`（它们旁边由 `.qwrap + .qfloat` 提供 `?`，不挂 data-explain）。 */
+{
+  const NO_HELP = new Set(['esubmit', 'ecancel']);
+  /* ⚠️ **不要**先用正则剥模板（`${...}` 里可能有嵌套花括号，一剥就会吃掉后面的按钮）。
+   * 直接在原文上扫标签，并把 `${...}` 当作一个整体（它的 `>` 不结束标签）。 */
+  const tags = [...js.matchAll(/<button\b(?:\$\{[^}]*\}|[^>])*>/g)].map((m) => m[0]);
+  const missing = tags.filter((t) => /data-act="/.test(t) && !/data-explain="/.test(t))
+    .map((t) => (/data-act="([\w.]+)"/.exec(t) || [])[1]).filter((a) => a && !NO_HELP.has(a));
+  if (missing.length) problems.push(`这些按钮没有讲解词（data-explain）：${[...new Set(missing)].join(', ')}`);
+}
+
 /* 15.9) ⚠️ **文档逐字 ↔ demo 逐字**（用户 2026-10-02：「你要确保 demo 和你文档中描述的一致，因为我会在 demo 上验证。
  * 最终这两个保持一致了才可以去实施，否则你照着 demo 去实现会有问题。」）
  *
