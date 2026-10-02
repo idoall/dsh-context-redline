@@ -71,7 +71,7 @@
 | [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **需求追溯矩阵**：你的原话与图 2/3/4 每一项 → 落在哪条目标 → 做/不做/降级 |
 | [`demo/`](demo/README.md) | **可点击的交互原型**（M0.5 交互门禁）：假数据 + 真交互 + 「这个按钮是做什么的」讲解模式 |
 | [`docs/11-session-handoff.md`](docs/11-session-handoff.md) | **换会话时的交接文本**：一段可复制粘贴的话 + 每次收尾要更新的字段（新会话先读它） |
-| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **长任务执行清单（唯一状态源）**：细粒度任务表 —— `ID / 子任务 / 状态 / 文件动作（范围冻结）`，共 224 项，需要你的那几步标 `WAIT🙋` |
+| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **长任务执行清单（唯一状态源）**：细粒度任务表 —— `ID / 子任务 / 状态 / 文件动作（范围冻结）`，共 225 项，需要你的那几步标 `WAIT🙋` |
 | [`AGENTS.md`](AGENTS.md) | 工作约定（唯一必读入口）：硬约束、平台坑、测试纪律 |
 | [`UPSTREAM.md`](UPSTREAM.md) / [`NOTICE`](NOTICE) | 上游来源、许可合规、我们的修改清单 |
 

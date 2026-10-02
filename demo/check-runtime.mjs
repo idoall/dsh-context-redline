@@ -1003,6 +1003,53 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.children = []; S.invariants = []; api.render();
 }
 
+/* ---------------- 文档逐字 ↔ demo 行为：这次审计查出来的四处（2026-10-02） ----------------
+ * 用户要求「demo 与文档必须一致，因为我会在 demo 上验证」⟹ 静态侧查"字符串在不在"，
+ * 这里再查**渲染出来的行为**：派活/打断的短警示、助手消息的徽章、被遮蔽行挂草稿时的两条处置。 */
+{
+  const S = api.S();
+  S.invariants = []; S.children = [{ id: '00aaaaaa', src: 'own', state: 'running', label: 'reviewer' }];
+  S.sw.team = true;
+  api.render();
+  api.orchAct({ dataset: { act: 'csend', i: 0 } });
+  check('派活确认框：短警示按 docs/03 R4.3 逐字（投递给**官方成员**，不是"写入子会话"）',
+    /会向官方团队成员投递一条消息/.test(registry.get('modalWarn').textContent) && /排队中的不会重发/.test(registry.get('modalWarn').textContent),
+    registry.get('modalWarn').textContent.slice(0, 60));
+  check('派活确认框：清单里写明收件人（名册名）与投递方式', /收件人（名册名）/.test(registry.get('modalList').innerHTML) && /队列/.test(registry.get('modalList').innerHTML));
+  registry.get('modalCancel').onclick();
+  api.orchAct({ dataset: { act: 'cinterrupt', i: 0 } });
+  check('打断确认框：短警示逐字 + 清单里有"已提交的工作不会被回滚"这句实话',
+    registry.get('modalWarn').textContent === '会向子会话发出取消信号；未完成的工作可能被中断，不可撤销。'
+    && /不会被回滚/.test(registry.get('modalList').innerHTML), registry.get('modalWarn').textContent);
+  registry.get('modalCancel').onclick();
+  S.sw.team = false;
+
+  // 助手消息：徽章「助手消息仅可批注」+ 原因写在 title 里（`docs/03` R2.1/R4.6）
+  const asst = api.nodesOfReq(api.lastOfTurn(api.TOTAL_TURNS), true).find((n) => n.type === 'assistant/message');
+  S.selSeq = asst.seq; S.selTurn = api.TOTAL_TURNS; S.openCat = 'assistant'; api.render();
+  const bh = registry.get('cardBrowser').innerHTML;
+  check('助手消息行：有徽章「助手消息仅可批注」+ title 给出原因（原来只有一句被截断的原因词）',
+    /助手消息仅可批注/.test(bh) && /助手消息在平台上无法改写（两条规则互斥）/.test(bh), bh.slice(0, 120));
+
+  // 被遮蔽的行上挂着草稿 → 不给「应用到会话」，改为两条处置（`docs/03` R4.6）
+  S.applied = []; S.extraNodes = []; S.drafts = {};
+  S.drafts[1301] = { seq: 1301, text: '（草稿）改了一点点', reasoning: '', requestSeq: api.lastOfTurn(api.TOTAL_TURNS).seq };
+  api.doApply(1301);
+  S.drafts[1301] = { seq: 1301, text: '（旧行上的草稿）', reasoning: '', requestSeq: api.lastOfTurn(api.TOTAL_TURNS).seq };
+  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.selTurn = api.TOTAL_TURNS; S.openCat = 'user'; api.render();
+  const rows = registry.get('cardBrowser').innerHTML;
+  check('被遮蔽的行上挂草稿时：**不给**「应用到会话」，改为两条处置（迁移到当前可见 / 丢弃草稿）',
+    !/data-act="apply" data-seq="1301"/.test(rows) && /data-act="applyToCurrent"/.test(rows) && /data-act="discardDraft"/.test(rows) && /把草稿应用到当前可见的 #/.test(rows),
+    rows.slice(0, 160));
+  // 点了"把草稿应用到当前可见的 #K"必须**真的应用**（链变长、草稿清掉），不是只挪个位置
+  const cur = S.extraNodes[S.extraNodes.length - 1].seq;
+  api.rowAct({ dataset: { act: 'applyToCurrent', seq: '1301', cur: String(cur) } });
+  registry.get('modalOk').onclick();
+  check('把草稿应用到当前可见的 #K：**真的应用了**（新条目出现 + 旧行上的草稿被清掉）',
+    S.applied.length === 2 && !S.drafts[1301] && !S.drafts[cur], `applied=${S.applied.length} drafts=${Object.keys(S.drafts).join(',')}`);
+  S.drafts = {}; S.applied = []; S.extraNodes = []; api.render();
+}
+
 /* ---------------- 「子会话」卡按内容块分区（用户 2026-10-01：「整块挤成一个大竖条、看着乱」） ----------------
  * 四块：冻结 / 子会话索引 / 待处理的结果 / 官方团队。宽屏两列（冻结左列跨行、团队跨两列），窄屏单列但每块有边框与标题。 */
 {

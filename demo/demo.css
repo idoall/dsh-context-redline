@@ -362,6 +362,8 @@ body {
 .orch-actions .cap { margin-left: 2px; }   /* 说明挨着按钮，不顶到最右（顶到最右会显得左边空） */
 .orch-note { font-size: 12px; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
 .badge-src-own { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--ds-color-teal); color: var(--ds-color-teal); }
+/* `docs/03` R2.1/R4.6：助手消息行的徽章「助手消息仅可批注」（它只给批注，不给编辑） */
+.badge-asst { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px dashed var(--dsw-alias-label-caption); color: var(--dsw-alias-label-caption); }
 .badge-src-team { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--ds-color-purple); color: var(--ds-color-purple); }
 .badge-state { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); }
 .dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
