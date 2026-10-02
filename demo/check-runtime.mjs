@@ -906,8 +906,8 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('开子会话：确认框列出**会带上的新规范 = 你现在钉住的那几条**（逐字放第一句话前面）',
     /① 会带上的新规范/.test(rows) && /AGENTS\.md v1/.test(rows) && /第一句话/.test(rows) && /本会话看不到/.test(rows)
     && /现在钉住/.test(rows), rows.slice(0, 260));
-  check('开子会话：确认框照实说"这一刻之前应用的改动都已经算在里面"（平台只给一个起点）',
-    /全部日志/.test(rows) && /这一刻之后/.test(rows), rows.slice(0, 340));
+  check('开子会话：确认框照实说"点按钮之前应用的改动都已经算在里面"（平台只给一个起点）',
+    /全部日志/.test(rows) && /点按钮之前应用的改动/.test(rows), rows.slice(0, 340));
   document.getElementById('modalReason').value = '按新规范补一轮';
   document.getElementById('modalOk').onclick();
   check('开子会话：新规范**逐字**进了子会话的第一句话（规范块在前、人写那句在后）',
