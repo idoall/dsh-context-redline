@@ -375,9 +375,9 @@
 | M6-01 | RPC ops 全量可用（**只读 14 · 写入 13 · 官方团队写入 4**，逐个可调） | TODO | `src/host/redline-channel.ts` |
 | M6-02 | `/redline` 命令：只读报告 + 一句话建议（`plan.next` 的 reason 必显） | TODO | `src/host/redline-command.ts` |
 | M6-03 | 内部服务导出（`ctx.redline`）：`inspect/apply/annotate/invariants.*/freeze/plan` | TODO | `src/host/redline-service.ts` |
-| M6-04 | README 双语（成对）+ 截图 + 安装/使用/限制 | TODO | `README.md`、`README.zh.md` |
+| M6-04 | README 双语（成对）+ 截图 + 安装/使用/限制 | DONE | → 双语**成对**复核：两份各有 **9 节**且顺序一致（它要解决什么 / 它长什么样 / 四条规则 / 明确不做 / 文档索引 / 怎么读 / 安装与使用 / 许可 / 关于早期那次尝试）；**加了截图**并在两处都写明它来自 `demo/`（**当前界面准绳**），以及"**插件截图还欠**：要重启后在真面板上截（M3-22）"—— 不许把 demo 截图说成插件截图；**安装 / 使用 / 限制**三节补齐（`限制` 三条：保存只到本地、三类改不了、无版本历史/回滚）；文档索引补上 `docs/12` |
 | M6-05 | CHANGELOG / release notes（简洁双语版式：锚点 + 兼容性一行 + 分类 bullet + 升级命令） | DONE | → `CHANGELOG.md` 已写（版式照本行要求：**锚点版本 → 兼容性一行 → 分类条目 → 升级命令**）：首版 `0.1.0`（未发布）列出骨架与身份 / 编辑面 / 浏览与读数 / 帮助与工具四组**用户可见**变化，单列"**尚未包含（本轮明确不做）**"（直接改写当前会话、版本历史/回滚、批注与钉住）以免误读，兼容性写明"需要 DSH 0.2.0-rc.2 且与参考插件可并存" |
-| M6-06 | 打包与安装说明（本地目录 → npm 的路径） | TODO | `package.json`、`README*.md` |
+| M6-06 | 打包与安装说明（本地目录 → npm 的路径） | DONE | → 两份 README 的安装节都给出**两条路径**：① **本地目录** `dsh plugin --profile web add /绝对路径/dsh-context-redline`（测试期，需授权；装完**由用户重启**）；② **npm 之后** `dsh plugin --profile web add dsh-context-redline`。并写清"**还没有可安装的发布版**"、`pnpm install` 是唯一安装步骤（不建符号链接）、客户端改动只需硬刷新（F16）。自验命令同步到现状：4 个门禁 lane + `oxlint` + `progress.mjs` + demo 两条自检 |
 | M6-07 | 干净环境安装验证（装得上、卸得掉、无残留） | TODO | 独立 profile 或临时目录 |
 | M6-08 | 许可与来源复核（`LICENSE-Apache-2.0` 原样、`NOTICE`、`UPSTREAM.md` 与 diff 对齐） | DONE | → **复核结果**：`LICENSE`（我们的 MIT）与 `LICENSE-Apache-2.0`（上游，**逐字保留**，201 行，含 `Version 2.0, January 2004` 与 `APPENDIX: How to apply` 两处规范标记）都在；`NOTICE` 指名上游项目与 tag/commit。⚠️ **抓到一个真实的不准确**：`package.json` 原写 `license: MIT`，但本包**同时包含 Apache-2.0 代码** —— 兼容≠可以用一个名字覆盖两者的义务。已改成 SPDX 表达式 **`MIT AND Apache-2.0`**，并把这套依据写进 `UPSTREAM.md` §6。**另外**：`files` 白名单补上 `UPSTREAM.md`（Apache-2.0 §4(b) 要求的"改动清单"应随分发），并逐个确认白名单里的条目**都真实存在**（12/12 ok）。复核动作可重跑：`ls LICENSE* NOTICE UPSTREAM.md` + `shasum -a 256 LICENSE-Apache-2.0` + 遍历 `package.json.files` |
 | M6-09 | 版本与 tag 策略（tag = `package.json` 版本） | DONE | → **策略定死**：本仓库自成一条版本线，**首版 `0.1.0`**（`package.json` 实为 `0.1.0` ✓），不禁与上游 `v0.59.2` 比大小（我们不是它的续版）；tag 形如 `v0.1.0`，与 `package.json.version` **逐字一致**。⚠️ **打 tag 属发布动作**，按 `AGENTS.md` §1 要你单独授权（授权包④）；本轮只把策略写进这里与 `CHANGELOG.md`，**没有**创建任何 tag |
@@ -411,9 +411,9 @@
 | M4 轮次联动 | 7 | **4** | 0 | 3 | 0 |
 | M4.5 能力验证 | 19 | **4** | 3 | 9 | 3 |
 | M5 编排 | 28 | **1** | 0 | 26 | 1 |
-| M6 入口与发布 | 12 | **5** | 0 | 7 | 0 |
+| M6 入口与发布 | 12 | **7** | 0 | 5 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **269** | **194** | **7** | **60** | **8** |
+| **合计** | **269** | **196** | **7** | **58** | **8** |
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
 > 当前卡点：**M1 的收口动作 = 授权包①（装进 web profile + 你重启，见 M1-01）**；

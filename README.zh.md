@@ -21,6 +21,12 @@
 **一句话**：看上下文 → 改一条 → 保存（只在本地）→ **用改好的它开子会话**。
 
 ## 它长什么样
+![界面（交互 demo，当前界面准绳）](demo/screenshots/01-dark.png)
+
+> ⚠️ 这张图来自仓库里的**交互 demo**（`demo/`，深色主题）—— 它是**当前界面的准绳**：
+> 插件的界面按它实现。**插件的截图还没法给**：那要在 `dsh web` 重启后，在真面板上截
+> （`docs/10` M3-22 的人工门禁）。把 demo 截图说成"插件截图"是这一版**唯一**容易被误读的地方，
+> 所以这里明写。
 
 五张卡，两列（以 [`demo/`](demo/README.md) 为准）：
 
@@ -70,6 +76,7 @@
 | [`docs/08-open-questions.md`](docs/08-open-questions.md) | **问题与裁定**（含推荐、理由与最终结论）+ **外部模型评审记录**（逐条采纳/不采纳） |
 | [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **需求追溯矩阵**：你的原话与图 2/3/4 每一项 → 落在哪条目标 → 做/不做/降级 |
 | [`demo/`](demo/README.md) | **可点击的交互原型**（M0.5 交互门禁）：假数据 + 真交互 + 「这个按钮是做什么的」讲解模式 |
+| [`docs/12-user-guide.md`](docs/12-user-guide.md) | **用户向总体帮助**：这是什么 / 五分钟上手 / 七类能不能改 / 何时不能改 / 术语表 / 常见问题 |
 | [`docs/11-session-handoff.md`](docs/11-session-handoff.md) | **换会话时的交接文本**：一段可复制粘贴的话 + 每次收尾要更新的字段（新会话先读它） |
 | [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **长任务执行清单（唯一状态源）**：细粒度任务表 —— `ID / 子任务 / 状态 / 文件动作（范围冻结）`，共 269 项，需要你的那几步标 `WAIT🙋` |
 | [`AGENTS.md`](AGENTS.md) | 工作约定（唯一必读入口）：硬约束、平台坑、测试纪律 |
@@ -86,19 +93,34 @@
 
 ## 安装与使用
 
-暂时还没有可安装的发布版。**M1（骨架 + 上游外壳的改名复制）已在仓库内完成**，所以下面这套就是开发时的循环；
-**把本仓库装进 `web` profile 需要单独授权**，而**重启 `dsh web` 一律由用户本人执行**：
+**还没有可安装的发布版**（下面的命令都是开发/自验循环）。两条硬规矩：
+**把本仓库装进 `web` profile 需要你单独授权**；**重启 `dsh web` 一律由你本人执行**。
 
 ```bash
-pnpm install                                  # 唯一的安装步骤 —— 不建符号链接（docs/01 F42）
-./node_modules/.bin/tsc --noEmit              # 类型检查（含 tests/**）
-./node_modules/.bin/tsdown                    # 构建 lib/
-node scripts/namespace-contract.mjs           # 11 个面 / 24 项：我们的命名空间 vs 上游的
-./node_modules/.bin/vitest run --project edit --project channel
+pnpm install                                   # 唯一的安装步骤 —— 不建符号链接（docs/01 F42）
+./node_modules/.bin/tsc --noEmit               # 类型检查（含 tests/**）
+./node_modules/.bin/tsdown                     # 构建 lib/（客户端半边 + 宿主半边）
+node scripts/namespace-contract.mjs            # 11 个面 / 25 项：我们的命名空间 vs 上游的
+./node_modules/.bin/oxlint                     # 风格与类型感知规则（必须 0 error）
+./node_modules/.bin/vitest run --project edit --project channel --project client-logic --project client-ui
+node scripts/progress.mjs                      # 只读：看到哪些已完成、哪些没完成（--all 全列）
+node demo/check-static.mjs && node demo/check-runtime.mjs   # 交互 demo 的两条自检
 ```
 
-**客户端改动只需硬刷新**，不必重启 `dsh web`（[`docs/01`](docs/01-platform-facts.md) F16）。
+**装进一个 profile（测试期，需授权）**：
 
+```bash
+dsh plugin --profile web add /绝对路径/dsh-context-redline   # 本地目录
+# 发布到 npm 之后：dsh plugin --profile web add dsh-context-redline
+```
+
+装完**必须由你重启 `dsh web`**（本机这一步承载着你正在用的会话）。
+**客户端改动只需硬刷新**，不必重启（[`docs/01`](docs/01-platform-facts.md) F16）。
+
+**这条链的限制**（都是产品定义，不是待办）：
+- **保存只写插件本地**，当前会话的模型看不到；只有**开启子会话**时才逐字带进新会话的第一句话。
+- **助手消息 / 系统提示词 / 工具定义改不了**（平台硬限制与宿主保护，界面会写明原因）。
+- 界面**不提供版本历史 / 回滚**（与"保存只到本地"冲突，见 [`docs/11`](docs/11-session-handoff.md) D19）。
 ## 许可
 
 本项目自身为 **MIT**（[`LICENSE`](LICENSE)）；其中复制自上游 `dsh-context` 的部分为 **Apache-2.0**

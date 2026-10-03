@@ -23,6 +23,13 @@ defines the interface is [`demo/`](demo/README.md) — **it is the standard** if
 **In one line**: read the context → edit one item → save (local only) → open a child session with the edited context.
 
 ## What it looks like
+![The interface (interactive demo, the current standard)](demo/screenshots/01-dark.png)
+
+> ⚠️ This image is from the repository's **interactive demo** (`demo/`, dark theme) — the
+> **current interface standard** the plugin is built to match. **Plugin screenshots cannot be
+> given yet**: they need a real panel capture after `dsh web` is restarted (the human gate
+> `docs/10` M3-22). Presenting a demo capture as a plugin capture is the one easy misreading
+> here, so it is called out.
 
 Five cards, in two columns ([`demo/`](demo/README.md) is the authority):
 
@@ -75,6 +82,7 @@ Five cards, in two columns ([`demo/`](demo/README.md) is the authority):
 | [`docs/08-open-questions.md`](docs/08-open-questions.md) | **Questions and rulings** (each with a recommendation and its final ruling) + the external-model review log |
 | [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **Requirement traceability**: every original request and every capability from the WeChat screenshots → which goal → done / not done / downgraded |
 | [`demo/`](demo/README.md) | **Clickable interaction prototype** (M0.5 gate): fake data, real interactions, and a "what does this button do" explain mode |
+| [`docs/12-user-guide.md`](docs/12-user-guide.md) | **User guide**: what this is / five-minute tour / which of the seven kinds can be edited / when editing is blocked / glossary / FAQ |
 | [`docs/11-session-handoff.md`](docs/11-session-handoff.md) | **Session handoff**: a copy-paste block plus the fields to refresh at each wrap-up |
 | [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, 269 items; steps needing you are marked `WAIT🙋` |
 | [`AGENTS.md`](AGENTS.md) | Working agreement: hard constraints, platform pitfalls, testing discipline |
@@ -93,20 +101,39 @@ Five cards, in two columns ([`demo/`](demo/README.md) is the authority):
 
 ## Install / usage
 
-Not installable from a release yet. **M1 (skeleton + namespaced copy of the upstream shell) is complete inside
-this repository**, so the steps below are the loop used to work on it — installing the repository into the `web`
-profile is a **separately authorized** step, and restarting `dsh web` is always done by the user:
+**There is no installable release yet** (the commands below are the development / self-check
+loop). Two hard rules: **installing this repository into the `web` profile needs your explicit
+authorization**, and **restarting `dsh web` is always done by you**.
 
 ```bash
-pnpm install                                  # the only install step — no symlink is created (docs/01 F42)
-./node_modules/.bin/tsc --noEmit              # types (src + tests)
-./node_modules/.bin/tsdown                    # build lib/
-node scripts/namespace-contract.mjs           # 11 faces / 24 assertions: our namespaces vs upstream's
-./node_modules/.bin/vitest run --project edit --project channel
+pnpm install                                   # the only install step — no symlink (docs/01 F42)
+./node_modules/.bin/tsc --noEmit               # type check (includes tests/**)
+./node_modules/.bin/tsdown                     # build lib/ (client half + host half)
+node scripts/namespace-contract.mjs            # 11 faces / 25 items: our namespaces vs upstream's
+./node_modules/.bin/oxlint                     # style + type-aware rules (must be 0 errors)
+./node_modules/.bin/vitest run --project edit --project channel --project client-logic --project client-ui
+node scripts/progress.mjs                      # read-only: what is done, what is not (--all for everything)
+node demo/check-static.mjs && node demo/check-runtime.mjs   # the demo's two self-checks
 ```
 
-A client-side change needs only a **hard refresh** — no `dsh web` restart ([`docs/01`](docs/01-platform-facts.md) F16).
+**Into a profile (testing only, needs authorization)**:
 
+```bash
+dsh plugin --profile web add /absolute/path/dsh-context-redline   # local directory
+# after an npm release: dsh plugin --profile web add dsh-context-redline
+```
+
+You then have to **restart `dsh web` yourself** (on this machine that step carries the session
+you are using). **Client-side changes only need a hard refresh**, not a restart
+([`docs/01`](docs/01-platform-facts.md) F16).
+
+**Limits of this chain** (product definitions, not TODOs):
+- **Saving writes to the plugin's own local store only** — the current session's model cannot see
+  it; only **opening a child session** writes your text verbatim into that session's first message.
+- **Assistant messages / the system prompt / tool schemas cannot be edited** (a platform limit and
+  host protection; the row states the reason).
+- The UI offers **no version history / rollback** (it would conflict with "saving is local only" —
+  [`docs/11`](docs/11-session-handoff.md) D19).
 ## License
 
 This project is **MIT** ([`LICENSE`](LICENSE)); the portions copied from upstream `dsh-context` are
