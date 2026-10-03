@@ -278,10 +278,9 @@ check('应用后链变 3 段', api.familyOf(1301).length === 3, JSON.stringify(a
   const seqs = api.nodesOfReq(api.lastOfTurn(28), true).map((n) => n.seq);
   check('应用后：列表里没有重复的 #seq', new Set(seqs).size === seqs.length, seqs.join(','));
   const shHtml = api.rowHtml(api.nodeOf(1301));
-  check('被遮蔽的原文行：给「去改现在这条（#N）」的跳转入口（不许只留一句灰字；依据 docs/03 R4.6 / §7 #7）',
-    /data-act="gotoCurrent"/.test(shHtml) && /去改现在这条/.test(shHtml), shHtml.slice(0, 120));
-  check('被遮蔽的原文行：只留**一句**原因，不再堆三个重复标记',
-    (shHtml.match(/已被 #\d+ 接替/g) || []).length === 1 && !/（这里被改过）/.test(shHtml), shHtml.slice(0, 160));
+  check('被遮蔽的原文行：只留一句说明（已被 #K 接替），**不给任何动作**（用户 2026-10-02：只有编辑）',
+    (shHtml.match(/已被 #\d+ 接替/g) || []).length === 1
+    && !/data-act="(gotoCurrent|edit|annotate|history|restore)"/.test(shHtml), shHtml.replace(/\s+/g,' '));
 }
 
 
@@ -533,7 +532,7 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
     if (a.inert) return '（无动作条）';
     const out = [];
     if (a.canRewrite) out.push('编辑');
-    if (a.canNote) out.push('写一句更正');
+    /* ⚠️ 用户 2026-10-02：改不了的行**不给任何动作**（只给一句说明），所以这里不 push 任何东西。 */
     if (a.pinnable) out.push('存为不变量');
     return out.join('+');
   };
@@ -548,9 +547,9 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
     'user/user/message': '编辑',
     'inject/user/message': '编辑',
     'skill/user/message': '编辑',
-    'assistant/assistant/message': '写一句更正',
+    'assistant/assistant/message': '',
     'tool/tool/result': '编辑',
-    'user/user/message/compacted': '写一句更正'
+    'user/user/message/compacted': ''
   };
   for (const [k, v] of Object.entries(expect)) {
     if (k === 'tools') { check('按钮集合：工具定义（这一类在演示数据里没有行）', true, ''); continue; }
@@ -593,8 +592,6 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('高级编辑关：工具结果行不显示「编辑」按钮', !editBtn(toolNode.seq).test(off));
   check('高级编辑关：但留「高级编辑」标记 + 说明在哪打开（R2.3 不许凭空消失）', /高级编辑/.test(off) && /打开顶部「高级编辑」开关/.test(off));
   S.openCat = 'assistant'; api.render();
-  check('高级编辑关：「写一句更正」仍然在（助手消息改不了，那是它唯一的纠正入口）',
-    /data-act="annotate"/.test(registry.get('cardBrowser').innerHTML));
   S.sw.advanced = true; S.openCat = 'tool'; api.render();
   check('高级编辑开：工具结果的「编辑」出现', editBtn(toolNode.seq).test(registry.get('cardBrowser').innerHTML));
   S.sw.advanced = false; S.openCat = 'inject'; api.render();
@@ -617,25 +614,16 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   document.getElementById('edWhy').value = '这条作废：改成先跑全量测试';
   api.render();
   const eh = registry.get('cardBrowser').innerHTML;
-  check('写一句更正：编辑器里注明"只写本地 · 开子会话时才带进去"（去向标记）', /只写本地 · 开子会话时才带进去/.test(eh));
-  check('写一句更正：提交按钮是「保存更正」（不是"提交到会话"）', /保存更正/.test(eh));
   const before = S.extraNodes.length;
   api.submitEditor();
-  check('写一句更正：保存**不写会话**（事件数不变）', S.extraNodes.length === before, `extraNodes=${S.extraNodes.length}`);
   /* ⚠️ 用户 2026-10-02 选 A：**可编辑的行不再有第二个入口**（只有一个「编辑」）。
    * 能力层先断言（稳），再到 DOM 上看助手行确实只剩「写一句更正」。 */
   S.editor = null;
   const injectNode = api.nodesOfReq(api.lastOfTurn(api.TOTAL_TURNS), true).find((n) => n.cat === 'inject');
   const abInj = api.ability(injectNode);
-  check('可编辑的行：能力判定只有「编辑」（canNote=false、canRewrite=true）',
-    abInj.canRewrite === true && abInj.canNote === false, `canRewrite=${abInj.canRewrite} canNote=${abInj.canNote}`);
+  check('可编辑的行：能力判定 canRewrite=true（行上只有「编辑」）', abInj.canRewrite === true, `canRewrite=${abInj.canRewrite}`);
   const asstNode = api.nodesOfReq(api.lastOfTurn(api.TOTAL_TURNS), true).find((n) => n.type === 'assistant/message');
   const abAsst = api.ability(asstNode);
-  check('改不了的行：能力判定只有「写一句更正」（canRewrite=false、canNote=true）',
-    abAsst.canRewrite === false && abAsst.canNote === true, `canRewrite=${abAsst.canRewrite} canNote=${abAsst.canNote}`);
-  check('写一句更正：保存**只存本地**（本地改动表里多一条 note）',
-    Object.values(S.drafts).some((d) => d.kind === 'note' && /全量测试/.test(d.text)));
-  check('写一句更正：保存后编辑器收起来（本地保存没有确认框）', S.editor === null);
   S.extraNodes = []; S.applied = []; S.drafts = {}; S.editor = null; api.render();
 }
 
@@ -664,16 +652,11 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   /* 用户 2026-10-01：一步可能几百条、一会话上万条，"从这条到…"的下拉既没有语义、又是性能/体验负担
    * → 批注**只针对点的那一条**；要更大的范围就写在理由里（模型读的正是理由）。 */
   check('批注：**没有**范围选择器（不许出现下拉/区间选择）', !/id="edTo"/.test(ah) && !/voidRange/.test(ah), '');
-  check('批注：只针对"你点的那一条"，并说清更大范围写在理由里', /只针对/.test(ah) && /写在理由里/.test(ah));
-  check('批注：更正目标用人话描述（轮/步/类别/正文开头），seq 退居括号', /class="targetbox"/.test(ah) && /第 \$\{/.test(ah) === false && /事件序号 #/.test(ah));
-  check('批注：提交按钮左上角也有「?」', /class="qfloat"[^>]*data-help="act.annotate"/.test(ah));
 
   // 走一遍：保存 = 只存本地（硬约束：不写当前会话），所以没有确认框
   S.extraNodes = []; S.applied = []; S.drafts = {};
   document.getElementById('edWhy').value = '演示理由';
   api.submitEditor();
-  check('批注：保存后**不写会话**且**留下本地更正**（硬约束：保存都是临时的）',
-    S.extraNodes.length === 0 && Object.values(S.drafts).some((d) => d.kind === 'note'));
 
   S.extraNodes = []; S.applied = []; S.editor = null; api.render();
 }
@@ -716,10 +699,35 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   document.getElementById('edWhy').value = '这条作废：改成 pnpm';
   api.submitEditor();
   api.rowAct({ dataset: { act: 'annotate', seq: String(asst.seq) } });
-  check('保存更正后**仍可继续编辑**：批注理由预填上次保存的内容',
-    !!S.editor && S.editor.reason === '这条作废：改成 pnpm', S.editor && S.editor.reason);
 
   S.drafts = {}; S.editor = null; api.render();
+}
+
+/* ---------------- ⚠️ **行内动作白名单**（用户 2026-10-02：「上下文的编辑只有编辑就行了」） ----------------
+ * 把所有分类展开、真的渲染一遍，把 `#cardBrowser` 里**每一行的动作文案**抽出来：
+ * 只允许 `编辑`（可编辑的行）与 `丢弃这条改动`（有本地改动时）。
+ * 任何残留（`版本历史` / `从这一版恢复` / `去改现在这条` / `写一句更正` / `批注` / `应用到会话`）都会让这条红。 */
+{
+  const S = api.S();
+  S.applied = []; S.extraNodes = []; S.drafts = {}; S.editor = null;
+  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.selTurn = api.TOTAL_TURNS; api.render();
+  // 展开所有分类（把每一类都渲染出来）
+  const cats = api.CATS.map((c) => c.key);
+  const labels = new Set(), acts = new Set();
+  for (const c of cats) {
+    S.openCat = c; api.render();
+    const html = registry.get('cardBrowser').innerHTML;
+    for (const m of html.matchAll(/<div class="actions"[^>]*>([\s\S]*?)<\/div>/g)) {
+      for (const b of m[1].matchAll(/<button[^>]*data-act="([\w]+)"[^>]*>([^<]{0,40})<\/button>/g)) {
+        acts.add(b[1]); labels.add(b[2].trim());
+      }
+    }
+  }
+  const ALLOWED = new Set(['编辑', '丢弃这条改动']);
+  const extra = [...labels].filter((l) => !ALLOWED.has(l));
+  check('行内动作白名单：只允许「编辑」与「丢弃这条改动」（没有版本历史 / 去改现在这条 / 写一句更正 / 批注 / 应用到会话）',
+    extra.length === 0, `出现白名单外的动作：${extra.join('、') || '（无）'}｜实际动作=${[...acts].join(',')}`);
+  S.openCat = null; api.render();
 }
 
 /* ---------------- 「说人话」的固定结构：一句话是什么 / 为什么需要 / 什么时候用 / 不做什么 ----------------
@@ -793,8 +801,6 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
     /结果文本<span class="chip-soft dest-model"/.test(hTool) && /标记为错误<span class="chip-soft dest-model"/.test(hTool));
   check('去向标记：用户消息的正文与思考文本都写明「只写本地 · 开子会话时才带进去」',
     /正文<span class="chip-soft dest-model"/.test(hUser) && /思考文本<span class="chip-soft dest-model"/.test(hUser) && /开子会话时才带进去/.test(hUser));
-  check('去向标记：「更正内容」栏写明「只写本地 · 开子会话时才带进去」并提示怎么写具体',
-    /更正内容<span class="chip-soft dest-model"/.test(hAnn) && /开子会话时才带进去/.test(hAnn) && /写具体/.test(hAnn));
   const all = html.join('\n') + hOrch;
   const kinds = new Set((all.match(/dest-(local|model)/g) || []));
   check('去向标记：全界面只用一种标记（硬约束下所有输入都是"本地暂存、开子会话才带进去"）',
@@ -847,7 +853,6 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.drafts['note-1241'] = { seq: 1241, kind: 'note', text: '这条作废', cat: 'user', name: '', where: '第 28 轮 · 第 1 步（#1241）' };
   api.orchAct({ dataset: { act: 'spawn' } });
   const carryRows = registry.get('modalList').innerHTML;
-  check('开子会话：确认框照实说会写进去几条改动', /1 条改写/.test(carryRows) && /1 条更正/.test(carryRows));
   document.getElementById('modalReason').value = '按新口径继续';
   document.getElementById('modalOk').onclick();
   check('开子会话：本地改动被**逐字**写进新会话的第一句话（硬约束的落地）',

@@ -175,7 +175,6 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
 
 /* 13) 批注的"快照语义"必须写在用户能看到的地方（R3.3.1 的确认框 + 编辑器提示） */
 {
-  if (!/请求式/.test(js)) problems.push('批注必须说明它是"请求式"的：不遮蔽原文、不保证模型照做（与「编辑」的确定生效相对）');
 }
 
 /* 14) 界面说人话：四条硬要求（用户 2026-10-01） */
@@ -183,7 +182,6 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (/type="number"/.test(js)) problems.push('批注不许再用数字输入框（用户不知道 seq）');
   if (/id="edTo"/.test(js)) problems.push('批注不许再给"从这条到…"的范围选择器（一步几百条、一会话上万条 → 无意义且是负担；要范围就写在理由里）');
   if (!/class="qfloat"/.test(js) || !/class="qwrap"/.test(js)) problems.push('动态出现的按钮要用**左上角飘的**「?」（.qfloat/.qwrap，与讲解模式序号同一种做法），不是按钮后面再挂一个按钮');
-  if (!/class="targetbox"/.test(js)) problems.push('批注必须用**人话**说明"这条批注针对哪一条"（轮/步/类别/正文开头），#seq 只能退居括号');
   if (!/<details class="adv">/.test(js)) problems.push('思考文本这类"多数消息没有"的字段必须收进「高级」折叠（R3.2 本来就要求折叠）');
   if (!/第 1 步/.test(js) || !/应用到会话/.test(js)) problems.push('「保存草稿」旁边必须写清两步流程（否则用户不知道点完还要做什么）');
 }
@@ -232,7 +230,7 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
       const m = cols[1] && /`([^`]{6,200})`/.exec(cols[1]);
       if (m) r43.push([cols[0].replace(/\*\*/g, '').slice(0, 20), m[1]]);
     }
-    if (r43.length < 2) problems.push(`R4.3 短警示只抽到 ${r43.length} 条（应 ≥2：本地保存后只剩开子会话/回滚两条；表格结构或反引号被改动了？）`);
+    if (r43.length < 1) problems.push(`R4.3 短警示只抽到 ${r43.length} 条（应 ≥1：本地保存后只剩「开子会话」一条确认框；表格结构或反引号被改动了？）`);
     for (const [action, txt] of r43) {
       if (!js.includes(txt)) problems.push(`R4.3 短警示与 demo 不一致：${action} → 文档写「${txt.slice(0, 40)}…」但 demo.js 里找不到`);
     }
@@ -242,13 +240,11 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
     ['确认框去向·子会话首条任务', '会成为子会话的第一句话 —— 它的模型看得到'],
     ['两态标记·琥珀（本地暂存，开子会话才带进去）', '只写本地 · 开子会话时才带进去'],
     ['按钮·开子会话', '开启子会话'],
-    ['按钮·去改现在这条（被遮蔽行的出路）', '去改现在这条（#'],
-    ['按钮·版本历史', '版本历史'],
     ['按钮·应用到会话', '应用到会话'],
     ['按钮·保存', '保存'],
     ['按钮·批注', '批注'],
     ['按钮·编辑', '编辑'],
-    ['徽章·助手消息改不了', '助手消息改不了 · 只能写一句更正'],
+    ['徽章·助手消息改不了', '助手消息改不了'],
     ['徽章·未生效', '未生效'],
     ['徽章·已被接替', '已被 #'],
     ['空白态·还没有子会话', '（还没有子会话）'],
@@ -336,6 +332,31 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
     problems.push('单文件独立版看起来没重新打包：请跑 node demo/build-standalone.mjs');
   } else if (!standalone.includes(`单文件版 ${fp}`)) {
     problems.push(`单文件独立版不是最新的（指纹对不上，当前应为 ${fp}）：请跑 node demo/build-standalone.mjs`);
+  }
+}
+
+/* 15.95) ⚠️ **界面动作白名单**（用户 2026-10-02：「上下文的编辑只有编辑就行了……怎么总是自己遗漏地方？不会好好检查一下吗？」）
+ * 做法：把 `demo.js` 里**每一个按钮的文案**抽出来，必须全部落在白名单里。
+ * 任何新按钮（或忘了删的旧按钮）都会让这条立刻红 —— 逼着人来决定"它到底该不该存在"，而不是靠眼看。 */
+{
+  const ALLOWED_LABELS = new Set([
+    '编辑',                    // 上下文浏览器：**唯一**的行内动作
+    '丢弃这条改动',             // 本地改动的反悔口（只清本地）
+    '保存',                    // 编辑器提交（只写本地）
+    '取消（Esc）',              // 编辑器取消
+    '回到当前',                 // 工具条：跳回当前（live）
+    '改这一轮的用户消息',        // 步骤卡：跳到该轮最后一条用户消息
+    '改这一轮的注入内容',        // 步骤卡：跳到该轮最后一条注入内容
+    '开启子会话',               // 唯一的写入点
+    '（全部）',                 // 分类筛选：清除聚焦
+  ]);
+  const found = [...js.matchAll(/<button[^>]*data-act="([\w]+)"[^>]*>([^<]{0,40})<\/button>/g)]
+    .map((m) => ({ act: m[1], label: m[2].trim() }))
+    .filter((b) => b.label);                       // 动态文案（${...}）不参与比对
+  const bad = found.filter((b) => !ALLOWED_LABELS.has(b.label));
+  if (bad.length) {
+    problems.push(`界面出现白名单之外的按钮：${bad.map((b) => `${b.label}（data-act=${b.act}）`).join('、')}`
+      + ' —— 要留就加进 check-static 的 ALLOWED_LABELS 并写清理由；不要就删掉。');
   }
 }
 

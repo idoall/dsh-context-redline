@@ -606,7 +606,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 46c17e4</span>
+    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 1ba0aa1</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -716,48 +716,8 @@ const EXPLAIN = {
   'cat.toggle': { t: '展开 / 收起分类', what: '展开某类（系统提示词 / 工具定义 / 用户消息 / 注入内容 / 技能注入 / 助手消息 / 工具结果）。', effect: '列出该类里的每一条（带 #seq、时间、token）。**点类名左侧的色块 = 聚焦到趋势图**。', rev: '再点一次收起', confirm: '不需要', refs: ['docs/03 §2'] },
   'row.toggle': { t: '展开这一条', what: '看这一条的正文。', effect: '就地展开全文（不跳页）。', rev: '再点一次收起', confirm: '不需要', refs: ['docs/03 R2.2'] },
 
-  'ui.advanced': { t: '高级编辑', what: '打开后，**工具结果**这一类的「编辑」入口才会出现。', effect: '默认收起的两类：工具结果（一轮几十条、"要动手"的概率低）与助手消息（平台本来就不给「编辑」，只有「批注」）。常用三类始终可见：用户消息 / 注入内容 / 技能注入 —— 它们都是"我告诉模型什么"，而且后两类每轮会被宿主重新注入（会漂）。', rev: '随时关掉，只是收起入口，不改任何数据', confirm: '不需要', refs: ['docs/03 R2.1 / R2.5'] },
-  'act.edit': { t: '编辑（遮蔽原文）', what: '改写这一条的内容。', effect: '先把改动存成本地草稿（模型还看不到）；确认后才"应用到会话"，届时原文被替换、模型再也看不到原文（但日志里仍在）。', rev: '草稿可放弃；已应用的改动可用"版本历史"恢复', confirm: '提交时要', refs: ['docs/03 R2.2 / R3.3', 'docs/01 F7'] },
-  'act.annotate': {
-    t: '写一句更正',
-    what: '**一句话**：这一条在平台上**改不了**（助手消息不能改写、被压缩埋掉的读不回），所以只能**写一句更正**告诉新会话"这条不算数、应该按什么来"。\n'
-      + '**为什么只有它有这个按钮**：能编辑的行（用户消息 / 注入内容 / 技能注入 / 工具结果）直接点「编辑」改就行 —— 同一个效果不需要两个入口。\n'
-      + '**它不做什么**：不改这一条、不删这一条（原文仍在日志里），当前会话的模型也看不到它。',
-    effect: '只写插件本地；点「开启子会话」时，这句更正与你的改写一起**逐字**写进新会话的第一句话。',
-    rev: '可以再点「写一句更正」继续改；或点「丢弃这条改动」清掉',
-    confirm: '不需要（本地保存，不出确认框）',
-    refs: ['docs/03 R2.1 / R4.6', 'docs/01 F7.2', 'docs/11 D18'] },
-  'act.gotoCurrent': {
-    t: '去改现在这条',
-    what: '**一句话**：你点的那条**原文已经被遮蔽**（改不动了），这个按钮把你带到"**现在可见的那一条**"并直接打开编辑器。\n'
-      + '**为什么会有两条**：改写不是把原文改掉，而是**追加一条替换**（原文仍在日志里）。\n'
-      + '**它做什么**：跳到当前可见节点 + 就地展开编辑器（预填宿主全文）。\n'
-      + '**它不做什么**：不会去掉灰行、也不会改历史（原文永远留在日志里，可用 `版本历史` 回看/恢复）。',
-    effect: '切到「替换后的新条目」那一行并打开编辑器；**不影响任何数据**。',
-    rev: '再点一次就是普通编辑（可取消、不写会话）',
-    confirm: '不需要（只是切视图 + 开编辑器）',
-    refs: ['docs/03 R4.6', 'docs/01 F7'] },
-  'act.apply': { t: '应用到会话', what: '把这条草稿真的写进会话。', effect: '追加一条替换事件；模型此后看到的是改后的内容；原文仍保留在日志里但不再可见。', rev: '不可撤销（可用版本历史恢复某一版）', confirm: '要，且会列出本次清单', refs: ['docs/03 R4.3', 'docs/01 F7.1'] },
-  'act.applyAll': {
-    t: '逐条应用到会话',
-    what: '**一句话**：把**所有**草稿一次提交（不是一条条点）。\n'
-      + '**它会做什么**：对每一条草稿走一次"应用到会话"（各自追加一条替换记录），**逐条**列出清单后请你确认一次。\n'
-      + '**它不做什么**：不会跳过任何一条、也不会把"放弃"混进来；想只提交其中一条就用行上的 `应用到会话`。',
-    effect: '会话日志里为每条草稿各追加一条替换记录；原文都还在日志里（可回滚）。',
-    rev: '不可撤销（但每条都能再改 / 回滚）',
-    confirm: '要（清单里逐条列：目标 #seq / 原文 / 改后 / 理由）',
-    refs: ['docs/03 R4.3', 'docs/03 R3.2'] },
-  'act.discardAll': {
-    t: '放弃未应用的改动',
-    what: '**一句话**：把所有**还没应用**的草稿从本地清掉。\n'
-      + '**它不做什么**：不碰会话、不碰已应用的改动、不影响模型看到的内容。\n'
-      + '**什么时候会用**：改了一半又不想改了（草稿只在插件本地，清了就没了）。',
-    effect: '只清本地草稿（插件数据目录）；会话与模型可见内容一字不动。',
-    rev: '不可撤销（草稿没保存过就找不回来）',
-    confirm: '要（列出将丢弃的草稿条数与 #seq）',
-    refs: ['docs/03 R4.3', 'docs/03 R3.2'] },
-  'act.history': { t: '版本历史', what: '看这一条的全部版本：原始 → 每次改写 → 每次回滚（**跨替换体**，按行身份串起来）。', effect: '只读展示；可选中某一版"恢复"。', rev: '只读', confirm: '不需要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
-  'act.restore': { t: '恢复这一版', what: '把"模型看到的内容"变回你选的那一版。', effect: '再追加一条替换事件——不是删除，错的那版仍在日志里但不再可见。', rev: '再次替换即可换别的版本', confirm: '要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
+  'ui.advanced': { t: '高级编辑', what: '打开后，**工具结果**这一类的「编辑」入口才会出现。', effect: '默认收起的一类：工具结果（一轮几十条、"要动手"的概率低）。助手消息**任何模式下都不给「编辑」**（平台禁改写）。常用三类始终可见：用户消息 / 注入内容 / 技能注入。', rev: '随时关掉，只是收起入口，不改任何数据', confirm: '不需要', refs: ['docs/03 R2.1 / R2.5'] },
+  'act.edit': { t: '编辑', what: '改写这一条的内容。', effect: '**只写插件本地**（当前会话的模型看不到，会话日志也不动）；点「开启子会话」时，改后的正文逐字写进新会话的第一句话。', rev: '可反复改（预填上次保存的版本）；`丢弃这条改动` 回到原文', confirm: '不需要（本地保存）', refs: ['docs/03 R3.3', 'docs/11 D15'] },
 
   'orch.spawn': {
     t: '开启子会话（把这件事交给一个新会话来干）',
@@ -819,16 +779,16 @@ const LONG_USER_TEXT = '这轮先把「上下文批改台」的验收标准收�
 /** 富态轮（最后一轮）的节点：故意做全边界态 */
 const RICH = {
   user1: N(1240, 'user', 'user/message', '这条消息我后来发现写错了：我说的是"只改用户消息"，其实要把注入内容也一起管。请以后都按这个来。', 120),
-  asst1: N(1241, 'assistant', 'assistant/message', '收到，我把两类都纳入判定范围。（助手消息在平台上无法改写，只能批注。）', 300),
+  asst1: N(1241, 'assistant', 'assistant/message', '收到，我把两类都纳入判定范围。（助手消息在平台上无法改写，我改不了它。）', 300),
   tool1: N(1243, 'tool', 'tool/result', 'npm test — 42 passed, 0 failed（工具结果，编辑只能改它的内容文本与错误标记）', 260),
   orig: N(1287, 'user', 'user/message', '（原始版本 #1287）请把「上下文」面板的默认档位设成"注入的内容"，我要一眼看到模型这轮收到了什么。', 96, { versions: [{ seq: 1287, kind: 'origin', time: '12:05', text: '（原始版本 #1287）请把「上下文」面板的默认档位设成"注入的内容"，我要一眼看到模型这轮收到了什么。', why: '' }] }),
-  compacted: N(1290, 'user', 'user/message', '（来自被压缩掉的早期历史 #1290）这句在压缩时被摘要取代了 —— 改写够不到它，只能批注。', 40, { compacted: true }),
-  asst2: N(1293, 'assistant', 'assistant/message', '（助手消息 #1293）平台两条规则互斥 → 助手消息无法改写，只能批注。', 210),
+  compacted: N(1290, 'user', 'user/message', '（来自被压缩掉的早期历史 #1290）这句在压缩时被摘要取代了 —— 改写够不到它，我改不了它。', 40, { compacted: true }),
+  asst2: N(1293, 'assistant', 'assistant/message', '（助手消息 #1293）平台两条规则互斥 → 助手消息无法改写。', 210),
   toolErr: N(1295, 'tool', 'tool/result', 'ERROR: cannot read properties of undefined (reading "seq")', 150, { err: true }),
   inject2: N(1297, 'inject', 'user/message', '[memory-doc] 项目速览：这是本项目的一句话摘要……（注入类，可编辑，也能存为不变量）', 700, { name: 'memory-doc' }),
   skill: N(1299, 'skill', 'user/message', '[skill-catalog] 可用技能：agent-experience / browser-skill / cordis-plugin-development / editing-cordis-compositions …（底层是 user/message，可编辑）', 900, { name: 'skill-catalog' }),
   repl: N(1301, 'user', 'user/message', '（当前可见的替换体 #1301）请把「上下文」面板的默认档位设成"注入的内容"，并且给我逐条的 #seq。', 110),
-  tail: N(1303, 'inject', 'user/message', '[compaction checkpoint] 早期历史已被压缩成摘要 —— 这一条够不到"改写"，只能批注。', 400, { name: 'compact-checkpoint', compacted: true }),
+  tail: N(1303, 'inject', 'user/message', '[compaction checkpoint] 早期历史已被压缩成摘要 —— 这一条够不到"改写"。', 400, { name: 'compact-checkpoint', compacted: true }),
   longUser: N(1305, 'user', 'user/message', LONG_USER_TEXT, 620)
 };
 Object.values(RICH).forEach((n) => NODES.push(n));
@@ -918,7 +878,7 @@ const initial = () => ({
   trendGran: 'turn', trendMode: 'total', trendAdaptive: true, trendCat: null,
   selTurn: RICH_TURN, selSeq: REQUESTS[REQUESTS.length - 1].seq,
   openCat: 'user', openElem: null,
-  editor: null, editorError: null, editorOk: null, historyFor: null,
+  editor: null, editorError: null, editorOk: null,
   drafts: {}, applied: [], extraNodes: [], children: [], pendingSeen: false
 });
 
@@ -967,7 +927,6 @@ const draftOf = (seq) => S.drafts[seq];
  * ⟹ 保存过的本地改动就是"当前生效的正文"：**编辑器预填它、行上显示它、再次保存覆盖它**。
  * 注意：这只影响面板里看到/编辑的内容 —— 会话日志与模型可见内容始终不变（硬约束）。 */
 const savedEditOf = (seq) => { const d = S.drafts[seq]; return d && d.kind !== 'note' ? d : null; };
-const savedNoteOf = (seq) => S.drafts['note-' + seq] || null;
 const effTextOf = (node) => { const d = savedEditOf(node.seq); return d ? d.text : node.text; };
 const effReasoningOf = (node) => { const d = savedEditOf(node.seq); return d ? (d.reasoning || '') : ''; };
 const effErrOf = (node) => { const d = savedEditOf(node.seq); return d ? !!d.err : !!node.err; };
@@ -1429,7 +1388,7 @@ function editTurnUserMessage(turn) {
   S.selSeq = hit.req.seq; S.selTurn = hit.req.turn;
   S.openCat = 'user'; S.openElem = hit.node.seq;
   S.editor = { kind: 'edit', seq: hit.node.seq, text: hit.node.text, reasoning: '', err: !!hit.node.err };
-  S.editorError = null; S.editorOk = null; S.historyFor = null;
+  S.editorError = null; S.editorOk = null;
   render();
   const row = document.querySelector ? document.querySelector(`[data-elem="${hit.node.seq}"]`) : null;
   if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -1485,7 +1444,7 @@ function renderEvents() {
         <span class="evchip evchip-todo">还没发生 ${later.length}</span></div>
         <div class="evlist">${done.map((e) => row(e, true)).join('')}${later.map((e) => row(e, false)).join('')}</div>
         <div class="cap evhint"><b>这一栏是干什么用的</b>：告诉你上下文在哪一轮被压掉 / 剪掉过。
-          被压掉的条目从此改不了（只能批注），压缩也不可逆 —— 灰色那几条是<b>还没发生</b>的。
+          被压掉的条目从此改不了，压缩也不可逆 —— 灰色那几条是<b>还没发生</b>的。
           每个事件标在它之后的第一个请求上（点趋势图上的 ✂ 可跳到那一次）。共 ${TOTAL_TURNS} 轮 / ${REQUESTS.length} 次请求。</div>`;
     })()}`;
 }
@@ -1498,27 +1457,22 @@ function ability(node) {
   const type = node.type;
   /* ⚠️ 三类"不能改"要分清（docs/03 R2.1 / R4.6）：
    *   · inert（系统提示词 / 工具定义）：**一个动作都不给**，也不渲染空动作区（宿主保护 node 0 的 system）；
-   *   · assistant/message：**改不了** → 只给「写一句更正」（平台事实：replace 要求 sourceEventSeqs，而它禁带，见 docs/01 F7.2）；
-   *   · 被压缩埋掉：同理改不了 → 也只给「写一句更正」；
-   *   · 被遮蔽的原文：不给改写，但给「去改现在这条」（改写目标换成现在可见的那条）。
+   *   · assistant/message / 被压缩埋掉 / 被遮蔽的原文：**都改不了** → **不给任何动作**，只给一句说明（为什么没有「编辑」）。
    * 「存为不变量」给的是**每轮会被宿主重新注入**的那两类：注入内容 + 技能注入（R2.1 表里的两个 ✅）。 */
   const inert = node.cat === 'system' || node.cat === 'tools';
   const canRewrite = !inert && !shadowed && type !== 'assistant/message' && !node.compacted;
-  /* ⚠️ 用户 2026-10-02 选 A：**「批注」这个概念删掉** —— 更正只留给"平台真的改不了"的行；
-   * 能编辑的行只有一个动作（编辑），不再有第二个说法相同、后果却不同的入口。 */
-  const canNote = !inert && !shadowed && !canRewrite;   // = 助手消息 / 被压缩埋掉
   return {
-    canRewrite, shadowed, isReplacement: repl, canNote, inert,
+    canRewrite, shadowed, isReplacement: repl, inert,
     /* 「高级编辑」：**模型/工具回了什么**那一类（工具结果）。
      * 判据不是"会不会漂移"（只有每轮被重新注入的注入内容/技能注入才漂），而是"用户需要动手的概率"：
      * 工具结果一轮几十条、要改的概率低 —— 默认把「编辑」收起来，避免干扰；
-     * 助手消息根本没有编辑按钮（平台互斥），它的批注**始终保留**（那是纠正它的唯一路径）。 */
+     * 助手消息根本没有编辑按钮（平台互斥）。 */
     advancedOnly: node.cat === 'tool',
     isToolResult: type === 'tool/result',
-    blockReason: inert ? '系统提示词 / 工具定义由宿主保护：改不了，也不批注'
+    blockReason: inert ? '系统提示词 / 工具定义由宿主保护：改不了'
       : shadowed ? `这一条已被 #${gone[node.seq]} 接替，已不在模型可见内容里`
-      : type === 'assistant/message' ? '助手消息在平台上无法改写（两条规则互斥）。要纠正它只能用「批注」。'
-      : node.compacted ? '这一条被压缩埋掉了，改写够不到它，只能批注'
+      : type === 'assistant/message' ? '助手消息在平台上无法改写（两条规则互斥）：改不了。要纠正它，就在开启子会话时写在首条任务里。'
+      : node.compacted ? '这一条被压缩埋掉了：改写够不到它'
       : type === 'system/message' ? '系统提示词不可改' : ''
   };
 }
@@ -1544,17 +1498,6 @@ function versionsOf(node) {
     return { seq, kind: i === 0 ? 'origin' : (ap && /回滚/.test(ap.reason || '') ? 'rollback' : 'edit'), time: ap ? ap.time : ((n.versions && n.versions[0] && n.versions[0].time) || '—'), text: n.text || '', why: ap ? ap.reason : '' };
   });
 }
-function historyHtml(node) {
-  const vs = versionsOf(node), cur = vs.length ? vs[vs.length - 1].seq : node.seq;
-  return `<div class="history">
-    <div class="cap" style="margin-bottom:4px">版本历史（同一行身份，跨替换体）：原始 → 每次改写 → 每次回滚</div>
-    ${vs.map((v) => `<div class="vrow">
-      <span class="vlabel">#${v.seq} · ${v.kind === 'origin' ? '原始' : v.kind === 'edit' ? '改写' : '回滚'} · ${esc(v.time || '')}</span>
-      <span class="vtext" title="${esc(v.text)}">${esc((v.text || '').slice(0, 60))}</span>
-      ${v.seq === cur ? '<span class="vwhy">当前可见</span>' : `<button class="btn sm" data-act="restore" data-seq="${cur}" data-to="${v.seq}" data-explain="act.restore">从这一版恢复</button>`}
-    </div>`).join('')}
-  </div>`;
-}
 function rowHtml(node) {
   const a = ability(node), gone = goneMap();
   const chain = S.applied.filter((x) => x.replacedSeq === node.seq);
@@ -1576,29 +1519,31 @@ function rowHtml(node) {
       <span class="tok">≈${fmt(node.tokens)}</span>
     </button>
     ${open ? `<div class="row-body"><div class="meta">#${node.seq} · ${esc(node.type)}${effErrOf(node) ? ' · 错误结果' : ''}${node.compacted ? ' · 被压缩埋掉' : ''}${savedEditOf(node.seq) ? ' · <b>显示的是你本地保存的版本</b>（原文仍在会话日志里，模型看到的仍是原文）' : ''}</div>${esc(effTextOf(node))}</div>` : ''}
-    ${a.inert ? '' : `<div class="actions" data-rowactions="${node.seq}">
+    ${a.inert ? '' : (() => {
+      /* ⚠️ 用户 2026-10-02：「上下文的编辑我们都沟通好了，**只有编辑就行了**。」
+       * ⟹ 行上的动作**只有**（有本地改动时的）`丢弃这条改动` + （可编辑行的）`编辑`；
+       * 旧模型的残留（`版本历史` / `从这一版恢复` / `去改现在这条` / `写一句更正`）全部删除。
+       * 改不了的行只留一句**说明**（为什么没有「编辑」），不给任何其他动作。 */
+      const acts = [];
+      if (a.canRewrite) {
+        acts.push(a.advancedOnly && !S.sw.advanced
+          ? '<span class="chip-soft" title="工具结果的「编辑」属于高级编辑：打开顶部「高级编辑」开关即可看到（避免几十条工具结果把常用动作淹掉）">高级编辑</span>'
+          : `<button class="btn sm" data-act="edit" data-seq="${node.seq}" data-explain="act.edit">编辑</button>`);
+      } else if (node.type === 'assistant/message') {
+        acts.push(`<span class="badge-asst" title="${esc(a.blockReason)}">助手消息改不了</span>`);
+      } else if (!a.shadowed) {
+        /* 被遮蔽的行：上面的 `tail` 已经写了「已被 #K 接替」——**不重复第二个标记**。 */
+        acts.push(`<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 16))}…</span>`);
+      }
+      if (draftOf(node.seq)) {
+        acts.push('<span class="chip-draft" title="已保存在插件本地：当前会话的模型看不到。点「开启子会话」时，改后的正文会逐字带进那个新会话的第一句话">已保存（本地）</span>');
+        acts.push(`<button class="btn sm ghost" data-act="dropDraft" data-seq="${node.seq}" data-explain="act.edit">丢弃这条改动</button>`);
+      }
+      return `<div class="actions" data-rowactions="${node.seq}">
       <span class="seq">#${node.seq}</span>${draft}${tail}${chainChip}
-      ${a.shadowed
-        ? `<button class="btn sm" data-act="gotoCurrent" data-seq="${gone[node.seq]}" data-explain="act.gotoCurrent"
-             title="被遮蔽的原文不能再当改写目标（平台拒）；要接着改就对**现在可见的那条**操作 —— 点它就地打开编辑器">去改现在这条（#${gone[node.seq]}）</button>`
-        : (a.canRewrite
-          ? (a.advancedOnly && !S.sw.advanced
-            ? '<span class="chip-soft" title="工具结果的「编辑」属于高级编辑：打开顶部「高级编辑」开关即可看到（避免几十条工具结果把常用动作淹掉）">高级编辑</span>'
-            : `<button class="btn sm" data-act="edit" data-seq="${node.seq}" data-explain="act.edit">编辑</button>`)
-          : (node.type === 'assistant/message'
-            ? `<span class="badge-asst" title="${esc(a.blockReason)}">助手消息改不了 · 只能写一句更正</span>`
-            : `<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 14))}…</span>`))}
-      ${a.canNote ? `<button class="btn sm" data-act="annotate" data-seq="${node.seq}" data-explain="act.annotate">写一句更正</button>` : ''}
-      ${savedNoteOf(node.seq) ? '<span class="chip-draft" title="你为这一条写了一句本地更正：当前会话的模型看不到；开子会话时它会逐字带进新会话的第一句话">已写更正（本地）</span>' : ''}
-      ${draftOf(node.seq)
-        /* ⚠️ **硬约束**（用户 2026-10-02）：「所有的保存都是临时性保存，只有开启子会话的时候才会写进去。」
-         * ⟹ 这里**不出现「应用到会话」**：保存只存本地；要让它生效就去点「开启子会话」。 */
-        ? `<span class="chip-draft" title="已保存在插件本地：当前会话的模型看不到。点「开启子会话」时，改后的正文会逐字带进那个新会话的第一句话">已保存（本地）</span>
-           <button class="btn sm ghost" data-act="dropDraft" data-seq="${node.seq}" data-explain="act.edit">丢弃这条改动</button>`
-        : ''}
-      ${familyOf(node.seq).length > 1 || node.versions ? `<button class="btn sm ghost" data-act="history" data-seq="${node.seq}" data-explain="act.history">版本历史</button>` : ''}
-    </div>`}
-    ${S.historyFor === node.seq ? historyHtml(node) : ''}
+      ${acts.join('\n      ')}
+    </div>`;
+    })()}
     ${S.editor && S.editor.seq === node.seq ? editorHtml() : ''}
   </div>`;
 }
@@ -1620,29 +1565,20 @@ const DEST_CARRY = '<span class="chip-soft dest-model" title="这段字只存在
 function editorHtml() {
   const st = S.editor, blocked = S.sw.turnOpen || !S.sw.live;
   const node = nodeOf(st.seq);              // 字段要按**底层类型**给（R3.2）：工具结果只给内容文本 + isError
-  const title = st.kind === 'edit' ? `编辑第 ${reqOf().turn} 轮 · 第 ${reqOf().step} 步的这一条`
-    : st.kind === 'annotate' ? `批注第 ${reqOf().turn} 轮 · 第 ${reqOf().step} 步的这一条`
-    : `钉住这一段（存起来，给新会话用）`;
-  const note = st.kind === 'pin'
-    ? '钉住 = 把这段正文逐字存成"新规范"（只存插件本地 —— 本会话的模型看不到）。等你开一个新子会话时，它会逐字附在那个新会话的第一句话前面 ⟹ 那个新会话的模型才读到它，并以此为准（冲突的旧理解作废）。'
-    : st.kind === 'annotate' ? '提交后会往会话追加一条更正消息，不可撤销；原文不会被遮蔽，模型两者都看到。它是"请求式"的（不保证模型照做）。'
-    : '这一步只把改动存在插件本地，模型还看不到；要让模型看到，还要做下面第 2 步。';
-  const multiPara = st.kind === 'edit' && /\n\s*\n/.test(String(st.text || ''));
+  /* ⚠️ **编辑器只有一种**（用户 2026-10-02：「上下文的编辑只有编辑就行了」）：
+   * 旧模型的 `批注` / `钉住` 两种编辑器已删除，这里只剩"编辑这一条"。 */
+  const title = `编辑第 ${reqOf().turn} 轮 · 第 ${reqOf().step} 步的这一条`;
+  const note = '保存只把改动存在插件本地（当前会话的模型看不到）；点「开启子会话」时，改后的正文才会逐字写进那个新会话的第一句话。';
+  const multiPara = /\n\s*\n/.test(String(st.text || ''));
   /* ③ 左上角飘一个「?」——与讲解模式序号同一种做法（贴着元素，一眼知道对应谁）。
    *    用户 2026-10-01：「我说的问号不是在按钮后面单独加一个问号……这么做用户体验看着很差」。 */
   const q = (key, label) => `<span class="qfloat" role="button" tabindex="0" data-help="${key}"
       title="${esc(label)}：点这里看它是做什么的（不影响这个按钮）">?</span>`;
-  /* ① 更正目标写成人话（哪一轮、哪一步、哪一类、正文开头），#seq 只作为追溯编号放在括号里。 */
-  const targetBox = () => (node ? `<div class="targetbox">
-      <b>${esc(nodeWhere(node))}</b><br>${esc(nodeExcerpt(node))}
-      <span class="cap">（事件序号 #${node.seq}：写进更正消息里供追溯；你不用记它）</span>
-    </div>` : '');
   return `<div class="editor">
     <p class="etitle">${esc(title)}</p>
-    ${st.kind !== 'annotate' ? '' : targetBox()}
     <p class="enote">${esc(note)}</p>
     ${multiPara ? '<p class="enote">这条消息有多个文本段落；改写后会合并为一段。</p>' : ''}
-    ${st.kind === 'edit' ? (node && node.type === 'tool/result' ? `
+    ${node && node.type === 'tool/result' ? `
       <label class="field"><span>结果文本${DEST_CARRY}<span class="cap">（工具结果只能改内容文本与错误标记）</span></span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>
       <label class="field" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="edErr" style="width:auto;min-height:0" ${node.err ? 'checked' : ''}><span style="margin:0">标记为错误${DEST_CARRY}</span></label>`
     : `
@@ -1650,17 +1586,13 @@ function editorHtml() {
       <details class="adv"><summary>高级：思考文本（可选，多数消息没有）</summary>
         <p class="cap">思考文本是模型的 reasoning 块；用户自己发的消息通常没有。留空即沿用原文。</p>
         <label class="field"><span>思考文本${DEST_CARRY}</span><textarea rows="2" id="edR">${esc(st.reasoning || '')}</textarea></label>
-      </details>`)
-    : st.kind === 'annotate' ? `
-      <label class="field"><span>更正内容${DEST_CARRY}<span class="cap">（写具体 —— "作废哪些、改成什么"；开子会话时这段会逐字带进新会话的第一句话，那边的模型才读到）</span></span><textarea rows="3" id="edWhy" placeholder="一句话说明为什么更正">${esc(st.reason || '')}</textarea></label>
-      <p class="cap">这一条在平台上<b>改不了</b>（助手消息不能改写 / 被压缩埋掉的读不回），所以只能写一句更正。它<b>只针对上面那一条</b>。如果你要作废的范围不止这一条，就直接写在理由里（例如"上面第 3、4 条都作废"）—— 模型读的正是这段理由，不需要你去选范围或记编号。</p>`
-    : ''}
+      </details>`}
     ${blocked ? `<p class="eblocked">${S.sw.turnOpen ? '当前轮次还没结束 —— 改动只能在轮次边界提交。' : '这个会话不在本进程里，只能查看，不能编辑。'}</p>` : ''}
     ${S.editorError ? `<p class="emsg-err">${esc(S.editorError)}</p>` : ''}
     ${S.editorOk ? `<p class="emsg-ok">${esc(S.editorOk)}</p>` : ''}
-    ${st.kind === 'edit' ? '<p class="cap esteps">点<b>「保存」</b> → <b>只存本地</b>：当前会话的模型看不到它。等你点<b>「开启子会话」</b>时，改后的正文会逐字带进那个新会话的第一句话。</p>' : ''}
+    <p class="cap esteps">点<b>「保存」</b> → <b>只存本地</b>：当前会话的模型看不到它。等你点<b>「开启子会话」</b>时，改后的正文会逐字带进那个新会话的第一句话。</p>
     <div class="efoot">
-      <span class="qwrap"><button class="btn sm" data-act="esubmit" ${blocked ? 'disabled' : ''}>${st.kind === 'annotate' ? '保存更正' : '保存'}</button>${q(st.kind === 'pin' ? 'act.pin' : st.kind === 'annotate' ? 'act.annotate' : 'act.edit', '这个按钮')}</span>
+      <span class="qwrap"><button class="btn sm" data-act="esubmit" ${blocked ? 'disabled' : ''}>保存</button>${q('act.edit', '这个按钮')}</span>
       <span class="qwrap"><button class="btn sm ghost" data-act="ecancel">取消（Esc）</button></span>
       <span class="cap">Cmd/Ctrl + Enter 提交</span>
     </div>
@@ -1733,7 +1665,7 @@ function editTurnInject(turn) {
   S.selSeq = hit.req.seq; S.selTurn = hit.req.turn;
   S.openCat = 'inject'; S.openElem = hit.node.seq;
   S.editor = { kind: 'edit', seq: hit.node.seq, text: hit.node.text, reasoning: '', err: !!hit.node.err };
-  S.editorError = null; S.editorOk = null; S.historyFor = null;
+  S.editorError = null; S.editorOk = null;
   render();
   const row = document.querySelector ? document.querySelector(`[data-elem="${hit.node.seq}"]`) : null;
   if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -1837,17 +1769,9 @@ function rowAct(btn) {
       text: d ? d.text : node.text,
       reasoning: d ? (d.reasoning || '') : '',
       err: d ? !!d.err : !!node.err
-    };
-    S.historyFor = null; render();
+    }; render();
     toast(d ? `打开 #${seq} 的编辑器（预填的是你上次保存的版本，可继续改）` : `打开 #${seq} 的内联编辑器（预填的是全文，不是 80 字预览）`);
   }
-  if (act === 'annotate') {
-    const n = savedNoteOf(seq);
-    S.editor = { kind: 'annotate', seq, reason: n ? n.text : '', voidFrom: String(seq), voidTo: String(seq) };
-    S.historyFor = null; render();
-  }
-  if (act === 'pin') { S.editor = { kind: 'pin', seq, label: '', text: node.text }; S.historyFor = null; render(); }
-  if (act === 'history') { S.historyFor = S.historyFor === seq ? null : seq; S.editor = null; render(); }
   if (act === 'dropDraft') {
     /* 本地保存的反悔口：只清本地，不碰会话（硬约束下没有任何"写进当前会话"的路径）。 */
     confirmModal({ title: '丢弃这条本地改动', warn: '只清插件本地的改动，不影响会话与模型可见内容。',
@@ -1859,38 +1783,13 @@ function rowAct(btn) {
         /* ⚠️ 用户 2026-10-02 报的细节 bug：丢弃之后**编辑器必须收起来**（回到取消状态）。
          * 否则编辑器里还留着你刚丢弃的那段文字 ⟹ 看起来"没生效"。 */
         if (S.editor && S.editor.seq === seq) S.editor = null;
-        if (S.historyFor === seq) S.historyFor = null;
         S.editorError = null; S.editorOk = null;
         render();
         toast('已丢弃这条本地改动（会话未动）—— 这一行回到原文');
       } });
     return;
   }
-  if (act === 'gotoCurrent') {
-    /* 被遮蔽的原文 → 跳到"现在可见的那条"并**就地打开它的编辑器**（`docs/03` R4.6 / §7 #7：
-     * 不给"点了才知道不行"的死路；撤销/续改永远作用于当前可见节点）。 */
-    S.openCat = node.cat; S.openElem = seq; S.historyFor = null;
-    S.editor = { kind: 'edit', seq, text: node.text, reasoning: '', err: !!node.err };
-    render();
-    toast(`已跳到现在可见的 #${seq} 并打开编辑器 —— 接着改它就行（被遮蔽的那条原文改不了）`);
-  }
 
- if (act === 'restore') {
-    const to = Number(btn.dataset.to), v = versionsOf(node).find((x) => x.seq === to) || { text: '' };
-    confirmModal({
-      title: '回滚到某一版',
-      warn: '会向会话追加一条替换记录，把模型看到的内容恢复成你选的那一版。原文与中间版本都还在日志里，之后还可以再改。',
-      rows: [['当前可见', `#${seq}`], ['要恢复到的版本', `#${to}`], ['该版正文', (v.text || '').slice(0, 140)], ['理由', `（回滚到 #${to}）`]],
-      needReason: false, okText: '确认恢复',
-      onOk: (reason) => {
-        const ns = 1400 + S.applied.length;
-        S.applied.push({ replacedSeq: seq, newSeq: ns, requestSeq: reqOf().seq, text: v.text, reason: reason || `回滚到 #${to}`, time: '12:1' + (S.applied.length % 9) });
-        S.extraNodes.push(N(ns, node.cat, node.type, v.text, node.tokens, { name: node.name, requestSeq: reqOf().seq }));
-        delete S.drafts[seq];
-        render(); toast(`已回滚：#${seq} → 恢复为 #${to} 的内容（关系链见行上）`);
-      }
-    });
-  }
 }
 function submitEditor() {
   const st = S.editor; if (!st) return;
@@ -1919,21 +1818,6 @@ function submitEditor() {
       : '已保存（只存本地：当前会话的模型看不到）—— 开子会话时，改后的正文会逐字带进新会话的第一句话');
     return;
   }
-  if (st.kind === 'annotate') {
-    const reason = ($('edWhy') && $('edWhy').value.trim()) || '';
-    if (reason === '') { S.editorError = '理由不能为空'; render(); return; }
-    /* ⚠️ 批注也是**临时保存**（同一条硬约束）：只记本地，不写会话日志。
-     * 开子会话时，这条更正会与你改过的正文一起，逐字拼进那个新会话的第一句话。 */
-    S.drafts['note-' + st.seq] = {
-      seq: st.seq, kind: 'note', text: reason,
-      updatedAt: '12:1x', requestSeq: reqOf().seq,
-      name: node.name || '', cat: node.cat,
-      where: `${nodeWhere(nodeOf(st.seq))} ${nodeExcerpt(nodeOf(st.seq), 18)}（#${st.seq}）`
-    };
-    S.editor = null; render();
-    toast('已保存更正（只存本地：当前会话的模型看不到）—— 开子会话时它会逐字带进新会话的第一句话');
-    return;
-  }
 }
 function doApply(seq) {
   // ⚠️ 新条目的 seq 从 **1600** 起（不是 1300）：演示数据里已经有 1300/1301/1303/1305 这些条目，
@@ -1942,25 +1826,18 @@ function doApply(seq) {
   S.applied.push({ replacedSeq: seq, newSeq: ns, requestSeq: reqOf().seq, text: d.text, reason: d.reason || '', time: '12:1' + (S.applied.length % 9) });
   S.extraNodes.push(N(ns, node.cat, node.type, d.text, node.tokens, { name: node.name, requestSeq: reqOf().seq, err: !!d.err }));
   delete S.drafts[seq];
-  render(); toast(`已应用：#${seq} 被遮蔽 → 新条目 #${ns}（原文仍在日志里；可用版本历史恢复）`);
+  render(); toast(`已应用：#${seq} 被遮蔽 → 新条目 #${ns}（平台能力路径；界面不再提供这个入口）`);
 }
 function orchAct(b) {
   const act = b.dataset.act, i = Number(b.dataset.i);
-  if (act === 'gotoPin') {
-    S.openCat = 'inject'; S.selSeq = reqOf().seq; render();
-    toast('已展开「注入内容」——点某条的「钉住这一段」即可钉住它的原文');
-    return;
-  }
   if (act === 'spawn') {
     const last = reqOf();
     /* ⚠️ **硬约束的落地**（用户 2026-10-02）：「所有的保存都是临时性保存，只有开启子会话的时候才会写进去。」
      * 保存只写本地 ⟹ 改动**不在父会话日志里** ⟹ 子会话继承的日志里没有它们。
      * 所以在这一刻把本地改动**逐字拼进子会话的第一句话**（这就是"开子会话时才写进去"）。 */
-    const edits = Object.values(S.drafts).filter((d) => d.kind !== 'note');
-    const notes = Object.values(S.drafts).filter((d) => d.kind === 'note');
+    const edits = Object.values(S.drafts);
     const carryLines = [];
     for (const d of edits) carryLines.push(`【改过 · ${d.cat || ''}${d.name ? ' · ' + d.name : ''} · #${d.seq}】\n${d.text}`);
-    for (const n of notes) carryLines.push(`【更正 · ${n.where}】\n${n.text}`);
     const carry = carryLines.length
       ? '[redline] 以下是本次改动（以此为准；与此冲突的此前理解一律作废）\n' + carryLines.join('\n\n') + '\n---\n'
       : '';
@@ -1969,11 +1846,10 @@ function orchAct(b) {
       warn: '会新建一个会话，把这个会话「已经聊完的内容」当作它的开头；你保存的改动会逐字写进它的第一句话。之后本会话的新轮次不会进去。',
       rows: [['① 从哪儿开始', `本会话「最后聊完的那一轮」为止（第 ${last.turn} 轮末）—— 平台自己算的，改不了；没有"从更早的位置开始"这个选项`],
              ['② 会写进去的改动', carryLines.length
-               ? `${edits.length} 条改写 + ${notes.length} 条更正 —— 逐字拼在它的第一句话前面（当前会话看不到，只有那个新会话的模型读到）`
+               ? `${edits.length} 条改写 —— 逐字拼在它的第一句话前面（当前会话看不到，只有那个新会话的模型读到）`
                : '（你还没保存过任何改动 —— 保存只存本地，开子会话时才写进去）'],
              /* R4.3「本次清单」：把**逐字要写进去的内容**列出来（否则用户只能看到条数、看不到写的是什么）。 */
              ...edits.map((d) => [`· 改写 #${d.seq}`, (d.text || '').slice(0, 120)]),
-             ...notes.map((n) => [`· 更正 ${n.where || '#' + n.seq}`, (n.text || '').slice(0, 120)]),
              ['③ 首条任务', '（写在下面那一栏 —— 必须你写；插件不生成任何内容）'],
              ['④ 不会带上', '这个会话的工具授权；本会话此后新聊的内容。'],
              ['⑤ 取消', '取消 = 什么都不发生（不建会话）']],
@@ -1982,10 +1858,10 @@ function orchAct(b) {
       reasonPlaceholder: '一句话说清这次要它干什么',
       onOk: (reason) => {
         const id = '00' + (49000 + S.children.length * 771).toString(16).slice(0, 6);
-        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), prime: carry + reason, norms: edits.length + notes.length });
+        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), prime: carry + reason, norms: edits.length });
         render();
         toast(carryLines.length
-          ? `已创建 ${id}：${edits.length} 条改写 + ${notes.length} 条更正已逐字写进它的第一句话`
+          ? `已创建 ${id}：${edits.length} 条改写已逐字写进它的第一句话`
           : `已创建 ${id}（来源 = 本项目发起）`);
       }
     }); return;
@@ -1998,13 +1874,13 @@ function renderSelfcheck() {
   if (!S.selfcheck) { box.hidden = true; return; }
   box.hidden = false;
   const rows = [
-    ['原始节点（当前可见）', '编辑 / 批注'],
-    ['替换体（当前可见）', '仍有「编辑」（可连续改）+ 版本历史'],
-    ['旧替换体 / 已被遮蔽的原文', '无「编辑」，给原因 + 版本历史'],
-    ['助手消息', '只给「批注」+ 原因'],
-    ['工具结果', '「编辑」（只改内容文本/错误标记）+ 批注'],
-    ['注入内容', '编辑 + 批注 + 存为不变量'],
-    ['被压缩埋掉', '只能批注'],
+    ['原始节点（当前可见）', '编辑'],
+    ['替换体（当前可见）', '仍有「编辑」（可连续改）'],
+    ['旧替换体 / 已被遮蔽的原文', '无任何动作，只给一句原因（已被 #K 接替）'],
+    ['助手消息', '无任何动作，只给徽章「助手消息改不了」'],
+    ['工具结果', '「编辑」（只改内容文本/错误标记）'],
+    ['注入内容', '编辑'],
+    ['被压缩埋掉', '无任何动作（改写够不到）'],
     ['系统提示词 / 工具定义', '无动作条，也不留空占位']
   ];
   const overflow = document.documentElement.scrollWidth > document.documentElement.clientWidth;
@@ -2128,7 +2004,7 @@ function render() {
    *   · 固定块（不变量）整卡 + 行上的「钉住这一段」
    *   · 官方团队整块 + 「派活」「建成官方任务」「去官方面板」
    *   · 子会话行上的「打开」「发消息」
-   * 保留：整体布局、轮次/趋势/事件卡、浏览器的编辑/批注、版本历史、开启子会话、压缩、打断。 */
+   * 保留：整体布局、轮次/趋势/事件卡、浏览器里的**编辑**、开启子会话。 */
   renderSwitches(); renderNotice();
   renderStats(); renderTrend(); renderStep(); renderEvents();
   renderBrowser();
