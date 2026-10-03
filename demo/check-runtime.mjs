@@ -665,6 +665,50 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.extraNodes = []; S.applied = []; S.editor = null; api.render();
 }
 
+/* ---------------- 保存之后**还能继续编辑**（用户 2026-10-02：「填错了 / review 之后要完善」） ----------------
+ * 这条以前没人测，所以真的缺：保存后再点「编辑」，编辑器预填的是**原文**，行上也还显示原文
+ * ⟹ 用户以为"改了不能接着改"。现在是：预填**上次保存的正文**、行上显示**当前生效的正文**、再存覆盖同一条。 */
+{
+  const S = api.S();
+  S.applied = []; S.extraNodes = []; S.drafts = {}; S.editor = null;
+  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.openCat = 'inject'; api.render();
+  const node = api.nodesOfReq(api.lastOfTurn(api.TOTAL_TURNS), true).find((n) => n.cat === 'inject');
+
+  // 第一次保存
+  api.rowAct({ dataset: { act: 'edit', seq: String(node.seq) } });
+  document.getElementById('edT').value = '第一版：先跑全量测试';
+  api.submitEditor();
+  check('保存：编辑器收起（本地保存不弹确认框）', S.editor === null);
+
+  // 行上显示"当前生效的正文"= 本地保存的那版（展开行才能看到正文与说明）
+  S.openElem = node.seq; api.render();
+  check('保存后：行上显示的是**本地保存的正文**（不是原文）', /第一版：先跑全量测试/.test(registry.get('cardBrowser').innerHTML));
+  check('保存后：行上标出"显示的是你本地保存的版本"（原文仍在日志里）', /显示的是你本地保存的版本/.test(registry.get('cardBrowser').innerHTML));
+
+  // 再点「编辑」→ 必须预填上次保存的正文
+  api.rowAct({ dataset: { act: 'edit', seq: String(node.seq) } });
+  check('保存后**仍可继续编辑**：编辑器预填的是上次保存的正文（不是原文）',
+    !!S.editor && S.editor.text === '第一版：先跑全量测试', S.editor && S.editor.text);
+
+  // 改第二次 → 覆盖同一条（不新增、不重复）
+  document.getElementById('edT').value = '第二版：先跑全量测试，再改 README';
+  api.submitEditor();
+  const edits = Object.values(S.drafts).filter((d) => d.kind !== 'note');
+  check('第二次保存：仍然只有**一条**本地改动（同一行覆盖，不叠加）', edits.length === 1, `edits=${edits.length}`);
+  check('第二次保存：带的是最新版', edits[0].text === '第二版：先跑全量测试，再改 README', edits[0].text);
+
+  // 批注同样：保存后再点批注 → 预填上次保存的更正
+  const asst = api.nodesOfReq(api.lastOfTurn(api.TOTAL_TURNS), true).find((n) => n.type === 'assistant/message') || node;
+  api.rowAct({ dataset: { act: 'annotate', seq: String(asst.seq) } });
+  document.getElementById('edWhy').value = '这条作废：改成 pnpm';
+  api.submitEditor();
+  api.rowAct({ dataset: { act: 'annotate', seq: String(asst.seq) } });
+  check('保存更正后**仍可继续编辑**：批注理由预填上次保存的内容',
+    !!S.editor && S.editor.reason === '这条作废：改成 pnpm', S.editor && S.editor.reason);
+
+  S.drafts = {}; S.editor = null; api.render();
+}
+
 /* ---------------- 「说人话」的固定结构：一句话是什么 / 为什么需要 / 什么时候用 / 不做什么 ----------------
  * 用户 2026-10-01：「看了右侧弹出的提示，也没看懂」→ 说明文字光有术语不算说明，要有这四段。 */
 {

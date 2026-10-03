@@ -606,7 +606,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 27a4225</span>
+    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 cb0cfcd</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -955,6 +955,14 @@ const surfaceOf = () => nodesOfReq(reqOf(), false);
 const visibleOf = () => nodesOfReq(reqOf(), true);
 const metricOf = (req, cat) => nodesOfReq(req, true).filter((n) => !cat || n.cat === cat).reduce((s, n) => s + n.tokens, 0);
 const draftOf = (seq) => S.drafts[seq];
+/* ⚠️ 用户 2026-10-02：「保存后，还应该可以**继续编辑**」（填错了 / review 之后要完善）。
+ * ⟹ 保存过的本地改动就是"当前生效的正文"：**编辑器预填它、行上显示它、再次保存覆盖它**。
+ * 注意：这只影响面板里看到/编辑的内容 —— 会话日志与模型可见内容始终不变（硬约束）。 */
+const savedEditOf = (seq) => { const d = S.drafts[seq]; return d && d.kind !== 'note' ? d : null; };
+const savedNoteOf = (seq) => S.drafts['note-' + seq] || null;
+const effTextOf = (node) => { const d = savedEditOf(node.seq); return d ? d.text : node.text; };
+const effReasoningOf = (node) => { const d = savedEditOf(node.seq); return d ? (d.reasoning || '') : ''; };
+const effErrOf = (node) => { const d = savedEditOf(node.seq); return d ? !!d.err : !!node.err; };
 const draftCount = () => Object.keys(S.drafts).length;
 
 /** 兜住 WebKit 忽略 overscroll-behavior-x 的情况（参照参考插件 overscroll.ts）：
@@ -1552,10 +1560,10 @@ function rowHtml(node) {
     <button class="row-main" data-elem="${node.seq}" data-explain="row.toggle">
       <i class="catsq" style="background:${catColor(node.cat)}" title="点色块 = 趋势图聚焦这一类" data-focus="${node.cat}"></i>
       <span class="tagchip">${catLabel(node.cat)}</span>${node.name ? `<span class="tagchip">${esc(node.name)}</span>` : ''}
-      <span class="preview">${esc((node.text || '').slice(0, 90))}</span>
+      <span class="preview">${esc((effTextOf(node) || '').slice(0, 90))}</span>
       <span class="tok">≈${fmt(node.tokens)}</span>
     </button>
-    ${open ? `<div class="row-body"><div class="meta">#${node.seq} · ${esc(node.type)}${node.err ? ' · 错误结果' : ''}${node.compacted ? ' · 被压缩埋掉' : ''}</div>${esc(node.text)}</div>` : ''}
+    ${open ? `<div class="row-body"><div class="meta">#${node.seq} · ${esc(node.type)}${effErrOf(node) ? ' · 错误结果' : ''}${node.compacted ? ' · 被压缩埋掉' : ''}${savedEditOf(node.seq) ? ' · <b>显示的是你本地保存的版本</b>（原文仍在会话日志里，模型看到的仍是原文）' : ''}</div>${esc(effTextOf(node))}</div>` : ''}
     ${a.inert ? '' : `<div class="actions" data-rowactions="${node.seq}">
       <span class="seq">#${node.seq}</span>${draft}${tail}${chainChip}
       ${a.shadowed
@@ -1808,8 +1816,23 @@ function rowAct(btn) {
   const seq = Number(btn.dataset.seq), node = nodeOf(seq);
   if (!node) return;
 
-  if (act === 'edit') { S.editor = { kind: 'edit', seq, text: node.text, reasoning: '', err: !!node.err }; S.historyFor = null; render(); toast(`打开 #${seq} 的内联编辑器（预填的是全文，不是 80 字预览）`); }
-  if (act === 'annotate') { S.editor = { kind: 'annotate', seq, reason: '', voidFrom: String(seq), voidTo: String(seq) }; S.historyFor = null; render(); }
+  if (act === 'edit') {
+    /* ⚠️ 预填**上次保存的版本**（若有）—— 用户 2026-10-02：「保存后还应该可以继续编辑」。 */
+    const d = savedEditOf(seq);
+    S.editor = {
+      kind: 'edit', seq,
+      text: d ? d.text : node.text,
+      reasoning: d ? (d.reasoning || '') : '',
+      err: d ? !!d.err : !!node.err
+    };
+    S.historyFor = null; render();
+    toast(d ? `打开 #${seq} 的编辑器（预填的是你上次保存的版本，可继续改）` : `打开 #${seq} 的内联编辑器（预填的是全文，不是 80 字预览）`);
+  }
+  if (act === 'annotate') {
+    const n = savedNoteOf(seq);
+    S.editor = { kind: 'annotate', seq, reason: n ? n.text : '', voidFrom: String(seq), voidTo: String(seq) };
+    S.historyFor = null; render();
+  }
   if (act === 'pin') { S.editor = { kind: 'pin', seq, label: '', text: node.text }; S.historyFor = null; render(); }
   if (act === 'history') { S.historyFor = S.historyFor === seq ? null : seq; S.editor = null; render(); }
   if (act === 'dropDraft') {
@@ -1854,17 +1877,23 @@ function submitEditor() {
     const text = ($('edT') && $('edT').value) || '', reasoning = isTool ? '' : (($('edR') && $('edR').value) || '');
     const errBox = $('edErr'), err = isTool ? !!(errBox && errBox.checked) : !!node.err;
     if (text === '' && reasoning === '') { S.editorError = '可见文本与思考文本不能同时为空'; render(); return; }
-    if (text === node.text && reasoning === '' && err === !!node.err) { S.editorError = '没有实质改动 —— 宿主会拒绝这样的提交（no-change）'; render(); return; }
+    /* 与**当前生效的正文**比较：保存过一次之后再点保存，把内容改回原文也算一次实质改动（否则用户没法"改回去"）。 */
+    if (text === effTextOf(node) && reasoning === effReasoningOf(node) && err === effErrOf(node)) {
+      S.editorError = '没有实质改动 —— 内容和上次保存的一模一样'; render(); return;
+    }
     /* ⚠️ **硬约束**（用户 2026-10-02 第二次明确）：「所有的保存都是临时性保存，只有开启子会话的时候才会写进去。
      * 否则，所有的保存都不能写进当前模型。」
      * ⟹ 这里**只存本地**（`S.drafts`）：不写会话日志、不遮蔽原文、当前会话的模型一个字都看不到。
      * 改动**什么时候生效**：点「开启子会话」时，改后的正文被逐字拼进那个新会话的第一句话。 */
+    const again = !!savedEditOf(st.seq);
     S.drafts[st.seq] = {
       seq: st.seq, kind: 'edit', text, reasoning, err,
       updatedAt: '12:1x', requestSeq: reqOf().seq, name: node.name || '', cat: node.cat
     };
     S.editor = null; render();
-    toast('已保存（只存本地：当前会话的模型看不到）—— 开子会话时，改后的正文会逐字带进新会话的第一句话');
+    toast(again
+      ? '已更新这条本地改动（同一行只留一条；开子会话时带的是最新版）'
+      : '已保存（只存本地：当前会话的模型看不到）—— 开子会话时，改后的正文会逐字带进新会话的第一句话');
     return;
   }
   if (st.kind === 'annotate') {
