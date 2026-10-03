@@ -16,7 +16,7 @@
 
 【仓库】/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline（分支 main，本地提交未 push）
 
-【项目一句话】把参考插件 dsh-context 的「上下文浏览器」改造成**可编辑的上下文批改台**：
+【项目一句话】把参考插件 dsh-context 的「上下文浏览器」改造成**可编辑的上下文批改**：
 改条目 → 冻结快照 → 用编辑过的上下文开子会话/官方 teammate → 压缩 → 主会话据此继续；
 与官方 Agent Teams 对接（不自己造协作层）。
 
@@ -107,7 +107,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**本轮在改文档**：文档 review 裁定 D1–D8 见本文末 + `scripts/check-docs.mjs`（机器把关） |
-| 进度 | `docs/10`：**DONE 104 / 共 239**（DOING 4 · TODO 123 · WAIT🙋 8） |
+| 进度 | `docs/10`：**DONE 105 / 共 240**（DOING 4 · TODO 123 · WAIT🙋 8） |
 | 当前卡点 | **M05-15 交互定稿** 与 **M5-28 起点口径确认**（都等用户点头）；文档 review 轮已收口（75 → 0，由 `scripts/check-docs.mjs` 把关）；M1 可在仓库内自验，**授权包①（装配 + 用户重启）是 M1 的收口动作** |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -420,16 +420,14 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 
 **因此**：`demo/` 只承担"契约与视觉对齐"（静态原型，不重写趋势块）；M1 起来后这三层**原样保留**，只做 §3.1 的 8 项命名空间改名；我们真正要写的是**编辑能力**（M2/M3）。
 
-## D26 · 面板 slot 归属：**我们接管 `conversation.view`（A）**（用户 2026-10-02 二选一）
+## D26 · 与上游面板的关系：**我们自己的产品「上下文批改」，在自己的 demo 里重写**（用户 2026-10-02 澄清）
 
-| 选项 | 用户选择 |
+> 用户原话：「**不是接管他，是我们要重新写一个，在我们的 demo 里边重新写一个。我们的代码叫上下文批改**。」
+
+| 项 | 裁定 |
 |---|---|
-| **A** 我们的插件接管 `conversation.view`（上游面板不再显示） | ✅ **选定** |
-| B 两个面板并存（我们上到另一个 slot） | ✖ |
-
-**落地要点（已写进 `UPSTREAM.md` §3.1）**：① 我们注册进同一宿主 slot，但用**自己的 slot id** `redline`；
-② 在**我们的 bundle patch** 里把上游那一行 `disabled: true`（并 `insert` 依赖的宿主行）——
-**两个插件都注册同一 slot 时，晚注册者会静默顶掉先注册者**（不报错，属于最难查的一类）；
-③ 代价：上游面板的功能更新从此靠 cherry-pick（我们本来就不跟随上游 `main`）。
-
-**另一项裁定**：用户选择**继续抠 demo**（demo 仍作为"视觉 / 契约参照"维护；趋势块在最终客户端里仍复用上游组件、不重写）。
+| 产品名 | **「上下文批改」**（包名 `dsh-context-redline` 不变；界面/文档里的旧名"上下文批改台"已统一改掉） |
+| 与上游 `dsh-context` 的关系 | **不是接管它的面板**；上游**只当参考** —— 趋势图那块代码可以复用（`UPSTREAM.md` §3.2 的三层），复用仍按 §3.1 的 8 项改名 |
+| 我们的界面在哪写 | **在我们自己的 demo 里重新写**（demo 就是「上下文批改」的原型；已确认继续在 demo 上抠细节） |
+| 技术约束（与"接管"无关） | 两个插件若出现在**同一宿主 slot**，必须各用**自己的 slot id**（我们 `redline` / 上游 `context`），否则**晚注册者静默顶掉先注册者**；是否同时装、界面只显示哪个 = **装配选择**（`cordis.patch.yml` 的 `disabled` / `insert`） |
+| 代价 | 我们的面板自己维护；上游趋势块若跟着升级，走 cherry-pick（我们本来就不跟随上游 `main`） |
