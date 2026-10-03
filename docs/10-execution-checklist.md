@@ -192,15 +192,15 @@
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
 | M2-01 | 读模型封装：`sessionQuery.readSurface()`（**全文**）+ `readEvent` | DONE | → 读一律走 `ctx.sessionQuery`：`resolveEvent()` 先 `readEvent({sessionId,seq})` 取 `window.target`（**全文**），取不到再回退 `readSurface()` 按 seq 找；签名照 0.2.0-rc.2 的 `.d.ts`（`readEvent` 回 `{session,inheritedEventCount,target,events,startSeq,endSeq}`）。**不碰**废弃的同步读 API ` |
-| M2-02 | 分类判定：表面节点 → 7 类（system/tools/user/inject/skill/assistant/tool） | TODO | `src/redline/classify.ts` |
-| M2-03 | 行身份链：`seq → 家族`（跨替换体串联，供版本历史与按钮判定共用） | TODO | `src/redline/identity.ts` |
+| M2-02 | 分类判定：表面节点 → 7 类（system/tools/user/inject/skill/assistant/tool） | DONE | → 【作废】**分类判定的真实落点在复制基线的折叠里**：上游 fold 已经给每个 surface 节点盖了 `cat`（7 类），我们再写一个 `src/redline/classify.ts` 就是**与 fold 并存的第二套真相**（`docs/11` 的"死代码真删除"原则）。而"按底层事件类型"那一半已由 `src/shared/redline-ability.ts` 的 `durableTypeOf` + `TYPES_BY_BUCKET` 承担，并有 `tests/edit/ability-buckets.spec.ts` 锁住"桶内所有类型动作集一致"。**不新增文件** |
+| M2-03 | 行身份链：`seq → 家族`（跨替换体串联，供版本历史与按钮判定共用） | DONE | → 【作废】行身份链（`seq → 家族`）的唯一消费者是**版本历史 / 回滚界面**，而那个界面已经**不做**了（`docs/11` D19：与"保存只到本地"冲突）。平台能力仍在（可连续改、可回滚，`docs/01` F7），但**界面不开放入口** ⟹ 没有消费者的身份链就是死代码。**将来要做历史时再回来读这一行**（那时它的落点与消费者一起定） |
 | M2-04 | 能力判定 a：`assistant/message` → `canRewrite:false` + `assistant-immutable` | DONE | → 面：`src/shared/redline-ability.ts` 的 `ability()`；`assistant/message` → `canRewrite:false` + `blockReason:'assistant-immutable'`；`tests/edit/eligibility.spec.ts` 逐条锁定（含"被遮蔽 + 助手消息同时命中 → 助手优先"） |
 | M2-05 | 能力判定 b：被遮蔽的原始节点 → `canRewrite:false` + `shadowed-by:#seq` | DONE | → `shadowed:true` → `canRewrite:false` + `blockReason:'shadowed'`；**不给任何动作**（用户 2026-10-02「只有编辑」） |
 | M2-06 | 能力判定 c：替换体（当前可见）→ `canRewrite:true`（**连改可用的关键**） | DONE | → `isReplacement:true` 的行 `canRewrite:true` —— 这是"面板里改了还能再改"的依据；单测锁定 |
 | M2-07 | 能力判定 d：被压缩埋掉 → 只能批注 + `compacted-region` | DONE | → `compacted:true` → `canRewrite:false` + `blockReason:'compacted'`；**不给动作只给一句原因**（旧写的"只能批注"已随 D18 作废） |
 | M2-08 | 能力判定 e：工具结果可编辑范围（内容文本 + `isError`；不得改工具名/参数结构） | DONE | → 工具结果可改写范围 = 结果文本 + `isError`（`checkChange` 把 `isError` 的翻转也算实质改动，单测锁定）；工具名/参数不在可写面内 |
 | M2-09 | 草稿存储：按会话分文件的 `.json` 原子写（`.tmp` + rename） | DONE | → `src/redline/drafts.ts`（纯：记录形状/覆盖/丢弃/净化文件名/坏文件报错）+ 宿主侧 `writeTable()` 原子写（`.tmp-<pid>-<t>` + rename）。`tests/edit/drafts.spec.ts` 15 条 |
-| M2-10 | 轮次边界检查：open turn → 拒绝写会话类动作 + `turn-open` | TODO | `src/redline/write.ts` |
+| M2-10 | 轮次边界检查：open turn → 拒绝写会话类动作 + `turn-open` | DONE | → **已实现（落点与原计划不同，如实记）**：原计划写 `src/redline/write.ts`，实际落在 **`src/shared/redline-turn.ts`（纯函数 `hasOpenTurn`/`turnStateOf`）+ `src/host/redline-channel.ts`** —— 写之前先问 `turnState`（异步 `listEvents` 数轮次边界）：轮次未闭合 → `redline/turn-open` 拒绝，**一个字都不写**（用例断言草稿文件不存在 + `session.append` 调用数 0）。护栏：`tests/edit/turn-state.spec.ts`（9 条）+ `tests/channel/redline-ops.spec.ts`（7 条）+ `tests/client-ui`（3 条）；**4 个变异反向验证全红**，其中一个抓出我自己的空壳护栏（见 M3-30） |
 | M2-11 | 【作废】~~`apply`：组装替换事件（目标 = 当前可见 seq、保留遮蔽来源、append 到日志尾）~~ —— apply 已被硬约束删除（保存只写本地、唯一写入点是开子会话） | DONE | → 作废依据见 M2-34 |
 | M2-12 | 【作废】~~`apply`：`sourceEventSeqs` 规则（覆盖被遮蔽节点；**assistant 不带**）~~ —— 同上：没有 replace，就没有 sourceEventSeqs 规则要落 | DONE | → 作废依据见 M2-34 |
 | M2-13 | 【作废】~~`annotate`：追加带"作废范围"的普通 user 消息（结构化头部，非伪造宿主内容）~~ —— 批注已删（docs/11 D18/D19：行上只有「编辑」） | DONE | → 作废依据见 M2-34 |
@@ -210,13 +210,13 @@
 | M2-17 | 【作废】~~V8 未通过时的降级：读不到正文 → `history-unavailable`，**禁止用 80 字预览冒充**~~ —— 随版本历史一起删除（D19） | DONE | → 作废依据见 M2-34 |
 | M2-18 | 【作废】~~固定块存储：`invariants`（标签/正文/作用域/版本/退休）~~ —— 固定块已删（docs/11 D14） | DONE | → 作废依据见 M2-34 |
 | M2-19 | 【作废】~~固定块作用域 workspace 级（新会话可见）+ 漂移检查（逐字比对当前 surface）~~ —— 漂移检查已删（docs/11 D14） | DONE | → 作废依据见 M2-34 |
-| M2-20 | 计数与增量：事件数 / 字节（为"不膨胀"提供可核对数字） | TODO | `src/redline/metrics.ts` |
+| M2-20 | 计数与增量：事件数 / 字节（为"不膨胀"提供可核对数字） | TODO | `src/redline/metrics.ts` ⏳ **消费者是 M5 的开子会话确认框**（"首条任务会有多少字节"）⟹ 与 M5 一起做，现在做没有去处 |
 | M2-21 | 测试 A1–A10（读模型/分类/能力判定/草稿/边界）先红后绿 | DONE | → 读模型/全文/能力判定/草稿/边界：`tests/edit/{drafts,fulltext,eligibility,namespace}.spec.ts` **先红后绿**（新建时 3 个文件全红：模块不存在） |
 | M2-22 | 【作废】~~测试 A11–A16（固定块跨会话、漂移、应用、批注、**回滚逐字相等**）~~ —— 所测功能（固定块/漂移/应用/批注/回滚）已全部删除（D14/D18/D19） | DONE | → 作废依据见 M2-34 |
 | M2-23 | 测试 A17（按钮集合按事件类型锁定，**反向验证会红**） | DONE | → `tests/edit/eligibility.spec.ts` 的 A17 矩阵（7 类行 × 动作集合 + 4 个稳定原因键）；**反向验证**：去掉 `assistant/message` 判定 → 立刻红 |
 | M2-24 | 【作废】~~测试 A18–A24（降级/失败码/压缩体检/团队 op 转发/服务缺失返回 `null`）~~ —— 团队 op 转发属 M5（docs/10 §8）；压缩体检也随界面减法删除（D14） | DONE | → 作废依据见 M2-34 |
 | M2-25 | 反向验证全表执行（逐条改坏 → 确认红 → 改回），结果贴 `docs/05` §6 | DONE | → M2 的 8 个变异全部变红后恢复即绿（原始输出见 docs/11 D35）；M1 的 11 个面见 M1-12 |
-| M2-26 | 计数契约自测：S1/S1.1 口径与界面数字一致 | TODO | `tests/edit/**` |
+| M2-26 | 计数契约自测：S1/S1.1 口径与界面数字一致 | TODO | `tests/edit/**` ⏳ 依赖 M2-20 与 M4-07（统计卡格子口径未定）⟹ 那两个定了才能对账 |
 | M2-27 | 错误码 → 人话映射（`bad-range`/`no-change`/`turn-open`/`assistant-immutable`/`shadowed`/`history-unavailable`） | DONE | → 稳定错误码表落在 `src/shared/redline-errors.ts`（`redline/empty-content` / `no-change` / `not-live` / `shadowed` / `bad-request` …）+ 客户端查找键 `isRedlineErrorCode`；人话文案由客户端按 `docs/03` R4.7 出（宿主只发码） |
 | M2-28 | 【D10 已取消】~~冻结快照记录~~（切点/条目数/备注/版本那一层整体删除，不再实现） | DONE | → `docs/11` D10（不写代码） |
 | M2-29 | **本地改动存储**（纯逻辑）：一条一行、再保存**覆盖**、丢弃、通知"与当前生效版本逐字比较"、文件名净化、坏文件**报错不静默** | DONE | → `src/redline/drafts.ts`（纯，不 import `node:*`）；`tests/edit/drafts.spec.ts` 15 条先红后绿；反向验证 3 条（本地改动不生效 / 叠加 / 改回与原文比）全部变红 |
@@ -406,14 +406,14 @@
 | M0 文档集 | 22 | **22** | 0 | 0 | 0 |
 | M0.5 交互 demo | 88 | **87** | 0 | 0 | 1 |
 | M1 骨架与身份 | 14 | **12** | 0 | 1 | 1 |
-| M2 编辑面 | 34 | **29** | 0 | 5 | 0 |
+| M2 编辑面 | 34 | **32** | 0 | 2 | 0 |
 | M3 右侧界面 | 33 | **28** | 0 | 4 | 1 |
 | M4 轮次联动 | 7 | **4** | 0 | 3 | 0 |
 | M4.5 能力验证 | 19 | **4** | 3 | 9 | 3 |
 | M5 编排 | 28 | **1** | 0 | 26 | 1 |
 | M6 入口与发布 | 12 | **7** | 1 | 4 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **269** | **196** | **8** | **57** | **8** |
+| **合计** | **269** | **199** | **8** | **54** | **8** |
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
 > 当前卡点：**M1 的收口动作 = 授权包①（装进 web profile + 你重启，见 M1-01）**；
