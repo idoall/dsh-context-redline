@@ -587,6 +587,7 @@ SpawnTeammateRequest = {
 | F39 | **设置服务的注册面在 0.2.0-rc.2 已经没有了**：`@deepseek-ai/dsh-settings` 导出 `SettingsForms`（`describe/update/replace/mutate`）而**没有** `SettingsProvider`、**没有** `register(ns, schema)` ⟹ 上游那套"插件注册自己的偏好命名空间"的写法在这个运行时上**恒为 no-op**（需要改成"偏好声明为 loader Config 的 `.volatile()` 字段"或删掉） | §F39（本机实测） |
 | F40 | **插件的 CSS 会被注进同一个 document，且是不分层（unlayered）的全局规则** ⟹ 两个插件若共用类名前缀，**同特异性下后注入者顶掉先注入者**（不报错）。上游整套 chrome 用 `lc-*`（实装 0.60.0 的 `lib/client.js` 里 572 处、我们复制基线里 468 个不同类名）⟹ 必须换前缀 | §F40（本机实测） |
 | F43 | **官方有一个现成的「事件 → 语义文本」提取器，但插件不能 import 它**：`@deepseek-ai/dsh-session-query` 导出 `extractSessionEventText(event)`；然而（a）它**不在 profile 层的依赖树里**（F42：那里只有 5 个包）⟹ 真机 import 解析不到；（b）加进 `peerDependencies` 会被 tsdown 当外部依赖、真机仍解析不到；（c）加进 `dependencies` 会把整包**内联**进宿主 bundle（复制一份）。⟹ 我们自己写 `src/redline/inspect.ts`，并用 `tests/edit/fulltext.spec.ts` 把它钉在与宿主一致的事件形状上 | §F43（本机实测，2026-10-04） |
+| F45 | **fork / spawn provider 的能力表与种子算法**（实测，安装树 `0.2.0-rc.2`）：两者 `capabilities` **五项全 true**（`agentOptions` / `outputSchema` / `depthLimit` / `toolFilter` / `persona`）⟹ M5 的"给子会话指定 provider/model/推理档"**在 fork 路径上成立**；`fork` 的 `inheritsParentContext = true`、`spawn` 的是 `false`；**种子由 provider 自己算** —— `start` 与 `prepareContinuable` 都调 `completedTurnPrefix(request.parent)`，**前缀为空（父会话还没有聊完的轮）时返回 `{}` ⟹ 子会话不带任何继承历史**（开子会话确认框必须如实说明这种情形） | §F45（本机实测，2026-10-04） |
 | F44 | **"任意切点分叉"在 0.2.0-rc.2 上的真实边界**（V14 的静态半边，实测）：① **子代理 seam 没有切点参数** —— `SubagentStartRequest` 只有 `label?/prompt/parent/signal/agentOptions?/outputSchema?/maxDepth?`，`ContinuableStartSpec.request` 只是它去掉三项 ⟹ 委托路径的种子由 provider 自己算；② **但 agent 工厂可以塞任意前缀** —— `CreateAgentOptions` 有 `seed?: readonly SessionEvent[]`（"Initial replay/fork history, contiguous from seq 0 … a fork supplies an exact parent prefix"），外加 `meta.parentSession` / `meta.isSeeded` / `meta.origin` / `meta.delegationDepth` 与 `inheritedEventCount`；③ **回程通道不在那条路上** —— 那两处（返回指引 `withContinuableReturnGuidance`(599) 与结算通知 `kind: "subagent-settled"`(648)，**插件禁止调用前者**）都只在 `dsh-subagent` 里，`dsh-agent` 里没有 ⟹ 工厂造出来的子会话**没有**"收工自动回流" | §F44（本机实测，2026-10-04） |
 | F41 | 在本机**离线跑上游的 host/client lane**，需要把平台包补齐到 `node_modules`：`@deepseek-ai/dsh-scope`（`dsh-session` 运行时 import）、`@deepseek-ai/dsh-client-store` + `zustand` + `immer`（`dsh-client-store` 运行时 import）、`shiki`/`@shikijs/langs`/`clsx`/`diff`/`@deepseek-ai/dsh-util-code-language`/`micromark-*`/`mdast-*`；jsdom 另需 `ResizeObserver` 桩 | §F41（本机实测） |
 
@@ -654,6 +655,28 @@ Tailwind 动画键 `--animate-redline-*` / `@keyframes redline-*`、`data-redlin
 **护栏**：`scripts/namespace-contract.mjs` 的**面 10** 断言 `node_modules/@deepseek-ai` **不是**符号链接，
 反向验证过（在临时根目录里造一个 symlink → 该面立刻红）。
 ⛔ **不要**为了"照文档做"而重新创建那条链接 —— 那等于把一个**真实发生过**的故障模式搬回树里。
+
+### F45 · fork / spawn provider 的能力表（实测，2026-10-04）
+
+`$DSH_PKG/dsh-subagent-fork-in-process/lib/index.js` 与 `.../dsh-subagent-spawn-in-process/lib/index.js`：
+
+| 项 | fork | spawn |
+|---|---|---|
+| `capabilities.agentOptions` | ✅ true | ✅ true |
+| `capabilities.outputSchema` / `depthLimit` / `toolFilter` / `persona` | ✅ / ✅ / ✅ / ✅ | ✅ / ✅ / ✅ / ✅ |
+| `inheritsParentContext` | **true** | **false** |
+| `prepareContinuable`（**方法存在即能力**，F26） | ✅ 有 | ❌ 无 |
+| 种子算法 | `completedTurnPrefix(request.parent)` | 无（全新上下文） |
+
+三条对我们有直接后果的读数：
+
+1. **`agentOptions: true`** ⟹ M5 设计里"开子会话时单独指定 `provider` / `model` / `reasoningEffort`（`agentOptions`）"
+   在 **fork 路径上是有能力的**（`docs/01` F37 记的是服务面允许，这里补上 provider 面确实声明了该能力）。
+2. **种子只来自 `request.parent`**，没有任何调用方参数 —— 与 F38 / F44 相互印证：
+   切点由 provider 按"最后聊完的那一轮"自己算。
+3. ⚠️ **一个必须写进确认框的边界**：`completedTurnPrefix` 为空（父会话还没有任何一个**已闭合**的轮）
+   时，`start` / `prepareContinuable` 返回 `{}` ⟹ **子会话不带任何继承历史**（不是"带了个空的"，而是"没有种子"）。
+   M5 的确认框在列出"会带上什么 / 不会带上什么"时，必须覆盖这一情形，否则用户会以为历史被带过去了。
 
 ### F44 · V14 的答案：**"更早切点"能造出来，但那条路没有回程通道**（实测，2026-10-04）
 

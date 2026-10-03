@@ -296,13 +296,24 @@
 
 ---
 
-## 7. M4.5 · 平台能力验证（**0 / 19**，1 条 DOING）—— M5 的硬前置
+## 7. M4.5 · 平台能力验证（**0 / 19**，3 条 DOING）—— M5 的硬前置
+
+> **本轮（2026-10-04）已完成三条的静态半边**：M45-19（F44）、M45-03（F45）、M45-11（工具被禁而服务在册）。
+> **真机半边（包 A/B）的探针清单**（等你给授权时一次跑完，每条都要留命令 + 输出片段）：
+> ① `subagents.getProvider('fork')` 是否在册、`startContinuable` 能否建（M45-03/10）；
+> ② 当前会话 `agents.get(sessionId)` 是否拿得到（M45-01）；③ 替换前原文是否读得到（M45-02，V8）；
+> ④ `agentTeam` 投影可读性 + `tryMembership` 对 Lead 的判定（M45-04，V10/V13）；
+> ⑤ 专用可弃会话里真跑「替换 → 再替换 → 回滚」与跨压缩恢复（M45-05/06，V7/V9）；
+> ⑥ 可续接子会话端到端（含「父不在进程」「父正忙」两分支）（M45-10，V11）；
+> ⑦ `spawnTeammate(context:'fork')` 建出的成员是否进 roster、种子是否正确（M45-07）；
+> ⑧ 会话日志里实际存在的 subagent 工具表（M45-11 的真机半边）。
+> ⛔ ①–⑦ 都要在**专用会话**里做（`AGENTS.md` §1 的授权包②）；⑧ 只读。
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
 | M45-01 | 包 A（只读）：`ctx.agents.get(sessionId)` 对当前会话是否可得（V3） | TODO | 探针脚本（临时目录） |
 | M45-02 | 包 A：能否读到替换前的**原文**（V8 关键） | TODO | 探针脚本 |
-| M45-03 | 包 A：`subagents.getProvider('fork')` 是否在册、`startContinuable` 是否可用（V12） | TODO | 探针脚本 |
+| M45-03 | 包 A：`subagents.getProvider('fork')` 是否在册、`startContinuable` 是否可用（V12） | DOING | → ✅ **静态半边完成（2026-10-04）**：fork provider 有 `prepareContinuable`（**方法存在即能力**，F26）、`inheritsParentContext=true`、五项能力全 true（含 `agentOptions` —— M5 指定模型/推理档在 fork 路径上成立）；`spawn` provider 无 `prepareContinuable`、`inheritsParentContext=false`。见 `docs/01` **§F45**。**剩真机半边**：`subagents.getProvider('fork')` 在运行实例里确实在册（包 A） |
 | M45-04 | 包 A：`agentTeam` 投影可读性（V10）+ `tryMembership` 对 Lead 的判定（V13） | TODO | 探针脚本 |
 | M45-05 | 🙋 包 B（一次授权）：在**专用可弃会话**里真跑 替换 → 再替换 → 回滚（V7） | WAIT🙋 | 专用会话日志 |
 | M45-06 | 包 B：跨压缩 checkpoint 的版本能否恢复（V9） | WAIT🙋 | 专用会话日志 |
@@ -310,7 +321,7 @@
 | M45-08 | V1–V6 逐条给结论（读路径与判定是否与真机一致） | TODO | `docs/01-platform-facts.md` §6 |
 | M45-09 | V10 降级契约实测（不可读时行为符合 `docs/03` R5.1.2.1） | TODO | `docs/03-ui-spec.md` |
 | M45-10 | V11：可续接子会话端到端（含**父不在进程** / **父正忙** 两个分支） | TODO | 专用会话日志 |
-| M45-11 | V12：官方团队启用时服务层仍可用（并记录会话里实际存在的 subagent 工具） | TODO | `dump-config` + 真机 |
+| M45-11 | V12：官方团队启用时服务层仍可用（并记录会话里实际存在的 subagent 工具） | DOING | → ✅ **静态半边完成（2026-10-04）**：`dsh --profile web --dump-config` **exit 0**，合成树里 `subagent`（服务）与 `subagent-spawn-in-process` / `subagent-fork-in-process`（两个 provider）**都在**，而**四个 subagent 工具全部 `disabled: true`**（`tool-subagent` / `tool-subagent-control` / `.../list-agents` / `tool-subagent-fork`）⟹ **官方禁的是工具，我们用的是服务**（V12 的核心疑问有了静态答案）。**剩真机半边**：记录会话工具表里实际存在的 subagent 工具（包 A） |
 | M45-12 | V13：对接面五项（可选注入 / Lead 判定 / spawnTeammate / 任务板 / 投影） | TODO | `docs/01-platform-facts.md` §6 |
 | M45-13 | 失败决策表：V1–V13 每条失败 → 降级路径（禁止"以后再想"） | TODO | `docs/04-roadmap.md` M4.5 |
 | M45-14 | 能力开关（`{agents,fork,compaction,team}`）默认值定死并写进文档 | TODO | `docs/04-roadmap.md` |
@@ -398,11 +409,11 @@
 | M2 编辑面 | 34 | **29** | 0 | 5 | 0 |
 | M3 右侧界面 | 33 | **27** | 0 | 5 | 1 |
 | M4 轮次联动 | 7 | **4** | 0 | 3 | 0 |
-| M4.5 能力验证 | 19 | **0** | 1 | 15 | 3 |
+| M4.5 能力验证 | 19 | **0** | 3 | 13 | 3 |
 | M5 编排 | 28 | **1** | 0 | 26 | 1 |
 | M6 入口与发布 | 12 | **0** | 0 | 12 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **269** | **184** | **5** | **72** | **8** |
+| **合计** | **269** | **184** | **7** | **70** | **8** |
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
 > 当前卡点：**M1 的收口动作 = 授权包①（装进 web profile + 你重启，见 M1-01）**；
