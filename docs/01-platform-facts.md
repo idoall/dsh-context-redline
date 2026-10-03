@@ -587,6 +587,7 @@ SpawnTeammateRequest = {
 | F39 | **设置服务的注册面在 0.2.0-rc.2 已经没有了**：`@deepseek-ai/dsh-settings` 导出 `SettingsForms`（`describe/update/replace/mutate`）而**没有** `SettingsProvider`、**没有** `register(ns, schema)` ⟹ 上游那套"插件注册自己的偏好命名空间"的写法在这个运行时上**恒为 no-op**（需要改成"偏好声明为 loader Config 的 `.volatile()` 字段"或删掉） | §F39（本机实测） |
 | F40 | **插件的 CSS 会被注进同一个 document，且是不分层（unlayered）的全局规则** ⟹ 两个插件若共用类名前缀，**同特异性下后注入者顶掉先注入者**（不报错）。上游整套 chrome 用 `lc-*`（实装 0.60.0 的 `lib/client.js` 里 572 处、我们复制基线里 468 个不同类名）⟹ 必须换前缀 | §F40（本机实测） |
 | F43 | **官方有一个现成的「事件 → 语义文本」提取器，但插件不能 import 它**：`@deepseek-ai/dsh-session-query` 导出 `extractSessionEventText(event)`；然而（a）它**不在 profile 层的依赖树里**（F42：那里只有 5 个包）⟹ 真机 import 解析不到；（b）加进 `peerDependencies` 会被 tsdown 当外部依赖、真机仍解析不到；（c）加进 `dependencies` 会把整包**内联**进宿主 bundle（复制一份）。⟹ 我们自己写 `src/redline/inspect.ts`，并用 `tests/edit/fulltext.spec.ts` 把它钉在与宿主一致的事件形状上 | §F43（本机实测，2026-10-04） |
+| F44 | **"任意切点分叉"在 0.2.0-rc.2 上的真实边界**（V14 的静态半边，实测）：① **子代理 seam 没有切点参数** —— `SubagentStartRequest` 只有 `label?/prompt/parent/signal/agentOptions?/outputSchema?/maxDepth?`，`ContinuableStartSpec.request` 只是它去掉三项 ⟹ 委托路径的种子由 provider 自己算；② **但 agent 工厂可以塞任意前缀** —— `CreateAgentOptions` 有 `seed?: readonly SessionEvent[]`（"Initial replay/fork history, contiguous from seq 0 … a fork supplies an exact parent prefix"），外加 `meta.parentSession` / `meta.isSeeded` / `meta.origin` / `meta.delegationDepth` 与 `inheritedEventCount`；③ **回程通道不在那条路上** —— 那两处（返回指引 `withContinuableReturnGuidance`(599) 与结算通知 `kind: "subagent-settled"`(648)，**插件禁止调用前者**）都只在 `dsh-subagent` 里，`dsh-agent` 里没有 ⟹ 工厂造出来的子会话**没有**"收工自动回流" | §F44（本机实测，2026-10-04） |
 | F41 | 在本机**离线跑上游的 host/client lane**，需要把平台包补齐到 `node_modules`：`@deepseek-ai/dsh-scope`（`dsh-session` 运行时 import）、`@deepseek-ai/dsh-client-store` + `zustand` + `immer`（`dsh-client-store` 运行时 import）、`shiki`/`@shikijs/langs`/`clsx`/`diff`/`@deepseek-ai/dsh-util-code-language`/`micromark-*`/`mdast-*`；jsdom 另需 `ResizeObserver` 桩 | §F41（本机实测） |
 
 ### F39 · 设置服务：0.2.0-rc.2 **没有** `register(ns, schema)`
@@ -654,6 +655,25 @@ Tailwind 动画键 `--animate-redline-*` / `@keyframes redline-*`、`data-redlin
 反向验证过（在临时根目录里造一个 symlink → 该面立刻红）。
 ⛔ **不要**为了"照文档做"而重新创建那条链接 —— 那等于把一个**真实发生过**的故障模式搬回树里。
 
+### F44 · V14 的答案：**"更早切点"能造出来，但那条路没有回程通道**（实测，2026-10-04）
+
+`docs/10` **M45-19** 问的是"有没有**受支持的**、可指定更早切点的分叉路径"。读安装树 `0.2.0-rc.2` 的类型定义，答案是**分两层**：
+
+| 层 | 有没有切点参数 | 依据 |
+|---|---|---|
+| **子代理 seam**（`ctx.subagents.start` / `startContinuable`） | ❌ **没有** | `$DSH_PKG/dsh-subagent/lib/types/types.d.ts`：`SubagentStartRequest` 只有 `label?/prompt/parent/signal/agentOptions?/outputSchema?/maxDepth?`；`ContinuableStartSpec.request` 是它去掉 `label`/`signal`/`outputSchema` ⟹ 委托路径的种子只能由 provider 自己算（`dsh-subagent-fork-in-process` 按"最后聊完的那一轮"） |
+| **agent 工厂**（`ctx.agents` + `CreateAgentOptions`） | ✅ **能塞任意前缀** | `$DSH_PKG/dsh-agent/lib/types/index.d.ts`：`seed?: readonly SessionEvent[]`（"Initial replay/fork history, contiguous from seq 0 with lossless-JSON data. A fork supplies an exact parent prefix, its inherited marker, and closers for the open tail."），外加 `meta.parentSession` / `meta.isSeeded` / `meta.origin` / `meta.delegationDepth` 与 `inheritedEventCount` |
+
+**关键差别（决定我们能不能用）**：**回程通道只属于子代理 seam**。
+返回指引 `withContinuableReturnGuidance`（`dsh-subagent/lib/index.js:599`；⛔ **插件禁止 import/调用它**，只传人写的首条任务）与结算通知 `kind: "subagent-settled"`（同文件 `:648`）**都只在 `dsh-subagent` 里**；`dsh-agent`（工厂）里**一处都没有**。所以：
+
+- 用 `startContinuable` 建子会话 → 平台自己决定种子（最后的闭合轮），**且**收工会往父会话追加结算通知；
+- 用 `agents.create(seed: …)` 造"从更早切点开始"的会话 → 切点随便选，**但没有结算通知、没有返回指引**，等于 `docs/08` §8.5 里**已经否掉过的"普通会话方案"**（父子邻接与回程通道要靠自己另搭）。另外工厂**不校验** `seed` 是否真等于父会话日志的前缀（那是调用方的责任）。
+
+**结论**：`docs/03` R5.1 的现行口径（**只有最新切点可选起点**）**成立**，而且现在有了精确理由：
+"能造出来"≠"受支持"，而我们要的那条主线（子会话收工 → 主会话接着干）恰恰依赖回程通道。
+**仍未验的真机半边**：若 M5 想用工厂路径自己接回程（自建 settle 监听 + 往父会话追加通知），要在专用会话里真跑一次才算数 —— 属 `docs/10` **M45-01/05** 的包 A/B，不在静态读代码能覆盖的范围。
+
 ### F43 · 官方的事件文本提取器**不能**被插件 import（实测，2026-10-04）
 
 `@deepseek-ai/dsh-session-query` 除了服务之外还导出一个模块级函数：
@@ -696,4 +716,4 @@ export declare function extractSessionEventText(event: SessionEvent): string
 | V11 | `startContinuable({provider:'fork', …})` 在**真机**上端到端跑通，且**把失败情形也验掉**：① 子会话初始消息里**确实含**返回指引且 `send_message` 可用；② 父会话**在进程里**时 settle → 父日志出现 `subagent-settled`；③ 父会话**不在进程里**时 → 确认"不投递"这一行为（别期待有通知）；④ 父会话**正忙**时 → 确认走 steer 而不是立刻开新轮；⑤ 投递异常时只有 warn | 真机（包 B 授权后）：建专用会话 + 续存 fork 子会话，逐情形跑 | 决定"主会话能否接着干"这条主线的**真实**边界；若 ② 不稳或 ③ 常见 → M5 必须在面板上给"未确认/需人工查看"，并提供"让主会话接着做"的人工入口 |
 | V12 | **官方 Agent Teams 启用时，我们的服务层调用是否仍可用**：① `ctx.subagents.getProvider('fork')` 是否仍在册；② `ctx.subagents.startContinuable({provider:'fork'})` 是否仍能建；③ 会话里到底还有没有 `subagent` / `subagent_fork` 工具（bundle 声明禁用了它们，但**以会话工具表实测为准**） | ① `dsh --profile web --dump-config` 看 `tool-subagent*` 是否为 `disabled`；② 真机调一次 `getProvider('fork')`（只读） | ⚠️ 这是 M5 的**地基**：官方禁的是**工具**、我们用的是**服务**。若服务也受影响 → M5 主线改为"引导用户走官方团队"，我们的面板只保留"编辑 + 快照" |
 | V13 | **对接面在真机上可用**：① 插件**可选注入** `agentTeams` 能否成功（团队启用/未启用两种情形都不该让插件加载失败）；② `ctx.agents.get(sessionId)` 拿到的 Agent 能否通过 `tryMembership` 判定为 Lead；③ `spawnTeammate(lead, {context:'fork'})` 能否建出一个**进 roster、种子=父会话已完成轮次**的成员；④ `listTasks` / `createTask` / `sendMessage` 能否按名册名调用；⑤ 客户端能否读到 `agentTeam` 投影 | 真机（包 B 授权后）：在**专用会话**里逐项调；同时看官方面板是否出现该成员与任务 | 决定 A′（对接官方）是否成立。**若 `spawnTeammate` 不可用** → 降级为裸 `startContinuable` + 只读跳转（不再提供派活/任务板对接） |
-| V14 | **有没有受支持的"更早切点"分叉路径**（决定"多条冻结记录"到底是不是多个起点）：① `startContinuable` / `spawnTeammate` 是否新增了可传 seed / 切点 / 快照的参数；② `ctx.agents` 那侧能否用 `CreateAgentOptions.seed` 造出"带更早闭合前缀"的会话，且**父子邻接与回程通道仍在**（不在 ⟹ 等于 `docs/08` §8.5 已被否掉的普通会话方案） | 先读 `$DSH_PKG` 类型定义 + `$DSH_SRC` 源码（只读）；真机再各调一次 | 决定 `docs/03` R5.1 是"每行都是可选起点"还是"**只有最新切点可选起点**"（**当前一律按后者**，见 `docs/01` F38）；不通过就**不许**在界面上承诺历史分叉（`docs/10` M7-04） |
+| V14 | **有没有受支持的"更早切点"分叉路径**（决定"多条冻结记录"到底是不是多个起点）：① `startContinuable` / `spawnTeammate` 是否新增了可传 seed / 切点 / 快照的参数；② `ctx.agents` 那侧能否用 `CreateAgentOptions.seed` 造出"带更早闭合前缀"的会话，且**父子邻接与回程通道仍在**（不在 ⟹ 等于 `docs/08` §8.5 已被否掉的普通会话方案） | 先读 `$DSH_PKG` 类型定义 + `$DSH_SRC` 源码（只读）；真机再各调一次 | 决定 `docs/03` R5.1 是"每行都是可选起点"还是"**只有最新切点可选起点**"（**当前一律按后者**，见 `docs/01` F38）；不通过就**不许**在界面上承诺历史分叉（`docs/10` M7-04） ✅ **静态半边已答（2026-10-04，见 §F44）**：子代理 seam **没有**切点参数；agent 工厂**能**塞任意前缀，但那条路**没有回程通道**（`subagent-settled` 与返回指引只在 `dsh-subagent`）⟹ 现行口径"只有最新切点可选起点"成立。**剩真机半边**：若要用工厂路径自建回程，需在专用会话里真跑（M45-05 包 B） |
