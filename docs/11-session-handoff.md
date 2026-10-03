@@ -60,6 +60,7 @@
   ./node_modules/.bin/tsc --noEmit ; ./node_modules/.bin/tsdown
   node scripts/namespace-contract.mjs                                # 期望：24 项 0 失败
   ./node_modules/.bin/vitest run --project edit --project channel    # 期望：67/67
+  dsh --profile web --dump-config | grep -A1 'dsh-context-redline'   # 期望：两插件并排、无冲突
 基线全绿后，问用户选哪条路：① 点头走**授权包①**（装进 web profile + 他重启 → 我复验 M1-02/M1-14）
 ② 继续 **M2**（编辑面 TDD：本地草稿 / 全文读取 / 按底层事件类型的能力判定 / 所有保存临时化）
 ③ 先写用户帮助（M6-11，权威来源已就位：docs/03 R4.7 + R7.1）。
@@ -116,8 +117,8 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 153 / 共 256**（DOING 4 · TODO 91 · WAIT🙋 8） |
-| 当前卡点 | **M1 的收口 = 授权包①**（装进 `web` profile + **你**重启 `dsh web` → 我复验 M1-02 / M1-14）；另有 **M05-15 交互定稿**。M1+M2 仓库内部分**已全绿**（`tsc` / `tsdown` / 自有 lane **67/67** / `namespace-contract` 24 项 0 失败 / `oxlint` 0 error）；M2 的本地保存链已可用，**但界面还是上游的**（M3 才接线） |
+| 进度 | `docs/10`：**DONE 154 / 共 256**（DOING 4 · TODO 90 · WAIT🙋 8） |
+| 当前卡点 | **M1 的收口 = 授权包①**（装进 `web` profile + **你**重启 `dsh web` → 我复验 M1-02 / M1-14）；另有 **M05-15 交互定稿**。M1+M2 仓库内部分**已全绿**，且**已装配进 `web` profile**（`dump-config` exit 0、两插件并排无冲突）——**只剩你重启 `dsh web`**；M2 的本地保存链已可用，**但界面还是上游的**（M3 才接线） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
 | 浏览器工具 | 已恢复且**本会话已实测跑通**（`navigate/resize/screenshot/evaluate/console_messages`）；限制：headless、无触屏（`pointer:coarse` 不命中） |

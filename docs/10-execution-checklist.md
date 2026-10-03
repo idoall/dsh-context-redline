@@ -161,7 +161,7 @@
 
 ---
 
-## 3. M1 · 骨架与身份（**11 / 14 DONE**）—— 仓库内可自验 ✅；授权包① 是**收口动作**（D4）
+## 3. M1 · 骨架与身份（**12 / 14 DONE**）—— 仓库内可自验 ✅；只剩「你重启 + 我复验」（D4）
 
 > **2026-10-04 执行记录**：仓库内部分**已全部完成并全绿**。当前**只剩 M1-01（授权包①，等你点头）与 M1-02（装完后的复验）**。
 > 结论：`src/` 从 tag `v0.59.2` 复制 **110 个文件**；`tsc --noEmit` 退出码 0；`tsdown` 退出码 0（`lib/index.js` 150.56 kB、`lib/client.js` 597.20 kB，banner `load({ id: "dsh-context-redline"`）；
@@ -170,7 +170,7 @@
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
-| M1-01 | 🙋 授权包①（**M1 收口动作**）：把本仓库装配进 `web` profile；**你**重启 `dsh web`；我做复验 | WAIT🙋 | 仅授权包内由 Lead 操作 profile（先备份）；**teammate 永不触碰 `$DSH_HOME/**`** |
+| M1-01 | 🙋 授权包①（**M1 收口动作**）：装配进 `web` profile ✅ **已完成（2026-10-04，用户选 A）**；**等你重启 `dsh web`**；我随后复验 | WAIT🙋 | → 备份 + 2 行声明，证据见 M1-14；**只剩重启**（`dsh web` 一律由用户本人执行） |
 | M1-02 | 复验：插件日志 `host loaded (/api/dsh-context-redline)`、两个面板并存、console 无注册错误 | TODO | 只读日志 + 浏览器 |
 | M1-03 | 从上游 tag `v0.59.2` 复制 `src/`（不带 `.git`、不带上游 `.github/workflows`） | DONE | → `git -C <upstream-clone> archive v0.59.2 src locale icon.svg cordis.patch.yml tests \| tar -x`；`find src -type f \| wc -l` = **110**（与 `docs/04` M1 风险的 110 一致）；`tests/` 复制后删掉 `tests/compat/**`+`tests/client/compat/**`+`tests/host/compat/**`+`tests/baselines.ts`（理由见 `UPSTREAM.md` §3.4）`src/**`、`tests/**`、`locale/**`、`icon.svg`、`cordis.patch.yml` |
 | M1-04 | 路由改名：`/api/dsh-context/{detail,balance,backfill}` → `/api/dsh-context-redline/*` | DONE | → 三个常量改成 `${REDLINE_API_PREFIX}/*`；`namespace-contract` 面 2「3 处 /api 字面量全部在我们前缀下」+「上游路由零命中」；`channel` lane 在**真 cordis** 上 boot 主机入口、抓真实注册的 4 条路由（`redline`/`detail`/`balance`/`backfill`）断言无上游路径 `src/host/{detail,balance,backfill}.ts`、`src/shared/redline-route.ts` |
@@ -183,7 +183,7 @@
 | M1-11 | `namespace-contract` 机器检查覆盖 **11 个面**（原写 8 个面；M1 实测补出 3 个） | DONE | → **24 项 0 失败**。11 个面 = ①身份 ②路由 ③投影 ④插槽 ⑤文案 ⑥消息来源 ⑦数据目录 ⑧上游旧值（含 **CSS `lc-` 前缀**，`.tsx` **与** `.css` 都扫）⑨lane 纯度（自有 lane 不碰 node/DOM/React；client 不许 import host/redline）⑩依赖（不许符号链接）⑪版本（`engines.dsh` ↔ 版本闸基线）。新增的 3 个面来自实测：**CSS 类名前缀**（`docs/01` F40）、**lane 纯度**（`docs/05` §1 承诺的机械校验）、**符号链接**（F42） `scripts/namespace-contract.mjs` |
 | M1-12 | 反向验证：手工改坏一处命名空间 → 检查必须变红 | DONE | → **11 个用例全部变红、恢复即绿**（原始输出）：面1 包名 / 面2 路由前缀 / 面3 投影 key / 面4 slot id / 面5 locale ns / 面7 数据目录 / 面8 localStorage / **面8 CSS 前缀** / 面9 `node:` 污染 / 面11 版本 / **面10 沙箱 symlink**。⚠️ **反向验证抓到一个真漏洞**：面 8 原来只扫 `.ts`/`.tsx`，把 `.redline-root` 改回 `.lc-root` **不会红** → 已把 `.css` 纳入扫描并复验；另有自有 lane 的 4 个变体也全部变红（route 常量指回上游 / 错误码改名 / 主机入口不挂通道 / 信封形状被改） `scripts/namespace-contract.mjs`、`tests/{edit,channel}/**` |
 | M1-13 | `tsc --noEmit` exit 0 + `vitest run --project edit --project channel` 可跑 | DONE | → `tsc --noEmit` **exit 0**；`vitest run --project edit --project channel` = **2 文件 15/15**；`vitest run`（四个 lane 全跑）= **96 文件 1689/1689**；`tsdown` exit 0；`oxlint` 0 error / 201 文件 `tsconfig.json`、`vitest.config.ts` |
-| M1-14 | `dsh --profile web --dump-config` 无路由/投影冲突（**属于授权包①**，需先把本仓库加进 profile） | TODO | → 离线部分已由 `channel` lane 覆盖：在**真 cordis** 上 boot 真插件、抓真实注册的路由并断言命名空间；剩下的是装进 profile 后的静态合成确认。只读命令 |
+| M1-14 | `dsh --profile web --dump-config` 无路由/投影冲突（**属于授权包①**） | DONE | → **2026-10-04 授权包①执行**：先备份 `~/.dsh/profiles/web/{package.json,cordis.patch.yml}`（`.before-redline-m1-install-20261004-051455`）→ 只加 2 行（deps 的 `link:` + `dsh.profile.bundles`）→ `dsh --profile web --dump-config` **exit 0**，合成树里 `dsh-context` 与 `dsh-context-redline` 两行**并排**（`# == dsh-context-redline` → `- id/name: dsh-context-redline`），**无** `already registered` / conflict / disabled 标记；包与 `lib/client.js` 都从 profile 可解析。备份 sha256 未变（`a1585181…`）。只读命令 + 2 行 profile 声明 |
 
 ---
 
@@ -374,7 +374,7 @@
 | X 横切 | 8 | **2** | 4 | 1 | 1 |
 | M0 文档集 | 22 | **22** | 0 | 0 | 0 |
 | M0.5 交互 demo | 88 | **87** | 0 | 0 | 1 |
-| M1 骨架与身份 | 14 | **11** | 0 | 2 | 1 |
+| M1 骨架与身份 | 14 | **12** | 0 | 1 | 1 |
 | M2 编辑面 | 34 | **29** | 0 | 5 | 0 |
 | M3 右侧界面 | 23 | **1** | 0 | 21 | 1 |
 | M4 轮次联动 | 4 | **0** | 0 | 4 | 0 |
@@ -382,7 +382,7 @@
 | M5 编排 | 28 | **1** | 0 | 26 | 1 |
 | M6 入口与发布 | 12 | **0** | 0 | 12 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **256** | **153** | **4** | **91** | **8** |
+| **合计** | **256** | **154** | **4** | **90** | **8** |
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
 > 当前卡点：**M1 的收口动作 = 授权包①（装进 web profile + 你重启，见 M1-01）**；
