@@ -30,7 +30,6 @@ const EXPLAIN = {
   'trend.strip': { t: '轮次刻度带（趋势图下面那排轮号）', what: '就是图下面那排 1…28 的号码格。**按轮次**模式：一格 = 一轮；**按步骤**模式：一格 = 一轮，格子的宽度 = 这一轮有几步。', effect: '点一格 = 选中那一轮的末步（选中的格子会描边，并弹一句提示）。⚠️ 手机上这排格子很窄（它是坐标轴，宽度跟着轮长走），要稳定选轮次请用上面的 `轮次` 下拉。讲解模式下**每类只标一个编号**（只标第一格），其余每格行为一样。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.10'] },
 
   'turn.pick': { t: '选择某一轮', what: '点轮次条 = 让右侧浏览器切到该轮最后一步。', effect: '右侧标题变成"第 T 轮（共 N 步，显示末步）"，分类条数/token/占比跟着变。', rev: '随时可切别的轮', confirm: '不需要', refs: ['docs/03 R1.1'] },
-  'turn.inject': { t: '改这一轮的注入内容', what: '切到这一轮**最后一条注入内容**（AGENTS.md / memory-doc / runtime-context 这类每轮由宿主重新注入的东西），就地展开编辑器。', effect: '注入内容才是最容易让模型理解错的那一半；而且它每轮会被重新注入 —— 改一轮漂一轮，所以改完通常还要「存为不变量」把口径钉住。', rev: '只切视图与展开编辑器，不改任何内容', confirm: '不需要', refs: ['docs/03 R1.16'] },
   'step.pick': { t: '步级选择', what: '选某一步（或回到"当前（下一次请求）"）。', effect: '右侧展示该步的上下文构成；与轮次入口交叉比对应当逐项一致。', rev: '随时可切', confirm: '不需要', refs: ['docs/03 R1.2'] },
   'step.chip': { t: '步级快捷片', what: '当前选中轮次的每一步一片，点一下就切到那一步。', effect: '等于用步级下拉选同一件事，但少两次点击。', rev: '随时可切', confirm: '不需要', refs: ['docs/03 R1.9'] },
   'step.nav': { t: '上一轮 / 下一轮 · 上一步 / 下一步', what: '在轮与步之间顺序移动（不用去点趋势图）。', effect: '到边界时按钮禁用。', rev: '随时可用', confirm: '不需要', refs: ['docs/03 R1.10'] },
@@ -712,45 +711,6 @@ function turnLastUser(turn) {
  * （用户 2026-10-01 实测："按钮点击了没有效果？"）。而且它压根没做 R1.4 要求的后两件事。
  * @returns 是否找到并展开（false = 这一轮没有用户消息，按钮应为置灰态）
  */
-function editTurnUserMessage(turn) {
-  if (S.sw.noUser) return false;              // 演示"这一轮没有用户消息"的置灰态
-  const hit = turnLastUser(turn);
-  if (!hit) return false;
-  S.selSeq = hit.req.seq; S.selTurn = hit.req.turn;
-  S.openCat = 'user'; S.openElem = hit.node.seq;
-  S.editor = { kind: 'edit', seq: hit.node.seq, text: hit.node.text, reasoning: '', err: !!hit.node.err };
-  S.editorError = null; S.editorOk = null;
-  render();
-  const row = document.querySelector ? document.querySelector(`[data-elem="${hit.node.seq}"]`) : null;
-  if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  toast(`已切到第 ${turn} 轮最后一条用户消息 #${hit.node.seq}，编辑器已展开`);
-  return true;
-}
-function renderStep() {
-  const r = reqOf();
-  const hasUser = !S.sw.noUser && !!turnLastUser(r.turn);
-  const hasInject = !!turnLastInject(r.turn);
-  $('cardStep').innerHTML = `
-    <div class="card-title">第 ${r.turn} 轮 · 第 ${r.step} 步 <span class="hint">${r.time}${isLive() ? ' · 当前（下一次请求）' : ''}</span>
-      <span class="bmeta">共 ${turnSteps(r.turn)} 步 · ${reqsOfTurn(r.turn).length} 次请求</span></div>
-    <div class="cap">这一屏的条数：用户消息 ${visibleOf().filter((n) => n.cat === 'user').length} · 注入内容 ${visibleOf().filter((n) => n.cat === 'inject').length}
-      ${markerOf(r) ? `· <b>✂ ${esc(markerOf(r).label)}</b>` : ''}</div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-      <button class="btn sm" data-act="editTurnUser" data-explain="turn.pick"
-        ${hasUser ? '' : 'disabled title="这一轮没有用户消息"'}
-        title="切到这一轮最后一条用户消息，展开编辑器">改这一轮的用户消息</button>
-      <button class="btn sm" data-act="editTurnInject" data-explain="turn.inject"
-        ${hasInject ? '' : 'disabled title="这一轮没有注入内容"'}
-        title="切到这一轮最后一条注入内容，展开编辑器">改这一轮的注入内容</button>
-      <button class="btn sm ghost" data-act="pickLive" data-explain="turn.pick">回到当前</button>
-    </div>`;
-  const live = $('cardStep').querySelector('[data-act="pickLive"]');
-  if (live) live.onclick = () => selectReq(REQUESTS[REQUESTS.length - 1], null);
-  const editUser = $('cardStep').querySelector('[data-act="editTurnUser"]');
-  if (editUser) editUser.onclick = () => { if (!editTurnUserMessage(r.turn)) toast('这一轮没有用户消息'); };
-  const editInject = $('cardStep').querySelector('[data-act="editTurnInject"]');
-  if (editInject) editInject.onclick = () => { if (!editTurnInject(r.turn)) toast('这一轮没有注入内容'); };
-}
 function renderEvents() {
   $('cardEvents').innerHTML = `
     <div class="card-title">上下文事件 <span class="hint">（压缩 / 裁剪，会标在趋势图上 · 一旦发生不可逆）</span></div>
@@ -990,19 +950,6 @@ function turnLastInject(turn) {
     if (ins.length) return { req: reqs[i], node: ins[ins.length - 1] };
   }
   return null;
-}
-function editTurnInject(turn) {
-  const hit = turnLastInject(turn);
-  if (!hit) return false;
-  S.selSeq = hit.req.seq; S.selTurn = hit.req.turn;
-  S.openCat = 'inject'; S.openElem = hit.node.seq;
-  S.editor = { kind: 'edit', seq: hit.node.seq, text: hit.node.text, reasoning: '', err: !!hit.node.err };
-  S.editorError = null; S.editorOk = null;
-  render();
-  const row = document.querySelector ? document.querySelector(`[data-elem="${hit.node.seq}"]`) : null;
-  if (row && row.scrollIntoView) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  toast(`已切到第 ${turn} 轮最后一条注入内容 #${hit.node.seq}（${hit.node.name || '注入'}），编辑器已展开`);
-  return true;
 }
 
 /**
@@ -1338,7 +1285,7 @@ function render() {
    *   · 子会话行上的「打开」「发消息」
    * 保留：整体布局、轮次/趋势/事件卡、浏览器里的**编辑**、开启子会话。 */
   renderSwitches(); renderNotice();
-  renderStats(); renderTrend(); renderStep(); renderEvents();
+  renderStats(); renderTrend(); renderEvents();
   renderBrowser();
   /* 草稿两步已删除（用户 2026-10-02）：不再有「还有 N 条未生效 / 逐条应用 / 放弃未应用的改动」横幅。 */
   renderOrch(); applyExplain(); renderSelfcheck();   // ⚠️ 必须最后跑：上面那些 render* 会把 HTML 重写一遍

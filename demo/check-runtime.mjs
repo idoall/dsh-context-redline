@@ -94,7 +94,7 @@ const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendCellAct, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
-  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editTurnUserMessage, turnLastUser, editorHtml, editTurnInject, turnLastInject, orchAct, nodeOf, rowHtml, BAR_W, BAR_GAP, spanW, chartW };`;
+  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editorHtml, orchAct, nodeOf, rowHtml, BAR_W, BAR_GAP, spanW, chartW };`;
 
 /**
  * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
@@ -433,18 +433,6 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
 /* ---------------- R1.4「改这一轮的用户消息」必须**真的**做三件事 ----------------
  * 旧实现只有一句 `document.querySelector('[data-turn=N]').click()`，而 [data-turn] 只在"按步骤"模式的
  * 刻度格里才有 → 默认（按轮次）模式下点了等于没点（用户 2026-10-01 实测："按钮点击了没有效果？"）。 */
-{
-  const S = api.S();
-  S.selTurn = 1; S.selSeq = api.reqsOfTurn(1)[0].seq; S.openCat = null; S.openElem = null; S.editor = null;
-  const ok = api.editTurnUserMessage(1);
-  const expect = api.turnLastUser(1);
-  check('R1.4：点「改这一轮的用户消息」真的切到该轮最后一条用户消息', ok === true && expect !== null && S.selSeq === expect.req.seq, `selSeq=${S.selSeq} 期望 ${expect && expect.req.seq}`);
-  check('R1.4：并展开「用户消息」类', S.openCat === 'user', `openCat=${S.openCat}`);
-  check('R1.4：并就地展开编辑器（预填的是该条）', !!S.editor && S.editor.seq === expect.node.seq && S.editor.kind === 'edit', JSON.stringify(S.editor && { kind: S.editor.kind, seq: S.editor.seq }));
-  S.sw.noUser = true;
-  check('R1.4：这一轮没有用户消息时返回 false（按钮应为置灰态）', api.editTurnUserMessage(1) === false);
-  S.sw.noUser = false; S.openCat = null; S.openElem = null; S.editor = null; api.render();
-}
 
 /* ---------------- 编号不许塞进装不下子节点的元素（select/input/textarea/img） ----------------
  * 用户 2026-10-01 问"11 编号在哪里？"—— `step.pick` 当时挂在 <select> 上，而 <select> 只能装 option，
@@ -464,46 +452,10 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
 /* ---------------- R3.4：编辑器预填**全文**，多段要给提示；门禁第 5 条要能在 demo 上真验 ----------------
  * 用户 2026-10-01：「demo 里没有一条 >200 字、多段的用户消息，所以 R3.4（全文/多段合并提示）
  * 与人工门禁第 5 条在 demo 上验不了」。补一条这样的演示消息，并让它成为 R1.4 的目标。 */
-{
-  const S = api.S();
-  // ⚠️ 前面的用例跑过"草稿 → 应用"，会往最后一轮追加一条替换体（seq 从 1600 起）（它就成了该轮最后一条用户消息）。
-  //    这里先清干净，否则验的不是演示数据的原始状态（第一版就是这么误红的）。
-  S.applied = []; S.extraNodes = []; S.drafts = {}; S.editor = null;
-  const longOnes = api.NODES.filter((n) => n.cat === 'user' && String(n.text || '').length > 200 && /\n\s*\n/.test(n.text));
-  check('演示数据里有一条 >200 字、多段的用户消息（门禁第 5 条才有得验）', longOnes.length >= 1, `条数=${longOnes.length} 最长=${Math.max(...longOnes.map((n) => n.text.length))} 字`);
-  const longNode = longOnes[0];
-  S.selTurn = api.TOTAL_TURNS; S.openCat = null; S.openElem = null; S.editor = null; S.sw.noUser = false;
-  api.editTurnUserMessage(api.TOTAL_TURNS);
-  check('R1.4 的目标就是那条长消息（点一下即可验"全文 + 多段提示"）', !!S.editor && S.editor.seq === longNode.seq, `editor.seq=${S.editor && S.editor.seq} 期望 ${longNode.seq}`);
-  check('R3.4：编辑器里预填的是**全文**（不是 80 字预览）', !!S.editor && S.editor.text.length === longNode.text.length && S.editor.text.length > 200, `编辑器 ${S.editor && S.editor.text.length} 字 / 原文 ${longNode.text.length} 字`);
-  const htmlLong = api.editorHtml();
-  check('R3.4：多段消息在编辑器里给出"会被合并为一段"的提示', /这条消息有多个文本段落；改写后会合并为一段。/.test(htmlLong));
-  const single = api.NODES.find((n) => n.cat === 'user' && !/\n\s*\n/.test(n.text) && String(n.text).length > 10);
-  S.editor = { kind: 'edit', seq: single.seq, text: single.text, reasoning: '' };
-  const htmlSingle = api.editorHtml();
-  check('R3.4：单段消息**不**出现该提示（不许见谁都提示）', !/这条消息有多个文本段落/.test(htmlSingle), `单段样例 #${single.seq}`);
-  S.editor = null; S.openCat = null; S.openElem = null; api.render();
-}
 
 /* ---------------- 注入内容是一等公民（用户 2026-10-01：「注入内容也是要编辑的」） ----------------
  * 检查四件事：能改（R2.1 的行按钮）→ 能钉住（存为不变量后**看得见**）→ 能看漂移（逐字比对）→
  * 能重注入 / 能退休（R4.3 的确认框）。之前只有"能改"，存完就消失了。 */
-{
-  const S = api.S();
-  S.applied = []; S.extraNodes = []; S.drafts = {}; S.invariants = []; S.editor = null;
-  S.selTurn = api.TOTAL_TURNS; S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.sw.noUser = false;
-  api.render();
-
-  const req = api.lastOfTurn(api.TOTAL_TURNS);
-  const injects = api.nodesOfReq(req, true).filter((n) => n.cat === 'inject');
-  const lastInj = injects[injects.length - 1];
-  // ① 「改这一轮的注入内容」：R1.16，R1.4 的对称入口（它会把「注入内容」类展开）
-  const ok = api.editTurnInject(api.TOTAL_TURNS);
-  // ⚠️ 这条必须放在 editTurnInject 之后：注入类默认是折叠的，折叠时那不是"行上没按钮"而是"行没渲染"
-  check('R1.16：能切到该轮最后一条注入内容并展开编辑器', ok === true && S.openCat === 'inject' && !!S.editor && S.editor.seq === lastInj.seq, `editor.seq=${S.editor && S.editor.seq} 期望 ${lastInj.seq}`);
-  check('R1.16：编辑器预填的是这条注入的全文', !!S.editor && S.editor.text === lastInj.text);
-
-}
 
 /* ---------------- apply 生成的新 seq 不许撞上演示数据里已有的条目 ----------------
  * 2026-10-01 实测：生成规则本来是 `1300 + 已应用数`，而演示数据里已经有 1300/1301/1303/1305 →
@@ -1009,7 +961,7 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
 {
   api.render();
   // 事件卡**例外**：它的读数按新规矩不许放（静态）；动态信息在卡内 evsum（已发生 / 还没发生）
-  const titled = ['cardStats', 'cardStep', 'cardOrch'];
+  const titled = ['cardStats', 'cardOrch'];   // 步骤卡已整张删除（用户 2026-10-02）
   const missing = titled.filter((id) => !/class="bmeta"/.test(registry.get(id).innerHTML));
   check('卡片标题：会变的读数该有的都有（工具卡与事件卡除外）', missing.length === 0, missing.join(','));
   check('卡片标题：事件卡不许有标题读数（它的读数是静态的，已挪进卡内）', !/class="bmeta"/.test(registry.get('cardEvents').innerHTML));
