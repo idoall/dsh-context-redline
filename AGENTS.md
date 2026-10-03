@@ -121,6 +121,7 @@ pnpm install                                                         # 只有这
 ./node_modules/.bin/tsc --noEmit                                     # 类型检查（exit 0 是底线；含 tests/**）
 ./node_modules/.bin/tsdown                                           # 构建（不要跑 clean-lib.mjs）
 ./node_modules/.bin/vitest run --project edit --project channel --project client-logic --project client-ui   # 自有护栏（门禁）
+node scripts/release-check.mjs                                       # 一条命令跑完全部门禁并打印判定行（发布前自检）
 node scripts/namespace-contract.mjs                                  # 命名空间门禁（11 个面 / 24 项）
 ./node_modules/.bin/oxlint                                           # 风格与类型感知规则
 ./node_modules/.bin/vitest run --project host --project client       # 上游 lane（非门禁；环境依赖，docs/05 §1）
