@@ -101,6 +101,43 @@ export function ability(row: SurfaceRow): Ability {
   }
 }
 
+/**
+ * Which durable types each presentation bucket can hold, per the host fold
+ * (`src/host/fold.ts` `categoryOf` + the header-epoch rows for `system`/`tools`).
+ *
+ * WHY a bucket needs a list rather than one type: `skill` holds BOTH a skill
+ * injection (`user/message`) and a skill LOAD, which the fold reclassifies into
+ * the skill bucket "but stays a tool result". So the bucket cannot name one type.
+ *
+ * WHY that is still safe for the BUTTON SET: the action rule is invariant across
+ * every type a bucket can hold (proved by `tests/edit/ability-buckets.spec.ts`:
+ * for each bucket, all its listed types yield the same `canRewrite` / `inert` /
+ * `advancedOnly` / `blockReason`). The row's category therefore decides the
+ * actions, and the ONLY thing that needs the exact type — the editor's fields
+ * (`docs/03` R3.2: a tool result edits result-text + `isError`, a user message
+ * edits 正文 + thinking text) — is taken from `node.read`, which answers the real
+ * durable type when the editor opens. No guessing anywhere.
+ */
+export const TYPES_BY_BUCKET: Readonly<Record<RowClass, readonly string[]>> = {
+  system: ['system/message'],
+  tools: ['request/header'],
+  user: ['user/message'],
+  inject: ['user/message'],
+  skill: ['user/message', 'tool/result'],
+  assistant: ['assistant/message'],
+  tool: ['tool/result'],
+}
+
+/**
+ * The representative durable type of a bucket — for callers that need SOMETHING
+ * to feed {@link ability} when the exact type is not at hand. It is safe to use
+ * for the action set (the buckets are action-invariant) and **unfit for the
+ * editor's fields** — use the type `node.read` returns for that.
+ */
+export function durableTypeOf(cat: RowClass): string {
+  return TYPES_BY_BUCKET[cat][0] ?? 'user/message'
+}
+
 /** The actions a row offers, given whether it carries a local edit. */
 export function rowActions(a: Ability, hasLocalEdit: boolean): readonly RowAction[] {
   if (!a.canRewrite) return []
