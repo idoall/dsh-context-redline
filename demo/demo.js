@@ -1248,7 +1248,7 @@ function renderOrch() {
     </section>
 
     <section class="orchblock" data-block="children">
-    <div class="subhead blocktitle">子会话 / 成员索引 <span class="hint">官方 teammate 也占同一份额度</span>
+    <div class="subhead blocktitle">子会话 <span class="hint">你开出去的新会话 · 看状态与来源</span>
       <span class="bmeta">活跃 ${active} / 8 · 共 ${S.children.length} 个</span></div>
     ${c.length === 0 ? '<div class="cap">（还没有子会话）</div>' : c.map((x, i) => {
       const [stCls, stText] = stateOf(x.state);
@@ -1720,7 +1720,10 @@ function pruneRemovedUI() {
   if (orch) {
     const team = orch.querySelector('[data-block="team"]');
     if (team) team.remove();                                      // 官方团队（名册/任务板）
-    orch.querySelectorAll('[data-act="csend"],[data-act="ctask"],[data-act="teamOpen"],[data-act="copen"],[data-act="cprompt"],[data-act="ccompact"],[data-act="cinterrupt"]')
+    /* 用户 2026-10-02：「待处理的结果」那些是平台自己写的结算账目，人工不该在那里干预（"标记已查看"是我加的）⟹ 整块删掉。 */
+    const pending = orch.querySelector('[data-block="pending"]');
+    if (pending) pending.remove();
+    orch.querySelectorAll('[data-act="csend"],[data-act="ctask"],[data-act="teamOpen"],[data-act="copen"],[data-act="cprompt"],[data-act="ccompact"],[data-act="cinterrupt"],[data-act="pendingSeen"],[data-act="pendingHand"]')
       .forEach((b) => b.remove());   // 派活 / 建成官方任务 / 去官方面板 / 打开 / 发消息 / 压缩 / 打断
     /* 用户 2026-10-02：「压缩、打断应该不需要 —— 进子会话后官方视图右边有箭头，可以随时打断或压缩；
      * 我们前面再加这两个反而多余、容易引起歧义。」⟹ 面板不再提供压缩/打断。 */
