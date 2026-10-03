@@ -93,6 +93,22 @@ async function typeInto(area: HTMLTextAreaElement, value: string): Promise<void>
   })
 }
 
+describe('⓪ the browser shell provides the category tree the demo fixed', () => {
+  test('all seven categories render as rows, in CATS order', async () => {
+    const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'hello' })]), controller())
+    const cats = queryAll(m.container, '.redline-br-cat-row')
+    assert.equal(cats.length, 7, 'system, tools, user, inject, skill, assistant, tool')
+    assert.ok(text(m.container).includes(DICT_EN['cat.user']))
+    await m.unmount()
+  })
+
+  test('the row picker exists (the demo\'s two-level (turn → step) form is M3-03, still open)', async () => {
+    const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'hello' })]), controller())
+    assert.ok(queryAll(m.container, '.redline-br-pick').length >= 1, 'a step picker is present')
+    await m.unmount()
+  })
+})
+
 describe('① the only row action is 编辑', () => {
   test('an editable row offers 编辑 and nothing else', async () => {
     const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'hello' })]), controller())
