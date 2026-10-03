@@ -54,7 +54,7 @@
 【第一件事（先跑这几条，确认基线没坏）】
   git log --oneline -3
   pnpm install                     # 只有这一条（不建符号链接，见 docs/01 F42）
-  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：268 / 183 / 4 / 73 / 8」
+  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：269 / 184 / 4 / 73 / 8」
   node demo/check-static.mjs       # 期望：✅ 静态契约检查通过
   node demo/check-runtime.mjs      # 期望：共 193 项，失败 0 项
   ./node_modules/.bin/tsc --noEmit ; ./node_modules/.bin/tsdown
@@ -117,7 +117,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 183 / 共 268**（DOING 4 · TODO 73 · WAIT🙋 8） |
+| 进度 | `docs/10`：**DONE 184 / 共 269**（DOING 4 · TODO 73 · WAIT🙋 8） |
 | 当前卡点 | **M1 的收口 = 授权包①**（装进 `web` profile + **你**重启 `dsh web` → 我复验 M1-02 / M1-14）；另有 **M05-15 交互定稿**。M1+M2 仓库内部分**已全绿**，且**已装配进 `web` profile**（`dump-config` exit 0、两插件并排无冲突）——**只剩你重启 `dsh web`**；M2 的本地保存链已可用，**但界面还是上游的**（M3 才接线） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -645,3 +645,17 @@ tip 两行口径（`tip.turn1`）。**颜色不抄**，仍走我们的主题令�
 | **D37.2** | `docs/03` **R1.5**：粒度开关「**默认按轮次**」；demo 的 `trendGran` 初始值也是 `'turn'` | 插件的默认是 **`'step'`**（`src/host/settings.ts` 的 schema 默认 + `src/client/settings.ts` 的预置默认） | **本轮实测后回退**：改成 `turn` 会让 **18 条**上游断言（`settings.spec` 的默认值矩阵、`index.spec`）跟着红，超出本轮可安全吸收的范围 ⟹ 记成有界任务 `docs/10` **M4-06**，并在此说明代价。**请你定**：跟 demo 一致（我下轮连规格一起改），还是保留 `step`（那就得改 `docs/03` R1.5 的"默认按轮次"） |
 
 两条都不是"平台事实"问题，而是"文档与准绳打架"，所以按纪律**停在这里等你一句话**；其余 M4 工作（规模读数、点击联动）照做不误。
+
+
+## D38 · M4-03 落地时更正的两处（2026-10-04）
+
+1. **`AGENTS.md` §2.5 的判据①是陈旧说法**：它写"面板数字条里的『本会话共 N 事件 / 最后 seq』"，
+   但 **demo 与插件都没有那样一条数字条**（全仓 grep 零命中）。已改成真实可用的判据：
+   统计卡的 **`轮数 / 步数`**（就是会话的形状）、趋势卡标题的 **`按轮次（共 N 轮）`**（本轮新加）、
+   浏览器 meta 的 **`第 t 轮 · 第 s 步`**。
+   **判据本身仍成立**（面板数字要对得上目标会话日志），错的是"数字条"这个名字。
+2. **统计卡的格子：demo 3 格 vs 插件 7 格**（`docs/11` D38 / `docs/10` **M4-07**）：
+   demo = `模型可见条目 / 用户消息 / 注入内容` + 一句 `本步可见 N 条 · ≈X tokens`；
+   插件（复制基线）= `轮数 / 步数 / 人类输入 / 工具调用 / 缓存命中 / 费用 / 子 Agent 费用`。
+   `docs/03` 只钉了三张卡的名字、**没钉卡内格子** ⟹ 这不是"文档 vs demo"而是"demo vs 基线"；
+   照 demo 换就是**改交互**，按纪律留给你在人工门禁定夺（换掉会把"轮数/步数/费用"这些读数拿掉）。
