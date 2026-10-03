@@ -54,7 +54,7 @@
 【第一件事（先跑这几条，确认基线没坏）】
   git log --oneline -3
   pnpm install                     # 只有这一条（不建符号链接，见 docs/01 F42）
-  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：269 / 186 / 7 / 68 / 8」
+  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：269 / 188 / 7 / 66 / 8」
   node demo/check-static.mjs       # 期望：✅ 静态契约检查通过
   node demo/check-runtime.mjs      # 期望：共 193 项，失败 0 项
   ./node_modules/.bin/tsc --noEmit ; ./node_modules/.bin/tsdown
@@ -117,7 +117,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 184 / 共 269**（DOING 7 · TODO 68 · WAIT🙋 8） |
+| 进度 | `docs/10`：**DONE 184 / 共 269**（DOING 7 · TODO 66 · WAIT🙋 8） |
 | 当前卡点 | **M1 的收口 = 授权包①**（装进 `web` profile + **你**重启 `dsh web` → 我复验 M1-02 / M1-14）；另有 **M05-15 交互定稿**。M1+M2 仓库内部分**已全绿**，且**已装配进 `web` profile**（`dump-config` exit 0、两插件并排无冲突）——**只剩你重启 `dsh web`**；M2 的本地保存链已可用，**但界面还是上游的**（M3 才接线） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
