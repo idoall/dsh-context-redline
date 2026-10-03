@@ -1720,8 +1720,10 @@ function pruneRemovedUI() {
   if (orch) {
     const team = orch.querySelector('[data-block="team"]');
     if (team) team.remove();                                      // 官方团队（名册/任务板）
-    orch.querySelectorAll('[data-act="csend"],[data-act="ctask"],[data-act="teamOpen"],[data-act="copen"],[data-act="cprompt"]')
-      .forEach((b) => b.remove());                                // 派活 / 建成官方任务 / 去官方面板 / 打开 / 发消息
+    orch.querySelectorAll('[data-act="csend"],[data-act="ctask"],[data-act="teamOpen"],[data-act="copen"],[data-act="cprompt"],[data-act="ccompact"],[data-act="cinterrupt"]')
+      .forEach((b) => b.remove());   // 派活 / 建成官方任务 / 去官方面板 / 打开 / 发消息 / 压缩 / 打断
+    /* 用户 2026-10-02：「压缩、打断应该不需要 —— 进子会话后官方视图右边有箭头，可以随时打断或压缩；
+     * 我们前面再加这两个反而多余、容易引起歧义。」⟹ 面板不再提供压缩/打断。 */
   }
   const browser = $('cardBrowser');
   if (browser) browser.querySelectorAll('[data-act="pin"],[data-act="gotoPin"]').forEach((b) => b.remove());  // 钉住这一段

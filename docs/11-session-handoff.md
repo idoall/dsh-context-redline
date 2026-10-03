@@ -251,3 +251,22 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 **⚠️ 本轮只做到"界面减法"**：`demo/` 里的**底层代码**（草稿机制、固定块/漂移函数、团队转发函数）**仍在**，只是界面上不出现；
 因此 `demo/check-runtime.mjs` 里仍有约 20 条护栏在测这些**界面上已不存在的功能**（它们仍绿，因为桩里能直接构造状态）。
 **下一步（未完成）**：把这些护栏与 `docs/03` R2.1/R2.4/R3.3/R4.6/§7、`docs/00` G4/S4、`docs/06` A5/A6、`docs/10` 相关行一起清干净 —— 否则就是"文档说有、界面没有"。
+
+## 减法补一条 + 死代码真删除（**2026-10-02 晚**）
+
+**用户新增裁定**：「压缩打断的功能应该不需要吧？因为当你进入**子智能体当前会话**时，右边有个箭头，可以随时**打断**或进行**压缩命令**。
+前面加了这两个压缩打断，反而多余，容易引起歧义。」⟹ **面板不再提供 `压缩` / `打断`**（界面上已移除，见下）。
+
+| 项 | 状态 |
+|---|---|
+| 界面移除 `压缩` / `打断` | ✅ 已完成（`pruneRemovedUI()` 的移除列表里加上 `ccompact` / `cinterrupt`），三件套绿 |
+| **死代码真删除**（草稿机制 / 固定块·漂移函数 / 团队转发 / 压缩打断处理 / `pruneRemovedUI()` 本身） | ⬜ **未完成** —— 今晚我两次用"字符串下标切片"删，把 `demo.js` 的模板字符串切残（语法错误），**已回退到绿的提交 `1076fdf`**，没给你留坏状态 |
+
+**明天怎么做（方法已定，别再图快）**：**逐块删 + 每删一块立刻跑一次 `node -e new Function(...)` 验语法**（我今晚最后那版脚本就是这么写的，但对 `if (act === 'x')` 块的边界正则写得太脆，
+漏了 `ctask`/`teamOpen`/`copen`/`discardAll`/`applyAll` 与提交器的 pin 分支）。正确顺序：
+1. 先按**行号范围**（`grep -n "^function "` 定位）删 5 个函数：`blockDrift` / `pinnedVersionOf` / `renderBlocks` / `blockAct` / `pruneRemovedUI`；
+2. 再逐个删 `if (act === 'x')` 处理块（**一次一个**，删完立刻验语法）：`csend` / `ctask` / `teamOpen` / `copen` / `cprompt` / `ccompact` / `cinterrupt` / `discardAll` / `applyAll` / `discardDraft` / `applyToCurrent`；
+3. 再删 `rowHtml` 里的「钉住这一段/已钉住」表达式、`ability()` 的 `pinnable`、编辑器与 `submitEditor` 的 pin 分支、`S.members`/`S.tasks`/`S.invariants` 的预置、开子会话卡片里"会带上的规范"那句、`render()` 里的旧调用；
+4. 删对应 **EXPLAIN 讲解词键**（`act.pin`/`act.reinject`/`act.retire`/`act.gotoCurrent`/`child.open`/`child.prompt`/`child.compact`/`child.interrupt`）、`#cardBlocks` 卡片与只服务它们的 CSS；
+5. 同时删掉 `demo/check-runtime.mjs` 里**约 20 条在测这些已删功能**的护栏（否则"测试说有、界面没有"）；
+6. 最后清 `docs/03`（R2.1/R2.4/R3.3/R4.6/R5.1/§7）、`docs/00`（G4/S4）、`docs/06`（A5/A6）、`docs/10` 里对应描述，保证**文档 / 护栏 / 界面**三者一致。
