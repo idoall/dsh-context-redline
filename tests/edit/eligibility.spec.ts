@@ -1,4 +1,4 @@
-// Capability judgement (`src/redline/eligibility.ts`) — A17 in `docs/05-test-plan.md` §2.2:
+// Capability judgement (`src/shared/redline-ability.ts` — shared by both halves) — A17 in `docs/05-test-plan.md` §2.2:
 // **the button set is decided by the UNDERLYING EVENT TYPE, never by the display category**
 // (`AGENTS.md` §2.3.1, `docs/01` F7.2).
 //
@@ -14,7 +14,7 @@
 
 import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
-import { ability, rowActions, type RowClass, type SurfaceRow } from '../../src/redline/eligibility'
+import { ability, rowActions, type RowClass, type SurfaceRow } from '../../src/shared/redline-ability'
 
 const surface = (over: Partial<SurfaceRow> & { type: string; cat: RowClass }): SurfaceRow => ({
   seq: 1,

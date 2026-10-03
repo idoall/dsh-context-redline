@@ -118,16 +118,22 @@ src/
 │   └─ store.ts         sqlite（schema_version / snapshots /
 │                        snapshot_links / pending_results）——**不存 children**：
 │                        子关系与状态一律来自平台投影与父日志（docs/01 F13.1）
-├─ shared/          ← 两半共用（**唯一**路由与请求形状来源，防 404）
-│   └─ redline-route.ts
+├─ shared/          ← 两半共用（**唯一**路由与请求形状来源，防 404；也是**两半都要跑的纯逻辑**的家）
+│   ├─ redline-route.ts     路由 + RPC 信封（防"前缀/形状不成对 404"）
+│   ├─ redline-errors.ts    稳定错误码表（客户端按码出人话）
+│   ├─ redline-paths.ts     数据目录常量
+│   └─ redline-ability.ts   ★ 能力判定：**客户端也要**（决定行上给什么动作），
+│                           而客户端不许 import `src/redline/**` ⟹ 规则放这里、只写一份
+│                           （反向验证：在 src/client 里 import src/redline → 面 9 立刻红）
 └─ （无 `src/index.ts`：Host 入口 = `src/host/index.ts`，客户端入口 = `src/client/index.ts`）
 tests/
 ├─ edit/            ← 自有 lane（纯逻辑；不 import 客户端 primitives）
 └─ channel/         ← 自有 lane（真实路由级；捕获精确 Fetch 路由后按真实信封调用）
 ```
 
-**纪律**：客户端 bundle **不得** import `src/redline`/`src/host`（上游有 bundle purity 检查）。
-两半只能通过 `shared/` 的类型与常量交流（**历史归档线**里，早期那次尝试的 `tests/redline/route-pairing.spec.ts` 就是守这条的；该目录名已废弃，现行是 `tests/edit/`）。
+**纪律**：客户端 bundle **不得** import `src/redline`/`src/host`（上游有 bundle purity 检查，`scripts/namespace-contract.mjs` 面 9 也机械断言）。
+两半要**跑**同一段逻辑时，那段逻辑必须放在 `shared/`（`redline-ability.ts` 就是这么定的）—— 不许两边各写一份（一份按钮规则写两遍，正是早期那次尝试让「助手消息可改写」这种必然报错的分支上线的原因）。
+（**历史归档线**里，早期那次尝试的 `tests/redline/route-pairing.spec.ts` 就是守这条的；该目录名已废弃，现行是 `tests/edit/`。）
 `src/redline/rows.ts` 这类"纯投影"可以放在能被客户端 `import type` 的位置（编译后无运行时依赖）。
 
 ---

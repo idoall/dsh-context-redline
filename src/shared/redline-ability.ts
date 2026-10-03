@@ -22,6 +22,17 @@
  * surface node, so it stays editable. `shadowed` therefore means "superseded by a
  * later replacement", not "is a replacement".
  *
+ * ── Why this lives in `src/shared/**` and not in `src/redline/**` ──────────
+ * The BROWSER needs this rule too (it decides which action a row renders), and the
+ * client bundle must not import `src/redline/**` — that is the bundle-purity gate
+ * (`docs/02` §4, `docs/05` A13), enforced mechanically by
+ * `scripts/namespace-contract.mjs` face 9 and by the tsdown client-bundle purity
+ * plugin. Proved by reverse verification: a temporary `import { ability } from
+ * '../redline/eligibility'` in `src/client/services.ts` reddens face 9 immediately.
+ * `src/shared/**` is the documented home for logic BOTH halves run, so the rule
+ * lives here once — never duplicated per half (a duplicated button rule is exactly
+ * how the earlier attempt shipped an assistant-rewrite branch that could only fail).
+ *
  * Purity: no `node:*`, no DOM, no React.
  */
 

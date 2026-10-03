@@ -88,8 +88,10 @@
 | `src/shared/redline-route.ts` | 两半共用的路由常量（4 条，含 `/api` 前缀）、RPC 信封、`RedlineCall` 解析。**唯一**允许拼路由的地方（防 404，`docs/01` F1） |
 | `src/shared/redline-errors.ts` | 稳定错误码表（`redline/*`）+ wire 文案 + `isRedlineErrorCode`。**它是客户端的查找键**（`docs/03` R4.7），改名 = 契约变更 |
 | `src/shared/redline-paths.ts` | 数据目录常量 `dsh-context-redline`（`docs/02` §6）。纯逻辑，不 import `node:*` |
-| `src/host/redline-channel.ts` | **我们唯一的上游接线文件**（`docs/11` D3.1）：注册 `/api/dsh-context-redline/redline`、按 `op` 分发、回统一信封。**M1 的 `OPS` 表是空的**（任何 op 回 `redline/unknown-op`），M2 往里填 |
+| `src/shared/redline-ability.ts` | **能力判定**（7 类行的动作集合 + 4 个稳定原因键）。放在 `shared/` 而不是 `redline/`：客户端也要这条规则，而客户端不许 import `src/redline/**`（bundle purity；`namespace-contract` 面 9 断言） |
+| `src/host/redline-channel.ts` | **我们唯一的上游接线文件**（`docs/11` D3.1）：注册 `/api/dsh-context-redline/redline`、按 `op` 分发、回统一信封。M2 起提供 `node.read` / `draft.list` / `draft.update` / `draft.drop`（保存只写我们自己的 JSON） |
 | `tests/edit/namespace.spec.ts` | `edit` lane 起步用例：路由/错误码/数据目录/信封的契约断言 |
+| `src/redline/{drafts,inspect}.ts`、`tests/edit/{drafts,fulltext,eligibility}.spec.ts`、`tests/channel/redline-ops.spec.ts` | **M2**：本地改动存储 / 全文读取 / 能力判定 / 通道 op，及其先红后绿的护栏 |
 | `tests/channel/redline-route.spec.ts` | `channel` lane 起步用例：**真 cordis 上 boot 主机入口**、抓真实注册的路由、断言命名空间 + 信封行为 |
 | `scripts/namespace-contract.mjs` | M1 的机器门禁（**11 个面** / 24 项），见 `docs/04` M1 DoD；逐面反向验证过 |
 | `.github/workflows/ci.yml` | 自建 CI（不继承上游的 `ci.yml`/`publish.yml`；见 §4） |
