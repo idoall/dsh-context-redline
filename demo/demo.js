@@ -1038,10 +1038,16 @@ function renderBrowser() {
         <button type="button" class="granbtn${S.deltaBase === 'step' ? ' on' : ''}" data-base="step" data-explain="browser.base">比前步</button>
         <button type="button" class="granbtn${S.deltaBase === 'turn' ? ' on' : ''}" data-base="turn" data-explain="browser.base">比前轮</button>
       </span>
-      ${/* 步骤下拉（照上游：live 在最前、其余**倒序**，标签 = 第 t 轮 · 第 s 步 (共 n 步) · 时间） */ ''}
+      ${/* ⚠️ **两级选择器**（用户 2026-10-02 裁定 = 方案 B：给选择器加量级保护）：
+           *  列表规模从 N（全部请求）降到 **T + S**（轮数 + 该轮步数）。
+           *  实测（Chromium）：N=2,000 建 DOM 23.4ms、N=10,000 = 128.8ms；两级在「1000 轮 × 4 步」下 ≈ 1,000 + 4 项。
+           *  ⚠️ 上游 0.60.0 是**一个**下拉（`lc-br-pick`）——这里是我们**有意偏离**上游的一处，理由见 `docs/05` §1.5 的量级约束。 */ ''}
+      <span class="pickwrap" data-explain="turn.pick"><select class="btn sm" id="turnPick" title="选轮次">
+        ${Array.from({ length: TOTAL_TURNS }, (_, i) => i + 1).map((t) => `<option value="${t}" ${t === S.selTurn ? 'selected' : ''}>第 ${t} 轮（共 ${turnSteps(t)} 步）</option>`).join('')}
+      </select></span>
       <span class="pickwrap" data-explain="step.pick"><select class="btn sm" id="stepPick" title="选步骤">
-        <option value="live" ${isLive() ? 'selected' : ''}>当前（下一次请求）</option>
-        ${REQUESTS.slice().reverse().map((x) => `<option value="${x.seq}" ${x.seq === S.selSeq ? 'selected' : ''}>第 ${x.turn} 轮 · 第 ${x.step} 步 (共 ${turnSteps(x.turn)} 步) · ${x.time}</option>`).join('')}
+        ${reqsOfTurn(S.selTurn).map((x) => `<option value="${x.seq}" ${x.seq === S.selSeq ? 'selected' : ''}>第 ${x.step} 步（共 ${turnSteps(S.selTurn)} 步） · ${x.time}</option>`).join('')}
+        ${S.selTurn === TOTAL_TURNS ? `<option value="live" ${isLive() ? 'selected' : ''}>当前（下一次请求）</option>` : ''}
       </select></span>
     </div>
     <div class="cap" style="margin-bottom:6px">${esc(isLive() ? '当前 · 下一次请求' : `第 ${r.turn} 轮 · 第 ${r.step} 步（共 ${turnSteps(r.turn)} 步）`)} · 估算合计 ≈ ${fmt(total)} tokens${markerOf(r) ? ` · ✂ ${esc(markerOf(r).label)}` : ''}</div>
@@ -1074,6 +1080,7 @@ function renderBrowser() {
   $('cardBrowser').querySelectorAll('[data-base]').forEach((b) => {
     b.onclick = () => { S.deltaBase = b.dataset.base; render(); toast(S.deltaBase === 'turn' ? '对比基线：比前轮（与上一轮最后一步比）' : '对比基线：比前步（与上一步比）'); };
   });
+  $('turnPick').onchange = (e) => selectReq(lastOfTurn(Number(e.target.value)), `已选第 ${e.target.value} 轮（末步）`);
   $('stepPick').onchange = (e) => {
     if (e.target.value === 'live') selectReq(REQUESTS[REQUESTS.length - 1], null);
     else selectReq(reqBySeq(e.target.value), null);

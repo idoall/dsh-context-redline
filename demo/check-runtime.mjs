@@ -1027,14 +1027,22 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('浏览器标题栏：基线切换组「比前步 / 比前轮」都在', /data-base="step"[^>]*>比前步</.test(html) && /data-base="turn"[^>]*>比前轮</.test(html));
   check('浏览器标题栏：基线组的 title 逐字照上游（含"首轮无基线，全部计为变动"）',
     /变动对比的基线：比前步＝与上一步对比；比前轮＝与上一轮最后一步对比（首轮无基线，全部计为变动）/.test(html));
-  check('浏览器标题栏：只有一个步骤下拉（上游就是一个；原来的"轮"下拉已删）',
-    (html.match(/<select/g) || []).length === 1 && !/id="turnPick"/.test(html));
-  check('浏览器标题栏：下拉首项 = 当前（下一次请求）', /<option value="live"[^>]*>当前（下一次请求）/.test(html));
-  check('浏览器标题栏：下拉选项标签 = 第 t 轮 · 第 s 步 (共 n 步) · 时间',
-    /第 \d+ 轮 · 第 \d+ 步 \(共 \d+ 步\) · \d{2}:\d{2}/.test(html));
-  const reqOpts = [...html.matchAll(/<option value="(\d+)"[^>]*>第 (\d+) 轮/g)];
-  check('浏览器标题栏：请求选项**倒序**（live 之后第一条 = 最新一次请求）',
-    reqOpts.length > 0 && Number(reqOpts[0][2]) === api.TOTAL_TURNS, `首条=${reqOpts[0] ? reqOpts[0][2] : null} 期望=${api.TOTAL_TURNS}`);
+  /* ⚠️ 用户 2026-10-02 裁定 = **方案 B：给选择器加量级保护** ⟹ 有意偏离上游的"单下拉"，
+   *  改成**两级**（轮 → 步）：列表规模从 N（全部请求）降到 **T + S**（轮数 + 该轮步数）。
+   *  这是**唯一**一处我们故意不像上游的地方（`docs/05` §1.5 的量级约束）。 */
+  check('浏览器标题栏：**两级**选择器 —— 有「轮」下拉（`#turnPick`）与「步」下拉（`#stepPick`）',
+    /id="turnPick"/.test(html) && /id="stepPick"/.test(html));
+  const turnOpts = [...html.matchAll(/<option value="(\d+)"[^>]*>第 (\d+) 轮（共 (\d+) 步）/g)];
+  check('量级保护：轮下拉项数 = 总轮数（T，不随步数增长）',
+    turnOpts.length === api.TOTAL_TURNS, `轮项=${turnOpts.length} 期望=${api.TOTAL_TURNS}`);
+  const stepOpts = [...html.matchAll(/<option value="(\d+)"[^>]*>第 (\d+) 步（共/g)];
+  check('量级保护：步下拉只列**当前离线那一轮**的步（S，不列全部请求）',
+    stepOpts.length === api.turnSteps(S.selTurn), `步项=${stepOpts.length} 期望=${api.turnSteps(S.selTurn)}`);
+  check('量级保护：列表总项数 = T + S（+1 当轮为末轮时的"当前"项）',
+    (turnOpts.length + stepOpts.length) === (api.TOTAL_TURNS + api.turnSteps(S.selTurn)),
+    `${turnOpts.length}+${stepOpts.length} vs ${api.TOTAL_TURNS}+${api.turnSteps(S.selTurn)}`);
+  check('浏览器标题栏：步下拉的"当前（下一次请求）"只在**末轮**出现',
+    (S.selTurn === api.TOTAL_TURNS) === /<option value="live"[^>]*>当前（下一次请求）/.test(html));
   check('浏览器标题栏：行上有 δ 两个标记（数量变动 + token 变动，非 0 才给）',
     /class="delta (up|down)"/.test(html) && /class="tdelta (up|down)"/.test(html));
   const req2 = api.REQUESTS.find((r) => (r.turn || 1) > 1 && r.step === 2);
