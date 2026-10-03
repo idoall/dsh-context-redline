@@ -36,6 +36,8 @@ a.redline-stat:hover { border-color: var(--dsw-alias-label-secondary); }
 .redline-stat-tip-band i { font-style: normal; }
 .redline-stat-tip-by { display: block; margin-top: 3px; color: var(--dsw-alias-label-secondary); }
 .redline-card-sub { font-weight: 400; color: var(--dsw-alias-label-secondary); font-size: 12px; margin-left: auto; }
+/* 规模读数（docs/03 R1.5）：与副标题同一套字色字号，但**不是**副标题（左贴标题，不吃掉右侧空间） */
+.redline-card-scale { font-weight: 400; color: var(--dsw-alias-label-secondary); font-size: 12px; margin-left: 8px; }
 .redline-overview-num { display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px; }
 .redline-overview-num > b { font-size: 20px; }
 .redline-overview-num span { color: var(--dsw-alias-label-secondary); }

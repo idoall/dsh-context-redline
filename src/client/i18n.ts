@@ -58,6 +58,9 @@ export const DICT_ZH: Record<string, string> = {
   'plugin.settingsOpen': '打开插件设置',
   'trend.title': '上下文趋势',
   'gran.step': '步骤', 'gran.turn': '轮次',
+  // 规模读数（docs/03 R1.5，与 demo 的 granLabel 同一句）
+  'trend.gran.turn': '按轮次（共 {n} 轮）',
+  'trend.gran.step': '按步骤（共 {n} 次请求）',
   'settings.title': '上下文', 'settings.desc': 'dsh-context-redline 插件中上下文面板的偏好设置',
   'settings.placement': '入口位置',
   'placement.tab': '标签页', 'placement.sidebar': '侧边栏', 'placement.all': '全部',
@@ -401,6 +404,8 @@ export const DICT_EN: Record<string, string> = {
   'plugin.settingsOpen': 'Open plugin settings',
   'trend.title': 'Context Trend',
   'gran.step': 'Step', 'gran.turn': 'Turn',
+  'trend.gran.turn': 'By turn ({n} turns)',
+  'trend.gran.step': 'By step ({n} requests)',
   'settings.title': 'Context', 'settings.desc': 'Preferences for Context panel in dsh-context-redline plugin',
   'settings.placement': 'Entry Options',
   'placement.tab': 'Tab', 'placement.sidebar': 'Sidebar', 'placement.all': 'All',

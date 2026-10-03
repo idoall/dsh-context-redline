@@ -54,7 +54,7 @@
 【第一件事（先跑这几条，确认基线没坏）】
   git log --oneline -3
   pnpm install                     # 只有这一条（不建符号链接，见 docs/01 F42）
-  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：266 / 180 / 4 / 74 / 8」
+  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：268 / 183 / 4 / 73 / 8」
   node demo/check-static.mjs       # 期望：✅ 静态契约检查通过
   node demo/check-runtime.mjs      # 期望：共 193 项，失败 0 项
   ./node_modules/.bin/tsc --noEmit ; ./node_modules/.bin/tsdown
@@ -117,7 +117,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 180 / 共 266**（DOING 4 · TODO 74 · WAIT🙋 8） |
+| 进度 | `docs/10`：**DONE 183 / 共 268**（DOING 4 · TODO 73 · WAIT🙋 8） |
 | 当前卡点 | **M1 的收口 = 授权包①**（装进 `web` profile + **你**重启 `dsh web` → 我复验 M1-02 / M1-14）；另有 **M05-15 交互定稿**。M1+M2 仓库内部分**已全绿**，且**已装配进 `web` profile**（`dump-config` exit 0、两插件并排无冲突）——**只剩你重启 `dsh web`**；M2 的本地保存链已可用，**但界面还是上游的**（M3 才接线） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -633,3 +633,15 @@ tip 两行口径（`tip.turn1`）。**颜色不抄**，仍走我们的主题令�
 
 **教训（写给下一个人，也写给未来的我）**：报告"通过"时必须引用**判定行**，不是输出的最后一行；
 一条从没在门禁里跑过的检查，等于没有。⟹ 凡是写进 `docs/10` 证据里的读数，都要能在 CI 里被复现。
+
+
+## D37 · M4 开工发现的两处 **demo ↔ 文档不一致**（2026-10-04 · 助手，未自行裁定）
+
+按用户口径「**当前 demo 是唯一界面准绳**」，遇到 demo 与文档冲突时**记下来、不自行选新需求**。本轮两条：
+
+| # | 文档怎么说 | demo 实际怎么做 | 我的处置 |
+|---|---|---|---|
+| **D37.1** | `docs/03` **R1.3**：轮次条/轮次列表上每轮显示两个数字 —— `用户消息 N` 与 `注入内容 N`（绿/紫，取自 `RequestRecord` 的分类计数） | **没有**。趋势卡的轮次条（`tcell`）只渲染轮号；柱子是按类别分色的堆叠段；全仓 grep 只在讲解词与假数据里出现那两个词 | **不实现**（加了就是给 demo 没有的界面加东西）；`docs/10` **M4-01 标 作废**。**请你定**：是 demo 漏了这条（要补），还是 R1.3 是旧稿（要删） |
+| **D37.2** | `docs/03` **R1.5**：粒度开关「**默认按轮次**」；demo 的 `trendGran` 初始值也是 `'turn'` | 插件的默认是 **`'step'`**（`src/host/settings.ts` 的 schema 默认 + `src/client/settings.ts` 的预置默认） | **本轮实测后回退**：改成 `turn` 会让 **18 条**上游断言（`settings.spec` 的默认值矩阵、`index.spec`）跟着红，超出本轮可安全吸收的范围 ⟹ 记成有界任务 `docs/10` **M4-06**，并在此说明代价。**请你定**：跟 demo 一致（我下轮连规格一起改），还是保留 `step`（那就得改 `docs/03` R1.5 的"默认按轮次"） |
+
+两条都不是"平台事实"问题，而是"文档与准绳打架"，所以按纪律**停在这里等你一句话**；其余 M4 工作（规模读数、点击联动）照做不误。

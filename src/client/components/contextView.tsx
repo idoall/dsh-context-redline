@@ -217,6 +217,9 @@ export function makeContextView(
       () => (granularity === 'turn' ? aggregateByTurn(requests) : requests),
       [requests, granularity],
     )
+    // The scale readout's turn count: the LAST request's turn — the demo's own
+    // `REQUESTS[last].turn` (`docs/03` R1.5).
+    const lastTurn = displayRequests.length > 0 ? displayRequests[displayRequests.length - 1]?.turn ?? 1 : 0
     // The step labels' per-turn totals ("第 s 步 (共 n 步)"), tallied over the RAW step records — turn-mode
     // aggregates read their own stepCount instead.
     const stepsOf = useMemo(() => turnStepsOf(requests), [requests])
@@ -421,6 +424,11 @@ export function makeContextView(
       <div className="redline-card">
         <div className="redline-card-title">
           <span className="redline-card-title-text">{t('trend.title')}</span>
+          {/* 规模读数（`docs/03` R1.5，与 demo 的 `granLabel` 同一句）：`按轮次（共 N 轮）` / `按步骤（共 N 次请求）`。
+              单独一个 class：`.redline-card-sub` 是**聚焦**那一行，两者语义不同（混用会让"没聚焦⇒没有副标题"的契约失真）。 */}
+          <span className="redline-card-scale">
+            {t(granularity === 'turn' ? 'trend.gran.turn' : 'trend.gran.step', { n: granularity === 'turn' ? lastTurn : displayRequests.length })}
+          </span>
           {/* The adaptive switch rides the title's right (the browser card's DNA toggle idiom): bars rescale
               to the bars currently on screen instead of the whole retained log. */}
           <span className="redline-gran redline-trend-adaptive" role="group" title={t('trend.adaptiveHint')}>

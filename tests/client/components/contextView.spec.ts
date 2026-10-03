@@ -457,9 +457,14 @@ describe('ContextView — interactions', () => {
     const titleText = query(card, '.redline-card-title-text')
     assert.equal(text(titleText), DICT_EN['trend.title'])
 
-    // The switch is the title text's NEXT sibling — left of the card's right-hand control cluster.
+    // The scale readout (`docs/03` R1.5) sits between the title text and the switch,
+    // so the switch's group is now the SECOND sibling after the title — still inside
+    // the same title row, left of the card's right-hand control cluster.
+    // The scale readout (docs/03 R1.5) states the SIZE of what is plotted and
+    // follows the granularity switch: N requests by step, T turns by turn.
+    assert.equal(text(query(card, '.redline-card-scale')), DICT_EN['trend.gran.step'].replace('{n}', '3'))
     const toggleOf = () => buttonByText(m.container, DICT_EN['trend.adaptive'])
-    assert.equal(toggleOf().parentElement?.previousElementSibling, titleText)
+    assert.equal(toggleOf().parentElement?.previousElementSibling?.previousElementSibling, titleText)
     assert.equal(toggleOf().parentElement?.getAttribute('title'), DICT_EN['trend.adaptiveHint'])
     assert.ok(!toggleOf().className.includes('redline-gran-on'), 'off at mount')
 
