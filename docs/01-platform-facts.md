@@ -246,7 +246,7 @@ SubagentRun        = { id: SessionId, localAgent: Agent | undefined,
 - 种子切点：父会话 `snapshotEvents()` 中**最后一个 `turn/end`**（`$DSH_SRC packages/subagent/subagent-fork-in-process/src/index.ts:48-55`）
 - **`prompt` 必填**：子会话建立时必须带一条初始消息
 - **`parent` 必须是活的 `Agent`**：`ctx.agents.get(sessionId)`（`'subagent/start'` 的 JSDoc 明确 in-process provider 可解析）
-- **⚠️ 关键推论（实测/很重要）**：种子取自**日志**，而**草稿不在日志里**
+- **⚠️ 关键推论（实测/很重要）**：种子取自**日志**，而**本地保存的改动不在日志里**
   → **没 apply 的改动不会带进子会话**。这条是编排层的第一优先级（见 `docs/06` §2）
 
 ### F11 · 压缩：可编程，但有四个前置条件

@@ -606,25 +606,23 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
  * 答案必须在确认框里能读到，否则用户只能靠猜（原先这段连确认框都没有，是漏了 R3.3.1）。 */
 {
   const S = api.S();
+  /* ⚠️ 硬约束（用户 2026-10-02）：**所有保存都是临时保存**，只有开启子会话时才写进去。
+   * 批注不再"提交即写进会话"——它只存本地，开子会话时逐字带进新会话的第一句话。 */
   S.applied = []; S.extraNodes = []; S.drafts = {};
   const node = api.NODES.find((n) => n.cat === 'user' && !n.compacted && n.type === 'user/message');
   S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq;
-  S.editor = { kind: 'annotate', seq: node.seq, reason: '演示理由', voidFrom: String(node.seq), voidTo: String(node.seq) };
-  document.getElementById('edWhy').value = '演示理由';
-  document.getElementById('edFrom').value = String(node.seq);
-  document.getElementById('edTo').value = String(node.seq);
+  S.editor = { kind: 'annotate', seq: node.seq, reason: '', voidFrom: String(node.seq), voidTo: String(node.seq) };
+  document.getElementById('edWhy').value = '这条作废：改成先跑全量测试';
+  api.render();
+  const eh = registry.get('cardBrowser').innerHTML;
+  check('批注：编辑器里注明"只写本地 · 开子会话时才带进去"（去向标记）', /只写本地 · 开子会话时才带进去/.test(eh));
+  check('批注：提交按钮是「保存更正」（不是"提交到会话"）', /保存更正/.test(eh));
   const before = S.extraNodes.length;
   api.submitEditor();
-  check('批注：提交**先出确认框**，不直接写会话（R3.3.1）', S.extraNodes.length === before && registry.get('modalWrap').hidden === false, `extraNodes=${S.extraNodes.length}`);
-  const rows = registry.get('modalList').innerHTML;
-  check('批注确认框：写明它在**快照/子会话**里的作用（人话：跟着快照进子会话）', /在快照里/.test(rows) && /快照进子会话/.test(rows), '');
-  check('批注确认框：写明它是"请求式"的（不遮蔽原文、不保证模型照做）', /请求式/.test(rows) && /不遮蔽原文/.test(rows));
-  check('批注确认框：给出"想确定生效"的替代路径', /确定生效/.test(rows) && /应用到会话/.test(rows));
-  check('批注确认框：短警示说清"原文保留、两者都能看到"', /不可撤销；原文保留，模型两者都能看到/.test(registry.get('modalWarn').textContent));
-  check('批注确认框：本次清单含更正目标（人话）/ 范围说明 / 理由', /更正目标/.test(rows) && /只针对上面这一条/.test(rows) && /理由/.test(rows));
-  document.getElementById('modalOk').onclick();
-  const added = S.extraNodes[S.extraNodes.length - 1];
-  check('批注确认后：真的追加了那条更正（带结构化头部）', S.extraNodes.length === before + 1 && /\[redline\] 更正目标 seq=/.test(added.text) && /作废范围 seq=/.test(added.text));
+  check('批注：保存**不写会话**（事件数不变）', S.extraNodes.length === before, `extraNodes=${S.extraNodes.length}`);
+  check('批注：保存**只存本地**（本地改动表里多一条 note）',
+    Object.values(S.drafts).some((d) => d.kind === 'note' && /全量测试/.test(d.text)));
+  check('批注：保存后编辑器收起来（本地保存没有确认框）', S.editor === null);
   S.extraNodes = []; S.applied = []; S.drafts = {}; S.editor = null; api.render();
 }
 
@@ -642,8 +640,8 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   const eh = api.editorHtml();
   check('编辑用户消息：主字段叫「正文」', /正文/.test(eh) && /id="edT"/.test(eh));
   check('编辑用户消息：思考文本收进「高级」折叠（默认不展开）', /<details class="adv">/.test(eh) && /id="edR"/.test(eh));
-  check('编辑用户消息：写清"保存即写进上下文"（用户 2026-10-02 去掉草稿两步）',
-    /保存并写进上下文/.test(eh) && /保存并写进上下文/.test(registry.get('cardBrowser').innerHTML + eh) && /回退|恢复/.test(eh));
+  check('编辑用户消息：写清"保存只存本地、开子会话时才带进去"（硬约束 2026-10-02）',
+    /只写本地/.test(eh) && /开启子会话/.test(eh) && /第一句话/.test(eh));
   check('编辑器：提交按钮**左上角飘一个「?」**（与讲解模式序号同一种做法，不是按钮后面挂一个）', /class="qfloat"[^>]*data-help="act.edit"/.test(eh) && /class="qwrap"/.test(eh));
 
   // 批注：不许再出现数字输入框，作废范围改成"就这一条 / 从这条到…"
@@ -657,13 +655,13 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('批注：更正目标用人话描述（轮/步/类别/正文开头），seq 退居括号', /class="targetbox"/.test(ah) && /第 \$\{/.test(ah) === false && /事件序号 #/.test(ah));
   check('批注：提交按钮左上角也有「?」', /class="qfloat"[^>]*data-help="act.annotate"/.test(ah));
 
-  // 走一遍：默认"就这一条"→ 确认框里写的是人话范围
-  S.extraNodes = []; S.applied = [];
+  // 走一遍：保存 = 只存本地（硬约束：不写当前会话），所以没有确认框
+  S.extraNodes = []; S.applied = []; S.drafts = {};
   document.getElementById('edWhy').value = '演示理由';
   api.submitEditor();
-  const rows = registry.get('modalList').innerHTML;
-  check('批注确认框：更正目标显示成人话（第 N 轮 · 第 M 步 · 类别 “正文…”（#seq））', /第 \d+ 轮 · 第 \d+ 步/.test(rows) && /#\d+/.test(rows), rows.slice(0, 90));
-  document.getElementById('modalOk').onclick();
+  check('批注：保存后**不写会话**且**留下本地更正**（硬约束：保存都是临时的）',
+    S.extraNodes.length === 0 && Object.values(S.drafts).some((d) => d.kind === 'note'));
+
   S.extraNodes = []; S.applied = []; S.editor = null; api.render();
 }
 
@@ -736,16 +734,17 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
 
   check('去向标记：工具结果编辑器两处（结果文本 / 标记为错误）都写明「会进模型上下文」',
     /结果文本<span class="chip-soft dest-model"/.test(hTool) && /标记为错误<span class="chip-soft dest-model"/.test(hTool));
-  check('去向标记：用户消息的正文与思考文本都写明「会进模型上下文（点应用到会话之后）」',
-    /正文<span class="chip-soft dest-model"/.test(hUser) && /思考文本<span class="chip-soft dest-model"/.test(hUser) && /应用到会话」之后/.test(hUser));
-  check('去向标记：批注的理由写明「会进模型上下文」并提示怎么写具体',
-    /理由<span class="chip-soft dest-model"/.test(hAnn) && /模型读到的全部/.test(hAnn));
+  check('去向标记：用户消息的正文与思考文本都写明「只写本地 · 开子会话时才带进去」',
+    /正文<span class="chip-soft dest-model"/.test(hUser) && /思考文本<span class="chip-soft dest-model"/.test(hUser) && /开子会话时才带进去/.test(hUser));
+  check('去向标记：批注的理由写明「只写本地 · 开子会话时才带进去」并提示怎么写具体',
+    /理由<span class="chip-soft dest-model"/.test(hAnn) && /开子会话时才带进去/.test(hAnn) && /写具体/.test(hAnn));
   const all = html.join('\n') + hOrch;
   const kinds = new Set((all.match(/dest-(local|model)/g) || []));
-  check('去向标记：全界面只有两种取值（没有第三种说法）',
-    [...kinds].every((k) => k === 'dest-local' || k === 'dest-model') && kinds.size === 2, [...kinds].join(','));
-  const forms = new Set((all.match(/只写本地 · 模型看不到|会进模型上下文（点「应用到会话」之后）|会进模型上下文/g) || []));
-  check('去向标记：文字也只用这几种固定说法（不会被改出模糊表述）', forms.size >= 2 && forms.size <= 4, [...forms].join(' / '));
+  check('去向标记：全界面只用一种标记（硬约束下所有输入都是"本地暂存、开子会话才带进去"）',
+    [...kinds].every((k) => k === 'dest-model') && kinds.size === 1, [...kinds].join(','));
+  const forms = new Set((all.match(/只写本地 · 模型看不到|只写本地 · 开子会话时才带进去|会进模型上下文/g) || []));
+  check('去向标记：文字只用这一种固定说法，且不许残留旧说法（会进模型上下文）',
+    forms.size === 1 && [...forms][0] === '只写本地 · 开子会话时才带进去', [...forms].join(' / '));
   S.editor = null; api.render();
 }
 
@@ -777,15 +776,27 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   const rows2 = registry.get('modalList').innerHTML;
   document.getElementById('modalReason').value = '干一件小事';
   document.getElementById('modalOk').onclick();
-  // 一条规范都没有 → 照实说，且首条任务里没有规范块
-  S.children = []; S.invariants = []; api.render();
+  // 没有任何本地改动 → 首条任务里没有改动块；有本地改动时才逐字拼进去
+  S.children = []; S.drafts = {}; api.render();
   api.orchAct({ dataset: { act: 'spawn' } });
   const rows3 = registry.get('modalList').innerHTML;
   document.getElementById('modalReason').value = '干一件不涉及规范的事';
   document.getElementById('modalOk').onclick();
-  check('开子会话：没有规范时首条任务里**不出现**规范块（只有人写那句）',
-    S.children.length === 1 && !/新规范（以此为准）/.test(S.children[0].prime || '')
+  check('开子会话：没有本地改动时，首条任务里**不出现**改动块（只有人写那句）',
+    S.children.length === 1 && !/以下是本次改动/.test(S.children[0].prime || '')
     && (S.children[0].prime || '').trim() === '干一件不涉及规范的事', (S.children[0].prime || '').slice(0, 60));
+  /* ⚠️ 硬约束的正面验证：**保存只存本地**，改动只在"开启子会话"这一刻逐字写进新会话的第一句话。 */
+  S.drafts[1240] = { seq: 1240, kind: 'edit', text: '（本地改后的正文）先跑全量测试', reasoning: '', err: false, cat: 'inject', name: 'AGENTS.md' };
+  S.drafts['note-1241'] = { seq: 1241, kind: 'note', text: '这条作废', cat: 'user', name: '', where: '第 28 轮 · 第 1 步（#1241）' };
+  api.orchAct({ dataset: { act: 'spawn' } });
+  const carryRows = registry.get('modalList').innerHTML;
+  check('开子会话：确认框照实说会写进去几条改动', /1 条改写/.test(carryRows) && /1 条更正/.test(carryRows));
+  document.getElementById('modalReason').value = '按新口径继续';
+  document.getElementById('modalOk').onclick();
+  check('开子会话：本地改动被**逐字**写进新会话的第一句话（硬约束的落地）',
+    /以下是本次改动/.test(S.children[1].prime) && /先跑全量测试/.test(S.children[1].prime) && /这条作废/.test(S.children[1].prime)
+    && /按新口径继续/.test(S.children[1].prime), (S.children[1].prime || '').slice(0, 80));
+  S.drafts = {};
   // 取消 = 零副作用
   const n0 = S.children.length;
   api.orchAct({ dataset: { act: 'spawn' } });
@@ -826,40 +837,22 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
  * 用户要求「demo 与文档必须一致，因为我会在 demo 上验证」⟹ 静态侧查"字符串在不在"，
  * 这里再查**渲染出来的行为**：派活/打断的短警示、助手消息的徽章、被遮蔽行挂草稿时的两条处置。 */
 {
+{
   const S = api.S();
-  S.invariants = []; S.children = [{ id: '00aaaaaa', src: 'own', state: 'running', label: 'reviewer' }];
-  S.sw.team = true;
-  api.render();
-  api.orchAct({ dataset: { act: 'csend', i: 0 } });
-  registry.get('modalCancel').onclick();
-  api.orchAct({ dataset: { act: 'cinterrupt', i: 0 } });
-  registry.get('modalCancel').onclick();
-  S.sw.team = false;
-
-  // 助手消息：徽章「助手消息仅可批注」+ 原因写在 title 里（`docs/03` R2.1/R4.6）
-  const asst = api.nodesOfReq(api.lastOfTurn(api.TOTAL_TURNS), true).find((n) => n.type === 'assistant/message');
-  S.selSeq = asst.seq; S.selTurn = api.TOTAL_TURNS; S.openCat = 'assistant'; api.render();
-  const bh = registry.get('cardBrowser').innerHTML;
-  check('助手消息行：有徽章「助手消息仅可批注」+ title 给出原因（原来只有一句被截断的原因词）',
-    /助手消息仅可批注/.test(bh) && /助手消息在平台上无法改写（两条规则互斥）/.test(bh), bh.slice(0, 120));
-
-  // 被遮蔽的行上挂着草稿 → 不给「应用到会话」，改为两条处置（`docs/03` R4.6）
+  /* ⚠️ 硬约束（2026-10-02）：保存只存本地 ⟹ 行上**不出现「应用到会话」**，只给「丢弃这条改动」。 */
   S.applied = []; S.extraNodes = []; S.drafts = {};
-  S.drafts[1301] = { seq: 1301, text: '（草稿）改了一点点', reasoning: '', requestSeq: api.lastOfTurn(api.TOTAL_TURNS).seq };
-  api.doApply(1301);
-  S.drafts[1301] = { seq: 1301, text: '（旧行上的草稿）', reasoning: '', requestSeq: api.lastOfTurn(api.TOTAL_TURNS).seq };
-  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.selTurn = api.TOTAL_TURNS; S.openCat = 'user'; api.render();
+  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.openCat = 'user'; api.render();
+  const target = api.nodesOfReq(api.lastOfTurn(api.TOTAL_TURNS), true).find((n) => n.cat === 'user' && n.type === 'user/message');
+  S.drafts[target.seq] = { seq: target.seq, kind: 'edit', text: '（本地改动）先跑全量测试', reasoning: '', err: false, cat: 'user', name: '' };
+  api.render();
   const rows = registry.get('cardBrowser').innerHTML;
-  check('被遮蔽的行上挂草稿时：**不给**「应用到会话」，改为两条处置（迁移到当前可见 / 丢弃草稿）',
-    !/data-act="apply" data-seq="1301"/.test(rows) && /data-act="applyToCurrent"/.test(rows) && /data-act="discardDraft"/.test(rows) && /把草稿应用到当前可见的 #/.test(rows),
-    rows.slice(0, 160));
-  // 点了"把草稿应用到当前可见的 #K"必须**真的应用**（链变长、草稿清掉），不是只挪个位置
-  const cur = S.extraNodes[S.extraNodes.length - 1].seq;
-  api.rowAct({ dataset: { act: 'applyToCurrent', seq: '1301', cur: String(cur) } });
+  check('本地改动：行上给「已保存（本地）」标记 + 「丢弃这条改动」，且**没有**「应用到会话」',
+    /已保存（本地）/.test(rows) && /data-act="dropDraft"/.test(rows) && !/data-act="apply"/.test(rows), rows.slice(0, 120));
+  api.rowAct({ dataset: { act: 'dropDraft', seq: String(target.seq) } });
   registry.get('modalOk').onclick();
-  check('把草稿应用到当前可见的 #K：**真的应用了**（新条目出现 + 旧行上的草稿被清掉）',
-    S.applied.length === 2 && !S.drafts[1301] && !S.drafts[cur], `applied=${S.applied.length} drafts=${Object.keys(S.drafts).join(',')}`);
-  S.drafts = {}; S.applied = []; S.extraNodes = []; api.render();
+  check('丢弃本地改动：只清本地，不碰会话（applied 仍为空）', !S.drafts[target.seq] && S.applied.length === 0);
+  S.drafts = {}; api.render();
+}
 }
 
 /* ---------------- 「子会话」卡按内容块分区（用户 2026-10-01：「整块挤成一个大竖条、看着乱」） ----------------

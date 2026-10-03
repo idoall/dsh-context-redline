@@ -233,7 +233,7 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
       const m = cols[1] && /`([^`]{6,200})`/.exec(cols[1]);
       if (m) r43.push([cols[0].replace(/\*\*/g, '').slice(0, 20), m[1]]);
     }
-    if (r43.length < 4) problems.push(`R4.3 短警示只抽到 ${r43.length} 条（应 ≥4：减法后剩 4 条；表格结构或反引号被改动了？）`);
+    if (r43.length < 2) problems.push(`R4.3 短警示只抽到 ${r43.length} 条（应 ≥2：本地保存后只剩开子会话/回滚两条；表格结构或反引号被改动了？）`);
     for (const [action, txt] of r43) {
       if (!js.includes(txt)) problems.push(`R4.3 短警示与 demo 不一致：${action} → 文档写「${txt.slice(0, 40)}…」但 demo.js 里找不到`);
     }
@@ -241,13 +241,12 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   // ② 其余"界面逐字"（人工维护的小表：改了这两边就要同改）
   const VERBATIM = [
     ['确认框去向·子会话首条任务', '会成为子会话的第一句话 —— 它的模型看得到'],
-    ['两态标记·灰', '只写本地 · 模型看不到'],
-    ['两态标记·琥珀（编辑带门槛）', '会进模型上下文（点「应用到会话」之后）'],
+    ['两态标记·琥珀（本地暂存，开子会话才带进去）', '只写本地 · 开子会话时才带进去'],
     ['按钮·开子会话', '开启子会话'],
     ['按钮·去改现在这条（被遮蔽行的出路）', '去改现在这条（#'],
     ['按钮·版本历史', '版本历史'],
     ['按钮·应用到会话', '应用到会话'],
-    ['按钮·保存草稿', '保存草稿'],
+    ['按钮·保存', '保存'],
     ['按钮·批注', '批注'],
     ['按钮·编辑', '编辑'],
     ['徽章·助手消息仅可批注', '助手消息仅可批注'],
@@ -255,8 +254,6 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
     ['徽章·已被接替', '已被 #'],
     ['空白态·还没有子会话', '（还没有子会话）'],
     ['助手消息原因（title）', '助手消息在平台上无法改写（两条规则互斥）'],
-    ['被遮蔽行的两条草稿处置', '丢弃草稿'],
-    ['被遮蔽行的两条草稿处置（迁移）', '把草稿应用到当前可见的 #'],
   ];
   for (const [what, txt] of VERBATIM) {
     if (!js.includes(txt)) problems.push(`文档逐字 ↔ demo 不一致：${what} → demo.js 里找不到「${txt}」`);

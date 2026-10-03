@@ -389,7 +389,7 @@ function renderSwitches() {
     e.preventDefault();
     const live = REQUESTS[REQUESTS.length - 1];
     S.drafts[1301] = { seq: 1301, text: '（演示草稿）把默认档位设成"注入的内容"，并显示 #seq。', reasoning: '', updatedAt: '12:11', requestSeq: live.seq };
-    selectReq(live, '已加 1 条演示草稿（看右侧行上的"未生效"与吸顶计数）');
+    selectReq(live, '已加 1 条本地改动（看右侧行上的"已改（本地）"）');
   };
 }
 function renderNotice() {
@@ -862,7 +862,9 @@ function rowHtml(node) {
   const chain = S.applied.filter((x) => x.replacedSeq === node.seq);
   const isNew = isReplacement(node.seq);
   const open = S.openElem === node.seq;
-  const draft = draftOf(node.seq) ? '<span class="chip-draft">未生效</span>' : '';
+  const draft = draftOf(node.seq)
+    ? '<span class="chip-draft" title="已保存在插件本地：当前会话的模型看不到。开子会话时，改后的正文会逐字带进那个新会话的第一句话">已改（本地）</span>'
+    : '';
   /* 被遮蔽的原文行：**只留一句原因**（原来叠了三句："已被 #K 接替" + "（这里被改过）" + 截断的原因词），
    * 并且必须给"跳过去改当前可见那条"的入口 —— 用户 2026-10-02 实测："编辑并应用之后整条变灰、没法再改"。 */
   const tail = isNew ? '<span class="chain">（这是替换后的新条目）</span>'
@@ -890,12 +892,10 @@ function rowHtml(node) {
             : `<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 14))}…</span>`))}
       ${a.canAnnotate ? `<button class="btn sm" data-act="annotate" data-seq="${node.seq}" data-explain="act.annotate">批注</button>` : ''}
       ${draftOf(node.seq)
-        ? (a.shadowed
-          /* `docs/03` R4.6：**旧替换体 / 已遮蔽的原文**上挂着草稿时，草稿**不自动迁移**，
-             只给两条处置（二选一，都要确认）—— 不许出现"点了才报错"的 `应用到会话`。 */
-          ? `<button class="btn sm" data-act="applyToCurrent" data-seq="${node.seq}" data-cur="${gone[node.seq]}" data-explain="act.apply">把草稿应用到当前可见的 #${gone[node.seq]}</button>
-             <button class="btn sm ghost" data-act="discardDraft" data-seq="${node.seq}" data-explain="act.apply">丢弃草稿</button>`
-          : `<button class="btn sm danger" data-act="apply" data-seq="${node.seq}" data-explain="act.apply">应用到会话</button>`)
+        /* ⚠️ **硬约束**（用户 2026-10-02）：「所有的保存都是临时性保存，只有开启子会话的时候才会写进去。」
+         * ⟹ 这里**不出现「应用到会话」**：保存只存本地；要让它生效就去点「开启子会话」。 */
+        ? `<span class="chip-draft" title="已保存在插件本地：当前会话的模型看不到。点「开启子会话」时，改后的正文会逐字带进那个新会话的第一句话">已保存（本地）</span>
+           <button class="btn sm ghost" data-act="dropDraft" data-seq="${node.seq}" data-explain="act.edit">丢弃这条改动</button>`
         : ''}
       ${familyOf(node.seq).length > 1 || node.versions ? `<button class="btn sm ghost" data-act="history" data-seq="${node.seq}" data-explain="act.history">版本历史</button>` : ''}
     </div>`}
@@ -913,13 +913,10 @@ const nodeExcerpt = (n, len = 26) => `“${String(n.text || '').replace(/\s+/g, 
 /* 输入去向标记（`docs/03` R3.3.3）：**界面上每一处"让你写字"的地方都必须带一个**，只有两种取值。
  * 用户 2026-10-02：「整个 Demo 都存在这个问题：哪些编辑了模型能看到、哪些看不到……给人类可能简单一些，
  * 如果给 Agent，就要写清楚，避免漂移」⟹ 给模型看的那一档**必须提醒怎么写**。 */
-const DEST_LOCAL = '<span class="chip-soft dest-local" title="这段字只存在插件本地（我们自己的库）：模型看不到，也不会随快照进子会话">只写本地 · 模型看不到</span>';
-const DEST_MODEL = '<span class="chip-soft dest-model" title="这段字会进模型上下文：请写清楚它要对模型说什么（别写给自己看的备忘）—— 写含糊就是下一次漂移的源头">会进模型上下文</span>';
+const DEST_CARRY = '<span class="chip-soft dest-model" title="这段字只存在插件本地：当前会话的模型看不到；只有你点「开启子会话」时，改写后的正文才会逐字带进那个新会话的第一句话（那边的模型才读到）">只写本地 · 开子会话时才带进去</span>';
 /** 有门槛的"会进模型"：编辑草稿要**点「应用到会话」之后**模型才看得到（两步语义，R3.3）。 */
-const DEST_MODEL_GATED = '<span class="chip-soft dest-model" title="这段字会进模型上下文 —— 但要等你点「应用到会话」之后；在那之前只有插件本地有">会进模型上下文（点「应用到会话」之后）</span>';
 /** 钉住这一档：**本会话看不到**，但会在"新快照 + 新子会话启动"时逐字带进那个新会话（`docs/11` D9）。
  *  用户 2026-10-02 二次纠正：「不是钉住了以后模型立刻就能读到它，而是钉住了以后，在新快照、并且在新子会话启动的时候，才会读到它」。 */
-const DEST_PIN_CARRY = '<span class="chip-soft dest-model" title="这段字本会话的模型看不到 —— 但你开新子会话时，它会逐字带进那个新会话的第一句话（那边的模型才读到）">开新会话时会带进新会话（本会话看不到）</span>';
 
 function editorHtml() {
   const st = S.editor, blocked = S.sw.turnOpen || !S.sw.live;
@@ -947,26 +944,24 @@ function editorHtml() {
     <p class="enote">${esc(note)}</p>
     ${multiPara ? '<p class="enote">这条消息有多个文本段落；改写后会合并为一段。</p>' : ''}
     ${st.kind === 'edit' ? (node && node.type === 'tool/result' ? `
-      <label class="field"><span>结果文本${DEST_MODEL}<span class="cap">（工具结果只能改内容文本与错误标记）</span></span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>
-      <label class="field" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="edErr" style="width:auto;min-height:0" ${node.err ? 'checked' : ''}><span style="margin:0">标记为错误${DEST_MODEL}</span></label>`
+      <label class="field"><span>结果文本${DEST_CARRY}<span class="cap">（工具结果只能改内容文本与错误标记）</span></span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>
+      <label class="field" style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="edErr" style="width:auto;min-height:0" ${node.err ? 'checked' : ''}><span style="margin:0">标记为错误${DEST_CARRY}</span></label>`
     : `
-      <label class="field"><span>正文${DEST_MODEL_GATED}<span class="cap">（模型看到的就是这一段；这里预填的是宿主全文，不是列表里那种 80 字预览）</span></span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>
+      <label class="field"><span>正文${DEST_CARRY}<span class="cap">（这里预填的是宿主全文，不是列表里那种 80 字预览；改完点「保存」只存本地）</span></span><textarea rows="4" id="edT">${esc(st.text)}</textarea></label>
       <details class="adv"><summary>高级：思考文本（可选，多数消息没有）</summary>
         <p class="cap">思考文本是模型的 reasoning 块；用户自己发的消息通常没有。留空即沿用原文。</p>
-        <label class="field"><span>思考文本${DEST_MODEL_GATED}</span><textarea rows="2" id="edR">${esc(st.reasoning || '')}</textarea></label>
+        <label class="field"><span>思考文本${DEST_CARRY}</span><textarea rows="2" id="edR">${esc(st.reasoning || '')}</textarea></label>
       </details>`)
     : st.kind === 'annotate' ? `
-      <label class="field"><span>理由${DEST_MODEL}<span class="cap">（会跟着这条更正写进会话：模型看得到。所以写具体 —— "作废哪些、改成什么"；这段就是模型读到的全部）</span></span><textarea rows="3" id="edWhy" placeholder="一句话说明为什么更正">${esc(st.reason || '')}</textarea></label>
+      <label class="field"><span>理由${DEST_CARRY}<span class="cap">（写具体 —— "作废哪些、改成什么"；开子会话时这段会逐字带进新会话的第一句话，那边的模型才读到）</span></span><textarea rows="3" id="edWhy" placeholder="一句话说明为什么更正">${esc(st.reason || '')}</textarea></label>
       <p class="cap">这条批注<b>只针对上面那一条</b>。如果你要作废的范围不止这一条，就直接写在理由里（例如"上面第 3、4 条都作废"）—— 模型读的正是这段理由，不需要你去选范围或记编号。</p>`
-    : `
-      <label class="field"><span>标签${DEST_LOCAL}<span class="cap">（只用来在列表里认这块）</span></span><input type="text" id="edLabel" value="${esc(st.label || '')}" placeholder="例如「目标」「约束」"></label>
-      <label class="field"><span>正文（逐字为准）${DEST_PIN_CARRY}<span class="cap">—— 只存本地；<b>本会话看不到</b>，它会在"开新子会话"时逐字带进那个新会话</span></span><textarea rows="4" id="edPin">${esc(st.text)}</textarea></label>`}
+    : ''}
     ${blocked ? `<p class="eblocked">${S.sw.turnOpen ? '当前轮次还没结束 —— 改动只能在轮次边界提交。' : '这个会话不在本进程里，只能查看，不能编辑。'}</p>` : ''}
     ${S.editorError ? `<p class="emsg-err">${esc(S.editorError)}</p>` : ''}
     ${S.editorOk ? `<p class="emsg-ok">${esc(S.editorOk)}</p>` : ''}
-    ${st.kind === 'edit' ? '<p class="cap esteps">点<b>「保存并写进上下文」</b> → 确认后立刻生效：原文被遮蔽，模型之后只看到改后的内容（原文仍在日志里，可回退）。</p>' : ''}
+    ${st.kind === 'edit' ? '<p class="cap esteps">点<b>「保存」</b> → <b>只存本地</b>：当前会话的模型看不到它。等你点<b>「开启子会话」</b>时，改后的正文会逐字带进那个新会话的第一句话。</p>' : ''}
     <div class="efoot">
-      <span class="qwrap"><button class="btn sm" data-act="esubmit" ${blocked ? 'disabled' : ''}>${st.kind === 'annotate' ? '提交更正到会话' : '保存并写进上下文'}</button>${q(st.kind === 'pin' ? 'act.pin' : st.kind === 'annotate' ? 'act.annotate' : 'act.edit', '这个按钮')}</span>
+      <span class="qwrap"><button class="btn sm" data-act="esubmit" ${blocked ? 'disabled' : ''}>${st.kind === 'annotate' ? '保存更正' : '保存'}</button>${q(st.kind === 'pin' ? 'act.pin' : st.kind === 'annotate' ? 'act.annotate' : 'act.edit', '这个按钮')}</span>
       <span class="qwrap"><button class="btn sm ghost" data-act="ecancel">取消（Esc）</button></span>
       <span class="cap">Cmd/Ctrl + Enter 提交</span>
     </div>
@@ -1088,7 +1083,7 @@ function renderOrch() {
       <span class="bmeta">${S.children.length ? `已开 ${S.children.length} 个` : '还没开过'}</span></div>
 
     <div class="orch-toolbar">
-      <button class="btn sm" data-act="spawn" data-explain="orch.spawn" ${!S.sw.live || draftCount() > 0 ? 'disabled' : ''}>开启子会话</button>
+      <button class="btn sm" data-act="spawn" data-explain="orch.spawn" ${!S.sw.live ? 'disabled' : ''}>开启子会话</button>
       <span class="cap">新会话从<b>最后聊完的那一轮</b>往下接着干（平台自己算的，没有更早的位置可选）；它会继承你已经改好的上下文。</span>
     </div>
 
@@ -1105,7 +1100,7 @@ function renderOrch() {
           <span class="snapid">${esc(x.id)}</span>
           <span class="${x.src === 'own' ? 'badge-src-own' : 'badge-src-team'}">${x.src === 'own' ? '本项目发起' : '来自 Agent Teams'}</span>
           <span class="badge-state"><i class="mstat ${stCls}"></i>${stText}</span>
-          <span class="cap orch-desc">${esc(x.label)}${x.from ? ' · 来源记录 ' + esc(x.from) : ''}${x.norms ? ` · <span class="chip-soft">带 ${x.norms} 条新规范启动</span>` : ''}</span>
+          <span class="cap orch-desc">${esc(x.label)}${x.from ? ' · 来源记录 ' + esc(x.from) : ''}${x.norms ? ` · <span class="chip-soft">带 ${x.norms} 条改动启动</span>` : ''}</span>
           <span class="chev" title="打开它（去官方视图）">›</span>
         </div>
         <div class="orch-actions">
@@ -1139,31 +1134,12 @@ function rowAct(btn) {
   if (act === 'annotate') { S.editor = { kind: 'annotate', seq, reason: '', voidFrom: String(seq), voidTo: String(seq) }; S.historyFor = null; render(); }
   if (act === 'pin') { S.editor = { kind: 'pin', seq, label: '', text: node.text }; S.historyFor = null; render(); }
   if (act === 'history') { S.historyFor = S.historyFor === seq ? null : seq; S.editor = null; render(); }
-  if (act === 'applyToCurrent') {
-    /* 草稿**不自动迁移**：由人点名"应用到当前可见的那条"（`docs/03` R4.6）。 */
-    const cur = Number(btn.dataset.cur);
-    confirmModal({
-      title: '把草稿应用到当前可见的那条',
-      warn: '草稿原本挂在一条**已被遮蔽**的原文上；应用后会写到**当前可见的 #' + cur + '**（原文与中间版本都还在日志里）。',
-      rows: [['草稿（原文）', (draftOf(seq) || {}).text || ''], ['目标', `#${cur}（当前可见节点）`], ['#${seq} 上的草稿', '应用后清掉（不自动迁移，是你点名迁移的）']],
-      needReason: false, okText: '确认应用',
-      /* 按钮名叫"把草稿**应用**到当前可见的 #K"，那就**真的应用它**（不是只把草稿挪个位置）。 */
-      onOk: () => {
-        const d = draftOf(seq);
-        if (!d) return;
-        S.drafts[cur] = { ...d, seq: cur, requestSeq: reqOf().seq };
-        delete S.drafts[seq];
-        S.editor = null;
-        doApply(cur);
-      }
-    });
-    return;
-  }
-  if (act === 'discardDraft') {
-    confirmModal({ title: '丢弃这条草稿', warn: '只清本地草稿，不影响会话与模型可见内容。',
-      rows: [['草稿', (draftOf(seq) || {}).text || ''], ['失败原因', '（不适用 —— 是丢草稿，不是应用）']],
+  if (act === 'dropDraft') {
+    /* 本地保存的反悔口：只清本地，不碰会话（硬约束下没有任何"写进当前会话"的路径）。 */
+    confirmModal({ title: '丢弃这条本地改动', warn: '只清插件本地的改动，不影响会话与模型可见内容。',
+      rows: [['将丢弃', (draftOf(seq) || {}).text || (draftOf(seq) || {}).name || '（这条本地改动）'], ['会话', '不动']],
       needReason: false, okText: '丢弃',
-      onOk: () => { delete S.drafts[seq]; render(); toast('已丢弃该草稿（不影响会话）'); } });
+      onOk: () => { delete S.drafts[seq]; delete S.drafts['note-' + seq]; render(); toast('已丢弃这条本地改动（会话未动）'); } });
     return;
   }
   if (act === 'gotoCurrent') {
@@ -1175,18 +1151,7 @@ function rowAct(btn) {
     toast(`已跳到现在可见的 #${seq} 并打开编辑器 —— 接着改它就行（被遮蔽的那条原文改不了）`);
   }
 
-  if (act === 'apply') {
-    const d = draftOf(seq);
-    S._pendingDraftSeq = null;
-    confirmModal({
-      title: '写进上下文',
-      warn: '会向会话追加一条替换记录，之后无法删除；原文对模型永久不可见，但仍保留在日志里。当前可见的那一条之后还能继续改，也能从版本历史里恢复某一版。',
-      rows: [['目标', `#${seq}（当前可见节点）`], ['原文', (node.text || '').slice(0, 120)], ['改后', (d.text || '').slice(0, 120)], ['理由', d.reason || '（未填）']],
-      needReason: false, okText: '确认应用',
-      onOk: () => doApply(seq)
-    });
-  }
-  if (act === 'restore') {
+ if (act === 'restore') {
     const to = Number(btn.dataset.to), v = versionsOf(node).find((x) => x.seq === to) || { text: '' };
     confirmModal({
       title: '回滚到某一版',
@@ -1212,44 +1177,31 @@ function submitEditor() {
     const errBox = $('edErr'), err = isTool ? !!(errBox && errBox.checked) : !!node.err;
     if (text === '' && reasoning === '') { S.editorError = '可见文本与思考文本不能同时为空'; render(); return; }
     if (text === node.text && reasoning === '' && err === !!node.err) { S.editorError = '没有实质改动 —— 宿主会拒绝这样的提交（no-change）'; render(); return; }
-    /* 用户 2026-10-02：「保存后发现问题还能改」「没必要存草稿」⟹ **一步**：
-     * 保存 = 立刻走「写进上下文」确认框（确认后进日志）；取消则这次改动不留痕。 */
-    S.drafts[st.seq] = { seq: st.seq, text, reasoning, err, updatedAt: '12:1x', requestSeq: reqOf().seq };
+    /* ⚠️ **硬约束**（用户 2026-10-02 第二次明确）：「所有的保存都是临时性保存，只有开启子会话的时候才会写进去。
+     * 否则，所有的保存都不能写进当前模型。」
+     * ⟹ 这里**只存本地**（`S.drafts`）：不写会话日志、不遮蔽原文、当前会话的模型一个字都看不到。
+     * 改动**什么时候生效**：点「开启子会话」时，改后的正文被逐字拼进那个新会话的第一句话。 */
+    S.drafts[st.seq] = {
+      seq: st.seq, kind: 'edit', text, reasoning, err,
+      updatedAt: '12:1x', requestSeq: reqOf().seq, name: node.name || '', cat: node.cat
+    };
     S.editor = null; render();
-    S._pendingDraftSeq = st.seq;            // 取消确认时用它把这次临时草稿丢掉
-    rowAct({ dataset: { act: 'apply', seq: String(st.seq) } });
+    toast('已保存（只存本地：当前会话的模型看不到）—— 开子会话时，改后的正文会逐字带进新会话的第一句话');
     return;
   }
   if (st.kind === 'annotate') {
     const reason = ($('edWhy') && $('edWhy').value.trim()) || '';
     if (reason === '') { S.editorError = '理由不能为空'; render(); return; }
-    /* ⚠️ 批注**只针对你点的那一条**（用户 2026-10-01：范围下拉在"一步几百条、一会话上万条"时
-     * 既没有语义、又是性能/体验负担；要说明更大范围就写在**理由**里 —— 模型读的正是理由）。
-     * 结构化头部里的 seq 只用于我们自己的追溯。 */
-    const from = st.seq, to = st.seq;
-    const rangeText = `${nodeWhere(nodeOf(st.seq))} ${nodeExcerpt(nodeOf(st.seq), 18)}（#${st.seq}）`;
-    /* ⚠️ R3.3.1：凡**写入型**提交按钮都要先出 R4.3 确认框，`提交更正到会话` 不例外
-     *（唯一例外是「保存草稿」——不写会话、可一键放弃）。原先这里直接追加，是漏了这道门。
-     * 框里必须写清"这条更正在**快照/子会话**里起什么作用"（用户 2026-10-01 问的那件事）。 */
-    confirmModal({
-      title: '提交更正到会话（批注）',
-      warn: '会向会话追加一条消息，不可撤销；原文保留，模型两者都能看到。',
-      rows: [
-        ['更正目标', rangeText],   // 人话：第 N 轮 · 第 M 步 · 类别 “正文…”（#seq）—— 只有这一条
-        ['范围', '只针对上面这一条；要更大范围请写在理由里'],
-        ['理由', reason],
-        ['在快照里', '这条更正会跟着快照进子会话 —— 但它只是"请求式"的：不遮蔽原文、不保证模型照做；长对话或压缩之后，它可能被摘要吞掉'],
-        ['想要"确定生效"', '用「编辑」+「应用到会话」（遮蔽原文，模型只看到改后的那条）；想长期有效就把它 `钉住这一段`']
-      ],
-      needReason: false, okText: '确认提交更正',
-      onOk: () => {
-        const ns = 1500 + S.extraNodes.length;
-        const text = `[redline] 更正目标 seq=${st.seq}\n作废范围 seq=${from}..${to}\n理由：${reason}`;
-        S.extraNodes.push(N(ns, 'inject', 'user/message', text, 60, { requestSeq: reqOf().seq, name: '批注', ours: true }));
-        const r = reqOf(); if (!r.surface.includes(ns)) r.surface.push(ns);
-        S.editor = null; render(); toast(`已追加更正 #${ns}（不可撤销）；原文 #${st.seq} 仍在模型可见内容里`);
-      }
-    });
+    /* ⚠️ 批注也是**临时保存**（同一条硬约束）：只记本地，不写会话日志。
+     * 开子会话时，这条更正会与你改过的正文一起，逐字拼进那个新会话的第一句话。 */
+    S.drafts['note-' + st.seq] = {
+      seq: st.seq, kind: 'note', text: reason,
+      updatedAt: '12:1x', requestSeq: reqOf().seq,
+      name: node.name || '', cat: node.cat,
+      where: `${nodeWhere(nodeOf(st.seq))} ${nodeExcerpt(nodeOf(st.seq), 18)}（#${st.seq}）`
+    };
+    S.editor = null; render();
+    toast('已保存更正（只存本地：当前会话的模型看不到）—— 开子会话时它会逐字带进新会话的第一句话');
     return;
   }
 }
@@ -1271,21 +1223,37 @@ function orchAct(b) {
   }
   if (act === 'spawn') {
     const last = reqOf();
+    /* ⚠️ **硬约束的落地**（用户 2026-10-02）：「所有的保存都是临时性保存，只有开启子会话的时候才会写进去。」
+     * 保存只写本地 ⟹ 改动**不在父会话日志里** ⟹ 子会话继承的日志里没有它们。
+     * 所以在这一刻把本地改动**逐字拼进子会话的第一句话**（这就是"开子会话时才写进去"）。 */
+    const edits = Object.values(S.drafts).filter((d) => d.kind !== 'note');
+    const notes = Object.values(S.drafts).filter((d) => d.kind === 'note');
+    const carryLines = [];
+    for (const d of edits) carryLines.push(`【改过 · ${d.cat || ''}${d.name ? ' · ' + d.name : ''} · #${d.seq}】\n${d.text}`);
+    for (const n of notes) carryLines.push(`【更正 · ${n.where}】\n${n.text}`);
+    const carry = carryLines.length
+      ? '[redline] 以下是本次改动（以此为准；与此冲突的此前理解一律作废）\n' + carryLines.join('\n\n') + '\n---\n'
+      : '';
     confirmModal({
       title: '开启子会话',
-      warn: '会新建一个会话，把这个会话「已经聊完的内容」当作它的开头。之后本会话的新轮次不会进去。',
+      warn: '会新建一个会话，把这个会话「已经聊完的内容」当作它的开头；你保存的改动会逐字写进它的第一句话。之后本会话的新轮次不会进去。',
       rows: [['① 从哪儿开始', `本会话「最后聊完的那一轮」为止（第 ${last.turn} 轮末）—— 平台自己算的，改不了；没有"从更早的位置开始"这个选项`],
-             ['② 首条任务', '（写在下面那一栏 —— 必须你写；插件不生成任何内容）'],
-             ['③ 它会带上什么', '已经聊完的对话（包含你已经改过的内容）。不会带上这个会话的工具授权。'],
-             ['④ 取消', '取消 = 什么都不发生（不建会话）']],
+             ['② 会写进去的改动', carryLines.length
+               ? `${edits.length} 条改写 + ${notes.length} 条更正 —— 逐字拼在它的第一句话前面（当前会话看不到，只有那个新会话的模型读到）`
+               : '（你还没保存过任何改动 —— 保存只存本地，开子会话时才写进去）'],
+             ['③ 首条任务', '（写在下面那一栏 —— 必须你写；插件不生成任何内容）'],
+             ['④ 不会带上', '这个会话的工具授权；本会话此后新聊的内容。'],
+             ['⑤ 取消', '取消 = 什么都不发生（不建会话）']],
       needReason: true, okText: '确认创建',
       reasonLabel: '首条任务（会成为子会话的第一句话 —— 它的模型看得到；本会话的模型看不到）',
       reasonPlaceholder: '一句话说清这次要它干什么',
       onOk: (reason) => {
         const id = '00' + (49000 + S.children.length * 771).toString(16).slice(0, 6);
-        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), prime: reason });
+        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), prime: carry + reason, norms: edits.length + notes.length });
         render();
-        toast(`已创建 ${id}（来源 = 本项目发起）`);
+        toast(carryLines.length
+          ? `已创建 ${id}：${edits.length} 条改写 + ${notes.length} 条更正已逐字写进它的第一句话`
+          : `已创建 ${id}（来源 = 本项目发起）`);
       }
     }); return;
   }

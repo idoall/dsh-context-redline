@@ -20,6 +20,7 @@
 | **装进运行中的 profile 需用户单独授权；`dsh web` 重启一律由用户本人执行** | 这台机器的 `dsh web` 承载用户当前的会话，助手自行重启会立刻杀掉它 |
 | **不跑 `scripts/clean-lib.mjs`** | 删 `lib/` 后，`link:` 安装的插件客户端半边直接失效 |
 | **保留上游许可声明**：`LICENSE-Apache-2.0` 原样、`NOTICE` 声明来源、`UPSTREAM.md` 记录修改 | Apache-2.0 要求 |
+| **所有保存都是临时保存**（用户 2026-10-02 立的硬约束） | 「只有开启子会话的时候才会写进去；否则任何保存都不能写进当前模型」⟹ 编辑/批注只写插件本地，**唯一写入点 = 开启子会话**（把本地改动逐字写进新会话第一句话）。详见 `docs/11` D15 |
 | **不产生任何 AI 生成内容** | 本项目存在理由：进入会话的每个字都必须来自人类输入（正文、标签、理由、子会话首条任务） |
 | **不放宽 turn 边界检查** | `apply`/`annotate`/`inject` 的 open-turn 拒绝，是"改动只发生在轮次边界"的机械保障 |
 | **不放宽 append-origin 与 sourceEventSeqs 规则** | 宿主 surface 语义决定的，不是可优化项 |
@@ -94,7 +95,7 @@ node scripts/link-dsh-runtime.mjs
   ② `turn/start` 与 `turn/end` 条数差 = 1 的会话就是末轮未结束的那个。
 - **`dsh --profile web --dump-config`** 会**合成插件树但不 boot** → 用来静态确认挂载与命名空间冲突。
 - **fork 的种子取自"日志里最后一个 `turn/end` 之前的全部事件"**，一次性；
-  **草稿不在日志里 → 不 apply 就不会进子会话**（最易错的一条，见 `docs/06` §2）。
+  **本地保存的改动不在日志里 → 子会话不会自动看到它们** ⟹ 按硬约束把它们**逐字写进新会话的第一句话**（见 `docs/11` D15）。
 - **压缩 `compactNow` 需要 live Agent + 空闲 + 轮次闭合**；`compactRegion` 反而要求"有未闭合轮次"，
   不适用于空闲场景。失败码 `busy/cancelled/changed/summary/commit/persistence` 必须映射成人话。
 - **插件直调 `ctx.subagents.start` / `ctx.compaction.compactNow` 绕过工具级审批** →
@@ -161,7 +162,7 @@ dsh --profile web --dump-config                                      # 静态确
 ## 5. 当前状态
 
 > **进度看板（唯一状态源）**：[`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) —— **细粒度任务表**
-> （ID / 子任务 / 状态 / **文件动作（范围冻结）**），当前 **DONE 92 / 共 227**，需要用户的步骤标 `WAIT🙋`。
+> （ID / 子任务 / 状态 / **文件动作（范围冻结）**），当前 **DONE 93 / 共 228**，需要用户的步骤标 `WAIT🙋`。
 > **每次收尾必须回来同步它**（含 §11 进度总览），否则就会出现第二个"真相"。
 
 | 阶段 | 状态 |

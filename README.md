@@ -32,7 +32,7 @@ What we add on top is **editing** and **orchestration**:
 - **Right**: the category accordion (system prompt / tool schemas / user messages / injected content /
   skill injection / assistant messages / tool results). Each row shows `#seq` plus actions:
   **Edit** (shadow the original) / **Annotate** (keep the original + a void range) /
-  **Save and write into context** (one step: confirm → one replace event is appended, the original is shadowed; cancelling leaves no trace). The editor expands **inline under that row** (never a modal), and is prefilled with the **full text**.
+  **Save** (hard constraint: every save is temporary — it is written to the plugin's local store only, so the *current* session's model never sees it. Your changes are written verbatim into the **first message of a new child session** when you open one). The editor expands **inline under that row** (never a modal), and is prefilled with the **full text**.
 - **Below**: child sessions (open one → it inherits the completed history; status + provenance).
   A child session always starts at the parent's **last completed turn** — there is **no parameter** to pick an earlier cut point
   the fork seed is always the parent's **last completed turn**, so a record older than that cannot be branched from
@@ -74,7 +74,7 @@ What we add on top is **editing** and **orchestration**:
 | [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **Requirement traceability**: every original request and every capability from the WeChat screenshots → which goal → done / not done / downgraded |
 | [`demo/`](demo/README.md) | **Clickable interaction prototype** (M0.5 gate): fake data, real interactions, and a "what does this button do" explain mode |
 | [`docs/11-session-handoff.md`](docs/11-session-handoff.md) | **Session handoff**: a copy-paste block plus the fields to refresh at each wrap-up |
-| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, 227 items; steps needing you are marked `WAIT🙋` |
+| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, 228 items; steps needing you are marked `WAIT🙋` |
 | [`AGENTS.md`](AGENTS.md) | Working agreement: hard constraints, platform pitfalls, testing discipline |
 | [`UPSTREAM.md`](UPSTREAM.md) / [`NOTICE`](NOTICE) | Upstream provenance, license compliance, list of our modifications |
 
