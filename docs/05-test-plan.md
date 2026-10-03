@@ -118,6 +118,7 @@ pnpm install
 
 # 必须能过的命令
 ./node_modules/.bin/tsc --noEmit
+./node_modules/.bin/oxlint                # 判定行是 "Found N warnings and M errors"（别只看最后一行）
 ./node_modules/.bin/tsdown
 ./node_modules/.bin/vitest run --project edit --project channel
 node scripts/namespace-contract.mjs        # M1 的命名空间自检（11 个面，docs/04 M1 DoD）

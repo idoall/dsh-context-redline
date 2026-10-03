@@ -25,7 +25,7 @@
  * Purity: no `node:*`, no DOM, no React — both halves may import it.
  */
 
-/** The little of a durable event this module needs. */
+/** The little of a durable event this module needs. Unsanitized input: this module is fed whatever the host hands over. */
 export interface ReadableEvent {
   readonly type?: unknown
   readonly seq?: unknown
@@ -39,29 +39,32 @@ function messageOf(data: Record<string, unknown>): Record<string, unknown> | nul
 }
 
 /** The block array holding the visible/reasoning text of THIS event type. */
-function blocksOf(event: ReadableEvent): readonly unknown[] {
-  if (event === null || typeof event !== 'object') return []
+function blocksOf(event: ReadableEvent | null | undefined): readonly unknown[] {
+  if (event === null || event === undefined || typeof event !== 'object') return []
   const data = event.data
-  if (data === null || typeof data !== 'object') return []
+  if (data === null || data === undefined || typeof data !== 'object') return []
   const bag = data as Record<string, unknown>
   switch (event.type) {
     case 'user/message':
     case 'system/message':
-      return Array.isArray(bag.content) ? bag.content : []
+      return Array.isArray(bag.content) ? bag.content as unknown[] : []
     case 'assistant/message':
-    case 'tool/result':
-      return Array.isArray(messageOf(bag)?.content) ? messageOf(bag)!.content as unknown[] : []
+    case 'tool/result': {
+      const message = messageOf(bag)
+      const content = message === null ? undefined : message.content
+      return Array.isArray(content) ? content as unknown[] : []
+    }
     default:
       return []
   }
 }
 
 /** Every non-empty `text` block of an event, in order, verbatim. */
-export function textBlocksOf(event: ReadableEvent): string[] {
+export function textBlocksOf(event: ReadableEvent | null | undefined): string[] {
   const out: string[] = []
   for (const item of blocksOf(event)) {
     if (item === null || typeof item !== 'object') continue
-    const block = item as { type?: unknown, text?: unknown }
+    const block = item as { type?: unknown; text?: unknown }
     if (block.type !== 'text' || typeof block.text !== 'string') continue
     if (block.text.trim() === '') continue
     out.push(block.text)
@@ -70,11 +73,11 @@ export function textBlocksOf(event: ReadableEvent): string[] {
 }
 
 /** Every non-empty `reasoning` block of an event, in order, verbatim. */
-export function reasoningBlocksOf(event: ReadableEvent): string[] {
+export function reasoningBlocksOf(event: ReadableEvent | null | undefined): string[] {
   const out: string[] = []
   for (const item of blocksOf(event)) {
     if (item === null || typeof item !== 'object') continue
-    const block = item as { type?: unknown, text?: unknown }
+    const block = item as { type?: unknown; text?: unknown }
     if (block.type !== 'reasoning' || typeof block.text !== 'string') continue
     if (block.text.trim() === '') continue
     out.push(block.text)
@@ -83,12 +86,12 @@ export function reasoningBlocksOf(event: ReadableEvent): string[] {
 }
 
 /** The complete visible text. `''` for a non-readable or textless event. */
-export function fullTextOf(event: ReadableEvent): string {
+export function fullTextOf(event: ReadableEvent | null | undefined): string {
   return textBlocksOf(event).join('\n\n')
 }
 
 /** The complete thinking text, kept separate from the visible text. */
-export function fullReasoningOf(event: ReadableEvent): string {
+export function fullReasoningOf(event: ReadableEvent | null | undefined): string {
   return reasoningBlocksOf(event).join('\n\n')
 }
 
@@ -96,15 +99,16 @@ export function fullReasoningOf(event: ReadableEvent): string {
  * The event's error mark. Only `tool/result` carries one, and the host spells it
  * three ways (a top-level `error`, `message.isError`, or a nested block flag).
  */
-export function isErrorOf(event: ReadableEvent): boolean {
-  if (event === null || typeof event !== 'object' || event.type !== 'tool/result') return false
+export function isErrorOf(event: ReadableEvent | null | undefined): boolean {
+  if (event === null || event === undefined || typeof event !== 'object' || event.type !== 'tool/result') return false
   const data = event.data
-  if (data === null || typeof data !== 'object') return false
+  if (data === null || data === undefined || typeof data !== 'object') return false
   const bag = data as Record<string, unknown>
   if (bag.error !== undefined && bag.error !== null && bag.error !== false && bag.error !== '') return true
   const message = messageOf(bag)
-  if (message?.isError === true) return true
-  const content = message?.content
+  if (message === null) return false
+  if (message.isError === true) return true
+  const content = message.content
   if (Array.isArray(content)) {
     for (const item of content) {
       if (item !== null && typeof item === 'object' && (item as { isError?: unknown }).isError === true) return true
@@ -114,12 +118,13 @@ export function isErrorOf(event: ReadableEvent): boolean {
 }
 
 /** The event's seq, or null when it does not carry a usable one. */
-export function seqOf(event: ReadableEvent): number | null {
-  const seq = event?.seq
+export function seqOf(event: ReadableEvent | null | undefined): number | null {
+  const seq = event === null || event === undefined ? undefined : event.seq
   return typeof seq === 'number' && Number.isInteger(seq) && seq >= 0 ? seq : null
 }
 
 /** The event's durable type, or `''`. */
-export function typeOf(event: ReadableEvent): string {
-  return typeof event?.type === 'string' ? event.type : ''
+export function typeOf(event: ReadableEvent | null | undefined): string {
+  if (event === null || event === undefined) return ''
+  return typeof event.type === 'string' ? event.type : ''
 }

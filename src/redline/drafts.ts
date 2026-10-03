@@ -52,7 +52,7 @@ export interface SurfaceRowText {
 /** Why a save was refused. Both codes are stable and distinguishable. */
 export type ChangeRefusal = 'redline/empty-content' | 'redline/no-change'
 
-export type ChangeVerdict = { readonly ok: true } | { readonly ok: false, readonly code: ChangeRefusal }
+export type ChangeVerdict = { readonly ok: true } | { readonly ok: false; readonly code: ChangeRefusal }
 
 export function emptyDrafts(): DraftTable {
   return {}
@@ -66,8 +66,9 @@ export function emptyDrafts(): DraftTable {
  */
 export function safeSessionId(sessionId: string): string {
   let out = ''
-  for (const ch of String(sessionId)) {
-    out += /[A-Za-z0-9_-]/.test(ch) ? ch : `%${ch.codePointAt(0)!.toString(16).toUpperCase().padStart(2, '0')}`
+  for (const ch of sessionId) {
+    const codePoint = ch.codePointAt(0) ?? 0
+    out += /[A-Za-z0-9_-]/.test(ch) ? ch : `%${codePoint.toString(16).toUpperCase().padStart(2, '0')}`
   }
   return out === '' ? '_' : out
 }
@@ -97,10 +98,12 @@ export function putEdit(table: DraftTable, edit: LocalEdit): DraftTable {
 
 /** Forget one row's edit. Dropping a row that has none is a no-op. */
 export function dropEdit(table: DraftTable, seq: number): DraftTable {
-  if (editOf(table, seq) === undefined) return table
-  const next: Record<string, LocalEdit> = { ...table }
-  delete next[String(seq)]
-  return next
+  const key = String(seq)
+  // Existence, not value: a `Record<string, T>` indexes as `T`, so `=== undefined`
+  // is both a lie to the reader and a lint error. `Object.hasOwn` is the honest check.
+  if (!Object.hasOwn(table, key)) return table
+  // Built immutably (no `delete` on a computed key), so callers can diff by identity.
+  return Object.fromEntries(Object.entries(table).filter(([k]) => k !== key))
 }
 
 /** The text in effect for a row: the local edit if there is one, else the original. */
@@ -133,7 +136,7 @@ export function effectiveIsError(row: SurfaceRowText, table: DraftTable): boolea
 export function checkChange(
   row: SurfaceRowText,
   table: DraftTable,
-  next: { readonly text: string, readonly reasoning: string, readonly isError: boolean },
+  next: { readonly text: string; readonly reasoning: string; readonly isError: boolean },
 ): ChangeVerdict {
   if (next.text === '' && next.reasoning === '') return { ok: false, code: 'redline/empty-content' }
   if (
@@ -161,8 +164,8 @@ export function serializeDrafts(sessionId: string, table: DraftTable): string {
 }
 
 export type ParseResult =
-  | { readonly ok: true, readonly table: DraftTable }
-  | { readonly ok: false, readonly code: string, readonly message: string }
+  | { readonly ok: true; readonly table: DraftTable }
+  | { readonly ok: false; readonly code: string; readonly message: string }
 
 /** A missing/empty file is an empty table; anything unreadable is a loud refusal. */
 export function parseDrafts(raw: string | null | undefined): ParseResult {

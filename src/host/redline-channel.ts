@@ -30,7 +30,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import { REDLINE_ERROR, REDLINE_ERROR_MESSAGE } from '../shared/redline-errors'
+import { REDLINE_ERROR, REDLINE_ERROR_MESSAGE, isRedlineErrorCode } from '../shared/redline-errors'
 import {
   REDLINE_CHANNEL_ROUTE,
   asRedlineCall,
@@ -70,7 +70,7 @@ type HomePathFace = (...segments: string[]) => string
 
 /** `ctx.sessionQuery`, as far as we consume it (signatures per the 0.2.0-rc.2 `.d.ts`). */
 interface SessionQueryFace {
-  readEvent?(request: { sessionId: string, seq: number }): Promise<unknown>
+  readEvent?(request: { sessionId: string; seq: number }): Promise<unknown>
   readSurface?(sessionId: string): Promise<unknown>
 }
 
@@ -91,7 +91,12 @@ export type RedlineOpHandler = (op: RedlineOpContext) => Promise<RedlineEnvelope
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 function fail(code: string, message?: string): RedlineEnvelope<never> {
-  return redlineFailure(code, message ?? REDLINE_ERROR_MESSAGE[code as keyof typeof REDLINE_ERROR_MESSAGE] ?? code)
+  return redlineFailure(code, message ?? wireMessage(code))
+}
+
+/** The wire text for a code: ours when we know it, the code itself when we do not. */
+function wireMessage(code: string): string {
+  return isRedlineErrorCode(code) ? REDLINE_ERROR_MESSAGE[code] : code
 }
 
 /** A required non-empty session id, or null. */
@@ -157,13 +162,13 @@ async function resolveEvent(ctx: Context, sessionId: string, seq: number): Promi
   }
   try {
     if (typeof query.readEvent === 'function') {
-      const window = await query.readEvent({ sessionId, seq }) as { target?: unknown } | null
+      const window = await query.readEvent({ sessionId, seq }) as { target?: unknown } | null | undefined
       if (window !== null && window !== undefined && window.target !== undefined && window.target !== null) {
         return redlineOk(window.target)
       }
     }
     if (typeof query.readSurface === 'function') {
-      const surface = await query.readSurface(sessionId) as { events?: unknown } | null
+      const surface = await query.readSurface(sessionId) as { events?: unknown } | null | undefined
       const events = surface?.events
       if (Array.isArray(events)) {
         const hit = (events as unknown[]).find(event => seqOf(event as never) === seq)
@@ -218,7 +223,7 @@ const updateDraft: RedlineOpHandler = async ({ ctx, call }) => {
   if (sessionId === null || seq === null) return fail(REDLINE_ERROR.badRequest)
   const edit = call.edit
   if (edit === null || typeof edit !== 'object' || Array.isArray(edit)) return fail(REDLINE_ERROR.badRequest)
-  const bag = edit as { text?: unknown, reasoning?: unknown, isError?: unknown, cat?: unknown, name?: unknown }
+  const bag = edit as { text?: unknown; reasoning?: unknown; isError?: unknown; cat?: unknown; name?: unknown }
   if (typeof bag.text !== 'string') return fail(REDLINE_ERROR.badRequest)
   if (bag.reasoning !== undefined && typeof bag.reasoning !== 'string') return fail(REDLINE_ERROR.badRequest)
   if (bag.isError !== undefined && typeof bag.isError !== 'boolean') return fail(REDLINE_ERROR.badRequest)

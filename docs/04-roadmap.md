@@ -57,7 +57,7 @@
 
    > grep（`grep -rn "dsh-context/" src/`）只能当**线索**，它抓不到无尾斜杠的写法、双引号/模板串、URL 分段、以及 `context` 这种短名。
 2. `tsc --noEmit` exit 0；`vitest run --project edit --project channel` 可跑。
-3. **`.github/workflows/ci.yml` 已提交**且内容明确：`push` + `pull_request` 触发；固定 Node（与 `engines` 一致）与 pnpm 版本；**从 registry 直装**（`docs/01` **F42** 更正了本节原来的"删链接 → install → 建链接"三段式：那条链接在本机已解析不到内部包，且 `pnpm install` 写穿它正是真实发生过的故障 —— **不建链接**，并加一条断言防止有人把它加回来）；必跑 `tsc --noEmit`、`tsdown`、`vitest --project edit --project channel`、`namespace-contract`；**`host`/`client` lane 明确不作为 required check**（环境缺口，`docs/05` §1）。
+3. **`.github/workflows/ci.yml` 已提交**且内容明确：`push` + `pull_request` 触发；固定 Node（与 `engines` 一致）与 pnpm 版本；**从 registry 直装**（`docs/01` **F42** 更正了本节原来的"删链接 → install → 建链接"三段式：那条链接在本机已解析不到内部包，且 `pnpm install` 写穿它正是真实发生过的故障 —— **不建链接**，并加一条断言防止有人把它加回来）；必跑 `tsc --noEmit`、**`oxlint`**、`tsdown`、`vitest --project edit --project channel`、`namespace-contract`（lint 是 2026-10-04 补上的 —— 之前它不在门禁里，一次提交因此带着 23 个 error 看起来全绿，见 `docs/11` D36）；**`host`/`client` lane 明确不作为 required check**（环境缺口，`docs/05` §1）。
 4. **配置来源表**已写入 `UPSTREAM.md`：`package.json` / `tsconfig.json` / `tsdown.config.ts` / `vitest.config.ts` 各自**来自哪个 tag 的哪个路径**、哪些字段保留、哪些必须改成 redline 值、以及各自的验证命令。
 5. `dsh --profile web --dump-config` 输出里没有路由/投影 key 冲突。
 

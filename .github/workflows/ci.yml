@@ -9,6 +9,10 @@ name: ci
 # (`docs/04` M1 DoD 3):
 #   · tsc --noEmit            (types, src + tests)
 #   · node scripts/namespace-contract.mjs   (the M1 naming gate)
+#   · oxlint                  (style + type-aware rules; added 2026-10-04 after a
+#                              green-looking M2 commit shipped 23 lint errors —
+#                              it was never in this list, and the runner only read
+#                              the summary's LAST line instead of the verdict line)
 #   · pnpm run build          (tsdown: host + client bundles)
 #   · vitest --project edit --project channel   (our own lanes)
 #
@@ -49,6 +53,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm run typecheck
+      - run: pnpm run lint
       - run: node scripts/namespace-contract.mjs
       - run: pnpm run build
       - run: pnpm run test

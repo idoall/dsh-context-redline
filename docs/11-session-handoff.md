@@ -608,3 +608,28 @@ tip 两行口径（`tip.turn1`）。**颜色不抄**，仍走我们的主题令�
 
 **新平台事实 F43**：官方有 `extractSessionEventText(event)`，但插件**不能** import 它（三路都堵，见 `docs/01` F43）
 ⟹ 我们自己实现 `src/redline/inspect.ts`，并用测试把它钉在与宿主一致的事件形状上。
+
+
+## D36 · **读数纪律被违反一次：`oxlint` 的"0 error"是错的**（2026-10-04，同轮修正）
+
+**发生了什么**：M2 的提交说明与 `docs/10` M2-33 的证据里都写了 `oxlint 0 error`。
+实际是 **23 个 error**（`@stylistic/member-delimiter-style` 13 个 + 类型感知规则 10 个）。
+根因不是规则太严，而是**我读错了输出**：我用 `./node_modules/.bin/oxlint | tail -1` 取了
+最后一行 —— 那是 `Finished in …`，判定行是它**上面**那行 `Found N warnings and M errors.`。
+
+**为什么没被拦住**：`oxlint` 当时**不在 CI 的必跑清单里**（`docs/04` M1 DoD 3 只列了
+`tsc` / `tsdown` / `vitest` / `namespace-contract`），所以"绿"是真的绿，只是**少跑了一道门禁**。
+
+**修了三件事**（不止把错误改掉）：
+1. **真修代码**（不是关规则）：`inspect.ts` / `drafts.ts` / `host/redline-channel.ts` 里
+   23 处 —— 12 处句法定界符（`--fix` 处理，diff 只含定界符）、
+   其余逐条按"更诚实的写法"改：入参类型放宽到 `| null | undefined`（这些函数本来就吃宿主给的
+   未净化输入）、去掉 `!` 非空断言、`dropEdit` 用 `Object.hasOwn` 判**存在性**而不是
+   `=== undefined`（`Record<string, T>` 的索引本来就不该这么比）、未知错误码走
+   `isRedlineErrorCode` 守卫而不是 `?? code` 兜底。
+2. **把 lint 加进门禁**：CI 多一步 `pnpm run lint`；`pnpm run verify` 也加上；`docs/05` §3 的
+   固定命令表补上它，并写明"判定行是 `Found N warnings and M errors`"。
+3. **改正记录**：本节 + `docs/10` M2-33（把错误读数标出来，不静默改掉）。
+
+**教训（写给下一个人，也写给未来的我）**：报告"通过"时必须引用**判定行**，不是输出的最后一行；
+一条从没在门禁里跑过的检查，等于没有。⟹ 凡是写进 `docs/10` 证据里的读数，都要能在 CI 里被复现。
