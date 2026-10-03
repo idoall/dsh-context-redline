@@ -37,6 +37,12 @@
 | 1 | HTTP 路由 | `/api/dsh-context/detail`、`/api/dsh-context/balance`、`/api/dsh-context/backfill` | `/api/dsh-context-redline/detail` 等（全部挂在我们自己的前缀下） | `connection.fetch.register` 对**同路径重复注册直接抛错**：`exact Fetch route "…" is already registered`（`dsh-client-connection/lib/index.js:633`） |
 | 2 | 投影 key | `contextTimeline`、`contextHeaders`、`contextActivity` | `redlineTimeline`、`redlineHeaders`、`redlineActivity` | `ctx.sessionProjections.register` 对同 key：stateVersion 相同则**静默共用先注册者的定义**（我们的 fold 会被顶掉），不同则**抛错**（`dsh-session-projection/lib/index.js:84-91`） |
 | 3 | 客户端 slot id | `conversation.view` 的 `context`；另有 `context-jump` / `context-modal` / `context-overview` | `redline` / `redline-*`（逐个改） | 同 slot id 并存会互相覆盖；**键控 slot**（`key: NS` 的 `settings.plugin.item` / `plugins.bundle.config` / `sidebar.right.pane.tab`）按 key 分派，也要一起换 |
+> **⚠️ slot 归属已拍板（用户 2026-10-02）：我们接管 `conversation.view`（选项 A）**。落地方式：
+> ① 我们的客户端**注册进同一个宿主 slot** `conversation.view`，但用**我们自己的 slot id**（`redline`，见上表 #3），不占用上游的 `context`；
+> ② 同时在**我们的 bundle patch** 里把上游那一行 `disabled: true`（并 `insert` 我们依赖的宿主行 —— 见 `cordis-composition-reference`），
+>    否则两个插件都注册同一 slot，**晚注册者会静默顶掉先注册者**（不报错，属于最难查的一类）；
+> ③ 代价写在明处：**上游面板的功能更新从此靠我们 cherry-pick**（我们本来就不跟随上游 `main`，见 §1）。
+
 | 4 | locale 命名空间 | `dsh-context` | `dsh-context-redline` | 同一命名空间下文案互相覆盖 |
 | 5 | 消息来源 kind | **无**——上游不注册任何 `MessageSourceMap` kind（`git grep MessageSourceMap v0.59.2 -- src/` 零命中） | `dsh-context-redline`（我们自 declare） | `MessageSourceMap` 是 merge-extensible、无 catch-all，各生产者声明自己的 kind |
 | 6 | 插件 `name` / bundle 注册 id | `dsh-context` | `dsh-context-redline`（= 包名，客户端 bundle 的注册 id 必须等于包名） | DSH 的 `dsh-client-modules` 按包名校验，不一致会抛 `loaded without registering "<id>"` |
