@@ -33,9 +33,6 @@
 │  drafts      本地草稿（不进会话；原子写 JSON）                              │
 │  inspect     取全文（编辑器的唯一预填来源，**不是**预览）                    │
 │  apply       遮蔽改写：surface replace（user / tool-result；**assistant 平台不支持**，见 docs/01 F7.2）
-│  rollback    版本历史 + 回滚（目标=当前可见节点，正文取历史版本；实测可行）             │
-│  annotate    追加更正 + 作废范围（不遮蔽原文）                               │
-│  invariants  逐字保存 / 版本留痕 / workspace 作用域 / 漂移检查 / 显式重注入   │
 └────────────────────────────────────────────────────────────────────────────┘
                                    ▲ ▼
 ┌────────────────────────────────────────────────────────────────────────────┐
@@ -127,15 +124,13 @@ src/
 │   ├─ drafts.ts        草稿存储（原子写）
 │   ├─ inspect.ts       取全文（sessionQuery）
 │   ├─ apply.ts         遮蔽改写（surface replace，规则照 docs/01 F6/F7 写死）
-│   ├─ annotate.ts      追加更正 + 作废范围
 │   ├─ eligibility.ts   能力判定（**按底层事件类型**给按钮，docs/01 F7.2）
-│   ├─ invariants.ts    逐字固定块（版本 / workspace 作用域 / 漂移判定）
 │   ├─ orchestrate/     ← 编排面的纯逻辑（只装配请求与判定，**不直接调平台服务**）
 │   │   ├─ child.ts         建子会话 / 建团队成员的请求装配（真正执行在 host 通道）
 │   │   ├─ compact.ts       压缩体检 + 失败码 → 人话
 │   │   ├─ steer.ts         发消息 / 打断的请求装配（转发官方）
 │   │   └─ plan.ts          纯函数「下一步该做什么」+ 事实装配
-│   └─ store.ts         sqlite（schema_version / invariants / history / snapshots /
+│   └─ store.ts         sqlite（schema_version / snapshots /
 │                        snapshot_links / pending_results）——**不存 children**：
 │                        子关系与状态一律来自平台投影与父日志（docs/01 F13.1）
 ├─ shared/          ← 两半共用（**唯一**路由与请求形状来源，防 404）
@@ -177,11 +172,7 @@ tests/
 | `node.read` | `{sessionId, seq}` | `{type, cat, text, reasoning?, toolResultText?, isError?, provider?, model?, turn?, step?, shadowed?, replacedBy?}` | **全文**（编辑器唯一预填来源） |
 | `draft.list` | `{sessionId}` | `Record<seq, draft>` | 草稿表 |
 | `edits.list` | `{sessionId}` | `{replacedSeq, newSeq, type, turn?, step?, time}[]` | 已生效的替换关系（渲染「原 #N → 新 #M」） |
-| `history.list` | `{sessionId, seq}` | `{version, seq, kind:'origin'\|'edit'\|'rollback', time, text, reasoning?, toolResultText?}[]` | **版本历史**（回滚要用）。正文来自**全量日志**（`sessionQuery.readSession`），因为被遮蔽的原文不在 surface 上（`docs/01` V8） |
 | `turnState` | `{sessionId}` | `{known, open}` | 轮次是否闭合（`known:false` = 判不了） |
-| `invariant.list` | `{sessionId}` | `InvariantBlock[]` | 含 workspace 级 |
-| `invariant.history` | `{id}` | `InvariantBlock[]` | 全部版本（含退休） |
-| `invariant.drift` | `{sessionId}` | `{id, label, present, firstSeenSeq?}[]` | 漂移检查（逐字比对当前 surface） |
 | `plan.next` | `{sessionId}` | `NextStep` | 「下一步该做什么 + 是否需要确认框（点确认即授权）+ 理由」 |
 | `child.list` | `{sessionId}` | `ChildRow[]` | **读平台投影**：父会话的 `subagentCatalog` / `agentTeam` + 各子会话的 `subagentTiming` / 用量。**不自建 children 表**、不推断状态（`docs/01` F13.1/F24/F34）；用 `tryMembership` 标来源 |
 | `team.members` | `{sessionId}` | `TeamMemberView[]` \| `null` | 转发官方 `ctx.agentTeams.listMembers(lead)`；**服务不存在 → 返回 `null`**（不是空数组，界面据此隐藏对接点） |
@@ -193,7 +184,7 @@ tests/
 > 写入 **13**（表一，含 `child.interrupt`）；官方团队写入 **4**（表二）。合计 **31**。
 > 官方团队服务不存在（团队未启用）时，`team.*` 一律返回 `null`（不是空数组），界面据此**隐藏**对接点。
 >
-> ⚠️ **界面上的「钉住这一段」只写本地、不写会话**（`docs/11` D9）：它落 `invariant.save`（本地逐字基准），**不**落 `invariant.inject`。让它进模型上下文有两条路：① **开子会话时**由 `child.fork` 把当时在效的固定块**逐字拼进子会话的第一句话**（于是只有那个新会话的模型读到）；② 在本会话里手动点 `重注入`（`invariant.inject`，追加一条消息）。
+> ⛔ **固定块 / 钉住 / 漂移检查整套已删除**（`docs/11` D14）：本条随之作废；开子会话时带进去的只有**本地改动**（S5.1）。原文留档如下：① **开子会话时**由 `child.fork` 把当时在效的固定块**逐字拼进子会话的第一句话**（于是只有那个新会话的模型读到）；② 在本会话里手动点 `重注入`（`invariant.inject`，追加一条消息）。
 > —— 用户点一次确认就完成这两件事；**不许**拆成"只存本地、模型看不到"再让用户手动注入（那是用户明确否掉的形态）。
 
 **写入（表一：本插件数据 / 会话日志 / 子会话通道）—— 13 条**
@@ -206,11 +197,6 @@ tests/
 | `draft.update` | `{sessionId, seq, patch}` | `Record<seq, draft>` | 我们的数据目录 | ✅ 可删 |
 | `draft.reset` | `{sessionId}` | `{}` | 我们的数据目录 | ✅ |
 | `apply` | `{sessionId, seq, draft?}` | `{replacedSeq, newSeq, type, turn?, step?, flushed}` | **会话日志**（追加 replace） | ❌ append-only；**但可再改/可回滚**——目标换成"当前可见的那个替换体"即可（`docs/01` F7） |
-| `apply.rollback` | `{sessionId, seq, toSeq}`（`seq` = 当前可见节点，`toSeq` = 要恢复到的版本） | `{replacedSeq, newSeq, restoredFrom, flushed}` | **会话日志**（追加 replace，正文取 `toSeq` 那一版） | ❌ append-only；回滚本身也可再回滚 |
-| `annotate` | `{sessionId, seq, reason, voidFrom?, voidTo?}` | `{targetSeq, newSeq, voidFrom?, voidTo?, flushed}` | **会话日志**（追加 user 消息） | ❌ |
-| `invariant.save` | `{sessionId, label, text, scope, id?}` | `InvariantBlock` | 我们的 sqlite | ✅ 可退休（历史保留） |
-| `invariant.retire` | `{id}` | `{id, retired:true}` | 我们的 sqlite | ✅ |
-| `invariant.inject` | `{sessionId, id, reason}` | `{newSeq, flushed}` | **会话日志**（追加 user 消息） | ❌ |
 | `child.fork` | `{sessionId, recordId?, label, prompt}` —— `recordId` 只用于**来源凭证/备注**（写 `snapshot_links`），**不是种子参数**：平台 fork **没有**任何切点参数（`docs/01` F38） | `{childId}` | **创建新会话**（优先 `ctx.agentTeams.spawnTeammate`；兜底 `ctx.subagents.startContinuable({provider:'fork', label, request:{parent, prompt}, signal})`）。**实际种子 = 平台自算的"当前最后一个 `turn/end` 及其之前"** | 会话可归档，但父会话种子是**一次性**的 |
 | `child.compact` | `{childId}` | `{compacted, items?, reason?}` | **子会话历史被摘要取代** | ❌ **不可逆** |
 | `child.prompt` | `{requestId（**由我们铸造**：`SubagentPromptRequestId`）, parentSessionId, childSessionId, mode:'continuable', delivery:'queue'\|'steer', content: PromptContentPart[]}` | `{messageId}`（`ctx.subagents.prompt(request, signal)` 的回执） | 子会话 inbox（人写的一条话 = 它的**下一个轮次**） | ❌ |
@@ -236,15 +222,14 @@ tests/
 |---|---|---|
 | `/redline children` | 列出子会话与状态 | 否 |
 | `/redline compact <childId>` | 压缩指定子会话（先体检） | **是（不可逆）** |
-| `/redline invariants` | 列出固定块与漂移状态 | 否 |
 | `/redline drift` | 只报漂移 | 否 |
 
-**为什么命令里不提供 apply/annotate**：斜杠命令最容易在"没看清改哪一条"的情况下误触，而遮蔽不可撤销。
+**为什么命令里不提供 apply**：斜杠命令最容易在"没看清改哪一条"的情况下误触，而遮蔽不可撤销。
 编辑必须在界面上**看着那一行**做（这也是"编辑在行下内联展开、不弹窗"的同一条理由）。
 
 ### 5.4 内部服务
 
-导出 cordis Service（`ctx.redline` 之类的命名），把 `inspect / apply / annotate / invariants.* / plan` 暴露给其它插件与命令复用。
+导出 cordis Service（`ctx.redline` 之类的命名），把 `inspect / apply / plan` 暴露给其它插件与命令复用。
 **这是图 2 里"内部服务"入口的对应物**；工具入口见 `docs/00` N6 与 `docs/08`。
 
 ---
@@ -254,9 +239,7 @@ tests/
 ```
 $DSH_HOME/dsh-context-redline/
 ├─ redline-drafts-<safeSessionId>.json   草稿（每会话一文件；原子写 .tmp + rename）
-└─ history.sqlite
    ├─ schema_version(version)            我们的格式版本（**只备将来升级用**；首启即空库，无旧数据可迁，见 `docs/08` Q8）
-   ├─ invariants(id, session_id, version, created_at, label, text, retired_at, scope)
    ├─ history(id, ts, kind, session_id, category, action, payload)
 ```
 
@@ -269,7 +252,7 @@ $DSH_HOME/dsh-context-redline/
 
 - **不写** `$DSH_HOME/profiles/*`、不写 DSH 安装目录、不写会话日志（除非用户点了写入类动作）。
 - **`digest` = 内容哈希（`counts` = 条目数等计数）**，**不是**人话摘要：本插件**不生成任何摘要/总结**（N4：不产生 AI 生成内容），人写备注里也不许出现"摘要"字样。
-- `schema_version` 存在的理由：要**继承**早期那次尝试 时期已经存在的 `invariants` 表（用户已有的固定块不该丢）。
+- ⛔ `history.sqlite`（`invariants` / `history` 两张表）**已随功能删除**（`docs/11` D14/D19）：我们的数据目录现在只有草稿 JSON。
 - 机密性：这里存的是**用户自己的上下文正文**（可能含私密内容），与 DSH 会话日志同等敏感；不做任何外发。
 
 ---
@@ -279,7 +262,7 @@ $DSH_HOME/dsh-context-redline/
 | 场景 | 对外表现 |
 |---|---|
 | 会话不在本进程（冷会话/别人的会话） | `turnState.known=false` → 界面前事禁用所有写入类动作，文案说明"这个会话不在本进程里，只能看" |
-| 轮次未闭合 | `apply`/`annotate`/`inject` 事前禁用 + 理由；**不靠点击后报错** |
+| 轮次未闭合 | `apply` 事前禁用 + 理由；**不靠点击后报错** |
 | 目标已被遮蔽 | 行上**不出现任何动作**，只给一句说明 `已被 #K 接替`（不再有"去改现在这条"这类跳转入口，`docs/11` D19） |
 | 草稿不存在 / 无实质改动 | 宿主拒绝并给原文（`redline/no-draft`、`no uncommitted edit`） |
 | 作废范围非法 | 只给一端 / `from > to` → 拒绝（`redline/bad-range`） |

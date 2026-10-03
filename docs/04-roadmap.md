@@ -33,7 +33,7 @@
 | 项 | 内容 |
 |---|---|
 | 产物 | 新仓库骨架（`package.json`/`tsconfig`/`tsdown`/`vitest` lane/`scripts`/lint/**CI**）；从 tag `v0.59.2` 复制的 `src/`；**命名空间化改造**（`docs/01` F1–F4）；安全的依赖安装顺序（F14/F15）；**配置来源表**；`dsh --profile web --dump-config` 的挂载确认（F23、V1、V2） |
-| 依赖 | M0 确认（**且 `docs/08` Q1/Q2/Q11 已拍板** —— ✅ 已满足：Q1 包名 = `dsh-context-redline`、Q2 本轮不做图 2 ②、Q11 = A 完整回滚） |
+| 依赖 | M0 确认（**且 `docs/08` Q1/Q2/Q11 已拍板** —— ✅ 已满足：Q1 包名 = `dsh-context-redline`、Q2 本轮不做图 2 ②；⛔ Q11 的「A 完整回滚」**已被 2026-10-02 的硬约束取代**（界面不提供回滚，见 `docs/11` D19）） |
 | 测试 | `tsc --noEmit` exit 0；`vitest run --project edit --project channel` 可跑；**`namespace-contract` 检查绿**；`--dump-config` 无路由/投影 key 冲突 |
 | 验收人 | **自验**（机械可验）+ 你的 `dump-config` 抽看 |
 | 授权点 | 安装依赖（本地，不需授权）；**装进 web profile 需你单独授权** |

@@ -107,7 +107,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**本轮在改文档**：文档 review 裁定 D1–D8 见本文末 + `scripts/check-docs.mjs`（机器把关） |
-| 进度 | `docs/10`：**DONE 108 / 共 243**（DOING 4 · TODO 123 · WAIT🙋 8） |
+| 进度 | `docs/10`：**DONE 109 / 共 244**（DOING 4 · TODO 123 · WAIT🙋 8） |
 | 当前卡点 | **M05-15 交互定稿** 与 **M5-28 起点口径确认**（都等用户点头）；文档 review 轮已收口（75 → 0，由 `scripts/check-docs.mjs` 把关）；M1 可在仓库内自验，**授权包①（装配 + 用户重启）是 M1 的收口动作** |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -451,3 +451,14 @@ tip 两行口径（`tip.turn1`）。**颜色不抄**，仍走我们的主题令�
 · 删 `回到当前` → 连带 `jumpNow` 处理分支与 `EXPLAIN[trend.jump]`；静态动作白名单同步去掉该文案；
 · 护栏改为"删干净"口径（趋势框里既无 `data-help="trend.read"` 也无 `data-act="jumpNow"`，两条讲解词也不在 EXPLAIN 里）；
 · 讲解词计数 14 → 13。**范围仍只有 `#cardTrend` 一个框**。
+
+
+## D29 · demo ↔ 文档统一（第二批：卡片清单 / 回滚整批删除 / 死讲解词）
+
+用户 2026-10-02 三选三：① 卡片清单**按 demo 收敛成 5 张**；② 回滚/版本历史**删掉（不再做）**；③ demo 死代码**删掉**。
+
+**① 卡片清单**：`docs/03` 左列 = 上下文统计 / 上下文趋势 / 上下文事件；右列 = 上下文浏览器 / 子会话；上游那几张（Token 统计 / 当前上下文 / 文件活动 / 插件信息 / 耗时统计）注明"本轮不做、demo 也没有"。
+**② 回滚整批删除**：`docs/02` 删 17 行（`rollback`/`annotate`/`invariants`/`history.list`/`invariant.*`/`/redline invariants`/`history.sqlite`）+ 6 处措辞；`docs/05` 删 §2.4；`docs/06` 删 `A10`；`docs/09` D4 标已删；`docs/00`/`04`/`08` 的 Q11「A 完整回滚」标注**已被硬约束取代**（`docs/08` 作为决策历史保留）；`AGENTS` 同步。
+**③ 死讲解词**：只删**真正无人引用**的 9 条。
+
+**⚠️ 我犯的错（第三次同类）**：先断言"demo 里已无任何 `?`"（grep 只找了 `data-help="字面量"`，漏了 `${q('act.edit')}` 这种模板调用），于是删掉 `q()` → demo 立刻 `q is not defined`。已 `git checkout -- demo/demo.js` 恢复到最后一次绿，重查后确认：demo 里**还有**编辑器「保存」按钮左上角的 `?`（实测 Δx=-8 / Δy=-9，点了弹说明）。**结论**：`q()` / `wireHelpButtons` / 那条静态规则（"动态出现的按钮要用左上角飘的 ?"）都**必须保留**。

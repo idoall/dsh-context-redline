@@ -58,7 +58,6 @@
 |---|---|---|---|
 | **A1** | 一个已闭合轮次的会话（N 条事件）+ 一条草稿 | `draft.update` → `draft.reset` | ① 返回草稿表正确；② **会话事件数仍是 N**（关键反证）；③ 草稿文件只在数据目录，路径里不含会话 id 明文（用 safeSessionId） |
 | **A4** | 一条 **>200 字、含多段换行**的 `user/message` | `node.read{seq}` | ① 返回正文**逐字等于**事件里的 `data.content` 文本块拼接；② **长度 ≠ 80**、**不等于** `firstText()` 的结果（封死 `docs/01` F35） |
-| **A24** | 有两次替换 + 一次回滚的会话 | `edits.list` / `history.list` | ① 形状与顺序正确（按时间/seq）；② 每个版本的 `kind` 是 `origin/ edit/ rollback` 之一 |
 
 ### 2.2 改写的门禁（每条都要有"被拒"的断言）
 
@@ -80,13 +79,6 @@
 | # | fixture | action | assertion |
 |---|---|---|---|
 | **A22** | 子会话夹具：① 空闲且未压缩过；② 有未闭合轮次；③ 已有一个未配对的 `compaction/start` | `compact.state` | 三种情况分别给出 `canCompact` 与**可读 reason**；②③ 为 false |
-
-### 2.4 回滚与版本历史
-
-| # | fixture | action | assertion |
-|---|---|---|---|
-| **A16** | 一条 `user/message` 原文 `#A` → 替换成 `#M` → 再替换成 `#K` | `history.list{当前可见 seq}` → `apply.rollback{seq:K, toSeq:A}` | ① 历史链返回 `[A(origin), M(edit), K(edit)]`，正文可读；② 回滚后**纯函数 fold 等价物逐字等于 #A 的原文**（同样不许用 live Session 的同步读 API，见 §2 引言）；③ 行上关系链为 `原 #A → #M → #K → 回滚 #N` |
-| **A18** | ① 注入一个"能读到被遮蔽正文"的 readSession 实现；② 注入一个"读不到"的实现 | `history.list` / `node.read` | ① 能读到时：返回完整正文；② 读不到时：返回 **`history-unavailable`** 这一稳定降级信号，**绝不用 80 字预览冒充**。<br>⚠️ **`conditional`**：**真机上"被遮蔽原文到底读不读得到"由 M4.5 的 V8 专项验证**，不在 M2 下定论（见 §3.1） |
 
 ### 2.5 契约与纯度（防"两边各自自洽但合不上"）
 
@@ -168,7 +160,6 @@ node scripts/namespace-contract.mjs        # M1 的命名空间自检（docs/04 
 
 | `docs/03` §7 的条目 | 前置 |
 |---|---|
-| `#15`（回滚逐字恢复） | **M4.5 的 V8 = pass** 才执行；否则只执行 `#16`（关闭态） |
 | `#16`（不可恢复态都有文案） | 无（任何情况下都要执行） |
 | `#19` / `#23`（开子会话 / 建子会话 + 结果回流） | ① M4.5 的 ② `agents`、③ `fork`、**V10**（`subagentCatalog` 等投影可读）、**V11**（续存 fork 端到端，含"父不在进程 / 父正忙"两种情形）、**V14**（起点口径：有没有受支持的更早切点）都有结论；② **官方 `dsh-client-ui-subagent` 已挂载**，父会话页头的血缘触发器存在且能打开一个 child（否则"打开 → 官方视图"这条承诺无法兑现）。任一不满足 → 按 `docs/04` 的同步变更表验"不存在 / 降级"；**V14 未出结论时，只能按"更早的记录不给入口"的降级形态验**（A26） |
 | `#21`（压缩体检） | M4.5 的 ④ 有结论（可用 → 验执行；不可用 → 验"不显示执行按钮"） |
@@ -199,7 +190,6 @@ node scripts/namespace-contract.mjs        # M1 的命名空间自检（docs/04 
 | E14 | SQLite 迁移中途失败 | 迁移前备份；失败可回退，不半迁移 |
 | E15 | 两个插件并存 | 无路由/key 冲突（M1 的 `namespace-contract`） |
 | E17 | **跨压缩 checkpoint 的区间替换**（V9 未验证前） | 界面上**不提供**该入口 |
-| E18 | **回滚后又被追问"为什么内容变了"** | 行上显示完整关系链，每一步可展开看正文 |
 | E19 | **有草稿时点开子会话** | 被阻止 + 明说"草稿不在 fork 种子里" + 逐条处置 |
 | E20 | **旧替换体上还挂着草稿**（R4.6 的组合） | 不静默丢弃：给"把草稿应用到当前可见的 #K"或"丢弃草稿"二选一（需确认） |
 
@@ -227,14 +217,12 @@ node scripts/namespace-contract.mjs        # M1 的命名空间自检（docs/04 
 | A13 | 在客户端里加一行动态 `import('../../host/...')` | **红** |
 | A14 | 调换 `plan.next` 的优先级；或把 `needsAuthorization` 全设 false | **红** |
 | A15（已降级） | 在代码里加一段"读旧 schema"的兼容分支 | **红**（旧数据目录已被用户删除，不该有任何旧库分支 —— `docs/08` Q8） |
-| A16 | 把"回滚"实现成新 append 一条（而不是 replace 当前可见节点） | **红**（纯函数 fold 等价物会同时看到新旧两条；不许用 live Session 同步读 API，见 §2 引言） |
 | A17 | 让 `canRewrite` 对 `assistant/message` 返回 true | **红** |
 | A18 | 在"读不到"的实现下返回 80 字预览 | **红** |
 | A19 | 去掉会话隔离 / 损坏草稿时静默返回 `{}` | **红** |
 | A21 | 能力开关为 false 时仍去调平台 API | **红**（spy 断言零调用） |
 | A22 | 让 `compact.state` 在"有未闭合轮次"时返回 `canCompact:true` | **红** |
 | A23 | 让 `cutSeq` 取"最后一个事件"而不是"最后一个 `turn/end`" | **红** |
-| A24 | 打乱 `history.list` 的顺序或漏掉 `kind` | **红** |
 | A25 | 给平台的调用里偷偷拼一个 `seed`/`cutSeq`（或把它写进日志当作已生效） | **红**（平台契约里没有这个参数 —— `docs/01` F38；确认框也必须同时给两个切点） |
 | A26 | 让"更早的记录也渲染开子会话按钮"，或"起点不存在时拿最新那条顶上" | **红**（`docs/03` R5.1 的降级形态 + 用户 2026-10-01 的"不许拿别的记录顶上"） |
 
@@ -270,13 +258,10 @@ demo 的验收口径：
 | `draft.update` | A1、A20 | #4、#12 | M2 |
 | `draft.reset` | A1、A20 | #12 | M2 |
 | `apply` | A2、A3a、A3b、A5、A6、A7、A17 | #5、#10、#11 | M2 |
-| `apply.rollback` | A16、A18 | #15、#16 | M2 |
-| `history.list` | A16、A18、A24 | #15、#16 | M2 |
 | `edits.list` | A24 | #5 | M2 |
 | `annotate` | A8、A9、A5、A17 | #10、#11 | M2 |
 | `turnState` | A19、A5 | #13、#14 | M2 |
 | `invariant.list` | A10、A19 | #17 | M2 |
-| `invariant.history` | A11 | #17 | M2 |
 | `invariant.drift` | A11 | #18 | M2 |
 | `invariant.save` | A10、A20 | #17 | M2 |
 | `invariant.retire` | A10、A20 | #17 | M2 |
