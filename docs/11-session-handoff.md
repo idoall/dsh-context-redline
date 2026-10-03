@@ -107,7 +107,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**本轮在改文档**：文档 review 裁定 D1–D8 见本文末 + `scripts/check-docs.mjs`（机器把关） |
-| 进度 | `docs/10`：**DONE 100 / 共 235**（DOING 4 · TODO 123 · WAIT🙋 8） |
+| 进度 | `docs/10`：**DONE 101 / 共 236**（DOING 4 · TODO 123 · WAIT🙋 8） |
 | 当前卡点 | **M05-15 交互定稿** 与 **M5-28 起点口径确认**（都等用户点头）；文档 review 轮已收口（75 → 0，由 `scripts/check-docs.mjs` 把关）；M1 可在仓库内自验，**授权包①（装配 + 用户重启）是 M1 的收口动作** |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -387,3 +387,17 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 **删掉的内容**：卡片标题（第 N 轮 · 第 M 步 · 时间 · 共 N 步 · N 次请求）、"这一屏的条数"一行、三个动作（`改这一轮的用户消息` / `改这一轮的注入内容` / `回到当前`）。
 **信息没丢**：轮/步选择器仍在**右侧上下文浏览器标题**里（`第 N 轮（共 M 步）`、`第 M 步（共 M 步）· 时间`）；`回到当前` 在趋势卡里仍有一个。
 **连带移除**：R1.4 / R1.16 两个快捷入口（`editTurnUserMessage` / `editTurnInject`）与讲解词 `turn.inject` —— 它们的唯一入口就是这张卡。
+
+
+## D23 · 趋势图下方的「选中态状态行」（照参考插件 `RequestDetail` 抄，用户 2026-10-02）
+
+> 用户原话：「/Volumes/SSD/Home/lionm4/my_project/_dsh/dsh-context，你参考下它的源码。它在点击轮次和步骤时，底下的那一行状态栏会变化，是如何变化的？你看一下代码，我们要抄过来。」
+
+**参考实现**（`src/client/components/requestDetail.tsx`，渲染在 `<TrendChart>` 正下方、滚动容器之外）：
+· `isTurn = req.stepCount !== undefined && req.stepCount > 1` ⟹ 轮聚合柱（= 该轮**最后一步**）显示 `第 t 轮 · 共 n 步` + 标签 `末步`；否则 `第 t 轮 · 第 s 步（共 n 步）`；
+· 带边界事件（压缩/裁剪）时追加 `✂ 第 t 轮 · 第 s→{s+1} 步`（`events.range`）；
+· 时间 `fmtTime(req.time)`；总计模式给 `实际 prompt` / `输出 output` / `缓存 cacheRead%` 三个 chips，增量模式换成带正负色的 `Δ ±net`；
+· 点轮号条的行为是 `setGranularity('turn') + setFocusTurn(turn)`（切到轮粒度并聚焦那一轮）。
+
+**抄进 demo**：新增 `trendDetailHtml()`，放在趋势卡最下方（**滚动容器之外** ⟹ 横向滚动时不动）；demo 没有 provider 用量字段，用「估算合计 + N 条 + 前三个类别」顶上。
+**护栏**：5 条（轮/步两种 head、时间、合计、Δ、✂）；反向验证过两条（head 逻辑、✂ 位）。

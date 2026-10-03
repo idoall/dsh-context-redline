@@ -600,13 +600,37 @@ body.explain [data-explain].explain-num::after {
   .trendscroll { padding-bottom: 14px; }
 }
 
+/* 趋势图下方的**选中态状态行**（照参考插件 dsh-context 的 .lc-detail-head）：
+   一行说清"你看的是哪一根柱子、它多大、带没带事件"。 */
+.trenddetail {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px;
+  margin-top: 8px; padding-top: 7px;
+  border-top: 1px dashed var(--dsw-alias-border-l2);
+  font-size: 12.5px; min-height: 22px;
+}
+.trenddetail b { font-weight: 600; }
+.trenddetail .td-tag {
+  font-size: 11px; border-radius: 4px; padding: 0 5px;
+  background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+}
+.trenddetail .td-time { color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
+.trenddetail .td-metric {
+  font-variant-numeric: tabular-nums; border-radius: 999px; padding: 0 7px; font-size: 11px;
+  background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2);
+}
+.trenddetail .td-metric.up { color: var(--ds-color-green); border-color: color-mix(in srgb, var(--ds-color-green) 40%, transparent); }
+.trenddetail .td-metric.down { color: var(--ds-color-orange); border-color: color-mix(in srgb, var(--ds-color-orange) 40%, transparent); }
+.trenddetail .td-sep { width: 1px; height: 12px; background: var(--dsw-alias-border-l2); }
+.trenddetail .td-cat { font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
 </style>
 </head>
 <body>
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 02b903b</span>
+    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 b46bc46</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -1225,6 +1249,45 @@ function showTrendTip(i, req, series) {
 }
 function hideTrendTip() { const tip = $('trendTip'); if (tip) tip.hidden = true; }
 
+/* ⚠️ **趋势图下方的"选中态状态行"**（用户 2026-10-02：「参考插件在点击轮次和步骤时，底下的那一行状态栏会变化……我们要抄过来」）
+ * 口径逐条照 `dsh-context` 的 `src/client/components/requestDetail.tsx` 头行（`.lc-detail-head`）：
+ *   · 按轮次（这一根柱子 = **该轮的聚合**，也就是该轮最后一步）→ `第 t 轮 · 共 n 步` + 标签 `末步`；
+ *   · 按步骤 → `第 t 轮 · 第 s 步（共 n 步）`；
+ *   · 该柱带压缩/裁剪事件 → 追加 `✂ 第 t 轮 · 第 s-1→s 步`（事件发生在两根柱子之间）；
+ *   · 时间；总计模式给指标 chips，增量模式换成单个带正负色的 `Δ ±net`；
+ *   · demo 没有 prompt/output/cacheRead 这三个真实字段，就用**估算合计 + 条数 + 前三个类别**顶上（不编不存在的数字）。 */
+function trendDetailHtml(list, parts, selIdx) {
+  const r = reqOf();
+  const i = selIdx >= 0 ? selIdx : list.findIndex((x) => x.seq === r.seq);
+  const steps = turnSteps(r.turn);
+  const isTurnAgg = S.trendGran === 'turn' && steps > 1;
+  const head = isTurnAgg ? `第 ${r.turn} 轮 · 共 ${steps} 步` : `第 ${r.turn} 轮 · 第 ${r.step} 步（共 ${steps} 步）`;
+  const mk = markerOf(r);
+  const at = mk ? (r.step > 1 ? `第 ${r.turn} 轮 · 第 ${r.step - 1}→${r.step} 步` : `第 ${r.turn} 轮 · 第 ${r.step} 步`) : '';
+  const p = parts[i] || {};
+  const total = CATS.reduce((a, c) => a + (p[c.key] || 0), 0);
+  const count = visibleOf().length;
+  const top = CATS.map((c) => ({ label: catLabel(c.key), v: p[c.key] || 0, color: c.color }))
+    .filter((x) => x.v > 0).sort((a, b) => b.v - a.v).slice(0, 3)
+    .map((x) => `<span class="td-cat" style="color:${x.color}">${esc(x.label)} ${fmt(x.v)}</span>`).join('');
+  let metric;
+  if (S.trendMode === 'delta') {
+    const prev = i > 0 ? (parts[i - 1] || {}) : {};
+    const net = CATS.reduce((a, c) => a + ((p[c.key] || 0) - (prev[c.key] || 0)), 0);
+    metric = `<span class="td-metric ${net >= 0 ? 'up' : 'down'}">Δ ${net > 0 ? '+' : ''}${fmt(net)}</span>`
+      + `<span class="cap">（与上一根柱子比：涨在上面、跌在下面）</span>`;
+  } else {
+    metric = `<span class="td-metric">估算合计 ≈ ${fmt(total)}</span><span class="td-metric">${count} 条</span>`;
+  }
+  return `<div class="trenddetail">
+    <b>${esc(head)}</b>
+    ${isTurnAgg ? '<span class="td-tag">末步</span>' : ''}
+    ${mk ? `<span class="td-tag" title="${esc(mk.label)}">✂ ${esc(at)}</span>` : ''}
+    <span class="td-time">${esc(r.time)}${isLive() ? ' · 当前（下一次请求）' : ''}</span>
+    ${metric}
+    ${top ? `<span class="td-sep"></span>${top}` : ''}
+  </div>`;
+}
 function renderTrend() {
   const { list, series, parts } = trendItems();
   window.__trendSeries = series;
@@ -1310,6 +1373,7 @@ function renderTrend() {
       </div>
       </div>
     </div>
+    ${trendDetailHtml(list, parts, selIdx)}
     `;  /* 底部那一条（步级快捷片 + 上一轮/下一轮/上一步/下一步）按用户 2026-10-01 的意见删掉：
            柱体自身 hover 就报"第几轮 / 第几步"，点一下就选中；那一排只是重复信息、还抢注意力。
            柱子下面那行轮号刻度带保留 —— 它是图表的坐标轴，不是导航。 */

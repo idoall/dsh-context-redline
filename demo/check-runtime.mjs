@@ -957,6 +957,55 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('块不许加彩色焦点标记（无记录时同样）', !/is-focus/.test(registry.get('cardOrch').innerHTML));
 }
 
+/* ---------------- 趋势图下方的「选中态状态行」（照参考插件 dsh-context 的 RequestDetail 头行） ----------------
+ * 用户 2026-10-02：「它在点击轮次和步骤时，底下的那一行状态栏会变化，是如何变化的？我们要抄过来。」
+ * 契约：① 按轮次且该轮多步 → `第 t 轮 · 共 n 步` + 标签 `末步`；② 否则 → `第 t 轮 · 第 s 步（共 n 步）`；
+ *      ③ 该柱带事件 → `✂ 第 t 轮 · 第 s-1→s 步`；④ 增量模式 → `Δ ±…`；⑤ 总计模式 → `估算合计 ≈ …`；
+ *      ⑥ 它必须**在横向滚动容器之外**（不然滚动时它会跟着跑）。 */
+{
+  const S = api.S();
+  const detailOf = () => {
+    const html = registry.get('cardTrend').innerHTML;
+    const m = html.match(/<div class="trenddetail">([\s\S]*?)<\/div>/);
+    return m ? m[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : null;
+  };
+  S.trendCat = null;
+  // ① 找一个多步的轮（demo 里末轮有 3 步）
+  const lastTurn = api.lastOfTurn(api.TOTAL_TURNS).turn;
+  S.trendGran = 'turn'; S.trendMode = 'total';
+  const lastReq = api.lastOfTurn(api.TOTAL_TURNS);
+  S.selSeq = lastReq.seq; S.selTurn = lastReq.turn; api.render();
+  let d = detailOf();
+  check('状态行（按轮次·多步轮）：写成「第 t 轮 · 共 n 步」+ 标签「末步」',
+    !!d && /共 \d+ 步/.test(d) && /末步/.test(d) && !/第 \d+ 步（共/.test(d), d);
+  check('状态行（按轮次）：时间与「当前」提示也在', !!d && /\d{2}:\d{2}/.test(d), d);
+  check('状态行（总计模式）：给估算合计与条数', !!d && /估算合计 ≈/.test(d) && /\d+ 条/.test(d), d);
+
+  // ② 按步骤
+  S.trendGran = 'step'; api.render();
+  d = detailOf();
+  check('状态行（按步骤）：写成「第 t 轮 · 第 s 步（共 n 步）」',
+    !!d && new RegExp(`第 ${lastReq.turn} 轮 · 第 ${lastReq.step} 步（共 \\d+ 步）`).test(d), d);
+
+  // ③ 增量模式：换成带正负的 Δ
+  S.trendMode = 'delta'; api.render();
+  d = detailOf();
+  check('状态行（增量模式）：换成带正负号的 Δ（不再给估算合计）',
+    !!d && /Δ [+-]?/.test(d) && !/估算合计/.test(d), d);
+
+  // ④ 事件：给"被事件标住的那一根"选中，应出现 ✂
+  S.trendMode = 'total';
+  const evSeq = api.REQUESTS.find((r) => api.markerOf(r)) ? api.markerOf(api.REQUESTS.find((r) => api.markerOf(r))) && api.REQUESTS.find((r) => api.markerOf(r)).seq : null;
+  if (evSeq !== null) {
+    S.trendGran = 'step'; S.selSeq = evSeq; S.selTurn = api.REQUESTS.find((r) => r.seq === evSeq).turn; api.render();
+    d = detailOf();
+    check('状态行（该柱带压缩/裁剪事件）：追加「✂ 第 t 轮 · …步」', !!d && /✂/.test(d), d);
+  } else {
+    check('状态行（该柱带压缩/裁剪事件）：demo 数据里应至少有一个事件', false, '没找到 marker');
+  }
+  S.trendGran = 'turn'; S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; api.render();
+}
+
 /* ---------------- 全页统一语言：卡片标题也要有右读数（与块标题一致） ---------------- */
 {
   api.render();
