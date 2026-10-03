@@ -22,6 +22,7 @@
 import { REDLINE_ERROR } from '../shared/redline-errors'
 import { REDLINE_CHANNEL_ROUTE, type RedlineEnvelope } from '../shared/redline-route'
 import type { DraftTable } from '../shared/redline-drafts'
+import type { TurnState } from '../shared/redline-turn'
 
 /** One row's complete content, as `node.read` answers it. */
 export interface RedlineRow {
@@ -96,6 +97,16 @@ async function call<T>(body: Record<string, unknown>): Promise<RedlineResult<T>>
 /** One row's COMPLETE content — the editor's only prefill source. */
 export async function readRow(sessionId: string, seq: number): Promise<RedlineResult<RedlineRow>> {
   return await call<RedlineRow>({ op: 'node.read', sessionId, seq })
+}
+
+/**
+ * Whether this session can be edited right now (`docs/03` R4.3). Asked BEFORE the
+ * editor opens, because the demo blocks editing entirely mid-turn / on a session
+ * this process does not host — a save button that fails after the click is a
+ * worse experience than one that is disabled with the reason beside it.
+ */
+export async function readTurnState(sessionId: string): Promise<RedlineResult<TurnState>> {
+  return await call<TurnState>({ op: 'turnState', sessionId })
 }
 
 /** Every local edit of this session (the row markers and the prefill read this). */

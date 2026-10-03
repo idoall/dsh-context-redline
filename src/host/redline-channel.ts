@@ -52,6 +52,7 @@ import {
   type SurfaceRowText,
 } from '../shared/redline-drafts'
 import { fullReasoningOf, fullTextOf, isErrorOf, seqOf, typeOf } from '../redline/inspect'
+import { turnStateOf, type TurnBoundaryEvent, type TurnState } from '../shared/redline-turn'
 
 /** The host `connection` service, as far as this route consumes it. */
 interface ConnectionHostFace {
@@ -72,6 +73,12 @@ type HomePathFace = (...segments: string[]) => string
 interface SessionQueryFace {
   readEvent?(request: { sessionId: string; seq: number }): Promise<unknown>
   readSurface?(sessionId: string): Promise<unknown>
+  listEvents?(sessionId: string): Promise<readonly TurnBoundaryEvent[]>
+}
+
+/** The host session store, as far as liveness is concerned. */
+interface SessionsHostFace {
+  get?(id: string): unknown
 }
 
 /** What an op handler is given. */
@@ -183,6 +190,26 @@ async function resolveEvent(ctx: Context, sessionId: string, seq: number): Promi
   return fail(REDLINE_ERROR.shadowed)
 }
 
+/**
+ * Whether this session can be edited right now (`docs/03` R4.3):
+ * `known: false` = this process does not host it (view only); `open: true` = the
+ * turn has not closed, and the panel must not let an edit be prepared against a
+ * surface that is still moving. The platform does NOT police this (`docs/01` F8).
+ */
+async function turnStateOfSession(ctx: Context, sessionId: string): Promise<TurnState> {
+  const sessions = ctx.get('sessions') as SessionsHostFace | undefined
+  const live = typeof sessions?.get === 'function' && sessions.get(sessionId) !== undefined
+  if (!live) return turnStateOf(false, null)
+  const query = ctx.get('sessionQuery') as SessionQueryFace | undefined
+  if (typeof query?.listEvents !== 'function') return turnStateOf(true, null)
+  try {
+    const events = await query.listEvents(sessionId)
+    return turnStateOf(true, Array.isArray(events) ? events : null)
+  } catch {
+    return turnStateOf(true, null)
+  }
+}
+
 /** One row's complete content, shaped for the client. */
 function rowOf(seq: number, event: unknown): Record<string, unknown> {
   return {
@@ -195,6 +222,16 @@ function rowOf(seq: number, event: unknown): Record<string, unknown> {
 }
 
 // ── the ops ─────────────────────────────────────────────────────────────────
+
+/**
+ * Whether the panel may edit this session at all, and if not, why in machine terms.
+ * The client shows the demo's sentence and disables `保存` BEFORE any round trip.
+ */
+const readTurnState: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  return redlineOk(await turnStateOfSession(ctx, sessionId))
+}
 
 /** One row's full content. The editor's only prefill source. */
 const readRow: RedlineOpHandler = async ({ ctx, call }) => {
@@ -228,6 +265,12 @@ const updateDraft: RedlineOpHandler = async ({ ctx, call }) => {
   if (bag.reasoning !== undefined && typeof bag.reasoning !== 'string') return fail(REDLINE_ERROR.badRequest)
   if (bag.isError !== undefined && typeof bag.isError !== 'boolean') return fail(REDLINE_ERROR.badRequest)
   const next = { text: bag.text, reasoning: bag.reasoning ?? '', isError: bag.isError ?? false }
+
+  // The demo's own gate (`blocked = turnOpen || !live`), enforced on the host too:
+  // the panel disables the button, and this is the safety net behind it.
+  const state = await turnStateOfSession(ctx, sessionId)
+  if (!state.known) return fail(REDLINE_ERROR.notLive)
+  if (state.open) return fail(REDLINE_ERROR.turnOpen)
 
   const current = await readTable(ctx, sessionId)
   if (!current.ok) return current
@@ -269,6 +312,7 @@ const dropDraft: RedlineOpHandler = async ({ ctx, call }) => {
  */
 const OPS = new Map<string, RedlineOpHandler>([
   ['node.read', readRow],
+  ['turnState', readTurnState],
   ['draft.list', listDrafts],
   ['draft.update', updateDraft],
   ['draft.drop', dropDraft],

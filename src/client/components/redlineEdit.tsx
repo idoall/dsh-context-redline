@@ -92,6 +92,12 @@ export function makeRedlineEditor(kit: ViewKit): (props: {
   /** The version in effect (the original, or your saved edit). */
   initial: RedlineSubmit
   busy: boolean
+  /**
+   * Set when editing is not allowed at all right now: the demo's own gate
+   * (`turnOpen || !live`) disables `保存` and shows the sentence, rather than
+   * letting the click fail.
+   */
+  blocked: 'turn-open' | 'not-live' | null
   /** The stable refusal code to display, if the last attempt failed. */
   errorCode: string | null
   onSubmit: (edit: RedlineSubmit) => void
@@ -119,6 +125,9 @@ export function makeRedlineEditor(kit: ViewKit): (props: {
       if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); submit() }
     }
     const errKey = props.errorCode === null ? null : `redline.err.${props.errorCode.replace('redline/', '')}`
+    const blockedKey = props.blocked === 'turn-open'
+      ? 'redline.blocked.turnOpen'
+      : props.blocked === 'not-live' ? 'redline.blocked.notLive' : null
 
     return (
       <div className="redline-editor" onKeyDown={onKey}>
@@ -159,13 +168,14 @@ export function makeRedlineEditor(kit: ViewKit): (props: {
               />
             </details>
           )}
+        {blockedKey !== null ? <div className="redline-editor-blocked">{t(blockedKey)}</div> : null}
         {errKey !== null ? <div className="redline-editor-err" role="alert">{t(errKey)}</div> : null}
         <div className="redline-editor-actions">
           <span className="redline-qwrap">
             <button
               type="button"
               className="redline-btn"
-              disabled={props.busy}
+              disabled={props.busy || blockedKey !== null}
               onClick={submit}
             >{t('redline.save')}</button>
             <span className="redline-qfloat" title={t('redline.save.tip')} aria-label={t('redline.save.tip')}>?</span>

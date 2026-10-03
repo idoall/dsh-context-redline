@@ -222,14 +222,14 @@
 | M2-29 | **本地改动存储**（纯逻辑）：一条一行、再保存**覆盖**、丢弃、通知"与当前生效版本逐字比较"、文件名净化、坏文件**报错不静默** | DONE | → `src/redline/drafts.ts`（纯，不 import `node:*`）；`tests/edit/drafts.spec.ts` 15 条先红后绿；反向验证 3 条（本地改动不生效 / 叠加 / 改回与原文比）全部变红 |
 | M2-30 | **全文读取**（纯逻辑）：按底层事件类型取完整正文与思考文本 + 工具结果的 `isError`；**绝不等于 80 字预览** | DONE | → `src/redline/inspect.ts`；`tests/edit/fulltext.spec.ts` 先红后绿（>200 字 / 4 段逐字往返、并直接与 `firstText` 的 80 字结果对比）；反向验证：把实现退回 `slice(0,80)+collapse` → 立刻红。⚠️ **不 import** 官方 `extractSessionEventText`（profile 层解析不到该包；inlining 会复制一份）→ `docs/01` F43 |
 | M2-31 | **能力判定按底层事件类型**（纯逻辑）：7 类行的动作集合 + 4 个稳定原因键；工具结果属"高级" | DONE | → `src/shared/redline-ability.ts`（`ability()` / `rowActions()`）—— **放在 shared 而不是 redline**：浏览器也要这条规则，而客户端 bundle 不许 import `src/redline/**`（bundle purity，docs/02 §4）；反向验证：临时在 `src/client/services.ts` 里 import `../redline/eligibility` → 面 9 立刻红。`tests/edit/eligibility.spec.ts` 的 A17 矩阵 |
-| M2-32 | **通道 op**：`node.read`（全文，走 `sessionQuery`）/ `draft.list` / `draft.update` / `draft.drop`；**只写我们自己的文件** | DONE | → `src/host/redline-channel.ts` 的 `OPS` 表；`tests/channel/redline-ops.spec.ts` 先红后绿。**硬约束的证据**：每条保存用例都断言 `session.append` 调用数 = 0 **且** `session.seq`（日志偏移）没有增长；反向验证：让 `draft.update` 顺手 append 一条事件 → 立刻红 |
+| M2-32 | **通道 op**：`node.read`（全文，走 `sessionQuery`）/ `draft.list` / `draft.update` / `draft.drop`；**只写我们自己的文件** | DONE | → `src/host/redline-channel.ts` 的 `OPS` 表；`tests/channel/redline-ops.spec.ts` 先红后绿。**硬约束的证据**：每条保存用例都断言 `session.append` 调用数 = 0 **且** `session.seq`（日志偏移）没有增长；反向验证：让 `draft.update` 顺手 append 一条事件 → 立刻红。**M3 补**：写之前先问 `turnState`（`listEvents` 数轮次边界）—— 轮次未闭合 → `redline/turn-open`、本进程不 host → `redline/not-live`（`docs/03` R4.3 的 demo 规则，主机侧安全网） |
 | M2-33 | M2 收尾：`tsc` / `tsdown` / 自有 lane / 全 lane / `namespace-contract` / `oxlint` 全绿 | DONE | → `tsc --noEmit` exit 0 · `tsdown` exit 0 · 自有 lane **6 文件 67/67** · 全 lane 见 docs/11 D35 · `namespace-contract` 24 项 0 失败 · `oxlint` **0 error**（⚠️ 见 docs/11 D36：这个读数第一次是**错的**，已在同一轮修正并把 lint 加进 CI） |
 | M2-34 | **作废批次说明**（M2-11…M2-19 / M2-22 / M2-24）：这些行写于 2026-10-01，随后被用户的裁定删除或移阶段 —— 见 `docs/11` **D14**（固定块/漂移/重注入）、**D15**（所有保存都是临时保存 ⟹ 没有 apply）、**D18**（批注删除）、**D19**（行上只有「编辑」）、**D10**（冻结删除）；团队/压缩 op 属 **M5** | DONE | → `docs/11` D10/D14/D15/D18/D19（不写代码） |
 
 
 ---
 
-## 5. M3 · 右侧界面（**21 / 33 DONE**，按当前 demo 重写后的计划 · 开工第一步已做）
+## 5. M3 · 右侧界面（**22 / 33 DONE**，按当前 demo 重写后的计划 · 开工第一步已做）
 
 > ✅ **2026-10-04：本节已按"当前 demo 是唯一界面准绳"重写**。旧版（2026-10-01）有 12 行写着 `批注` / `版本历史` /
 > `固定块` / `未生效吸顶` / `应用到会话` / `官方团队区块` / `待处理结果` —— 这些交互已被用户 2026-10-02 的裁定**删除**
@@ -275,8 +275,8 @@
 | M3-27 | 行下**内联编辑器**（R3.1/R3.2）：kind-aware 字段（`user/message` = 正文 + 「高级」里折叠的思考文本；`tool/result` = 结果文本 + `isError`）；同一时刻只有一个编辑器；**预填全文**（来自 `node.read`，不是 80 字预览） | DONE | → 行下内联编辑器：字段按 `node.read` 返回的**真实事件类型**给（`tool/result` = 结果文本 + `isError`；其余 = 正文 + 折在「高级」里的思考文本）；同一时刻只有一个编辑器；预填 `effectiveText`（首次是全文、保存过之后是你保存的那版）。护栏：预填 == 全文（含 `\n\n`），反向验证：改成用列表预览 `n.text` → 立刻红 |
 | M3-28 | 编辑器语义与去向标记（R3.3/R3.3.2）：字段旁 `只写本地 · 开子会话时才带进去`；保存**不出确认框**；`保存`（本地）覆写同一行；`取消（Esc）` 不清本地草稿；`丢弃这条改动` 清掉并**收起编辑器**、行回原文 | DONE | → 字段旁 `只写本地 · 开子会话时才带进去`；`保存` 不发确认框、只调 `draft.update`（宿主写我们自己的 JSON）；`取消（Esc）` 不动本地草稿；`丢弃这条改动` 清掉并**收起编辑器**、行回原文。护栏：保存把正文交给控制器（断言入参逐字）；取消不调用保存；丢弃后编辑器数 = 0 |
 | M3-29 | 编辑器细节：多段提示 `这条消息有多个文本段落；改写后会合并为一段。`（仅多段时）；`保存` 左上角飘一个 `?`（与讲解模式同一份说明）；Esc / Cmd+Enter；失败保留输入并在编辑器内显示人话原因 | DONE | → 多段提示（仅多段时）；`保存` 左上角飘 `?`（`title` 与 `aria-label` 同一份说明）；`Esc` 取消 / `Cmd/Ctrl+Enter` 提交；失败保留输入并显示按稳定码映射的人话（`redline.err.*`）。护栏：多段提示与去向标记在编辑器内；失败后 textarea 里的输入仍在 |
-| M3-30 | **不可编辑态 → 人话原因**（R2.3 / R4.7 汇总表的界面落点）：助手消息 / 被遮蔽原文 / 被压缩埋掉 / 系统提示词 / 工具定义 / 会话不在本进程 / 轮次未闭合 —— 每一态给出"原因 + 我该怎么办"，**能力为 false 时入口不出现**（不是禁用了还能点） | DOING | → **已做**：助手消息 → `助手消息改不了`；被接替/被压缩 → 一句原因、零按钮（`tests/client-ui` 锁）。**未做**：会话不在本进程 / 轮次未闭合两种状态条的界面落点，以及「这一态是什么意思 / 我该怎么办」的汇总入口（R4.7 的表格落点）。⚠️ **已知简化**：fold 用同一个 `gone` 标记"被改写过"与"被压缩埋掉"，所以面板目前只能给 `已被接替` 这一族说法；要分开得让 fold 暴露原因（记在这里，不猜） |
-| M3-31 | **帮助入口**（R7.1 + D6 连带要求）：从不可用态与说明处可跳到「这一态是什么意思 / 我该怎么办」汇总表 | TODO | `src/client/components/browser.tsx`、`src/client/i18n.ts`、`docs/12-user-guide.md`（M6-11） |
+| M3-30 | **不可编辑态 → 人话原因**（R2.3 / R4.7 汇总表的界面落点）：助手消息 / 被遮蔽原文 / 被压缩埋掉 / 系统提示词 / 工具定义 / 会话不在本进程 / 轮次未闭合 —— 每一态给出"原因 + 我该怎么办"，**能力为 false 时入口不出现**（不是禁用了还能点） | DONE | → **每一态都有人话**：助手消息 → `助手消息改不了`；被接替/被压缩 → 一句原因、零按钮；宿主保护的两类 → 不渲染动作区；**轮次未闭合 / 会话不在本进程 → 编辑器里写明句子并禁用 `保存`**（与 demo 的 `blocked`＝「轮次未闭合 或 不在本进程」逐字一致），且**主机侧同样拒绝**（`redline/turn-open` / `redline/not-live`）—— 界面禁用是体验，主机拒绝是安全网。护栏：`tests/edit/turn-state.spec.ts`（9 条纯函数）、`tests/channel/redline-ops.spec.ts`（`turnState` op + 两条拒绝 + "同一保存只因轮次闭合就通过"）、`tests/client-ui/redline-edit.spec.ts`（两种态各断言句子在 + `保存` 禁用 + 点了也不到存储）。**4 个变异反向验证**：边界判定写死已闭合 / 主机不拒 turn-open / 主机不拒 not-live / 界面不传 blocked —— 全部变红。⚠️ 反向验证**抓到我自己一条空壳护栏**：`not-live` 那条一开始是"读不到也报 not-live"，把 liveness 判断删掉它照样绿 → 已改成用"**行可读但本进程不 host**"的会话隔离该判断。⚠️ 已知简化：fold 用同一个 `gone` 同时表示"被改写过"与"被压缩埋掉"，所以两族说法还没分开（要分开得让 fold 暴露原因，不猜） |
+| M3-31 | **帮助入口**（R7.1 + D6 连带要求）：从不可用态与说明处可跳到「这一态是什么意思 / 我该怎么办」汇总表 | TODO | → ⏸ **依赖 M6-11 的 `docs/12-user-guide.md`**（R4.7 的汇总表是它的权威来源）；在该文档存在之前，"我该怎么办"以各行的 `title`（助手消息/被接替/系统保护各写清替代路径）与编辑器内的句子承担。**不许**先做一个指向不存在文档的链接 |
 | M3-33 | **客户端通道**（M3 的前置）：`src/client/redlineChannel.ts` —— `node.read` / `draft.list` / `draft.update` / `draft.drop` 四个调用的浏览器侧封装；URL 必须 import `REDLINE_CHANNEL_ROUTE`（不许手写），**失败一律回稳定码、绝不抛**（编辑器才能"保留输入 + 显示原因"） | DONE | → 先红后绿：`tests/client-logic/redline-channel.spec.ts`（新 lane）8 条，写测试时模块不存在 → 全红；实现后 8/8。**顺带修掉一个真实隐患**：`src/client/{timelineSource,overview,balance}.ts` 原本**各手写一份** `/api/dsh-context-redline/*` 字面量（上游的设计）→ 常量一改就静默 404，已改为 import `src/shared/redline-route.ts` 的常量；`namespace-contract` 新增一条"客户端里一个 `/api` 字面量都没有"（反向验证：塞回一个字面量 → 立刻红，即使那个字面量是**对的**也红）`src/client/redlineChannel.ts`、`src/client/{timelineSource,overview,balance}.ts`、`tests/client-logic/**`、`vitest.config.ts`、`scripts/namespace-contract.mjs` |
 | M3-32 | **作废批次说明**（M3-01/04/05/07/08/09/11/12/13/18/19/20）：这些行写于 2026-10-01，随后被用户删除或移阶段 —— `docs/11` **D10**（冻结）、**D14**（固定块/漂移/重注入/压缩）、**D15**（所有保存都是临时保存 ⟹ 没有 apply/未生效吸顶）、**D18**（批注）、**D19**（行上只有「编辑」+ 无版本历史）、**D22**（步卡片整张删除）；团队与压缩属 **M5** | DONE | → `docs/11` D10/D14/D15/D18/D19/D22（不写代码） |
 
@@ -393,13 +393,13 @@
 | M0.5 交互 demo | 88 | **87** | 0 | 0 | 1 |
 | M1 骨架与身份 | 14 | **12** | 0 | 1 | 1 |
 | M2 编辑面 | 34 | **29** | 0 | 5 | 0 |
-| M3 右侧界面 | 33 | **21** | 1 | 10 | 1 |
+| M3 右侧界面 | 33 | **22** | 0 | 10 | 1 |
 | M4 轮次联动 | 4 | **0** | 0 | 4 | 0 |
 | M4.5 能力验证 | 19 | **0** | 0 | 16 | 3 |
 | M5 编排 | 28 | **1** | 0 | 26 | 1 |
 | M6 入口与发布 | 12 | **0** | 0 | 12 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **266** | **174** | **5** | **79** | **8** |
+| **合计** | **266** | **175** | **4** | **79** | **8** |
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
 > 当前卡点：**M1 的收口动作 = 授权包①（装进 web profile + 你重启，见 M1-01）**；

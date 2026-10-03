@@ -54,6 +54,8 @@ interface Ops {
   /** The session's durable log offset — must not move either. */
   logOffset: () => number
   reads: string[]
+  /** Replace the session's log, so the open-turn refusal can be exercised. */
+  setLog: (next: { type: string }[]) => void
 }
 
 /**
@@ -67,6 +69,10 @@ interface Ops {
 async function boot(): Promise<Ops> {
   // Assigned once the real session exists; the read faces below compare against it.
   let readable = ''
+  // A session the QUERY can read but the session store does not host. Without this,
+  // "not-live" could come from the failed read instead of the liveness gate, and the
+  // guard would pass for the wrong reason (found by reverse verification).
+  const ghost = 'ghost-not-hosted'
   const home = mkdtempSync(join(tmpdir(), 'redline-m2-'))
   homes.push(home)
   const routes: CapturedRoute[] = []
@@ -87,10 +93,18 @@ async function boot(): Promise<Ops> {
   // Reads go through `sessionQuery` (docs/01 F5 — the sync event APIs are banned).
   // Shapes mirror the real service: `readEvent` answers a window whose `target` is
   // the full event; `readSurface` answers the current surface events.
+  // The turn boundary: a closed turn by default, switchable so the refusal can be
+  // driven. Every op that writes asks this FIRST (`docs/03` R4.3).
+  let log: { type: string }[] = [{ type: 'turn/start' }, { type: 'turn/end' }]
   ctx.provide('sessionQuery', {
+    async listEvents(sessionId: string) {
+      reads.push(`listEvents:${sessionId}`)
+      if (sessionId !== readable && sessionId !== ghost) throw new Error(`session "${sessionId}" is not readable here`)
+      return log
+    },
     async readSurface(sessionId: string) {
       reads.push(`readSurface:${sessionId}`)
-      if (sessionId !== readable) throw new Error(`session "${sessionId}" is not readable here`)
+      if (sessionId !== readable && sessionId !== ghost) throw new Error(`session "${sessionId}" is not readable here`)
       return {
         session: { id: sessionId },
         inheritedEventCount: 0,
@@ -103,7 +117,7 @@ async function boot(): Promise<Ops> {
     },
     async readEvent(request: { sessionId: string, seq: number }) {
       reads.push(`readEvent:${request.sessionId}:${request.seq}`)
-      if (request.sessionId !== readable) throw new Error(`session "${request.sessionId}" is not readable here`)
+      if (request.sessionId !== readable && request.sessionId !== ghost) throw new Error(`session "${request.sessionId}" is not readable here`)
       // Mirrors the real service: the window's `target` is the FULL event; a seq
       // that is not on the surface simply has no target.
       const content = request.seq === 1301 ? TEXT_BLOCKS : request.seq === 1302 ? [{ type: 'text', text: SECOND }] : undefined
@@ -131,7 +145,16 @@ async function boot(): Promise<Ops> {
   await ctx.plugin(plugin, {} as never)
   const channel = routes.find(r => r.path === REDLINE_CHANNEL_ROUTE)
   assert.ok(channel !== undefined, 'the channel registered')
-  return { ctx, channel, home, sessionId: session.id, sessionWrites, logOffset: () => session.seq, reads }
+  return {
+    ctx,
+    channel,
+    home,
+    sessionId: session.id,
+    sessionWrites,
+    logOffset: () => session.seq,
+    reads,
+    setLog: (next: { type: string }[]) => { log = next },
+  }
 }
 
 async function call(ops: Ops, body: unknown): Promise<Record<string, unknown>> {
@@ -225,6 +248,53 @@ describe('every save is temporary (the hard constraint)', () => {
     const left = value(await call(ops, { op: 'draft.drop', sessionId: ops.sessionId, seq: 1301 })) as Record<string, unknown>
     assert.deepEqual(Object.keys(left), ['1302'])
     assert.deepEqual(ops.sessionWrites, [])
+  })
+})
+
+describe('the turn boundary (docs/03 R4.3: the demo disables 保存 mid-turn)', () => {
+  test('turnState answers known+closed for a hosted, finished session', async () => {
+    const ops = await boot()
+    assert.deepEqual(value(await call(ops, { op: 'turnState', sessionId: ops.sessionId })), { known: true, open: false })
+  })
+
+  test('turnState answers open for a session whose last boundary is a start', async () => {
+    const ops = await boot()
+    ops.setLog([{ type: 'turn/start' }, { type: 'turn/end' }, { type: 'turn/start' }])
+    assert.deepEqual(value(await call(ops, { op: 'turnState', sessionId: ops.sessionId })), { known: true, open: true })
+  })
+
+  test('turnState answers NOT KNOWN for a session this process does not host', async () => {
+    const ops = await boot()
+    assert.deepEqual(value(await call(ops, { op: 'turnState', sessionId: 'somewhere-else' })), { known: false, open: false })
+  })
+
+  test('a save during an open turn is refused with turn-open, and writes nothing', async () => {
+    const ops = await boot()
+    ops.setLog([{ type: 'turn/start' }])
+    const reply = await call(ops, { op: 'draft.update', sessionId: ops.sessionId, seq: 1301, edit: { text: '途中改的', reasoning: '', isError: false } })
+    assert.equal(code(reply), REDLINE_ERROR.turnOpen)
+    assert.equal(existsSync(draftPath(ops)), false, 'a refused save writes nothing at all')
+    assert.deepEqual(ops.sessionWrites, [])
+  })
+
+  test('the same save is accepted once the turn closes (the boundary is the only difference)', async () => {
+    const ops = await boot()
+    ops.setLog([{ type: 'turn/start' }])
+    const blocked = await call(ops, { op: 'draft.update', sessionId: ops.sessionId, seq: 1301, edit: { text: '途中改的', reasoning: '', isError: false } })
+    assert.equal(code(blocked), REDLINE_ERROR.turnOpen)
+    ops.setLog([{ type: 'turn/start' }, { type: 'turn/end' }])
+    const accepted = await call(ops, { op: 'draft.update', sessionId: ops.sessionId, seq: 1301, edit: { text: '途中改的', reasoning: '', isError: false } })
+    assert.equal(accepted.ok, true, JSON.stringify(accepted))
+    assert.deepEqual(ops.sessionWrites, [], 'still zero session writes')
+  })
+
+  test('a session this process does not host cannot be saved into (not-live)', async () => {
+    const ops = await boot()
+    // Its ROWS are readable (the query serves them) — so a `not-live` here can only
+    // come from the liveness gate, which is exactly what this test must isolate.
+    const reply = await call(ops, { op: 'draft.update', sessionId: 'ghost-not-hosted', seq: 1301, edit: { text: 'x', reasoning: '', isError: false } })
+    assert.equal(code(reply), REDLINE_ERROR.notLive)
+    assert.equal(existsSync(draftPath(ops)), false, 'nothing is written for an unhosted session')
   })
 })
 

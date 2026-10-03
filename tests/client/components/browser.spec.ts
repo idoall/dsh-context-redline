@@ -88,6 +88,7 @@ async function pickStep(m: Mounted, value: string): Promise<void> {
 function stubRedline(over: Partial<RedlineDraftController> = {}): RedlineDraftController {
   return {
     table: {},
+    turn: { known: true, open: false },
     ready: true,
     busySeq: null,
     rowError: null,

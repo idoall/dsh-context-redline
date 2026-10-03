@@ -973,6 +973,7 @@ export function makeContextBrowser(
           type={editorRow.type}
           initial={initial}
           busy={props.redline.busySeq === n.seq}
+          blocked={!props.redline.turn.known ? 'not-live' : props.redline.turn.open ? 'turn-open' : null}
           errorCode={props.redline.rowError?.seq === n.seq ? props.redline.rowError.code : editorError}
           onSubmit={(edit: RedlineSubmit) => {
             void (async () => {

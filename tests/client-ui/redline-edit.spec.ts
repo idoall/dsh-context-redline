@@ -57,6 +57,7 @@ function step(nodes: SurfaceNode[]): ContextTimeline {
 function controller(over: Partial<RedlineDraftController> = {}): RedlineDraftController {
   return {
     table: {},
+    turn: { known: true, open: false },
     ready: true,
     busySeq: null,
     rowError: null,
@@ -228,7 +229,37 @@ describe('④ the editor is inline, prefilled with the FULL text, and saves loca
   })
 })
 
-describe('③ the tool-result action hides behind the advanced switch', () => {
+describe('③ the demo\'s blocked states disable 保存 and say why (docs/03 R4.3)', () => {
+  for (const [label, turn, key] of [
+    ['an open turn', { known: true, open: true }, 'redline.blocked.turnOpen'],
+    ['a session this process does not host', { known: false, open: false }, 'redline.blocked.notLive'],
+  ] as const) {
+    test(`${label}: the editor opens, states the reason, and cannot save`, async () => {
+      let saves = 0
+      const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'x' })]),
+        controller({ turn, save: () => { saves += 1; return Promise.resolve(true) } }))
+      await openCategory(m, 2)
+      await act(async () => { (queryAll(actionsIn(m, 11)!, 'button')[0] as HTMLElement).click() })
+      assert.ok(text(m.container).includes(DICT_EN[key]), 'the reason is stated in the editor')
+      const save = queryAll(m.container, '.redline-editor-actions button')[0] as HTMLButtonElement
+      assert.equal(save.disabled, true, 'the save button is disabled, not merely failing after the click')
+      await act(async () => { save.click() })
+      assert.equal(saves, 0, 'a disabled save never reaches the store')
+      await m.unmount()
+    })
+  }
+
+  test('with a closed turn and a hosted session the save is available', async () => {
+    const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'x' })]), controller())
+    await openCategory(m, 2)
+    await act(async () => { (queryAll(actionsIn(m, 11)!, 'button')[0] as HTMLElement).click() })
+    const save = queryAll(m.container, '.redline-editor-actions button')[0] as HTMLButtonElement
+    assert.equal(save.disabled, false)
+    await m.unmount()
+  })
+})
+
+describe('④ the tool-result action hides behind the advanced switch', () => {
   test('by default a tool result shows the 高级编辑 marker instead of 编辑, and no discard', async () => {
     const m = await mountBrowser(step([node({ seq: 41, cat: 'tool', text: 'result' })]), controller())
     await openCategory(m, 6)

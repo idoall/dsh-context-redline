@@ -19,7 +19,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DraftTable } from '../shared/redline-drafts'
-import { dropDraft, listDrafts, readRow, saveDraft, type DraftEdit, type RedlineResult, type RedlineRow } from './redlineChannel'
+import { dropDraft, listDrafts, readRow, readTurnState, saveDraft, type DraftEdit, type RedlineResult, type RedlineRow } from './redlineChannel'
+import type { TurnState } from '../shared/redline-turn'
 
 /** The per-row failure the editor shows, keyed by the row it belongs to. */
 export interface RedlineRowError {
@@ -31,6 +32,12 @@ export interface RedlineRowError {
 export interface RedlineDraftController {
   /** The local edits in effect (the row markers and the prefill read this). */
   readonly table: DraftTable
+  /**
+   * Whether editing is allowed at all right now. `known:false` = view only;
+   * `open:true` = the turn has not closed. The panel disables `保存` on both and
+   * says why (`docs/03` R4.3) — before any round trip, like the demo does.
+   */
+  readonly turn: TurnState
   /** False until the first load settles — the panel shows nothing edited before that. */
   readonly ready: boolean
   /** The row currently saving/dropping, so its buttons can disable. */
@@ -58,6 +65,7 @@ export function useRedlineDrafts(sessionId: string | undefined): RedlineDraftCon
   const [ready, setReady] = useState(false)
   const [busySeq, setBusySeq] = useState<number | null>(null)
   const [rowError, setRowError] = useState<RedlineRowError | null>(null)
+  const [turn, setTurn] = useState<TurnState>({ known: true, open: false })
   // A late answer from a previous session must not overwrite the current one.
   const generation = useRef(0)
 
@@ -67,12 +75,16 @@ export function useRedlineDrafts(sessionId: string | undefined): RedlineDraftCon
     setTable({})
     setReady(false)
     setRowError(null)
+    setTurn({ known: true, open: false })
     if (sessionId === undefined || sessionId === '') return
     void (async () => {
-      const result = await listDrafts(sessionId)
+      const [drafts, state] = await Promise.all([listDrafts(sessionId), readTurnState(sessionId)])
       if (generation.current !== mine) return
-      if (result.ok) setTable(result.value)
-      else setRowError({ seq: -1, code: result.code })
+      if (drafts.ok) setTable(drafts.value)
+      else setRowError({ seq: -1, code: drafts.code })
+      // A failed state read must not silently look "editable": `known:false` is the
+      // honest answer (view only), and the panel says so.
+      setTurn(state.ok ? state.value : { known: false, open: false })
       setReady(true)
     })()
   }, [sessionId])
@@ -109,7 +121,7 @@ export function useRedlineDrafts(sessionId: string | undefined): RedlineDraftCon
   const clearError = useCallback(() => { setRowError(null) }, [])
 
   return useMemo(
-    () => ({ table, ready, busySeq, rowError, loadRow, save, drop, clearError }),
-    [table, ready, busySeq, rowError, loadRow, save, drop, clearError],
+    () => ({ table, turn, ready, busySeq, rowError, loadRow, save, drop, clearError }),
+    [table, turn, ready, busySeq, rowError, loadRow, save, drop, clearError],
   )
 }
