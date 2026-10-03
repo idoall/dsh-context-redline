@@ -224,22 +224,10 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
  * ⚠️ 只放**稳定**的短句；带占位符（`#N` / `N 条`）或依赖运行时的句子不进这张表。 */
 {
   const spec = rd('../docs/03-ui-spec.md');
-  // ① R4.3 短警示：从表里自动抽取（动作表的第 2 列第一段反引号），保证"文档改了就必须同步 demo"
-  const rows = spec.split('\n').filter((l) => l.startsWith('| ') && l.includes('|'));
-  const r43 = [];
-  const i0 = spec.indexOf('| 动作 | 短警示');
-  if (i0 < 0) problems.push('docs/03 里找不到 R4.3 的「动作 | 短警示」表头（文档结构变了？）');
-  else {
-    for (const l of spec.slice(i0).split('\n').slice(2)) {
-      if (!l.startsWith('|')) break;
-      const cols = l.split('|').slice(1, -1).map((c) => c.trim());
-      const m = cols[1] && /`([^`]{6,200})`/.exec(cols[1]);
-      if (m) r43.push([cols[0].replace(/\*\*/g, '').slice(0, 20), m[1]]);
-    }
-    if (r43.length < 1) problems.push(`R4.3 短警示只抽到 ${r43.length} 条（应 ≥1：本地保存后只剩「开子会话」一条确认框；表格结构或反引号被改动了？）`);
-    for (const [action, txt] of r43) {
-      if (!js.includes(txt)) problems.push(`R4.3 短警示与 demo 不一致：${action} → 文档写「${txt.slice(0, 40)}…」但 demo.js 里找不到`);
-    }
+  // ① 当前 demo 不再使用旧版 R4.3「动作 | 短警示」表；确认框只有「开启子会话」。
+  //    机械锁住 demo 当前可观察的确认框合同，避免文档重新引入 apply/批量应用流程。
+  for (const txt of ['开启子会话', '会写进去的改动', '首条任务', '取消']) {
+    if (!js.includes(txt)) problems.push(`当前 demo 的子会话确认框缺少逐字合同：${txt}`);
   }
   // ② 其余"界面逐字"（人工维护的小表：改了这两边就要同改）
   const VERBATIM = [

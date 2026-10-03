@@ -667,7 +667,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 31cd1e4</span>
+    <b>上下文批改</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 305af70</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -797,7 +797,7 @@ const EXPLAIN = {
       + '**两条路**：团队可用时优先走官方 `spawnTeammate(context:"fork")`（于是它有官方名册/任务板/派活）；\n'
       + '团队不可用时退化成"裸可续接子会话"（没有任务板，界面会如实写出来）。\n'
       + '**只切一次（种子是一次性的）**：子会话只拿到"开它那一刻之前"的历史 —— 之后父会话的新轮次**不会**再进子会话；\n'
-      + '所以**草稿必须先「应用到会话」**再开（草稿只在插件本地，不是会话内容，进不了种子）。\n'
+      + '所以**不需要先应用草稿**：保存只写本地，开启子会话确认时才逐字带入首条任务。\n'
       + '**子会话在界面上怎么找**：官方把子会话**排除在左侧会话列表之外**，入口在**父会话页头的谱系目录**和**右侧 Sidebar**；\n'
       + '打开它之后，本插件的面板会跟着切到它的上下文（于是它的上下文也能编辑，见 R5.1.3）。',
     effect: '新建一个真会话（独立 sessionId）。父会话**此刻不会**被写入任何内容；子会话跑完后才有结算通知回流。',

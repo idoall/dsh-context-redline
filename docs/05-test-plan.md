@@ -6,7 +6,7 @@
 > **③ 入参尽量用 DSH 的真实类型**；不得不 `any` 时，测试必须传**真实对象**（手搓 fake 正是掩盖上游改形的东西）。
 >
 > ⚠️ **一句话说清本轮的边界**：本计划在 **M2/M3 只能证明"我们的代码与不变量成立"**；
-> 凡涉及真机平台语义的（真机会话上的 replace/回滚、被遮蔽原文可读性、跨压缩区间）**一律推迟到 M4.5**，
+> 凡涉及未来插件的真机平台语义（replace、被遮蔽原文可读性、跨压缩区间）**一律推迟到 M4.5**，当前 demo 只验证本地编辑与开子会话确认，
 > 并在本文件里逐条标 `conditional`。**不许把 fake 通过当成平台事实。**
 
 ---
@@ -47,6 +47,8 @@
 
 ## 2. 必须有的断言（每条按 **fixture → action → assertion** 三栏写全）
 
+> **范围说明：**本节及后续自动化断言是 M1–M6 的未来插件实现计划，不是当前 demo 已提供的 UI；当前 demo 契约以 `docs/03` 的「当前 demo」段落与 `demo/README.md` 为准。
+
 > 这是 M2 的自动化门禁。带 `conditional` 的条目**不等 M4.5 结论就不能算平台事实**。
 >
 > ⚠️ **断言载体（D6）**：「模型看到什么」一律用**纯函数断言**（自写 fold 等价物，`edit` lane 可跑）。
@@ -68,7 +70,7 @@
 | **A2** | 一条 append-origin 的 `user/message`（seq=A）+ 草稿 | `apply{seq:A}` | ① 追加一条 `surfaceOp:{op:'replace',startSeq:A,endSeq:A}`；② **纯函数 fold 等价物**（自写 fold，`edit` lane 可跑）里**看不到**原文 —— **不许用 live Session 的同步读 API**（`deriveMessages` / `eventAt` / `snapshotEvents`，见 §2 引言与 `AGENTS.md` §2.2）；③ A 不再是 surface 节点；④ 5 秒内 `readSurface` 能看到替换关系 |
 | **A3a** | 分别构造 `user/message` 与 `tool/result`（各自 append-origin）与草稿 | `apply` 各一次 | ① 两类**都成功**；② `tool/result` 的替换**只改了 `content`**（其余字段深比较相等）；③ `user/message` 带 `sourceEventSeqs:[原 seq]` |
 | **A3b** | 一条 `assistant/message`（append-origin） | ① 先问能力判定；② 再**强行**调写入口 | ① 能力判定返回 `canRewrite:false` + **稳定原因码**（如 `assistant-not-rewritable`）；② 强行调用返回**可读错误**（带同一个原因码），**不是**平台抛出的 `sourceEventSeqs must include…` 或 `assistant/message embeds…` |
-| **A5** | 一个**未闭合轮次**的会话（有 `turn/start` 无 `turn/end`）+ 草稿 | `apply` / `annotate` 各一次 | 三个写入器**全部**被拒，且错误文案里提到"轮次未结束"；**会话事件数不变** |
+| **A5** | 一个**未闭合轮次**的会话（有 `turn/start` 无 `turn/end`）+ 草稿 | 未来写入器测试 | 当前 demo 只锁定编辑器提交不出现且显示"当前轮次还没结束"；真实写入器留到插件阶段 |
 | **A6** | 一条已被遮蔽的**原始节点**（`#A` 已被 `#M` 替换） | `apply{seq:A}` | 被拒；错误码可读（对应用户文案是"这一条已不在模型可见内容里"） |
 | **A7** | ① 没有草稿的 seq；② 草稿内容与原文**完全相同** | `apply` 两次 | 两次都被拒，且两次的**原因码可区分**（`no-draft` vs `no-change`） |
 | **A8** | 四条夹具：只给 `voidFrom` / 只给 `voidTo` / `from > to` / `from == to` | `annotate` 四次 | 前三个被拒（`bad-range`）；`from == to` **成功** |
@@ -192,8 +194,8 @@ node scripts/namespace-contract.mjs        # M1 的命名空间自检（docs/04 
 | E14 | SQLite 迁移中途失败 | 迁移前备份；失败可回退，不半迁移 |
 | E15 | 两个插件并存 | 无路由/key 冲突（M1 的 `namespace-contract`） |
 | E17 | **跨压缩 checkpoint 的区间替换**（V9 未验证前） | 界面上**不提供**该入口 |
-| E19 | **有草稿时点开子会话** | 被阻止 + 明说"草稿不在 fork 种子里" + 逐条处置 |
-| E20 | **旧替换体上还挂着草稿**（R4.6 的组合） | 不静默丢弃：给"把草稿应用到当前可见的 #K"或"丢弃草稿"二选一（需确认） |
+| E19 | **当前 demo 有草稿时点开子会话** | 允许；确认框逐条列出并逐字带入首条任务 |
+| ~~E20~~ | ~~旧替换体上挂草稿的 apply 处置~~ | ⛔ 当前 demo 不提供 apply/替换体草稿流程；留作未来插件设计历史 |
 
 ---
 
