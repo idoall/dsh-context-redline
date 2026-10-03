@@ -22,6 +22,7 @@ import type { ContextSettings } from '../settings'
 import type { ViewKit } from '../viewkit'
 import { makeAgentHeads } from '../agentHeads'
 import { makeContextBrowser } from './browser'
+import { useRedlineDrafts } from '../redlineDrafts'
 import { makeAgentGraph } from './agentGraph'
 import { makeDonut } from './donut'
 import { makeCurrentComposition } from './currentComposition'
@@ -504,8 +505,10 @@ export function makeContextView(
           )}
       </div>
     )
+    const redline = useRedlineDrafts(typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined)
     const browserCard = (
       <ContextBrowser
+        redline={redline}
         data={data}
         headers={headers}
         convNodes={convNodes}

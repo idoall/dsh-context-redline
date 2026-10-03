@@ -11,6 +11,11 @@ import type { ViewKit } from '../viewkit'
 import { blockSummaryOf, callSummaryOf, parseCallArgs } from '../callSummary'
 import type { DetailState } from '../timelineSource'
 import { makeDetailNote } from './detailNote'
+import { makeRedlineActions, makeRedlineEditor, type RedlineSubmit } from './redlineEdit'
+import { ability, durableTypeOf, type Ability } from '../../shared/redline-ability'
+import { effectiveIsError, effectiveReasoning, effectiveText, hasLocalEdit } from '../../shared/redline-drafts'
+import type { RedlineRow } from '../redlineChannel'
+import type { RedlineDraftController } from '../redlineDrafts'
 import { makeNodeText } from './nodes'
 import { turnStepsOf } from './trendChart'
 import { fetchMissNote, useFetchOnMiss } from './fetchOnMiss'
@@ -53,6 +58,12 @@ export interface ContextBrowserProps {
    */
   nodeFocus?: { step: number | 'live'; seq: number; cat: Category } | null
   onNodeFocusHandled?: () => void
+  /**
+   * The local-edit controller (`redlineDrafts.ts`): a row's `编辑` reads the FULL
+   * text through it and its `保存` writes the plugin's own store — never the
+   * session (the hard constraint, `docs/11` D15).
+   */
+  redline: RedlineDraftController
   hoverKey?: string | null
   onHoverKey?: (key: string | null) => void
   /**
@@ -599,6 +610,8 @@ export function makeContextBrowser(
   const nodeText = makeNodeText(kit)
   const rich = makeRichText(kit)
   const ImageCard = makeImageCard(kit)
+  const RedlineActions = makeRedlineActions(kit)
+  const RedlineEditor = makeRedlineEditor(kit)
   // All rich text sections share the same line-count label; hoist it once so tool
   // descriptions, system text, and message bodies stay in sync.
   const lineLabel = (n: number): string => t(n === 1 ? 'block.line' : 'block.lines', { n })
@@ -840,7 +853,7 @@ export function makeContextBrowser(
     const elemRow = (
       key: string, tag: ReactNode | null, preview: string,
       tokens: number, time: number | undefined, body: ReactNode,
-      err = false, trailing: ReactNode = null,
+      err = false, trailing: ReactNode = null, actions: ReactNode = null, editor: ReactNode = null,
     ) => {
       const open = openElem === key
       return (
@@ -855,7 +868,120 @@ export function makeContextBrowser(
             <span className="redline-br-tokens">{'≈' + fmt(tokens)}</span>
           </button>
           {open ? <div className="redline-br-content">{body}</div> : null}
+          {actions}
+          {editor}
         </div>
+      )
+    }
+
+    // ── local editing (docs/03 §2–§3) ─────────────────────────────────────────
+    // The advanced switch only gates the `编辑` button on tool results (R2.5); it
+    // changes no data.
+    const [advanced, setAdvanced] = useState(false)
+    const [editingSeq, setEditingSeq] = useState<number | null>(null)
+    const [editorRow, setEditorRow] = useState<RedlineRow | null>(null)
+    const [editorError, setEditorError] = useState<string | null>(null)
+    // Mirrors `editingSeq` for the async loads: a `node.read` that lands after the
+    // user left that row must not reopen it.
+    const editingSeqRef = useRef<number | null>(null)
+
+    /**
+     * The row's action set. The BUCKET decides it — provably action-invariant
+     * across the bucket's durable types (`tests/edit/ability-buckets.spec.ts`);
+     * the exact type is only needed for the editor's fields, and that comes from
+     * `node.read` when the editor opens.
+     */
+    const abilityOfNode = (n: SurfaceNode): Ability => ability({
+      seq: n.seq,
+      type: durableTypeOf(n.cat),
+      cat: n.cat,
+      // `gone` marks an archived (superseded) node — no longer a surface node.
+      shadowed: n.gone !== undefined,
+      isReplacement: n.gone === undefined,
+      compacted: false,
+    })
+
+    /** Open the editor on one row: read the FULL text first (`docs/01` F35). */
+    const openEditor = (seq: number): void => {
+      editingSeqRef.current = seq
+      setEditingSeq(seq)
+      setEditorRow(null)
+      setEditorError(null)
+      void (async () => {
+        const result = await props.redline.loadRow(seq)
+        setEditorRow((current) => {
+          // Ignore a late answer for a row the user already left.
+          if (editingSeqRef.current !== seq) return current
+          return result.ok ? result.value : null
+        })
+        if (!result.ok) setEditorError(result.code)
+      })()
+    }
+
+    const closeEditor = (): void => {
+      editingSeqRef.current = null
+      setEditingSeq(null)
+      setEditorRow(null)
+      setEditorError(null)
+      props.redline.clearError()
+    }
+
+    /** The action bar for one row (`docs/03` R2.1–R2.5). */
+    const rowActionsFor = (n: SurfaceNode): ReactNode => {
+      const a = abilityOfNode(n)
+      return (
+        <RedlineActions
+          seq={n.seq}
+          ability={a}
+          hasLocalEdit={hasLocalEdit(props.redline.table, n.seq)}
+          advanced={advanced}
+          busy={props.redline.busySeq === n.seq}
+          onEdit={() => { openEditor(n.seq) }}
+          onDrop={() => {
+            void (async () => {
+              const ok = await props.redline.drop(n.seq)
+              // `docs/11` D17: discarding collapses the editor on that row.
+              if (ok && editingSeqRef.current === n.seq) closeEditor()
+            })()
+          }}
+        />
+      )
+    }
+
+    /** The inline editor for one row, when it is the open one. */
+    const rowEditorFor = (n: SurfaceNode): ReactNode => {
+      if (editingSeq !== n.seq) return null
+      if (editorRow === null) {
+        return (
+          <div className="redline-editor">
+            <div className="redline-editor-label">
+              {editorError === null ? t('detail.loading') : t(`redline.err.${editorError.replace('redline/', '')}`)}
+            </div>
+          </div>
+        )
+      }
+      const row = { seq: n.seq, text: editorRow.text, reasoning: editorRow.reasoning, isError: editorRow.isError }
+      const initial: RedlineSubmit = {
+        // The version in effect — after a save this is YOUR saved text (`docs/11` D16).
+        text: effectiveText(row, props.redline.table),
+        reasoning: effectiveReasoning(row, props.redline.table),
+        isError: effectiveIsError(row, props.redline.table),
+      }
+      return (
+        <RedlineEditor
+          seq={n.seq}
+          type={editorRow.type}
+          initial={initial}
+          busy={props.redline.busySeq === n.seq}
+          errorCode={props.redline.rowError?.seq === n.seq ? props.redline.rowError.code : editorError}
+          onSubmit={(edit: RedlineSubmit) => {
+            void (async () => {
+              const ok = await props.redline.save(n.seq, edit)
+              if (ok) closeEditor()
+            })()
+          }}
+          onCancel={closeEditor}
+        />
       )
     }
 
@@ -1079,7 +1205,7 @@ export function makeContextBrowser(
               // static hint.
               hint={conv === undefined ? missNote : t('browser.noContent')}
             />,
-            rowErr))}
+            rowErr, null, rowActionsFor(n), rowEditorFor(n)))}
         </div>
       )
     }
@@ -1088,6 +1214,14 @@ export function makeContextBrowser(
       <div className="redline-card" ref={rootRef}>
         <div className="redline-card-title">
           <span className="redline-card-title-text">{t('browser.title')}</span>
+          {/* 高级编辑开关（docs/03 R2.5）：默认关，只影响工具结果的「编辑」是否可见，不改任何数据 */}
+          <button
+            type="button"
+            className={'redline-gran-btn' + (advanced ? ' redline-gran-on' : '')}
+            aria-pressed={advanced}
+            title={t('redline.advancedToggle.tip')}
+            onClick={() => { setAdvanced(v => !v) }}
+          >{t('redline.advancedToggle')}</button>
           <span className="redline-gran redline-br-dna-ctl" role="group" title={t('browser.dnaTip')}>
             <button
               type="button"

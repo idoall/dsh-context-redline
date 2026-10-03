@@ -66,3 +66,35 @@
 .redline-br-hits { flex: none; color: var(--dsw-alias-label-secondary); font-size: 11px; }
 .redline-br-content { padding: 2px 6px 8px 26px; display: flex; flex-direction: column; gap: 6px; }
 .redline-br-dim { color: var(--dsw-alias-label-secondary); }
+
+/* ── 本地编辑（docs/03 §2–§3）：行内动作条 + 行下内联编辑器 ────────────────────
+   动作条是行的**兄弟节点**（不在那一行的 <button> 里，否则嵌套按钮非法）；
+   编辑器是行下的第二块内容，展开时与那一行留出区分。
+   颜色一律走宿主令牌（不写死色值）：与浏览器行内的 tag/time 同一套。 */
+.redline-act { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 2px 8px 6px 24px; }
+.redline-act-seq { flex: none; color: var(--dsw-alias-label-dimmed); font-size: 11px; font-variant-numeric: tabular-nums; }
+/* 「已改（本地）」：只出现一次，就在 #seq 旁边（docs/11 D20） */
+.redline-chip-local { flex: none; font-size: 11px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 4px; padding: 0 6px; }
+.redline-chip-soft { flex: none; font-size: 11px; color: var(--dsw-alias-label-secondary); border: 1px dashed var(--dsw-alias-border-l1); border-radius: 4px; padding: 0 6px; cursor: help; }
+.redline-btn { font: inherit; font-size: 11px; line-height: 1; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+.redline-btn:hover:not(:disabled) { border-color: var(--dsw-alias-label-secondary); }
+.redline-btn:disabled { opacity: 0.5; cursor: default; }
+.redline-btn-quiet { color: var(--dsw-alias-label-secondary); border-color: var(--dsw-alias-border-l1); }
+.redline-editor { display: flex; flex-direction: column; gap: 4px; margin: 0 8px 8px 24px; padding: 8px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 6px; background: var(--dsw-alias-bg-layer-1); }
+.redline-editor-note { font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.redline-editor-label { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.redline-editor-adv { font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.redline-editor-adv summary { cursor: pointer; }
+.redline-editor-check { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.redline-editor-text { font: inherit; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base, transparent); border: 1px solid var(--dsw-alias-border-l1); border-radius: 5px; padding: 6px 8px; resize: vertical; }
+.redline-editor-err { font-size: 11px; color: var(--ds-color-red, #e5484d); }
+.redline-editor-actions { display: flex; align-items: center; gap: 8px; }
+/* 字段的「去向」标记（docs/03 R3.3.2）：只写本地 vs 会进会话，一眼可分 */
+.redline-dest { font-size: 10px; color: var(--dsw-alias-label-dimmed); border-bottom: 1px dotted var(--dsw-alias-border-l1); cursor: help; }
+/* 「保存」左上角飘一个 ?（与讲解模式同一种做法，docs/03 R2.2） */
+.redline-qwrap { position: relative; display: inline-flex; }
+.redline-qfloat { position: absolute; top: -8px; left: -8px; width: 14px; height: 14px; border-radius: 50%; font-size: 10px; line-height: 14px; text-align: center; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l1); cursor: help; }
+/* 触控：窄屏把这两个动作放大到 ≥44px（docs/03 R2.2 / V11） */
+@media (pointer: coarse) {
+  .redline-btn { min-height: 44px; padding: 0 12px; font-size: 12px; }
+}

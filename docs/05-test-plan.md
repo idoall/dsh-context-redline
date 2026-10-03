@@ -17,6 +17,7 @@
 |---|---|---|---|---|
 | `channel`（自有护栏·真实路由级） | `tests/channel/` | 允许 `src/host/redline-channel.ts` 与 `src/redline/**`；**禁止** `src/client/**` | ✅ 必须永远绿 | 捕获宿主注册的**精确 Fetch 路由** → 按真实 RPC 信封调用 → 读回草稿文件断言 |
 | `client-logic`（自有护栏·客户端逻辑） | `tests/client-logic/` | 允许 `src/client/**` 与 `src/shared/**`；**禁止** `src/host/**` | ✅ 必须永远绿（普通 node + 桩 `fetch`，不用 jsdom/React） | 客户端**可测**的那半：通道传输（A12 的客户端侧：URL 必须是 shared 常量、失败一律回稳定码、绝不抛） |
+| `client-ui`（自有护栏·编辑界面） | `tests/client-ui/` | 允许 `src/client/**`；**禁止** `src/host/**` | ✅ 必须永远绿（jsdom + 真 React） | 当前 demo 确认的四件事：行上只有 `编辑`、改过只留**一个** `已改（本地）` + `丢弃这条改动`、改不了的行给原因不给按钮、编辑器在行下且**预填全文**、`保存` 把正文交给插件本地（不碰会话）；工具结果的「编辑」默认收在「高级编辑」后面 |
 | `host`（上游带的） | `tests/host/` | 上游 | ⚠️ 环境依赖，可能整片失败 | 上游 fold/投影。**不作为门禁**，但改动上游文件时要跑一次做对照 |
 | `client`（上游带的） | `tests/client/` | 上游客户端 | ⚠️ 同上 | 上游客户端组件。**不作为门禁** |
 
@@ -121,7 +122,7 @@ pnpm install
 ./node_modules/.bin/tsc --noEmit
 ./node_modules/.bin/oxlint                # 判定行是 "Found N warnings and M errors"（别只看最后一行）
 ./node_modules/.bin/tsdown
-./node_modules/.bin/vitest run --project edit --project channel --project client-logic
+./node_modules/.bin/vitest run --project edit --project channel --project client-logic --project client-ui
 node scripts/namespace-contract.mjs        # M1 的命名空间自检（11 个面，docs/04 M1 DoD）
 
 # 上游两个 lane（非门禁；环境依赖，见 §1）

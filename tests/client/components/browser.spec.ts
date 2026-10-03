@@ -13,6 +13,7 @@ import { UNKNOWN_TOOL_SOURCE, type ContextHeaders, type ContextTimeline, type He
 import { headersOf, type ConversationNodeLike, type ImageLoader } from '../../../src/client/services'
 import { createContextSettings } from '../../../src/client/settings'
 import { click, flush, hover, makeKit, mount, query, queryAll, text, unhover, type Mounted } from '../helpers/kit'
+import type { RedlineDraftController } from '../../../src/client/redlineDrafts'
 
 const kit = makeKit()
 const settings = createContextSettings()
@@ -79,8 +80,30 @@ async function pickStep(m: Mounted, value: string): Promise<void> {
   })
 }
 
+/**
+ * A stub local-edit controller: the specs here exercise the BROWSER's rendering,
+ * not the plugin's local store (that half is covered by `tests/channel` and
+ * `tests/client-logic`). `loadRow` answers a row the editor can prefill.
+ */
+function stubRedline(over: Partial<RedlineDraftController> = {}): RedlineDraftController {
+  return {
+    table: {},
+    ready: true,
+    busySeq: null,
+    rowError: null,
+    loadRow: (seq: number) => Promise.resolve({
+      ok: true as const,
+      value: { seq, type: 'user/message', text: 'stub row text', reasoning: '', isError: false },
+    }),
+    save: () => Promise.resolve(true),
+    drop: () => Promise.resolve(true),
+    clearError: () => {},
+    ...over,
+  }
+}
+
 function props(over: Partial<ContextBrowserProps>): ContextBrowserProps {
-  return { data: tl({}), headers: null, ...over }
+  return { data: tl({}), headers: null, redline: stubRedline(), ...over }
 }
 
 /**
@@ -1714,7 +1737,8 @@ describe('ContextBrowser focus bridges', () => {
 
 describe('ContextBrowser — the split generation detail states', () => {
   test('a pending detail read names the state on the note strip', async () => {
-    const m = await mount(h(Browser, { data: tl({}), headers: null, detailState: 'loading' }))
+    const m = await mount(h(Browser, {
+      redline: stubRedline(), data: tl({}), headers: null, detailState: 'loading' }))
     assert.ok(text(m.container).includes(DICT_EN['detail.loading']))
     // The picker still offers the live surface (the sections read zero until the detail lands).
     assert.equal(queryAll(m.container, '.redline-br-pick option').length, 1)
@@ -1724,6 +1748,7 @@ describe('ContextBrowser — the split generation detail states', () => {
   test('a failed detail read arms the retry button on the strip', async () => {
     let retries = 0
     const m = await mount(h(Browser, {
+      redline: stubRedline(),
       data: tl({}),
       headers: null,
       detailState: 'failed',
@@ -1736,13 +1761,15 @@ describe('ContextBrowser — the split generation detail states', () => {
 
   test('a landed (or inline) detail renders no strip', async () => {
     for (const state of ['ready', 'legacy'] as const) {
-      const m = await mount(h(Browser, { data: tl({}), headers: null, detailState: state }))
+      const m = await mount(h(Browser, {
+      redline: stubRedline(), data: tl({}), headers: null, detailState: state }))
       assert.ok(!text(m.container).includes(DICT_EN['detail.loading']))
       assert.ok(!text(m.container).includes(DICT_EN['detail.loadFailed']))
       await m.unmount()
     }
     // And the prop-less caller (older hosts) renders nothing either.
-    const m = await mount(h(Browser, { data: tl({}), headers: null }))
+    const m = await mount(h(Browser, {
+      redline: stubRedline(), data: tl({}), headers: null }))
     assert.ok(queryAll(m.container, '.redline-br-retry').length === 0)
     await m.unmount()
   })
@@ -1956,7 +1983,7 @@ describe('ContextBrowser DNA mode and the open-category bar pin', () => {
       const [hoverKey, setHoverKey] = useState<string | null>(null)
       return h(Browser, props({ ...p2, hoverKey, onHoverKey: setHoverKey }))
     }
-    const m = await mount(h(Harness, { data: dnaData, headers: dnaHeaders }))
+    const m = await mount(h(Harness, { data: dnaData, headers: dnaHeaders, redline: stubRedline() }))
     const stack = query(m.container, '.redline-stacked')
     assert.ok(!stack.className.includes('redline-stacked-dim'), 'nothing pinned while no category is open')
     // Opening a category pins its segment lit (category order: system, tools, user, inject, assistant, tool).

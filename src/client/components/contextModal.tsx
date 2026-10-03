@@ -19,6 +19,7 @@ import { makeCurrentComposition } from './currentComposition'
 import { makeErrorBoundary } from './errorBoundary'
 import { useEscapeClose } from './escapeClose'
 import { makeLegend, makeStackedBar } from './stackedBar'
+import { useRedlineDrafts } from '../redlineDrafts'
 
 export interface ContextModalProps extends SessionStandardProps {
   /** Bound selector hook over the per-session open flag (hooks compartment). */
@@ -39,6 +40,7 @@ export function makeContextModal(
 
   function ContextModalBody(props: ContextModalProps): ReactElement | null {
     const sessionId = typeof props.sessionId === 'string' ? props.sessionId : ''
+    const redline = useRedlineDrafts(sessionId !== '' ? sessionId : undefined)
     const open = typeof props.useContextModal === 'function' ? props.useContextModal(s => s) : false
     // The timeline source (timelineSource.ts) — shares the tab's per-session
     // detail store, so an open tab's detail serves the modal with no refetch.
@@ -135,6 +137,7 @@ export function makeContextModal(
                 onHoverKey={setHoverCat}
               />
               <ContextBrowser
+                redline={redline}
                 data={data}
                 headers={headers}
                 convNodes={convNodes}
