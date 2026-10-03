@@ -897,6 +897,28 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('丢弃本地改动：只清本地，不碰会话（applied 仍为空）', !S.drafts[target.seq] && S.applied.length === 0);
   S.drafts = {}; api.render();
 }
+
+/* ---------------- 丢弃本地改动 = 回到取消状态（用户 2026-10-02 报的细节） ---------------- */
+{
+  const S = api.S();
+  S.applied = []; S.extraNodes = []; S.drafts = {};
+  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.openCat = 'user'; api.render();
+  const node = api.nodesOfReq(api.lastOfTurn(api.TOTAL_TURNS), true).find((n) => n.cat === 'user' && n.type === 'user/message');
+  // 保存一条 → 再打开编辑器（预填保存的那版）
+  api.rowAct({ dataset: { act: 'edit', seq: String(node.seq) } });
+  document.getElementById('edT').value = '本地改过的正文';
+  api.submitEditor();
+  api.rowAct({ dataset: { act: 'edit', seq: String(node.seq) } });
+  check('丢弃前置：编辑器确实开着且预填上次保存的正文', !!S.editor && S.editor.text === '本地改过的正文');
+  // 丢弃 → 编辑器必须收起来
+  api.rowAct({ dataset: { act: 'dropDraft', seq: String(node.seq) } });
+  registry.get('modalOk').onclick();
+  check('丢弃本地改动：编辑器**收起来**（回到取消状态，不是还留着刚丢弃的文字）', S.editor === null);
+  check('丢弃本地改动：本地改动被清掉', !S.drafts[node.seq] && !S.drafts['note-' + node.seq]);
+  api.render();
+  check('丢弃本地改动：行上恢复显示原文', registry.get('cardBrowser').innerHTML.includes(node.text.slice(0, 12)));
+  S.drafts = {}; S.editor = null; api.render();
+}
 }
 
 /* ---------------- 「子会话」卡按内容块分区（用户 2026-10-01：「整块挤成一个大竖条、看着乱」） ----------------

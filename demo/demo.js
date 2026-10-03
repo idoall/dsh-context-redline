@@ -1162,7 +1162,17 @@ function rowAct(btn) {
     confirmModal({ title: '丢弃这条本地改动', warn: '只清插件本地的改动，不影响会话与模型可见内容。',
       rows: [['将丢弃', (draftOf(seq) || {}).text || (draftOf(seq) || {}).name || '（这条本地改动）'], ['会话', '不动']],
       needReason: false, okText: '丢弃',
-      onOk: () => { delete S.drafts[seq]; delete S.drafts['note-' + seq]; render(); toast('已丢弃这条本地改动（会话未动）'); } });
+      onOk: () => {
+        delete S.drafts[seq];
+        delete S.drafts['note-' + seq];
+        /* ⚠️ 用户 2026-10-02 报的细节 bug：丢弃之后**编辑器必须收起来**（回到取消状态）。
+         * 否则编辑器里还留着你刚丢弃的那段文字 ⟹ 看起来"没生效"。 */
+        if (S.editor && S.editor.seq === seq) S.editor = null;
+        if (S.historyFor === seq) S.historyFor = null;
+        S.editorError = null; S.editorOk = null;
+        render();
+        toast('已丢弃这条本地改动（会话未动）—— 这一行回到原文');
+      } });
     return;
   }
   if (act === 'gotoCurrent') {
