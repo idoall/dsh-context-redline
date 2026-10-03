@@ -15,7 +15,6 @@
 
 | lane | 目录 | 可依赖的运行时 import | 能不能稳定跑 | 跑什么 |
 |---|---|---|---|---|
-| `edit`（自有护栏·纯逻辑） | `tests/edit/` | **只允许** `src/redline/**` 与 `src/shared/**` | ✅ 必须永远绿 | 资格判定、行投影、漂移逐字判定、范围校验、快照/血缘序列化、`plan.next` 判定次序、能力开关组合 |
 | `channel`（自有护栏·真实路由级） | `tests/channel/` | 允许 `src/host/redline-channel.ts` 与 `src/redline/**`；**禁止** `src/client/**` | ✅ 必须永远绿 | 捕获宿主注册的**精确 Fetch 路由** → 按真实 RPC 信封调用 → 读回 SQLite/草稿文件断言 |
 | `host`（上游带的） | `tests/host/` | 上游 | ⚠️ 环境依赖，可能整片失败 | 上游 fold/投影。**不作为门禁**，但改动上游文件时要跑一次做对照 |
 | `client`（上游带的） | `tests/client/` | 上游客户端 | ⚠️ 同上 | 上游客户端组件。**不作为门禁** |
@@ -61,7 +60,6 @@
 |---|---|---|---|
 | **A1** | 一个已闭合轮次的会话（N 条事件）+ 一条草稿 | `draft.update` → `draft.reset` | ① 返回草稿表正确；② **会话事件数仍是 N**（关键反证）；③ 草稿文件只在数据目录，路径里不含会话 id 明文（用 safeSessionId） |
 | **A4** | 一条 **>200 字、含多段换行**的 `user/message` | `node.read{seq}` | ① 返回正文**逐字等于**事件里的 `data.content` 文本块拼接；② **长度 ≠ 80**、**不等于** `firstText()` 的结果（封死 `docs/01` F35） |
-| **A19** | 两个会话 A/B（各有草稿与固定块）+ 一个不存在的 sessionId + 一个故意的损坏草稿 JSON | 对所有**只读** op 各调一次 | ① A 的读取**绝不**返回 B 的数据（会话隔离）；② 不存在的会话 → 稳定错误码而不是 500；③ 损坏草稿 → 明确 `corrupt` 错误，**不静默清空** |
 | **A24** | 有两次替换 + 一次回滚的会话 | `edits.list` / `history.list` | ① 形状与顺序正确（按时间/seq）；② 每个版本的 `kind` 是 `origin/ edit/ rollback` 之一 |
 
 ### 2.2 改写的门禁（每条都要有"被拒"的断言）
@@ -71,19 +69,17 @@
 | **A2** | 一条 append-origin 的 `user/message`（seq=A）+ 草稿 | `apply{seq:A}` | ① 追加一条 `surfaceOp:{op:'replace',startSeq:A,endSeq:A}`；② **纯函数 fold 等价物**（自写 fold，`edit` lane 可跑）里**看不到**原文 —— **不许用 live Session 的同步读 API**（`deriveMessages` / `eventAt` / `snapshotEvents`，见 §2 引言与 `AGENTS.md` §2.2）；③ A 不再是 surface 节点；④ 5 秒内 `readSurface` 能看到替换关系 |
 | **A3a** | 分别构造 `user/message` 与 `tool/result`（各自 append-origin）与草稿 | `apply` 各一次 | ① 两类**都成功**；② `tool/result` 的替换**只改了 `content`**（其余字段深比较相等）；③ `user/message` 带 `sourceEventSeqs:[原 seq]` |
 | **A3b** | 一条 `assistant/message`（append-origin） | ① 先问能力判定；② 再**强行**调写入口 | ① 能力判定返回 `canRewrite:false` + **稳定原因码**（如 `assistant-not-rewritable`）；② 强行调用返回**可读错误**（带同一个原因码），**不是**平台抛出的 `sourceEventSeqs must include…` 或 `assistant/message embeds…` |
-| **A17** | **7 类行各一条**（系统提示词 / 工具定义 / 用户消息 / 注入内容 / 技能注入 / 助手消息 / 工具结果）+ **4 个状态夹具**（技能注入底层是 `assistant/message` ／ 被压缩埋掉 ／ 已被遮蔽的原文 ／ 旧替换体） | 调**能力判定纯函数**，逐类取按钮集合（常用档与「高级编辑」开档各跑一遍） | ① 按钮集合**逐类相等**于 `docs/03` R2.1 + R4.6 的矩阵：系统提示词与工具定义 = **无动作条、也不留空占位**；用户消息 = `编辑` + `批注`；注入内容 = `编辑` + `批注` + `钉住这一段`；技能注入 = `批注` + `钉住这一段`，且 `编辑` **按底层事件类型**（`user/message`/`tool/result` → 有，`assistant/message` → 没有）；助手消息 = **只** `批注` + `版本历史`；工具结果 = `批注`，`编辑` 只在高级档出现（收起时留 `高级编辑` 标记）；被压缩埋掉 = **只** `批注`；已被遮蔽的原文 / 旧替换体 = `批注` + `版本历史`（不给 `编辑` / `应用到会话`）；② 判定**按底层事件类型**，不按分类名猜（`docs/01` F7.2）；③ **反向**：让 `canRewrite` 对 `assistant/message` 返回 true → 必须红 |
-| **A5** | 一个**未闭合轮次**的会话（有 `turn/start` 无 `turn/end`）+ 草稿 | `apply` / `annotate` / `invariant.inject` 各一次 | 三个写入器**全部**被拒，且错误文案里提到"轮次未结束"；**会话事件数不变** |
+| **A5** | 一个**未闭合轮次**的会话（有 `turn/start` 无 `turn/end`）+ 草稿 | `apply` / `annotate` 各一次 | 三个写入器**全部**被拒，且错误文案里提到"轮次未结束"；**会话事件数不变** |
 | **A6** | 一条已被遮蔽的**原始节点**（`#A` 已被 `#M` 替换） | `apply{seq:A}` | 被拒；错误码可读（对应用户文案是"这一条已不在模型可见内容里"） |
 | **A7** | ① 没有草稿的 seq；② 草稿内容与原文**完全相同** | `apply` 两次 | 两次都被拒，且两次的**原因码可区分**（`no-draft` vs `no-change`） |
 | **A8** | 四条夹具：只给 `voidFrom` / 只给 `voidTo` / `from > to` / `from == to` | `annotate` 四次 | 前三个被拒（`bad-range`）；`from == to` **成功** |
 | **A9** | 一条 append-origin `user/message` | `annotate{seq}` | ① 追加的是一条**带结构化头部**的普通 user 消息；② **原文仍在 surface 上**（`gone` 未设置）；③ 头部可被解析回 `{targetSeq, voidFrom, voidTo, reason}` |
 
-### 2.3 固定块与漂移
+### 2.3 子会话压缩体检 + 能力判定矩阵（A17）
 
 | # | fixture | action | assertion |
 |---|---|---|---|
-| **A10** | 会话 A 建两个固定块（一个 `scope:'workspace'`、一个默认 session 级）；另一会话 B | 在 B 里 `invariant.list`；并**先钉一次**看会话 | ① B **只看到** workspace 那个；A 看到两个（**反向**：把 `scope` 过滤去掉 → 必须红）；② **钉住只写本地**（`docs/11` D9）：钉一次后**会话事件数不变**（本会话看不到它），能对上 `invariant.list`；③ **它在新子会话里生效**：冻结 + `child.fork` 时，**记录里冻住的那份**固定块正文**逐字拼进子会话第一句话的前面**（含「新规范（以此为准）」与作废声明），顺序是"规范块在前、人写那句在后"；④ **关键回归**：钉住 → 冻结 → **再把该块改掉 / 退休 / 另钉一条新的** → 从那条记录开子会话 ⇒ 带过去的仍是**冻结时那份**（改后的与新钉的都不许出现）；⑤ 记录冻结时没有在效固定块 ⇒ 确认框照实说，且首条任务里**不出现**规范块（不静默拿"现在在效的"顶上） |
-| **A11** | 四个夹具：① surface 上与固定块**逐字相同**；② **只差一个字**；③ 固定块**已退休**；④ **只有我们自己那条「新规范」消息里含这段正文、宿主注入里没有** | `invariant.drift` | ① `present:true`；② `present:false`（**不许** trim/contains 就算在）；③ 退休块不参与漂移判定但仍出现在 `invariant.history`；④ **必须报漂移**（排除**我们自己**写进会话的消息，例如 `重注入` 那条 —— 否则点一次重注入就永远报"在效"；「反向」：把排除去掉 → 必须红） |
+| **A17** | 四种行类型（可改写的 user/tool · 助手消息 · 被遮蔽原文 · 被压缩埋掉） | `ability{seq}` 四次 | 每一种的**按钮集合由底层事件类型决定**（不按分类猜）：可改写→编辑+批注；助手消息→只批注（`assistant-not-rewritable`）；被遮蔽→无编辑+去改现在这条+版本历史；被压缩→只批注 |
 | **A22** | 子会话夹具：① 空闲且未压缩过；② 有未闭合轮次；③ 已有一个未配对的 `compaction/start` | `compact.state` | 三种情况分别给出 `canCompact` 与**可读 reason**；②③ 为 false |
 
 ### 2.4 回滚与版本历史
@@ -99,19 +95,14 @@
 |---|---|---|---|
 | **A12** | 宿主半装好后，从**客户端那一半**的 transport 层发一次请求 | 逐个 op 打一次 | ① 客户端**实际 POST 的 URL** == 宿主注册表里捕获的 `path`（同一个常量来源）；② 把 `src/shared/redline-route.ts` 的常量改错一处 → **必须红**（两侧任何一侧单改都要红） |
 | **A13** | 客户端 bundle 的入口文件 | 静态**与动态** import 图分析 | `src/client/**` 的可达 import 图里**不出现** `src/host/**`、`src/redline/**`（实现）、`node:*`。**反向**：加一行动态 import → 必须红 |
-| **A14** | 表驱动：`plan.next` 的所有输入组合（轮次开/闭 × 草稿 0/N × 固定块 0/N × occupancy 未定/<0.7/≥0.7 × 能力开关组合） | 逐条调用 | ① 返回的 `kind` 与优先级次序**逐条符合** `docs/06` §6 的表；② `needsAuthorization` 正确；③ 每个 `reason` 非空且包含关键事实（例如有草稿时**必须**提到"种子取自会话日志"） |
 | **A20** | 本地写 op：`invariant.save` / `invariant.retire` / `draft.update` | 各调一次 | ① 只写数据目录/sqlite；② **会话事件数不变**；③ 再次调用（幂等场景）结果可预期 |
-| **A21** | 把能力开关置 `{agents:false}` / `{fork:false}` / `{compaction:false}` / `{team:false}` | 调 `child.fork` / `child.compact` / `child.prompt`（发消息）/ `child.interrupt` / `team.sendMessage`（派活，经官方）/ `team.interrupt` | ① 各自返回**明确的不可用错误码**；② **根本没有调用平台 API**（用 spy 断言 `ctx.subagents` / `ctx.compaction` / `ctx.agentTeams` 零调用）——避免"能力为 false 但按钮还在，点下去是平台异常"；③ `{team:false}` 时 `派活` / `建成官方任务` 入口**不出现**（不是置灰，`docs/03` R5.1） |
 
-| **A27** | 五个**带输入栏**的确认框：`snapshot` 改备注 / `invariant.inject`（重注入）/ `child.fork` / `child.prompt` / `team.sendMessage`（派活） | 逐个打开，读那一栏的标签文本 | ① 每栏都写明去向，且与 `docs/03` R3.3.2 的四档**逐字对应**：只写本地 → 含「只写插件本地」+「模型看不到」；写进会话 → 含「写进会话」+「模型看得到」；开子会话 → 含「第一句话」+「看得到」；发消息 → 含「新轮次」；派活 → 含「收件箱」；② 五栏文案**互不相同**（去重后 ≥ 4）；③ **不许**再出现旧的共用文案「会写进记录」；④ **反向**：把某一栏的去向标注删掉（回落成通用文案）→ 必须红 |
 
-| **A28** | 全部"能写字"的地方：编辑正文 / 编辑思考文本 / 工具结果文本 / `标记为错误` / 批注理由 / 固定块标签 / 固定块正文 | 逐个打开，读标签里的去向标记 | ① 每一处都带标记，且与 `docs/03` R3.3.3 的清单**逐处对应**；② **只有两种取值**（`.dest-local` 灰 = `只写本地 · 模型看不到`；`.dest-model` 琥珀 = `会进模型上下文`，编辑草稿那一档带「点应用到会话之后」）；③ 固定块正文那一处是 `开新会话时会带进新会话（本会话看不到）`（钉住不写本会话 —— `docs/11` D9），标签那一处是 `只写本地`；④ **反向**：拿掉任意一处的标记 → 必须红 |
 
 ### 2.6 迁移
 
 | # | fixture | action | assertion |
 |---|---|---|---|
-| **A15**（**已降级**：用户已删除旧数据目录，`docs/08` Q8 作废） | 一个**空数据目录** | 首次启动 | ① 能建库并写入 `schema_version`（值正确）；② 固定块增删改查正常；③ **不需要任何旧库迁移分支**（代码里不得残留"读旧 schema"的路径） |
 
 ### 2.7 起点口径（**冻结已删除 —— 这两条用例随之删除**，`docs/11` D10）
 
@@ -181,7 +172,6 @@ node scripts/namespace-contract.mjs        # M1 的命名空间自检（docs/04 
 | `#15`（回滚逐字恢复） | **M4.5 的 V8 = pass** 才执行；否则只执行 `#16`（关闭态） |
 | `#16`（不可恢复态都有文案） | 无（任何情况下都要执行） |
 | `#19` / `#23`（开子会话 / 建子会话 + 结果回流） | ① M4.5 的 ② `agents`、③ `fork`、**V10**（`subagentCatalog` 等投影可读）、**V11**（续存 fork 端到端，含"父不在进程 / 父正忙"两种情形）、**V14**（起点口径：有没有受支持的更早切点）都有结论；② **官方 `dsh-client-ui-subagent` 已挂载**，父会话页头的血缘触发器存在且能打开一个 child（否则"打开 → 官方视图"这条承诺无法兑现）。任一不满足 → 按 `docs/04` 的同步变更表验"不存在 / 降级"；**V14 未出结论时，只能按"更早的记录不给入口"的降级形态验**（A26） |
-| `#10`（派活确认框） | 只有 `ctx.agentTeams` 存在（团队启用）时才验；**团队不可用时改验"入口不出现"**（`docs/03` R5.1 / D7） |
 | `#21`（压缩体检） | M4.5 的 ④ 有结论（可用 → 验执行；不可用 → 验"不显示执行按钮"） |
 | `#30`（并存） | 两插件同 profile（需授权） |
 | **另立一条门禁**：官方 subagent UI 可用 | 与 `#30`（与 `dsh-context@0.60.0` 并存）**分开验**：本插件**不得注册或替代**官方的 subagent 槽位（`conversation.session.header.lineage` / `.actions` / `sidebar.chat.conversation` / `sidebar.right.pane.tab` / `conversation.composer`） |
@@ -236,7 +226,6 @@ node scripts/namespace-contract.mjs        # M1 的命名空间自检（docs/04 
 | A7 | 跳过"无草稿/无实质改动"检查 | **红** |
 | A8 | 接受单端/逆序范围 | **红** |
 | A9 | 让 `annotate` 走 replace（遮蔽原文） | **红** |
-| A10 | 忽略 `scope`，固定块永远全局返回 | **红** |
 | A11 | 把逐字比较改成 `trim()`/`includes()`；或不过滤退休块 | **红** |
 | A12 | 只改客户端常量、或只改宿主注册路径（任一侧） | **红** |
 | A13 | 在客户端里加一行动态 `import('../../host/...')` | **红** |
@@ -295,17 +284,14 @@ demo 的验收口径：
 | `invariant.drift` | A11 | #18 | M2 |
 | `invariant.save` | A10、A20 | #17 | M2 |
 | `invariant.retire` | A10、A20 | #17 | M2 |
-| `invariant.inject` | A5、（能力开关）A21 | #18 | M2 |
 | `plan.next` | A14 | #24 | M2 |
 | `snapshot.list` | A19、A23、A25、A26 | #19 | M2 |
 | `child.list` | A19、A21 | #19、#23 | M5 |
 | `child.fork` | A21、A25、A26 | #19 | M5 |
 | `child.compact` | A21 | #21、#22 | M5 |
 | `compact.state` | A22 | #21 | M5 |
-| `child.prompt`（发消息：人写话 → 子会话新轮次） | A21 | #23 | M5 |
 | `child.interrupt` | A21 | #10、#23 | M5 |
 | `team.members` / `team.tasks`（只读对接） | A21（服务不存在 → 返回 `null`，界面隐藏对接点） | #23 | M5 |
-| `team.createTask` / `team.updateTask` / `team.sendMessage`（派活，经官方）/ `team.interrupt` | A21、A17（团队不可用时入口不出现） | #10、#23 | M5 |
 | `/redline` 子命令（`snapshot`/`children`/`compact`/`invariants`/`drift`） | 每个子命令一条真实路由级用例（同 A12 的信封） | 与对应 op 同条目 | M6 |
 
 **能力开关为 false 时**：上表里对应的 op 改为断言"**明确不可用错误码 + 零平台调用**"（A21），人工门禁条目改为验"入口不存在"，并在 `docs/04` 的同步变更表里留下 diff。

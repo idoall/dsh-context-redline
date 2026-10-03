@@ -107,7 +107,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**本轮在改文档**：文档 review 裁定 D1–D8 见本文末 + `scripts/check-docs.mjs`（机器把关） |
-| 进度 | `docs/10`：**DONE 91 / 共 226**（DOING 4 · TODO 123 · WAIT🙋 8） |
+| 进度 | `docs/10`：**DONE 92 / 共 227**（DOING 4 · TODO 123 · WAIT🙋 8） |
 | 当前卡点 | **M05-15 交互定稿** 与 **M5-28 起点口径确认**（都等用户点头）；文档 review 轮已收口（75 → 0，由 `scripts/check-docs.mjs` 把关）；M1 可在仓库内自验，**授权包①（装配 + 用户重启）是 M1 的收口动作** |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -281,3 +281,11 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 浏览器实测（指纹 `7c1c601`）：`#cardOrch` 里只剩两块 `spawnone` + `children`；`待处理` 块不存在；`pendingSeen/pendingHand/ccompact/cinterrupt` 均为 0。
 
 **⚠️ 仍是"遮起来"而非真删除**：`renderOrch()` 仍会生成 pending/team 的 HTML，再由 `pruneRemovedUI()` 摘掉；死代码真删除仍按 **D14 的逐块清单**执行（先删 5 个函数 → 逐个删动作 → 再清护栏与文档）。
+
+### D14 执行结果（**2026-10-02 完成**）
+
+死代码**真删除**已完成（不再靠 `pruneRemovedUI()` 遮）。做法：**按行/括号配对逐块删，每块验语法**（放弃"字符串大切片"）。读数：
+`check-docs` exit 0（227 / 92 / 4 / 123 / 8）· `check-static` ✅（38 id · 102 class · 20 讲解键）· `check-runtime` **164/0**；
+浏览器（指纹 `73bf42f`）：`#cardOrch` 只剩 `[spawnone, children]`，`pin`/团队/待处理/派活/打开/发消息/压缩/打断/草稿开关 全为 0，编辑一步可用、无 JS 报错。
+文档同步：`docs/03` 删 3 整节（R2.4 固定块 / R5.1.4 发消息 / R5.3 压缩体检）+ 29 行；`docs/00` 12 行；`docs/05` 14 行（并补回 A17 定义行）；`docs/06` 19 行；
+`docs/09` 6 行；`demo/README` 22 行；README 双语与"两步草稿"文案一并改成**一步**。
