@@ -94,7 +94,7 @@ const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendCellAct, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
-  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editorHtml, orchAct, nodeOf, rowHtml, BAR_W, BAR_GAP, spanW, chartW };`;
+  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editorHtml, orchAct, nodeOf, rowHtml, BAR_W, BAR_GAP, spanW, chartW, focusCellOf };`;
 
 /**
  * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
@@ -754,10 +754,40 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
     /data-explain="trend.strip"/.test(html));
   const wrap = registry.get('toastWrap'); wrap.children.length = 0;
   const target = api.REQUESTS[5];
+  /* ⚠️ 用户 2026-10-02：「改」⟹ 点轮号条照参考插件 `onPickTurn`：**切到「按轮次」粒度 + 把这一轮居中**，
+   * **不改当前选择**（这与"点柱子 = 选中那一步"是两件事）。 */
+  api.S().trendGran = 'step'; api.render();
   api.trendCellAct({ dataset: { seq: String(target.seq) } });
   const said = wrap.children.map((c) => c.textContent).join(' | ');
-  check('轮次刻度带：点一格会弹一句人话提示（不再"点了没反应"）', /已选第 \d+ 轮（该轮末步）/.test(said), said.slice(0, 60));
-  check('轮次刻度带：点一格确实切到了那一轮', api.S().selTurn === target.turn, `selTurn=${api.S().selTurn} 期望=${target.turn}`);
+  const S2 = api.S();
+  check('轮次刻度带：点一格会弹一句人话提示（不再"点了没反应"）', /已切到按轮次，并定位到第 \d+ 轮/.test(said), said.slice(0, 60));
+  check('轮次刻度带：点一格 = **切到按轮次粒度**（照参考插件 onPickTurn）', S2.trendGran === 'turn', `trendGran=${S2.trendGran}`);
+  check('轮次刻度带：点一格**不改当前选择**（选择仍停在第 28 轮）', S2.selTurn === api.TOTAL_TURNS, `selTurn=${S2.selTurn}`);
+  check('轮次刻度带：聚焦是**一次性**的（渲染后被消费掉）', S2.focusTurn === null, `focusTurn=${S2.focusTurn}`);
+  /* ⚠️ 桩里 `querySelectorAll` 恒返回空（innerHTML 只是字符串、不做 DOM 解析）⟹「定位是否真的找到格子」
+   * 只能在**真 DOM** 里断言：这里只在桩具备 DOM 时生效，浏览器里的像素实测见 `measure-log` §25。 */
+  const domCells = document.getElementById('trendScroll').querySelectorAll('.tcell').length;
+  check('轮次刻度带：定位真的成功（需要 DOM 的断言；桩无 DOM 时跳过）',
+    domCells === 0 || !/定位失败/.test(said), `domCells=${domCells}｜${said.slice(0, 70)}`);
+  /* ⚠️ 两种粒度都要能**定位到那一格**（实测踩过的坑：按轮次模式下格子只有 `data-seq`，
+   * 只按 `data-turn` 找会**落空** ⟹ 居中静默失效、界面看不出错）。桩里没有 DOM 解析，
+   * 所以按**字符串**核对两边的契约（浏览器里的像素实测见 measure-log §25）。 */
+  api.S().trendGran = 'step'; api.render();
+  const cellsOfHtml = (html) => [...html.matchAll(/<button class="tcell[^"]*"([^>]*)>/g)].map((m) => m[1]);
+  const htmlStep = registry.get('cardTrend').innerHTML;
+  const cellTagsStep = cellsOfHtml(htmlStep);
+  check('刻度带定位（按步骤）：格子带 data-turn ⟹ 可以直接按轮号找',
+    cellTagsStep.length > 0 && /data-turn="5"/.test(htmlStep), `格数=${cellTagsStep.length}`);
+  api.S().trendGran = 'turn'; api.render();
+  const htmlTurn = registry.get('cardTrend').innerHTML;
+  const cellTagsTurn = cellsOfHtml(htmlTurn);
+  const gi5 = api.trendItems().list.findIndex((x) => x.turn === 5);
+  check('刻度带定位（按轮次）：格子只有 data-seq ⟹ 必须回退"按第几格找"（第 5 轮 = 第 gi5 格）',
+    gi5 >= 0 && !!cellTagsTurn[gi5] && /data-seq="/.test(cellTagsTurn[gi5]) && !/data-turn/.test(cellTagsTurn[gi5]),
+    `gi=${gi5} 该格=${(cellTagsTurn[gi5] || '').slice(0, 50)}`);
+  api.S().trendGran = 'step'; api.render();
+  check('轮次刻度带的 title 说明去向改成"切到按轮次并定位到这一轮"',
+    /切到按轮次并定位到这一轮/.test(registry.get('cardTrend').innerHTML));
   S.trendGran = 'turn'; S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.selTurn = api.TOTAL_TURNS; api.render();
 }
 

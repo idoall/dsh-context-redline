@@ -630,7 +630,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 b46bc46</span>
+    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 789ad5f</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -900,7 +900,7 @@ const initial = () => ({
   trendGran: 'turn', trendMode: 'total', trendAdaptive: true, trendCat: null,
   selTurn: RICH_TURN, selSeq: REQUESTS[REQUESTS.length - 1].seq,
   openCat: 'user', openElem: null,
-  editor: null, editorError: null, editorOk: null,
+  editor: null, editorError: null, editorOk: null, focusTurn: null,
   drafts: {}, applied: [], extraNodes: [], children: [], pendingSeen: false
 });
 
@@ -1033,14 +1033,30 @@ function selectReq(req, why) {
 /** 点了趋势图下面刻度带的一格（用户 2026-10-02：「（那排轮号）17 点了没有反应」）。
  *  修复前：按轮次模式下这里传 `why = null` ⟹ **不弹任何提示**，而刻度带又没有选中态
  *  ⟹ 点完看不出发生过什么（手机上尤其像坏了）。现在两条分支都给一句人话提示。 */
+/** 在刻度带里找到"第 t 轮"那一格。
+ *  ⚠️ **两种粒度下格子属性不同**：按步骤模式用 `data-turn`；按轮次模式是 `list.map()` 出来的、只有 `data-seq`
+ *  ⟹ 必须回退到"第几格"来找（实测踩过：只按 `data-turn` 找会**落空**，居中静默失效、看不出来）。 */
+function focusCellOf(sc, t, list) {
+  const cells = [...sc.querySelectorAll('.tcell')];
+  const byAttr = sc.querySelector(`.tcell[data-turn="${t}"]`);
+  if (byAttr) return byAttr;
+  const gi = list.findIndex((x) => x.turn === t);
+  return gi >= 0 && cells[gi] ? cells[gi] : null;
+}
 function trendCellAct(b) {
-  if (b.dataset.seq) {                      // 按轮次模式：一格 = 一轮（data-seq = 该轮末步）
-    const r = REQUESTS.find((x) => x.seq === Number(b.dataset.seq));
-    if (r) selectReq(r, `已选第 ${r.turn} 轮（该轮末步）`);
-    return;
-  }
-  const t = Number(b.dataset.turn);         // 按步骤模式：一格 = 一轮，宽度 = 步数
-  selectReq(lastOfTurn(t), `已选第 ${t} 轮（该轮末步）`);
+  /* ⚠️ 照参考插件 `dsh-context` 的 `onPickTurn`（用户 2026-10-02：「改」）：
+   *   `setGranularity('turn'); setFocusTurn(turn)`
+   * ⟹ 点轮号条 = **切到「按轮次」粒度 + 把这一轮的柱子居中**（一次性），**不改当前选择** ——
+   *    变的是"粒度与视野"，不是"选中了哪一步"。这与"点柱子"是两件不同的事：
+   *    点柱子 = 选中那一步；点轮号 = 切粒度 + 定位到那一轮。 */
+  const t = b.dataset.turn
+    ? Number(b.dataset.turn)
+    : (REQUESTS.find((x) => x.seq === Number(b.dataset.seq)) || {}).turn;
+  if (!t) return;
+  S.trendGran = 'turn';
+  S.focusTurn = t;                 // 一次性：渲染后把这一轮居中，随后清掉（照 onFocusTurnHandled）
+  render();
+  toast(`已切到按轮次，并定位到第 ${t} 轮`);
 }
 
 /* ------------------------------------------------------------------ 4. 状态开关 / 说明条 */
@@ -1364,7 +1380,7 @@ function renderTrend() {
           <div class="strip">${S.trendGran === 'step'
             ? [...new Set(list.map((r) => r.turn))].map((t) => {
                 const k = turnSteps(t);
-                return `<button class="tcell" data-turn="${t}" style="width:${spanW(k)}px" title="第 ${t} 轮（共 ${k} 步）→ 选中末步" data-explain="trend.strip">${t}</button>`;
+                return `<button class="tcell" data-turn="${t}" style="width:${spanW(k)}px" title="第 ${t} 轮（共 ${k} 步）→ 切到按轮次并定位到这一轮" data-explain="trend.strip">${t}</button>`;
               }).join('')
             : list.map((r) => `<button class="tcell${r.turn === S.selTurn ? ' is-sel' : ''}" data-seq="${r.seq}" data-explain="trend.strip" style="width:${spanW(1)}px" title="第 ${r.turn} 轮 · 共 ${r.stepCount} 步 → 选中末步">${r.turn}</button>`).join('')}
           </div>
@@ -1424,10 +1440,33 @@ function renderTrend() {
   /* ⚠️ 必须**同步**先算一次刻度：render() 紧接着就调 renderSelfcheck()，而自测面板要读 data-max。
    * 只把计算排进下面的 rAF 的话，面板拿到的是"刚重建、还没算过"的节点 → 显示 undefined（实测踩过）。 */
   applyTrendScale();
+  /* 点轮号条后的"聚焦"：**同步**把这一格的**中心**对到视口中心（照参考插件的
+   * `gi * (BAR_W + BAR_GAP) + BAR_W / 2 - clientWidth / 2`；这里用该格的实际位置算，两种粒度都对）。
+   * 只消费一次（等价于参考的 `onFocusTurnHandled`）—— 之后滚动仍按"选中那根柱子居中"的常规逻辑。 */
+  if (S.focusTurn !== null) {
+    const t = S.focusTurn;
+    S.focusTurn = null;
+    /* ⚠️ 两种粒度下刻度带的格子属性不同：**按步骤**模式用 `data-turn`；**按轮次**模式是 `list.map()` 出来的，
+     * 只有 `data-seq` ⟹ 必须按"第几格"找（实测：只按 data-turn 找会落空、居中静默失效）。 */
+    const cell = focusCellOf(sc, t, list);
+    if (cell) {
+      sc.scrollLeft = Math.max(0, cell.offsetLeft + cell.getBoundingClientRect().width / 2 - sc.clientWidth / 2);
+      sc.__focused = true;
+      toast(`已定位到第 ${t} 轮`);
+    } else {
+      /* ⚠️ 找不到格子**必须如实报**（实测踩过：只按 `data-turn` 找，在按轮次模式下必然落空，
+       * 而当时是静默的 ⟹ 界面看不出错）。这条也让护栏能抓住回归。 */
+      toast(`没找到第 ${t} 轮在刻度带上的位置（定位失败）`, 'err');
+    }
+  }
   requestAnimationFrame(() => {
     applyTrendScale();
-    const sel = sc.querySelector('.tbar.sel');
-    if (sel) sc.scrollLeft = Math.max(0, sel.offsetLeft - sc.clientWidth / 2);
+    if (sc.querySelector('.tbar.sel') && S.focusTurn === null) {
+      const sel = sc.querySelector('.tbar.sel');
+      /* 只有"刚刚聚焦过某一轮"时才跳过常规居中：用一次标记避免 rAF 覆盖掉上面的聚焦滚动。 */
+      if (!sc.__focused) sc.scrollLeft = Math.max(0, sel.offsetLeft - sc.clientWidth / 2);
+    }
+    sc.__focused = false;
     applyTrendScale();
   });
 }
