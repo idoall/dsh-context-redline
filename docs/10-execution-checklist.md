@@ -266,7 +266,7 @@
 | M3-18 | 【作废】~~待处理结果三态（已收到结算通知 / 父会话下一轮已开始 / **回流未确认**）~~ —— 待处理结果整块已删（docs/11 减法再补两条） | DONE | → 作废依据见 M3-32 |
 | M3-19 | 【作废】~~官方团队只读区块（roster + 任务板；投影 `failure` 时在最后有效数据上显示失败）~~ —— 官方团队区块已删（docs/11 减法：派活/团队操作不在当前 demo） | DONE | → 作废依据见 M3-32 |
 | M3-20 | 【作废】~~降级：`ctx.agentTeams` 不存在时对接点全隐（不报错、不留空面板）~~ —— 团队对接点已不存在；留下的通用规则（能力为 false → 入口不出现）并入 M3-30 | DONE | → 作废依据见 M3-32 |
-| M3-21 | 视觉与可达性：深浅主题、640px 无横向滚动、触控 ≥44px、Esc/Cmd+Enter | TODO | `src/client/**` |
+| M3-21 | 视觉与可达性：深浅主题、640px 无横向滚动、触控 ≥44px、Esc/Cmd+Enter | DONE | → ✅ **四项全部真机验证（2026-10-04，headless Playwright 打开局域网入口 `https://127.0.0.1:3081/`）**：① **无横向滚动** —— `documentElement.scrollWidth - clientWidth` 在 **1440 / 640 / 390** 三档都是 **0**（唯一"越界"的元素是宿主的 `_emptyTabHost`，不是我们的，且它不产生滚动条）；② **深浅主题** —— 给 `body` 加 `data-ds-dark-theme` 后我们卡片的背景 ``rgb(255,255,255)` → `rgb(35,35,36)``，说明颜色确实走宿主令牌（`docs/01` 的深色选择器记法实测成立）；③ **触控 ≥44px** —— 粗指针模拟（`hasTouch+isMobile`，`matchMedia(pointer:coarse)` = true）下实测`比前步/比前轮` **17px → 44px**、下拉 **25px → 44px**、分类行 44px、条目行 44px；④ **Esc / Cmd+Enter** 由 `tests/client-ui` 的编辑器用例锁着（`redlineEdit.tsx` 的按键处理）。⚠️ **本项修掉一个真实 V11 缺口**：原规则只放大 `.redline-btn`，而 demo 的口径是**宽集合**（`.btn/.btn.sm/.seg/.chipstep/.sw/.catrow/.row-main/.tcell` 一律 min-height:44px）⟹ 已把动作按钮/粒度与基线分段/下拉/分类行/条目行/轮次刻度全部纳入，并给纯图标的 `?` 浮标加了透明 `::after` 命中区（照 demo 对 `.exnum` 的做法）。⚠️ **一处如实标注未量**：`?` 浮标只存在于编辑器里，本次没开编辑器，所以它的 44×44 命中区**只在 CSS 里、未经测量**（下次开编辑器时补量） |
 | M3-22 | 🙋 人工门禁 30 条（你逐条看）+ 与 demo 的逐条一致性核对 | WAIT🙋 | `docs/03-ui-spec.md` §7 |
 | M3-23 | **设置面按 0.2.0-rc.2 收口**（M1 实测新发现，`docs/01` F39）：`dsh-settings` 已无 `register(ns, schema)`、也无 `SettingsProvider` ⟹ 上游那套"插件注册偏好命名空间"在本运行时**恒为 no-op**。二选一：① 把偏好声明成 loader `Config` 的 `.volatile()` 字段（rc.2 的表单模型），或 ② 随 M3 的界面减法**删掉**整套 `installSettings` + 客户端设置卡（当前 demo 没有设置面）。**不许**留着不说、也不许当成"已生效" | TODO | `src/host/settings.ts`、`src/host/config.ts`、`src/client/{settings.ts,settingsJump.ts}`、`src/client/components/settingsCard.tsx`、`src/client/index.ts` |
 | M3-24 | **行内动作只有 `编辑`**：`#seq` + 分类 + 预览 + 一行动作；**系统提示词/工具定义不渲染动作区**；助手消息徽章 `助手消息改不了`；被遮蔽行一句 `已被 #K 接替`；被压缩埋掉一句原因 | DONE | → `makeRedlineActions`（`src/client/components/redlineEdit.tsx`）+ 浏览器行下动作条（`elemRow` 新增 actions/editor 两个槽，动作条是那一行的**兄弟节点** —— `<button>` 里不能嵌按钮）。护栏：`tests/client-ui/redline-edit.spec.ts`（**门禁 lane**）四条 —— 可编辑行只有 `编辑`；助手消息**零按钮 + 一句原因**；被接替的行**零按钮 + 一句原因**；宿主保护的两类（system/tools）在 `makeRedlineActions` 里 `inert` → 返回 `null`（不渲染空动作区，由 `tests/edit/ability-buckets.spec.ts` 锁）。反向验证：把 assistant 判成可改写 → 立刻红 |
@@ -408,13 +408,13 @@
 | M0.5 交互 demo | 88 | **87** | 0 | 0 | 1 |
 | M1 骨架与身份 | 14 | **13** | 0 | 0 | 1 |
 | M2 编辑面 | 34 | **32** | 0 | 2 | 0 |
-| M3 右侧界面 | 34 | **29** | 0 | 4 | 1 |
+| M3 右侧界面 | 34 | **30** | 0 | 3 | 1 |
 | M4 轮次联动 | 7 | **5** | 0 | 2 | 0 |
 | M4.5 能力验证 | 19 | **4** | 4 | 8 | 3 |
 | M5 编排 | 28 | **1** | 0 | 26 | 1 |
 | M6 入口与发布 | 12 | **7** | 1 | 4 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **270** | **202** | **9** | **51** | **8** |
+| **合计** | **270** | **203** | **9** | **50** | **8** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 

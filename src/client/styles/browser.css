@@ -94,7 +94,25 @@
 /* 「保存」左上角飘一个 ?（与讲解模式同一种做法，docs/03 R2.2） */
 .redline-qwrap { position: relative; display: inline-flex; }
 .redline-qfloat { position: absolute; top: -8px; left: -8px; width: 14px; height: 14px; border-radius: 50%; font-size: 10px; line-height: 14px; text-align: center; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l1); cursor: help; }
-/* 触控：窄屏把这两个动作放大到 ≥44px（docs/03 R2.2 / V11） */
+/* 触控（docs/03 R6.4 **V11**）：**用 pointer 判断、不用窗口宽度**（桌面窄窗口不是触屏）。
+   面板里所有可点的小目标都要在粗指针下到 ≥44px —— 这条是**真机量出来才补齐的**：
+   实测（Playwright + `hasTouch`）`比前步/比前轮` 只有 17px、下拉 25px，而 demo 的口径是宽集合
+   （`.btn / .btn.sm / .seg / .chipstep / .sw / .catrow / .row-main / .tcell` 一律 min-height:44px），
+   所以这里对齐同一套：动作按钮、粒度/基线分段、下拉、分类行、条目行、轮次刻度。
+   纯图标的小目标（`?` 浮标）不能靠尺寸撑，**用透明 `::after` 撑命中区**（demo 对 `.exnum` 就是这么做的）。 */
 @media (pointer: coarse) {
-  .redline-btn { min-height: 44px; padding: 0 12px; font-size: 12px; }
+  .redline-btn, .redline-gran-btn, .redline-br-pick, .redline-br-cat-row,
+  .redline-br-elem-row, .redline-turn, .redline-br-retry {
+    min-height: 44px;
+    font-size: 12px;
+  }
+  .redline-btn, .redline-gran-btn { padding: 0 12px; }
+  .redline-qfloat { position: absolute; }
+  .redline-qfloat::after {
+    content: '';
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 44px; height: 44px;
+    transform: translate(-50%, -50%);
+  }
 }
