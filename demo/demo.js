@@ -31,8 +31,6 @@ const EXPLAIN = {
 
   'turn.pick': { t: '选择某一轮', what: '点轮次条 = 让右侧浏览器切到该轮最后一步。', effect: '右侧标题变成"第 T 轮（共 N 步，显示末步）"，分类条数/token/占比跟着变。', rev: '随时可切别的轮', confirm: '不需要', refs: ['docs/03 R1.1'] },
   'turn.inject': { t: '改这一轮的注入内容', what: '切到这一轮**最后一条注入内容**（AGENTS.md / memory-doc / runtime-context 这类每轮由宿主重新注入的东西），就地展开编辑器。', effect: '注入内容才是最容易让模型理解错的那一半；而且它每轮会被重新注入 —— 改一轮漂一轮，所以改完通常还要「存为不变量」把口径钉住。', rev: '只切视图与展开编辑器，不改任何内容', confirm: '不需要', refs: ['docs/03 R1.16'] },
-  'act.reinject': { t: '重注入固定块', what: '把这块正文**逐字**作为一条消息重新注入会话。', effect: '会往会话追加一条消息，不可撤销；插件不改一个字。用于"宿主这轮没注入 / 被改漂了"时把口径重新钉回去。', rev: '不可撤销（追加即落地）', confirm: '要（列出块版本与正文逐字）', refs: ['docs/03 R4.3', 'docs/00 G4'] },
-  'act.retire': { t: '退休固定块', what: '让这块不再生效（历史版本保留）。', effect: '之后漂移检查不再盯它；以后开的新子会话不会再带上它；已开出去的子会话不受影响。', rev: '可重新保存为新版本', confirm: '要', refs: ['docs/03 R4.3', 'docs/06 §1'] },
   'step.pick': { t: '步级选择', what: '选某一步（或回到"当前（下一次请求）"）。', effect: '右侧展示该步的上下文构成；与轮次入口交叉比对应当逐项一致。', rev: '随时可切', confirm: '不需要', refs: ['docs/03 R1.2'] },
   'step.chip': { t: '步级快捷片', what: '当前选中轮次的每一步一片，点一下就切到那一步。', effect: '等于用步级下拉选同一件事，但少两次点击。', rev: '随时可切', confirm: '不需要', refs: ['docs/03 R1.9'] },
   'step.nav': { t: '上一轮 / 下一轮 · 上一步 / 下一步', what: '在轮与步之间顺序移动（不用去点趋势图）。', effect: '到边界时按钮禁用。', rev: '随时可用', confirm: '不需要', refs: ['docs/03 R1.10'] },
@@ -43,24 +41,16 @@ const EXPLAIN = {
   'ui.advanced': { t: '高级编辑', what: '打开后，**工具结果**这一类的「编辑」入口才会出现。', effect: '默认收起的两类：工具结果（一轮几十条、"要动手"的概率低）与助手消息（平台本来就不给「编辑」，只有「批注」）。常用三类始终可见：用户消息 / 注入内容 / 技能注入 —— 它们都是"我告诉模型什么"，而且后两类每轮会被宿主重新注入（会漂）。', rev: '随时关掉，只是收起入口，不改任何数据', confirm: '不需要', refs: ['docs/03 R2.1 / R2.5'] },
   'act.edit': { t: '编辑（遮蔽原文）', what: '改写这一条的内容。', effect: '先把改动存成本地草稿（模型还看不到）；确认后才"应用到会话"，届时原文被替换、模型再也看不到原文（但日志里仍在）。', rev: '草稿可放弃；已应用的改动可用"版本历史"恢复', confirm: '提交时要', refs: ['docs/03 R2.2 / R3.3', 'docs/01 F7'] },
   'act.annotate': { t: '批注（保留原文）', what: '不遮蔽原文，追加一条带「作废范围」的更正（一条普通 user 消息，不是伪造宿主内容）。', effect: '模型会同时看到原文与更正 —— 所以它是**请求式**的：靠措辞让模型照做，平台不保证。它会随快照（fork 种子）进子会话；不会被重新注入（不漂），但**长对话或压缩之后可能被摘要吞掉**。想要"确定生效"要用「编辑」+「应用到会话」。', rev: '不可撤销（追加即落地）', confirm: '提交时要（确认框里会写清它在快照里起什么作用）', refs: ['docs/03 R2.2 / R3.3.1', 'docs/01 F6'] },
-  'act.pin': {
-    t: '钉住这一段（存起来，给新会话用）',
-    what: '**一句话**：把这一条的正文**逐字**存成"新规范"（只存插件本地）。**它不在本会话生效** ——\n'
-      + '等你**开一个新子会话**时，它才会**逐字带进那个新会话的第一句话**，\n'
-      + '那个新会话的模型才读到它，并以此为准（与此冲突的此前理解作废）。\n'
-      + '**为什么需要**：注入内容 / 技能注入这两类**每轮都由宿主重新塞给模型**（AGENTS.md、项目约定、技能目录…）。\n'
-      + '你这一轮把它改对了，下一轮宿主又塞回原文 —— 于是"改一轮漂一轮"。钉住的这段就是**新的标准**：\n'
-      + '之后每轮都能**逐字比对**，一旦"我钉的那句不在宿主注入里了"，「固定块（不变量）」卡会把状态标成**漂移**；\n'
-      + '要当场再强调一次，就点 `重注入`（那是往会话追加一条逐字消息，那个会话的模型看得到）。\n'
-      + '**你什么时候会用它**：这条注入是"模型必须一直遵守的口径"（例如"不许自动提交"、"必须先读 AGENTS.md"），\n'
-      + '而你要**开一个新子会话去干活** —— 让它一开工就按新口径，而不是带着旧理解。\n'
-      + '**它不做什么**：① 不改本会话（本会话的模型看不到它，会话日志里没有它）；\n'
-      + '② 不会删掉宿主注入的旧文本（那要改装配层，本轮不做）；③ 不生成任何内容（只做逐字复制）。',
-    effect: '**只在插件本地多一块基准**（逐字 + 标签 + 版本 + workspace 级）。本会话一字不动；'
-      + '**下次开子会话**时，它被逐字附进那个新会话的第一句话。',
-    rev: '可以退休 / 删除那块基准（已经开出去的子会话不受影响）',
-    confirm: '要（确认框会列：正文逐字 + 只存本地 + 谁会读到它 / 什么时候读到）',
-    refs: ['docs/03 R2.4', 'docs/11 D9'] },
+  'act.gotoCurrent': {
+    t: '去改现在这条',
+    what: '**一句话**：你点的那条**原文已经被遮蔽**（改不动了），这个按钮把你带到"**现在可见的那一条**"并直接打开编辑器。\n'
+      + '**为什么会有两条**：改写不是把原文改掉，而是**追加一条替换**（原文仍在日志里）。\n'
+      + '**它做什么**：跳到当前可见节点 + 就地展开编辑器（预填宿主全文）。\n'
+      + '**它不做什么**：不会去掉灰行、也不会改历史（原文永远留在日志里，可用 `版本历史` 回看/恢复）。',
+    effect: '切到「替换后的新条目」那一行并打开编辑器；**不影响任何数据**。',
+    rev: '再点一次就是普通编辑（可取消、不写会话）',
+    confirm: '不需要（只是切视图 + 开编辑器）',
+    refs: ['docs/03 R4.6', 'docs/01 F7'] },
   'act.apply': { t: '应用到会话', what: '把这条草稿真的写进会话。', effect: '追加一条替换事件；模型此后看到的是改后的内容；原文仍保留在日志里但不再可见。', rev: '不可撤销（可用版本历史恢复某一版）', confirm: '要，且会列出本次清单', refs: ['docs/03 R4.3', 'docs/01 F7.1'] },
   'act.applyAll': {
     t: '逐条应用到会话',
@@ -80,34 +70,6 @@ const EXPLAIN = {
     rev: '不可撤销（草稿没保存过就找不回来）',
     confirm: '要（列出将丢弃的草稿条数与 #seq）',
     refs: ['docs/03 R4.3', 'docs/03 R3.2'] },
-  'act.pendingSeen': {
-    t: '标记已查看',
-    what: '**一句话**：把"待处理的结果"里这条结算通知标成**你已经看过了**。\n'
-      + '**它不做什么**：不改子会话、不改父会话日志，也不代表"主会话已经接着干了"。',
-    effect: '只记在插件本地（重启后从父会话日志重扫重建）。',
-    rev: '可以再看（只是标记）',
-    confirm: '不需要（只写本地，随时可重看）',
-    refs: ['docs/03 R5.1', 'docs/01 F12.1'] },
-  'act.pendingHand': {
-    t: '让主会话接着做',
-    what: '**一句话**：把"该接着做什么"写成一句话，交给**主会话**继续（替代你手动回来催它）。\n'
-      + '**为什么需要**：结算通知是"尽力而为"的（父会话不在进程里就不投递），所以界面必须给你一个人工入口。\n'
-      + '**它不做什么**：不伪造子会话的结论、不自动改父会话；它只是在父会话里追加一条**人写的**消息。',
-    effect: '父会话日志里多一条人写的 user 消息（模型看得到）。',
-    rev: '不可撤销（追加即落地）',
-    confirm: '要（写明这条消息的正文与去向）',
-    refs: ['docs/03 R5.1', 'docs/06 §3'] },
-  'act.gotoCurrent': {
-    t: '去改现在这条',
-    what: '**一句话**：你点的那条**原文已经被遮蔽**（改不动了），这个按钮把你带到"**现在可见的那一条**"并直接打开编辑器。\n'
-      + '**为什么会有两条**：改写不是把原文改掉，而是**追加一条替换**（原文仍在日志里）——\n'
-      + '所以列表里会出现"原文（灰、改不了）"与"替换后的新条目（能改）"两条，它们属于**同一行身份**。\n'
-      + '**它做什么**：跳到当前可见节点 + 就地展开编辑器（预填宿主全文）。\n'
-      + '**它不做什么**：不会去掉灰行、也不会改历史（原文永远留在日志里，可用 `版本历史` 回看/恢复）。',
-    effect: '切到「替换后的新条目」那一行并打开编辑器；**不影响任何数据**。',
-    rev: '再点一次就是普通编辑（可取消、不写会话）',
-    confirm: '不需要（只是切视图 + 开编辑器）',
-    refs: ['docs/03 R4.6', 'docs/01 F7'] },
   'act.history': { t: '版本历史', what: '看这一条的全部版本：原始 → 每次改写 → 每次回滚（**跨替换体**，按行身份串起来）。', effect: '只读展示；可选中某一版"恢复"。', rev: '只读', confirm: '不需要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
   'act.restore': { t: '恢复这一版', what: '把"模型看到的内容"变回你选的那一版。', effect: '再追加一条替换事件——不是删除，错的那版仍在日志里但不再可见。', rev: '再次替换即可换别的版本', confirm: '要', refs: ['docs/03 R4.5', 'docs/00 S8'] },
 
@@ -136,27 +98,7 @@ const EXPLAIN = {
     rev: '子会话可以归档，但"开头切到哪儿"不能再重来（历史只取一次）',
     confirm: '要（确认框列五项：从哪儿开始 / 首条任务 / 它会带上什么 / 走哪条路 / 取消会怎样）',
     refs: ['docs/06 §3.1 / §4.1', 'docs/03 R5.1.3'] },
-  'child.prompt': {
-    t: '给子会话发消息（它会变成它的新轮次）※ 不依赖官方团队',
-    what: '**一句话**：你在主会话里写一句话，直接发给这个子会话，成为它的**一个新轮次**。\n'
-      + '**为什么能多轮**：可续接子会话（continuable）本来就是**可以一直接收后续消息**的 ——\n'
-      + '官方 `ctx.subagents.prompt({delivery:"queue"})` 把**人写的**这条话排成它的下一个轮次；\n'
-      + '`delivery:"steer"` 则是插到它**最近的步骤边界**（不打断当前这步）。\n'
-      + '**它忙怎么办**：忙就排队（到步骤边界接收）；空闲就立刻起一个新轮次；\n'
-      + '**它不在进程里**时官方会冷恢复（容量满则报 `subagent/delivery-unavailable`，界面会翻成人话）。\n'
-      + '**反向也通**：子会话能用 `ctx.subagents.sendMessage` 主动给父会话发消息（父忙→最近步骤边界、父闲→起轮次、父不在进程→冷恢复）。\n'
-      + '**你要说的话由你写**：插件不生成、不润色一个字的正文。',
-    effect: '这条消息进入子会话的收件箱并排成它的下一个轮次。主会话内容不变（不是"把这条也塞进我自己的上下文"）。',
-    rev: '不可撤销（消息一旦被收件箱接受就落地）',
-    confirm: '要（确认框列：发给谁 / 走哪条通道 / 它现在的状态）',
-    refs: ['docs/01 F37', 'docs/06 §2', 'docs/03 R5.1.4'] },
-  'child.open': { t: '打开', what: '跳到官方视图看这个子会话/成员的完整过程。', effect: '优先在右侧 Sidebar 打开；本插件不重画对话。**打开之后面板会跟着切到它的上下文** —— 所以子会话的上下文同样能编辑（改条目 / 批注 / 钉住这一段 / 压缩），不需要两套界面。两条前提：① 它**轮次闭合**（正在跑就只能看）；② 它**在本进程**（拿不到它的 live agent 时只剩只读）。', rev: '只读跳转', confirm: '不需要', refs: ['docs/03 R5.1.1 / R5.1.3'] },
-  'child.send': { t: '派活（经官方）', what: '给这个成员追加一条任务消息。', effect: '走官方通道（agentTeams.sendMessage），返回 accepted 或 queued；queued 不许重发。', rev: '不可撤销', confirm: '要（收件人/逐字正文/投递方式/理由）', refs: ['docs/06 §3.2', 'docs/01 F32'] },
-  'child.totask': { t: '建成官方任务', what: '把这条待办写成官方任务板上的一条任务。', effect: '写进官方任务板——我们显示的就是官方那份数据，不另存一份。', rev: '可在官方任务板更新/关闭', confirm: '要', refs: ['docs/03 R5.1', 'docs/01 F34'] },
-  'child.compact': { t: '压缩（不可逆）', what: '把子会话的历史压成摘要。', effect: '先体检（是否空闲/是否有未闭合轮次/是否已在压）。成功后原文被摘要取代，不可逆；失败会给人话与"是否留痕"。', rev: '不可逆', confirm: '要（执行前列出将丢失的区间与条目数）', refs: ['docs/06 §4.2 / §5', 'docs/01 F11'] },
-  'child.interrupt': { t: '打断', what: '停止这个子会话/成员当前的轮次。', effect: '成员走官方 interrupt；裸子会话走 interruptByParent。已提交的工作不会被回滚。', rev: '不可撤销', confirm: '要（当前状态/会发什么信号/已提交不回滚）', refs: ['docs/03 R4.3', 'docs/06 §4'] },
   'pending.view': { t: '待处理的结果', what: '子会话结束后，看"结果有没有回流"。', effect: '分三个状态：已收到平台结算通知 / 父会话下一轮已开始 / 回流未确认（父 Agent 当时不在进程 → 平台不投递）。', rev: '只读（"已查看"记在本地）', confirm: '不需要', refs: ['docs/03 R5.1 第 4 项', 'docs/01 F12.1'] },
-  'team.read': { t: '官方团队区块（只读）', what: '直接显示官方那份 roster 与任务板。', effect: '不复制、不缓存、不自己算依赖就绪；投影报失败时按官方做法在最后有效数据之上显示失败。', rev: '只读', confirm: '不需要', refs: ['docs/01 F34', 'docs/03 R5.1'] }
 };
 
 /* ------------------------------------------------------------------ 2. 演示数据 */
@@ -291,7 +233,7 @@ const initial = () => ({
   selTurn: RICH_TURN, selSeq: REQUESTS[REQUESTS.length - 1].seq,
   openCat: 'user', openElem: null,
   editor: null, editorError: null, editorOk: null, historyFor: null,
-  drafts: {}, applied: [], extraNodes: [], invariants: [], children: [], tasks: [], members: [], pendingSeen: false
+  drafts: {}, applied: [], extraNodes: [], children: [], pendingSeen: false
 });
 
 let S = initial();
@@ -874,7 +816,6 @@ function ability(node) {
      * 工具结果一轮几十条、要改的概率低 —— 默认把「编辑」收起来，避免干扰；
      * 助手消息根本没有编辑按钮（平台互斥），它的批注**始终保留**（那是纠正它的唯一路径）。 */
     advancedOnly: node.cat === 'tool',
-    pinnable: !inert && (node.cat === 'inject' || node.cat === 'skill'),
     isToolResult: type === 'tool/result',
     blockReason: inert ? '系统提示词 / 工具定义由宿主保护：改不了，也不批注'
       : shadowed ? `这一条已被 #${gone[node.seq]} 接替，已不在模型可见内容里`
@@ -948,9 +889,6 @@ function rowHtml(node) {
             ? `<span class="badge-asst" title="${esc(a.blockReason)}">助手消息仅可批注</span>`
             : `<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 14))}…</span>`))}
       ${a.canAnnotate ? `<button class="btn sm" data-act="annotate" data-seq="${node.seq}" data-explain="act.annotate">批注</button>` : ''}
-      ${a.pinnable ? (pinnedVersionOf(node)
-        ? `<span class="chip-soft" title="这一段已经钉住了（逐字基准见「固定块」那一栏）；要换基准就在新的那条注入上再钉一次">已钉住 · v${pinnedVersionOf(node)}</span>`
-        : `<button class="btn sm" data-act="pin" data-seq="${node.seq}" data-explain="act.pin" title="把这一段的正文逐字钉住，成为全局固定块">钉住这一段</button>`) : ''}
       ${draftOf(node.seq)
         ? (a.shadowed
           /* `docs/03` R4.6：**旧替换体 / 已遮蔽的原文**上挂着草稿时，草稿**不自动迁移**，
@@ -1114,19 +1052,6 @@ function editTurnInject(turn) {
  * 为什么必须做：注入类每轮由宿主重新注入，改一轮漂一轮 —— 不逐字比对就不知道"钉住的还是不是那句话"。
  * 只做**逐字包含**判断（不含推断、不含模糊匹配），与 docs/03 S4 的口径一致。
  */
-function blockDrift(b) {
-  /* ⚠️ 必须排除**我们自己**写进会话的消息（批注、重注入）：钉住的正文只存本地（`docs/11` D9），
-   * 但 `重注入` 会把正文逐字追加进会话 —— 若不排除，那条就会自己命中自己 ⟹ 漂移永远报不出来。 */
-  const here = nodesOfReq(reqOf(), true).filter((n) => n.cat === 'inject' && !n.ours);
-  if (b.retired) return { ok: false, code: 'retired', why: '已退休：不再生效（历史版本保留）' };
-  const hit = here.find((n) => String(n.text || '').includes(b.text));
-  if (hit) return { ok: true, code: 'pinned', seq: hit.seq, why: `逐字命中 #${hit.seq}${hit.name ? '（' + hit.name + '）' : ''}` };
-  const edited = here.find((n) => S.applied.some((a) => a.replacedSeq === n.seq || a.newSeq === n.seq));
-  return {
-    ok: false, code: edited ? 'edited' : 'missing',
-    why: edited ? `这一步的注入被改写过（#${edited.seq}），钉住的原文已不在里面` : '当前这一步的注入内容里找不到这段正文'
-  };
-}
 
 /** 给所有「?」帮助按钮接线（编辑器、确认框、动态弹出的按钮都用它）。
  *  用户 2026-10-01：「触发之后才展开的按钮，编号不好加，那就加一个问号，点了问号说明是什么」。 */
@@ -1136,79 +1061,7 @@ function wireHelpButtons() {
   });
 }
 /** 这一条注入是否已经被钉住（逐字相同即视为同一条基准），返回最新版本号；没有则返回 0。 */
-function pinnedVersionOf(node) {
-  const hit = S.invariants.filter((b) => b.text === node.text);
-  return hit.length ? Math.max(...hit.map((b) => b.version)) : 0;
-}
-function renderBlocks() {
-  const box = $('cardBlocks');
-  if (!box) return;
-  const rows = S.invariants.map((b) => {
-    const d = blockDrift(b);
-    return `<div class="orch-row">
-      <div class="orch-id">
-        <span class="snapid">${esc(b.id)}</span>
-        <span class="badge-state"><i class="mstat ${d.ok ? 's-done' : b.retired ? 's-idle' : 's-run'}"></i>${d.ok ? '在效' : b.retired ? '已退休' : '漂移'}</span>
-        <span class="cap orch-desc">${esc(b.label)} · v${b.version} · ${b.scope === 'workspace' ? 'workspace 级（新会话也看得见）' : '仅本会话'} · ${d.why}</span>
-      </div>
-      <div class="orch-actions">
-        <span class="orch-note">正文逐字（基准，只读）：${esc(b.text.slice(0, 46))}${b.text.length > 46 ? '…' : ''}</span>
-        <button class="btn sm" data-act="breinject" data-id="${esc(b.id)}" data-explain="act.reinject">重注入</button>
-        <button class="btn sm ghost" data-act="bretire" data-id="${esc(b.id)}" data-explain="act.retire" ${b.retired ? 'disabled' : ''}>退休</button>
-      </div>
-    </div>`;
-  }).join('');
-  box.innerHTML = `
-    <div class="card-title">固定块（不变量） <span class="hint"><b>全局</b>：workspace 级，本会话与子会话都看得见</span>
-      <span class="bmeta">${S.invariants.filter((b) => !b.retired).length} 个在效 / 共 ${S.invariants.length} 个</span></div>
-    <div class="cap" style="margin-bottom:4px"><b>这一栏是全局的</b>（不属于某一类条目）：任何一轮、任何会话钉住的话都汇总到这里，之后每轮逐字比对、发现漂移就标出来。<br>
-      按钮之所以长在<b>条目行上</b>，是因为要选的是<b>钉哪一段</b>：请回到上面「注入内容 / 技能注入」点那一条的 <b>「钉住这一段」</b>。
-      钉下的正文就是<b>漂移基准</b>，所以它在本栏里<b>只读</b>；要换基准就在新的那条上再钉一次（自动升版）。<br>
-      逐字保存：插件不生成、不润色、不压缩；漂移检查只做<b>逐字包含</b>判断（不含推断）。</div>
-    <div class="efoot" style="margin-bottom:6px">
-      <button class="btn sm ghost" data-act="gotoPin" data-explain="act.pin">去注入内容里钉一段</button>
-      <span class="cap">会展开「注入内容」这一类，并按行给出「钉住这一段」</span>
-    </div>
-    ${S.invariants.length ? rows : '<div class="cap">还没有固定块。回到上面展开 <b>注入内容</b>，点某条的 <b>「钉住这一段」</b>（例如 <b>AGENTS.md</b> / <b>memory-doc</b> / <b>runtime-context</b>）。</div>'}`;
-  box.querySelectorAll('[data-act]').forEach((el) => {
-    el.onclick = () => blockAct(el.dataset.act, el.dataset.id);
-  });
-}
 
-function blockAct(act, id) {
-  const b = S.invariants.find((x) => x.id === id);
-  if (!b) return;
-  if (act === 'breinject') {
-    confirmModal({
-      title: '重注入固定块',
-      warn: '会往会话追加一条消息，不可撤销。',
-      rows: [['固定块', `${b.label} · v${b.version} · ${b.scope}`],
-             ['正文逐字', b.text],
-             ['为什么现在注入', b.id]],
-      needReason: true, okText: '确认重注入',
-      reasonLabel: '理由（会跟着这条消息写进会话 —— 模型看得到）',
-      reasonPlaceholder: '一句话说明为什么现在重注入',
-      onOk: (reason) => {
-        const live = REQUESTS[REQUESTS.length - 1];
-        S.extraNodes.push(N(1400 + S.extraNodes.length, 'inject', 'user/message', b.text, Math.round(b.text.length * 1.6),
-          { name: b.label, ours: true }));   // ours：这条是**我们**写进去的，漂移检查要排除它（见 blockDrift）
-        S.extraNodes[S.extraNodes.length - 1].requestSeq = live.seq;
-        render();
-        toast(`已重注入「${b.label}」（逐字追加；理由：${reason || '（未填）'}）`);
-      }
-    });
-    return;
-  }
-  if (act === 'bretire') {
-    confirmModal({
-      title: '退休固定块',
-      warn: '退休后它不再生效，但历史版本会保留。',
-      rows: [['块 id 与版本', `${b.id} · v${b.version}`], ['当前生效范围', b.scope], ['退休影响面', '以后开的新子会话不会再带上它；已开出去的子会话不受影响']],
-      needReason: false, okText: '确认退休',
-      onOk: () => { b.retired = true; render(); toast(`已退休「${b.label}」（历史版本保留）`); }
-    });
-  }
-}
 
 function renderOrch() {
   const c = S.children;
@@ -1236,13 +1089,7 @@ function renderOrch() {
 
     <div class="orch-toolbar">
       <button class="btn sm" data-act="spawn" data-explain="orch.spawn" ${!S.sw.live || draftCount() > 0 ? 'disabled' : ''}>开启子会话</button>
-      <span class="cap">新会话从<b>最后聊完的那一轮</b>往下接着干（平台自己算的，没有更早的位置可选）；
-        它会把你<b>现在钉住的那几条规范</b>逐字放在第一句话前面${S.invariants.filter((b) => !b.retired).length ? `（${S.invariants.filter((b) => !b.retired).length} 条）` : ''}</span>
-      ${S.invariants.filter((b) => !b.retired).length === 0
-        ? '<span class="chip-soft" title="建议先把目标 / 约束（尤其是每轮被重新注入的那几条）存为固定块，否则子会话里没人守漂移">尚无固定块</span>'
-        : ''}
-
-      ${draftCount() > 0 ? `<span class="cap warn-text">还有 ${draftCount()} 条草稿没提交 —— 草稿不在新会话里；它只存在插件本地。</span>` : ''}
+      <span class="cap">新会话从<b>最后聊完的那一轮</b>往下接着干（平台自己算的，没有更早的位置可选）；它会继承你已经改好的上下文。</span>
     </div>
 
     </section>
@@ -1262,75 +1109,16 @@ function renderOrch() {
           <span class="chev" title="打开它（去官方视图）">›</span>
         </div>
         <div class="orch-actions">
-          <button class="btn sm ghost" data-act="copen" data-i="${i}" data-explain="child.open">打开</button>
-          ${x.src === 'own' ? `<button class="btn sm" data-act="cprompt" data-i="${i}" data-explain="child.prompt">发消息</button>
-          ${x.sent ? `<span class="cap">已排队 <b>${x.sent}</b> 条</span>` : ''}` : ''}
           <span class="cap">${x.state === 'running'
-            ? '运行中：打开它 = 面板切到它的上下文；<b>轮次闭合前只能看，不能改</b>（要改就先等它空闲或打断）'
-            : '打开它 = 面板切到它的上下文，就能像这里一样编辑'}</span>
-          ${x.src === 'own' ? `
-            ${S.sw.team ? `
-              <button class="btn sm" data-act="csend" data-i="${i}" data-explain="child.send">派活</button>
-              <button class="btn sm" data-act="ctask" data-i="${i}" data-explain="child.totask">建成官方任务</button>` : ''}
-            <button class="btn sm" data-act="ccompact" data-i="${i}" data-explain="child.compact">压缩</button>
-            <button class="btn sm danger" data-act="cinterrupt" data-i="${i}" data-explain="child.interrupt">打断</button>`
-          : `<span class="cap">${S.sw.team
-              ? '这类成员请在会话页头的 Agent Teams 面板里管理'
-              : '平台目录里的子会话（只读）；本机未启用官方智能体团队，故不提供派活 / 建任务'}</span>`}
+            ? '运行中：轮次闭合前只能看，不能改（要改就先等它空闲）'
+            : '空闲：可以进它的上下文继续编辑'}</span>
         </div>
       </div>`;
     }).join('')}
 
     </section>
 
-    <section class="orchblock" data-block="pending">
-    <div class="subhead blocktitle">待处理的结果 <span class="hint" data-explain="pending.view">结算通知由平台尽力投递，投不到就说投不到</span>
-      <span class="bmeta">${S.pendingSeen ? '已全部确认' : '1 条待确认'}</span></div>
-    ${S.sw.pendingState === 'settled' ? `
-      <div class="orch-row">
-        <div class="orch-id">
-          <i class="dot dot-ok"></i>
-          <span>已收到平台结算通知</span>
-          <span class="cap orch-desc">子会话 #004c37a5 已结束：「改完了 3 处，测试全绿」</span>
-        </div>
-        <div class="orch-actions">
-          <button class="btn sm ghost" data-act="pendingSeen" data-explain="act.pendingSeen">标记已查看</button>
-        </div>
-      </div>` : `
-      <div class="orch-row">
-        <div class="orch-id">
-          <i class="dot dot-warn"></i>
-          <span class="warn-text">回流未确认</span>
-          <span class="cap orch-desc">没收到平台的结算通知 —— 子会话结束了，但父会话没收到回流</span>
-        </div>
-        <div class="orch-actions">
-          <button class="btn sm" data-act="pendingHand" data-explain="act.pendingHand">让主会话接着做</button>
-        </div>
-      </div>`}
 
-    </section>
-
-    <section class="orchblock" data-block="team">
-    <div class="subhead blocktitle">官方团队 <span class="hint" data-explain="team.read">只读 —— 显示的就是官方那份数据</span>
-      <span class="bmeta">${S.sw.team ? `${S.members.length} 位成员 · ${S.tasks.length} 条任务` : '未启用'}</span></div>
-    ${S.sw.team ? `
-      <div class="cap list-label">成员</div>
-      <div class="roster">${S.members.map((m) => `<span class="member"><i class="mstat ${m.st}"></i>${esc(m.name)}</span>`).join('')}</div>
-      <div class="cap list-label">任务板</div>
-      ${S.tasks.length
-        ? S.tasks.map((t) => `
-        <div class="task">
-          <i class="tstat ${t.st}"></i>
-          <span class="subject">${esc(t.subject)}</span>
-          <span class="owner muted">${esc(t.owner || '未认领')}${t.blocked ? ' · 被依赖阻塞' : ''}</span>
-        </div>`).join('')
-        : '<div class="cap">（任务板为空）</div>'}
-      <div class="orch-actions">
-        <button class="btn sm ghost block" data-act="teamOpen" data-explain="team.read">去官方面板</button>
-        <span class="cap">成员导航复用官方，我们不在面板里重画对话</span>
-      </div>`
-      : '<div class="cap">本机未启用官方智能体团队 → 派活 / 建成官方任务 / 成员式打断全部不出现（不是报错）。</div>'}
-    </section>
 
     </div>
   `;
@@ -1464,33 +1252,6 @@ function submitEditor() {
     });
     return;
   }
-  if (st.kind === 'pin') {
-    const label = (($('edLabel') && $('edLabel').value.trim()) || '目标'), text = ($('edPin') && $('edPin').value) || '';
-    if (text.trim() === '') { S.editorError = '固定块正文不能为空'; render(); return; }
-    /* ⚠️ 语义（用户 2026-10-02 **二次纠正**，`docs/11` D9）：钉住**不在当前会话生效** ——
-     * 它只存本地；**读到它的时机 = 开新子会话时**：开子会话时把这条新规范
-     * **逐字附在子会话的第一句话前面**。所以这里**不写会话**（本会话的模型看不到它）。 */
-    confirmModal({
-      title: '钉住这一段（存起来，给新会话用）',
-      warn: '钉住 = 把这段正文逐字存成"新规范"（只存插件本地，本会话的模型看不到）。等你开一个新子会话时，它会逐字带进那个新会话的第一句话前面 —— 那个新会话的模型才读到它，并以此为准（冲突的旧理解作废）。',
-      rows: [['这段正文（逐字为准）', text.slice(0, 140) + (text.length > 140 ? '…' : '')],
-             ['它现在去哪', '只存插件本地 —— 本会话的模型看不到（会话日志不写）'],
-             ['谁会读到它', '新子会话启动时读到（逐字附在它的第一句话前面）；本会话与其它旧会话都读不到'],
-             ['什么时候读到', '点「开启子会话」的那一刻 —— 你钉住的这几条会一起带进那个新会话']],
-      needReason: false, okText: '钉住（存起来）', helpKey: 'act.pin',
-      onOk: () => {
-        const version = S.invariants.filter((x) => x.label === label).length + 1;
-        S.invariants.push({
-          id: 'inv-' + label.replace(/\s+/g, '-').slice(0, 16) + '-' + version,
-          label, text, version, retired: false, scope: 'workspace',
-          savedAt: '12:1' + (S.invariants.length % 9)
-        });
-        S.editor = null; render();
-        toast(`已钉住「${label}」v${version} —— 只存本地（本会话看不到）；下次开子会话时，它会逐字带进那个新会话的第一句话`);
-      }
-    });
-    return;
-  }
 }
 function doApply(seq) {
   // ⚠️ 新条目的 seq 从 **1600** 起（不是 1300）：演示数据里已经有 1300/1301/1303/1305 这些条目，
@@ -1503,85 +1264,31 @@ function doApply(seq) {
 }
 function orchAct(b) {
   const act = b.dataset.act, i = Number(b.dataset.i);
-  if (act === 'cprompt') {
-    const x = S.children[i];
-    /* 官方能力（docs/01 F37）：`ctx.subagents.prompt({delivery:'queue'})` 把**人写的**一条话排成子会话的
-     * **下一个轮次**（steer 则是插到最近的步骤边界）—— 所以子会话是**多轮**的，能一来一回。 */
-    confirmModal({
-      title: '给这个子会话发一条消息',
-      warn: '这条消息会成为它的一个新轮次（子会话是多轮的）；它现在忙就排队，等它空闲或到步骤边界再执行。不可撤销。',
-      rows: [['发给', `${x.id}${x.label ? ' · ' + x.label : ''}`],
-             ['走哪条通道', '官方 ctx.subagents.prompt({delivery:"queue"}) —— 排队成为它的下一个轮次'],
-             ['它现在', x.state === 'running' ? '运行中：会在最近的步骤边界接收' : '空闲：会立刻起一个新轮次'],
-             ['你要说的话', '写在下面那一栏 —— 它就是这条消息的正文（插件不生成任何内容）']],
-      needReason: true, okText: '排队发送', helpKey: 'child.prompt',
-      reasonLabel: '要说的话（会成为子会话的一个新轮次 —— 它的模型看得到）',
-      reasonPlaceholder: '一句话说清要它做什么（这句就是消息正文）',
-      onOk: () => { x.sent = (x.sent || 0) + 1; render(); toast(`已排队给 ${x.id} 的消息（会成为它的新轮次）`); }
-    });
-    return;
-  }
   if (act === 'gotoPin') {
     S.openCat = 'inject'; S.selSeq = reqOf().seq; render();
     toast('已展开「注入内容」——点某条的「钉住这一段」即可钉住它的原文');
     return;
   }
   if (act === 'spawn') {
-    /* ⚠️ **钉住的"新规范"就在这里生效**（`docs/11` D9）：它不在本会话生效，而是在**新子会话启动时**
-     * 逐字带进子会话的**第一句话**。冻结删掉之后（`docs/11` D10），带的就是**开启这一刻在效的那几条**
-     * ——"先冻住那一刻那版"这个能力随冻结一起去掉了（这是简单的代价，已在 D10 里写明）。 */
-    const carry = S.invariants.filter((x) => !x.retired);
     const last = reqOf();
-    const normHead = '[redline] 新规范（以此为准）\n以下逐段逐字为准；与此冲突的此前理解一律作废。\n';
-    const normBody = carry.map((x) => `【${x.label} · v${x.version}】\n${x.text}`).join('\n\n');
     confirmModal({
-      title: '允许创建子会话',
-      warn: '会新建一个会话，把这个会话「已经聊完的内容」当作它的开头（开头到哪儿由平台算：最后聊完的那一轮）；新会话会带上你现在钉住的规范。之后本会话的新轮次不会进去。',
+      title: '开启子会话',
+      warn: '会新建一个会话，把这个会话「已经聊完的内容」当作它的开头。之后本会话的新轮次不会进去。',
       rows: [['① 从哪儿开始', `本会话「最后聊完的那一轮」为止（第 ${last.turn} 轮末）—— 平台自己算的，改不了；没有"从更早的位置开始"这个选项`],
-             ['① 会带上的新规范', carry.length
-               ? `${carry.length} 条（${carry.map((x) => x.label + ' v' + x.version).join('、')}）—— 逐字附在它的第一句话前面（本会话看不到，只有那个新会话的模型读到）。就是你现在钉住的那几条`
-               : '（现在没有在效的固定块 —— 想带上规范，先在注入内容那一行点「钉住这一段」）'],
              ['② 首条任务', '（写在下面那一栏 —— 必须你写；插件不生成任何内容）'],
-             ['③ 它会带上什么', '✅ 会带上：已经聊完的对话（包含你已经改过的内容）+ 上面那些新规范｜❌ 不会带上：这个会话的工具授权；它也不会自动把干活的过程（工具输出、思考）送回本会话。注意：对话历史取的是"最后聊完的那一轮"之前的全部日志 —— 点按钮之前应用的改动全都已经算在里面了'],
-             ['④ 走哪条路', S.sw.team ? '走官方团队：它会成为官方名册里的一名成员（任务板、成员导航、派活都有）' : '团队不可用 → 变成一个"裸子会话"（没有任务板，也没有官方派活）'],
-             ['⑤ 取消', '取消 = 什么都不发生（不建会话）']],
+             ['③ 它会带上什么', '已经聊完的对话（包含你已经改过的内容）。不会带上这个会话的工具授权。'],
+             ['④ 取消', '取消 = 什么都不发生（不建会话）']],
       needReason: true, okText: '确认创建',
       reasonLabel: '首条任务（会成为子会话的第一句话 —— 它的模型看得到；本会话的模型看不到）',
       reasonPlaceholder: '一句话说清这次要它干什么',
       onOk: (reason) => {
         const id = '00' + (49000 + S.children.length * 771).toString(16).slice(0, 6);
-        // 首条任务 = （有规范时）逐字规范块 + 人写的一句话；规范块来自用户自己钉住的正文（插件只做逐字复制）
-        const prime = (carry.length ? normHead + normBody + '\n---\n' : '') + reason;
-        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), prime, norms: carry.length });
+        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), prime: reason });
         render();
-        toast(`已创建 ${id}（${carry.length ? `已带上 ${carry.length} 条新规范；` : ''}来源徽章 = 本项目发起）`);
+        toast(`已创建 ${id}（来源 = 本项目发起）`);
       }
     }); return;
   }
-  if (act === 'copen') { openDrawer('child.open'); toast('（演示）这里会跳到官方视图：父会话页头血缘目录 / 右侧 Sidebar 打开它的对话'); return; }
-  if (act === 'teamOpen') { toast('（演示）这里会跳到官方团队面板：成员导航与任务板都复用官方那一份'); return; }
-  if (act === 'csend') {
-    confirmModal({ title: '派活（经官方通道）', warn: '会向官方团队成员投递一条消息，不可撤销；返回「已接收 / 已排队」会如实显示，排队中的不会重发。',
-      rows: [['收件人（名册名）', S.children[i].label || S.children[i].id], ['逐字任务正文', '（写在下面那一栏）'], ['投递方式', '队列（queue）／就近插入（steer），以官方回执为准']],
-      needReason: true, okText: '确认发送',
-      reasonLabel: '任务正文（写进那位成员的收件箱 —— 那个 agent 看得到）',
-      reasonPlaceholder: '一句话说清要它做什么（这句就是任务正文）',
-      onOk: (reason) => toast(`已发送（模拟官方返回 accepted）：${reason.slice(0, 30)}`) }); return;
-  }
-  if (act === 'ctask') { S.tasks.push({ subject: `跟进 ${S.children[i] ? S.children[i].id : ''} 的产出`, owner: '', blocked: false, st: 's-idle' }); render(); toast('已建成官方任务（写进官方任务板 —— 官方面板现在也能看到它）'); return; }
-  if (act === 'ccompact') {
-    if (S.sw.compressBusy) { toast('压缩被拒：子会话正在运行，等它空闲再压缩。（busy）', 'err'); return; }
-    confirmModal({ title: '压缩子会话（不可逆）', warn: '子会话的历史会被摘要取代，不可逆。失败也通常会留下痕迹。',
-      rows: [['目标', S.children[i].id], ['将被替代的区间与条目数', '第 1–3 步 · 共 12 条'], ['不可逆提示', '原文会被摘要取代（不是遮蔽，读不回来）']],
-      needReason: false, okText: '确认压缩', onOk: () => { S.children[i].state = 'idle'; render(); toast('压缩完成（演示）：子会话历史出现 compaction/* 事件'); } }); return;
-  }
-  if (act === 'cinterrupt') {
-    confirmModal({ title: '打断子会话', warn: '会向子会话发出取消信号；未完成的工作可能被中断，不可撤销。',
-      rows: [['目标', S.children[i].id], ['当前状态', S.children[i].state === 'running' ? '运行中' : '空闲'], ['已提交的工作', '不会被回滚（这句是实话）'], ['信号', '成员走官方 interrupt；裸子会话走 interruptByParent']],
-      needReason: false, okText: '确认打断', onOk: () => { S.children[i].state = 'ended'; render(); toast('已打断（演示）'); } }); return;
-  }
-  if (act === 'pendingSeen') { S.pendingSeen = true; toast('已标记「已查看」（记在插件本地；重启后从父会话日志重扫重建）'); return; }
-  if (act === 'pendingHand') { toast('已把结果交回主会话（演示）'); return; }
 }
 
 /* ------------------------------------------------------------------ 9. 自测面板 */
@@ -1713,24 +1420,6 @@ function applyExplain() {
 
 /* ------------------------------------------------------------------ 11. 渲染 + 事件 */
 /** 用户 2026-10-02 的减法：把点名要去掉的交互从界面上摘掉（真实现里不生成这些按钮）。 */
-function pruneRemovedUI() {
-  const blocksCard = $('cardBlocks') && $('cardBlocks').closest('.card');
-  if (blocksCard) blocksCard.hidden = true;                       // 固定块（不变量）那一整卡
-  const orch = $('cardOrch');
-  if (orch) {
-    const team = orch.querySelector('[data-block="team"]');
-    if (team) team.remove();                                      // 官方团队（名册/任务板）
-    /* 用户 2026-10-02：「待处理的结果」那些是平台自己写的结算账目，人工不该在那里干预（"标记已查看"是我加的）⟹ 整块删掉。 */
-    const pending = orch.querySelector('[data-block="pending"]');
-    if (pending) pending.remove();
-    orch.querySelectorAll('[data-act="csend"],[data-act="ctask"],[data-act="teamOpen"],[data-act="copen"],[data-act="cprompt"],[data-act="ccompact"],[data-act="cinterrupt"],[data-act="pendingSeen"],[data-act="pendingHand"]')
-      .forEach((b) => b.remove());   // 派活 / 建成官方任务 / 去官方面板 / 打开 / 发消息 / 压缩 / 打断
-    /* 用户 2026-10-02：「压缩、打断应该不需要 —— 进子会话后官方视图右边有箭头，可以随时打断或压缩；
-     * 我们前面再加这两个反而多余、容易引起歧义。」⟹ 面板不再提供压缩/打断。 */
-  }
-  const browser = $('cardBrowser');
-  if (browser) browser.querySelectorAll('[data-act="pin"],[data-act="gotoPin"]').forEach((b) => b.remove());  // 钉住这一段
-}
 function render() {
   applyTheme();
   /* ⚠️ 用户 2026-10-02 的**减法**（原话：「之前那个 UI 是可以的，只是你 UI 上面的很多多余交互去掉就可以」）：
@@ -1743,8 +1432,7 @@ function render() {
   renderStats(); renderTrend(); renderStep(); renderEvents();
   renderBrowser();
   /* 草稿两步已删除（用户 2026-10-02）：不再有「还有 N 条未生效 / 逐条应用 / 放弃未应用的改动」横幅。 */
-  renderBlocks(); renderOrch(); applyExplain(); renderSelfcheck();
-  pruneRemovedUI();   // ⚠️ 必须最后跑：上面那些 render* 会把 HTML 重写一遍
+  renderOrch(); applyExplain(); renderSelfcheck();   // ⚠️ 必须最后跑：上面那些 render* 会把 HTML 重写一遍
 }
 
 /**
@@ -1803,10 +1491,6 @@ document.addEventListener('keydown', (e) => {
 (function seed() {
   S.children.push({ id: '004c37a5', src: 'own', state: 'running', label: '把 README 双语改完并跑测试' });
   S.children.push({ id: '00a1b2c3', src: 'team', state: 'idle', label: 'reviewer（官方 teammate）' });
-  S.members.push({ name: 'lead（当前会话）', st: 's-run' }, { name: 'reviewer', st: 's-idle' }, { name: 'tester', st: 's-done' });
-  S.tasks.push({ subject: '改 README 双语', owner: 'reviewer', blocked: false, st: 's-run' });
-  S.tasks.push({ subject: '跑全量测试', owner: '', blocked: true, st: 's-block' });
-  S.tasks.push({ subject: '出发布说明', owner: 'tester', blocked: false, st: 's-done' });
 })();
 
 render();
