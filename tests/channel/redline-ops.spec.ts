@@ -21,7 +21,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { apply, inject, name } from '../../src/host/index'
 import { REDLINE_ERROR } from '../../src/shared/redline-errors'
 import { REDLINE_CHANNEL_ROUTE } from '../../src/shared/redline-route'
-import { draftFileName } from '../../src/redline/drafts'
+import { draftFileName } from '../../src/shared/redline-drafts'
 import { REDLINE_DATA_DIR_NAME } from '../../src/shared/redline-paths'
 
 type RouteFetch = (request: Request) => Promise<Response>

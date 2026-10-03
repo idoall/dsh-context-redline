@@ -50,7 +50,7 @@ import {
   type DraftTable,
   type LocalEdit,
   type SurfaceRowText,
-} from '../redline/drafts'
+} from '../shared/redline-drafts'
 import { fullReasoningOf, fullTextOf, isErrorOf, seqOf, typeOf } from '../redline/inspect'
 
 /** The host `connection` service, as far as this route consumes it. */

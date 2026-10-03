@@ -15,7 +15,8 @@
 
 | lane | 目录 | 可依赖的运行时 import | 能不能稳定跑 | 跑什么 |
 |---|---|---|---|---|
-| `channel`（自有护栏·真实路由级） | `tests/channel/` | 允许 `src/host/redline-channel.ts` 与 `src/redline/**`；**禁止** `src/client/**` | ✅ 必须永远绿 | 捕获宿主注册的**精确 Fetch 路由** → 按真实 RPC 信封调用 → 读回 SQLite/草稿文件断言 |
+| `channel`（自有护栏·真实路由级） | `tests/channel/` | 允许 `src/host/redline-channel.ts` 与 `src/redline/**`；**禁止** `src/client/**` | ✅ 必须永远绿 | 捕获宿主注册的**精确 Fetch 路由** → 按真实 RPC 信封调用 → 读回草稿文件断言 |
+| `client-logic`（自有护栏·客户端逻辑） | `tests/client-logic/` | 允许 `src/client/**` 与 `src/shared/**`；**禁止** `src/host/**` | ✅ 必须永远绿（普通 node + 桩 `fetch`，不用 jsdom/React） | 客户端**可测**的那半：通道传输（A12 的客户端侧：URL 必须是 shared 常量、失败一律回稳定码、绝不抛） |
 | `host`（上游带的） | `tests/host/` | 上游 | ⚠️ 环境依赖，可能整片失败 | 上游 fold/投影。**不作为门禁**，但改动上游文件时要跑一次做对照 |
 | `client`（上游带的） | `tests/client/` | 上游客户端 | ⚠️ 同上 | 上游客户端组件。**不作为门禁** |
 
@@ -120,7 +121,7 @@ pnpm install
 ./node_modules/.bin/tsc --noEmit
 ./node_modules/.bin/oxlint                # 判定行是 "Found N warnings and M errors"（别只看最后一行）
 ./node_modules/.bin/tsdown
-./node_modules/.bin/vitest run --project edit --project channel
+./node_modules/.bin/vitest run --project edit --project channel --project client-logic
 node scripts/namespace-contract.mjs        # M1 的命名空间自检（11 个面，docs/04 M1 DoD）
 
 # 上游两个 lane（非门禁；环境依赖，见 §1）

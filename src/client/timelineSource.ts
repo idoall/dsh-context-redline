@@ -30,11 +30,12 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import type { ContextTimeline, ContextTimelineDetail } from '../shared/types'
 import type { ClientCtx, SessionStandardProps } from './services'
 import { asRecord, numOf, objectsOf, projectionOf, timelineOf } from './services'
+import { REDLINE_DETAIL_ROUTE } from '../shared/redline-route'
 
 // The detail route of host/detail.ts — re-declared here: the client bundle
 // inlines every import, and the host module must never reach it. Same-origin
 // POST under the harness's authenticated `/api` fence.
-const DETAIL_ROUTE = '/api/dsh-context-redline/detail'
+const DETAIL_ROUTE = REDLINE_DETAIL_ROUTE
 
 /**
  * Narrow the detail endpoint's payload to a render-safe value (the same

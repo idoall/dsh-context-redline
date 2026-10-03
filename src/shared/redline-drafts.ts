@@ -17,10 +17,22 @@
  *     editing back to the original counts as a change.
  *   · A corrupt file is an explicit error, never a silently empty table (E13).
  *
+ * ── Why this lives in `src/shared/**` and not in `src/redline/**` ──────────
+ * The BROWSER needs these rules too: it DISPLAYS the version in effect, PREFILLS
+ * the editor from it, and labels a row `已改（本地）` — all three must use the same
+ * answer the host uses when it decides "no substantive change". Two copies of
+ * "what is in effect" is precisely how a UI starts disagreeing with the gate that
+ * refuses the save.
+ *
+ * The bundle-purity gate (`docs/02` §4, `docs/05` A13, `namespace-contract` face 9,
+ * plus tsdown's client-bundle purity plugin) forbids `src/client/**` from importing
+ * `src/redline/**` at runtime — reverse-verified, same as `redline-ability.ts`.
+ *
  * Purity: no `node:*` — the host half owns the file system and passes text in/out.
  */
 
-import { REDLINE_DATA_DIR_NAME } from '../shared/redline-paths'
+import { REDLINE_ERROR } from './redline-errors'
+import { REDLINE_DATA_DIR_NAME } from './redline-paths'
 
 /** Our on-disk format version. Only bumped with a migration; there is none yet. */
 export const REDLINE_DRAFT_SCHEMA_VERSION = 1
@@ -49,8 +61,12 @@ export interface SurfaceRowText {
   readonly isError?: boolean
 }
 
-/** Why a save was refused. Both codes are stable and distinguishable. */
-export type ChangeRefusal = 'redline/empty-content' | 'redline/no-change'
+/**
+ * Why a save was refused. Derived from the ONE code table (`redline-errors.ts`)
+ * rather than re-spelled here: a second spelling of a wire code is how the client
+ * ends up with a case it cannot map.
+ */
+export type ChangeRefusal = typeof REDLINE_ERROR.emptyContent | typeof REDLINE_ERROR.noChange
 
 export type ChangeVerdict = { readonly ok: true } | { readonly ok: false; readonly code: ChangeRefusal }
 
@@ -138,13 +154,13 @@ export function checkChange(
   table: DraftTable,
   next: { readonly text: string; readonly reasoning: string; readonly isError: boolean },
 ): ChangeVerdict {
-  if (next.text === '' && next.reasoning === '') return { ok: false, code: 'redline/empty-content' }
+  if (next.text === '' && next.reasoning === '') return { ok: false, code: REDLINE_ERROR.emptyContent }
   if (
     next.text === effectiveText(row, table)
     && next.reasoning === effectiveReasoning(row, table)
     && next.isError === effectiveIsError(row, table)
   ) {
-    return { ok: false, code: 'redline/no-change' }
+    return { ok: false, code: REDLINE_ERROR.noChange }
   }
   return { ok: true }
 }

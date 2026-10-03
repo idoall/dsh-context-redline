@@ -212,6 +212,19 @@ check('2 路由', `src/host/** 里的 /api 字面量全部挂在 ${API_PREFIX} �
   return `${hits.length} 处 /api 字面量`
 })
 
+check('2 路由', 'src/client/** 里一个 /api 字面量都没有（必须走 shared 常量）', () => {
+  // `docs/05` A12: the browser must POST the SAME constant the host registers, and
+  // the only way to guarantee that is for the client to import it. A literal that
+  // happens to be correct TODAY drifts the moment the constant moves — and the
+  // failure mode is a silent 404, not an error. So the rule is zero literals.
+  const hits = findHits(clientFiles, /['"`]\/api\//, { code: true })
+  assert(
+    hits.length === 0,
+    `客户端里出现了手写路由（应 import REDLINE_*_ROUTE）：\n      ${hits.join('\n      ')}`,
+  )
+  return '0 处（客户端只 import shared 常量）'
+})
+
 check('2 路由', `src/shared/redline-route.ts 定义四条 ${API_PREFIX}/* 路由`, () => {
   const code = codeOf('src/shared/redline-route.ts')
   const routes = matches(code, /REDLINE_\w+_ROUTE = `\$\{REDLINE_API_PREFIX\}\/([a-z]+)`/g)

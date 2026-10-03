@@ -21,6 +21,7 @@ import { estimateSessionCost, mergeCostUsage } from './cost'
 import type { CostCurrency, ModelBook } from './cost'
 import { activityOf, asRecord, timelineOf, type ClientCtx, type SessionsFace } from './services'
 import type { ContextActivity, ContextTimeline, SessionCostUsage, TimingTotals, TokenUsage, ToolTimingTotals } from '../shared/types'
+import { REDLINE_BACKFILL_ROUTE } from '../shared/redline-route'
 
 /** One session-list row joined with its (sanitized) projection values. */
 export interface OverviewRow {
@@ -634,7 +635,7 @@ export function refreshSessions(ctx: ClientCtx): void {
 // The plugin's warm-up trigger route (host/backfill.ts) — re-declared here:
 // the client bundle inlines every import, and the host module must never
 // reach it. Same-origin POST under the harness's authenticated `/api` fence.
-const BACKFILL_ROUTE = '/api/dsh-context-redline/backfill'
+const BACKFILL_ROUTE = REDLINE_BACKFILL_ROUTE
 
 /**
  * Summon the host's projection warm-up (host/backfill.ts): the dashboard is

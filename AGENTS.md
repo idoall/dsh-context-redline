@@ -118,7 +118,7 @@ pnpm install        # 只有这一条；没有 link 步骤，也就没有写穿�
 pnpm install                                                         # 只有这一条（不建符号链接，见 §2.4 / docs/01 F42）
 ./node_modules/.bin/tsc --noEmit                                     # 类型检查（exit 0 是底线；含 tests/**）
 ./node_modules/.bin/tsdown                                           # 构建（不要跑 clean-lib.mjs）
-./node_modules/.bin/vitest run --project edit --project channel      # 自有护栏（门禁）
+./node_modules/.bin/vitest run --project edit --project channel --project client-logic   # 自有护栏（门禁）
 node scripts/namespace-contract.mjs                                  # 命名空间门禁（11 个面 / 24 项）
 ./node_modules/.bin/oxlint                                           # 风格与类型感知规则
 ./node_modules/.bin/vitest run --project host --project client       # 上游 lane（非门禁；环境依赖，docs/05 §1）
@@ -175,7 +175,7 @@ dsh --profile web --dump-config                                      # 静态确
 ## 5. 当前状态
 
 > **进度看板（唯一状态源）**：[`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) —— **细粒度任务表**
-> （ID / 子任务 / 状态 / **文件动作（范围冻结）**），当前 **DONE 167 / 共 265**，需要用户的步骤标 `WAIT🙋`。
+> （ID / 子任务 / 状态 / **文件动作（范围冻结）**），当前 **DONE 168 / 共 266**，需要用户的步骤标 `WAIT🙋`。
 > **每次收尾必须回来同步它**（含 §11 进度总览），否则就会出现第二个"真相"。
 
 | 阶段 | 状态 |
@@ -184,7 +184,7 @@ dsh --profile web --dump-config                                      # 静态确
 | **M0.5** 静态可交互 demo（交互门禁） | ✅ 第一版已交付（`demo/`，含逐步讲解模式）；✅ **已做浏览器实测**（1440/880/879/390 视口，原始数据在 [`demo/screenshots/measure-log.md`](demo/screenshots/measure-log.md)）；**等用户逐条按 R 编号确认交互**（`docs/10` M05-15） |
 | **M1** 骨架与身份（复制 tag `v0.59.2` + 命名空间化） | 🟡 **仓库内已完成 + 已装配进 profile（12 / 14）**：`src/` 从 tag `v0.59.2` 复制 **110 个文件** + 命名空间分家；`tsc --noEmit` exit 0 · `tsdown` exit 0 · `namespace-contract` **11 面 24 项 0 失败**（逐面反向验证）· `oxlint` 0 error · `dsh --profile web --dump-config` **exit 0** 且两插件并排无冲突（M1-14，2 行 profile 声明 + 备份）。**只剩「你重启 `dsh web`」→ 我复验 M1-02** |
 | **M2** 编辑面（TDD；⛔ 回滚已不做，见 `docs/11` D19） | 🟡 **仓库内已完成（29 / 34）**：本地改动存储 / 全文读取 / 按底层事件类型的能力判定 / 通道 `node.read`+`draft.*`；自有 lane **67/67**，每条保存都断言**会话零写入**。剩 5 条随 M3/M5 做 |
-| **M3** 右侧可编辑界面（人工门禁） | 🟡 **计划已按当前 demo 重写（14 / 32）**：开工第一步（把 12 行已被删掉的旧计划标作废 + 补 9 行 demo 已确认的工作）**已完成**；界面实现（M3-24…M3-31）是下一步，客户端改动**硬刷新即可**、不必重启（`docs/01` F16） |
+| **M3** 右侧可编辑界面（人工门禁） | 🟡 **计划已按当前 demo 重写 + 客户端通道就位（15 / 33）**：12 行旧计划已标作废、补了 9 行 demo 已确认的工作；`src/client/redlineChannel.ts` + 新 `client-logic` lane（8 条）先红后绿地通了浏览器侧那半，并顺手修掉"客户端各手写一份路由"的真实隐患。**界面实现（M3-24…M3-31）是下一步**；客户端改动**硬刷新即可**、不必重启（`docs/01` F16） |
 | **M4** 轮次联动（人工门禁） | ⬜ |
 | **M4.5** 平台能力验证（**M5 的硬前置**；含 V12/V13） | ⬜ |
 | **M5** 子会话 → 压缩 → **对接官方团队**（冻结已删，`docs/11` D10） | ⬜ |

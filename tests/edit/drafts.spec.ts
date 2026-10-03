@@ -1,4 +1,4 @@
-// Local-edit storage (`src/redline/drafts.ts`) — the EDIT lane's core guardrail.
+// Local-edit storage (`src/shared/redline-drafts.ts`) — the EDIT lane's core guardrail.
 //
 // What this file locks (docs/10 M2, the hard constraint of docs/11 D15):
 //   · a save writes ONLY the plugin's own store — the session log is never touched;
@@ -28,7 +28,7 @@ import {
   safeSessionId,
   serializeDrafts,
   type LocalEdit,
-} from '../../src/redline/drafts'
+} from '../../src/shared/redline-drafts'
 import { REDLINE_DATA_DIR_NAME } from '../../src/shared/redline-paths'
 
 /** A minimal surface row: the host fills `text` from the FULL event text. */

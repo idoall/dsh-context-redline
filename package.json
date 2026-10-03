@@ -38,7 +38,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "namespace-contract": "node scripts/namespace-contract.mjs",
-    "test": "vitest run --project edit --project channel",
+    "test": "vitest run --project edit --project channel --project client-logic",
     "test:upstream": "vitest run --project host --project client",
     "verify": "pnpm run typecheck && pnpm run lint && pnpm run namespace-contract && pnpm run build && pnpm run test"
   },

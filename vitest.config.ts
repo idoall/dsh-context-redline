@@ -9,6 +9,10 @@ import { defineConfig } from 'vitest/config'
 //   channel — OUR route-level guardrails. Captures the exact Fetch route the
 //             Host half registers and calls it through the real RPC envelope.
 //             Allowed to import `src/host/redline-channel.ts`; never `src/client/**`.
+//   client-logic — OUR client-half logic that is testable without a browser
+//             (the channel transport that the panel's rows call). Imports
+//             `src/client/**` + `src/shared/**`; never `src/host/**`. Runs in
+//             plain node with a stubbed `fetch` — no jsdom, no React.
 //   host    — upstream's own lane (fold/projection). Environment-dependent feed;
 //             NOT a gate, but run it once whenever an upstream file is touched.
 //   client  — upstream's own lane (React components, jsdom). NOT a gate.
@@ -30,6 +34,13 @@ export default defineConfig({
         test: {
           name: 'channel',
           include: ['tests/channel/**/*.spec.ts'],
+          environment: 'node',
+        },
+      },
+      {
+        test: {
+          name: 'client-logic',
+          include: ['tests/client-logic/**/*.spec.ts'],
           environment: 'node',
         },
       },

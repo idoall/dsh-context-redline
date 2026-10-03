@@ -16,11 +16,12 @@
 
 import type { PlatformBalance, PlatformBalanceEntry } from '../shared/types'
 import { asRecord } from './services'
+import { REDLINE_BALANCE_ROUTE } from '../shared/redline-route'
 
 // The balance route of host/balance.ts — re-declared here (the client bundle
 // inlines every import, and the host module must never reach it). Same-origin
 // POST under the harness's authenticated `/api` fence.
-const BALANCE_ROUTE = '/api/dsh-context-redline/balance'
+const BALANCE_ROUTE = REDLINE_BALANCE_ROUTE
 
 /** Where the last live figure is remembered across opens, per browser. */
 const STORAGE_KEY = 'dsh-context-redline:platform-balance'

@@ -25,6 +25,8 @@ export const REDLINE_ERROR = {
   noDraft: 'redline/no-draft',
   /** The draft is identical to the version already in effect. */
   noChange: 'redline/no-change',
+  /** The draft empties both the visible text and the thinking text. */
+  emptyContent: 'redline/empty-content',
   /** `assistant/message` cannot be rewritten on this platform (`docs/01` F7.2). */
   assistantImmutable: 'redline/assistant-immutable',
   /** The target is no longer a surface node (it was replaced) (`docs/01` F7). */
@@ -37,6 +39,8 @@ export const REDLINE_ERROR = {
   unsupportedType: 'redline/unsupported-type',
   /** An op handler threw. Never a platform code — the message carries that. */
   internal: 'redline/internal',
+  /** CLIENT-SIDE: the call never produced a valid answer (offline, HTTP error, bad body). */
+  transport: 'redline/transport',
 } as const
 
 export type RedlineErrorCode = (typeof REDLINE_ERROR)[keyof typeof REDLINE_ERROR]
@@ -54,12 +58,14 @@ export const REDLINE_ERROR_MESSAGE: Readonly<Record<RedlineErrorCode, string>> =
   [REDLINE_ERROR.turnOpen]: 'the session has an open turn',
   [REDLINE_ERROR.noDraft]: 'no local draft for that seq',
   [REDLINE_ERROR.noChange]: 'the draft does not change the effective text',
+  [REDLINE_ERROR.emptyContent]: 'the draft has no content at all',
   [REDLINE_ERROR.assistantImmutable]: 'assistant/message cannot be rewritten',
   [REDLINE_ERROR.shadowed]: 'that seq is no longer a surface node',
   [REDLINE_ERROR.badRange]: 'bad void range',
   [REDLINE_ERROR.historyUnavailable]: 'the full text of that version is not readable',
   [REDLINE_ERROR.unsupportedType]: 'this event type has no rewrite path',
   [REDLINE_ERROR.internal]: 'the op handler failed',
+  [REDLINE_ERROR.transport]: 'the request did not reach the host',
 }
 
 /** Whether `code` is one of ours (used by the client to pick the R4.7 wording). */
