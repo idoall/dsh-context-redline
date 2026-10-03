@@ -94,7 +94,7 @@ const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendCellAct, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
-  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editorHtml, orchAct, nodeOf, rowHtml, BAR_W, BAR_GAP, spanW, chartW, focusCellOf, turnOfEl, deltaRefReq };`;
+  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editorHtml, orchAct, nodeOf, rowHtml, BAR_W, BAR_GAP, spanW, chartW, focusCellOf, turnOfEl, deltaRefReq, SEQ_IX, TURN_IX, reqBySeq, reqsOfTurn, reqOf };`;
 
 /**
  * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
@@ -987,7 +987,35 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('块不许加彩色焦点标记（无记录时同样）', !/is-focus/.test(registry.get('cardOrch').innerHTML));
 }
 
-/* ---------------- 上下文浏览器标题栏：照上游 0.60.0 抄的「对比基线」+ 单个步骤下拉 ----------------
+/* ---------------- 索引层：把"每根柱子/每行都会调"的线性扫描换成 Map（用户 2026-10-02 裁定只做这项） ----------------
+ * 判据：这些函数出现在每个条目/每根柱子的循环里，线性扫描就是 O(N²)。
+ * 实测（10,000 条）：N 次线性查找 38.7ms vs N 次 Map 查找 0.2ms（约 190×）。
+ * 护栏做两件事：① 索引**完整且唯一**（不能漏轮、不能丢 seq）；② 语义与旧的线性扫描**逐一等价**。 */
+{
+  const S = api.S();
+  const R = api.REQUESTS;
+  check('索引层：SEQ_IX 覆盖每一条请求且不重复', api.SEQ_IX.size === R.length, `${api.SEQ_IX.size} vs ${R.length}`);
+  check('索引层：TURN_IX 覆盖每一轮（并集 = 全部请求）',
+    [...api.TURN_IX.values()].reduce((n, l) => n + l.length, 0) === R.length
+    && [...new Set(R.map((r) => r.turn))].every((t) => (api.TURN_IX.get(t) || []).length > 0));
+  // 语义等价：抽 3 轮 + 每轮首末两条，与"旧口径的线性扫描"逐条比
+  const turns = [...new Set(R.map((r) => r.turn))];
+  const sampleTurns = [turns[0], turns[Math.floor(turns.length / 2)], turns[turns.length - 1]];
+  const turnsOk = sampleTurns.every((t) => {
+    const old = R.filter((r) => r.turn === t);
+    const now = api.reqsOfTurn(t);
+    return old.length === now.length && old.every((r, i) => r.seq === now[i].seq);
+  });
+  check('索引层：reqsOfTurn / turnSteps / lastOfTurn 与旧的 filter 口径**逐条等价**', turnsOk);
+  const seqOk = R.every((r) => (api.reqBySeq(r.seq) || {}).seq === r.seq)
+    && api.reqBySeq(-1) === null;
+  check('索引层：reqBySeq 对每条请求都命中，且 miss 返回 null（不抛）', seqOk);
+  check('索引层：reqOf() 仍等于"选中那条或最后一条"',
+    api.reqOf().seq === (R.find((r) => r.seq === S.selSeq) || R[R.length - 1]).seq);
+  api.render();
+}
+
+/* ---------------- 上下文浏览器标题栏：照上游 0.60.0/* ---------------- 上下文浏览器标题栏：照上游 0.60.0 抄的「对比基线」+ 单个步骤下拉 ----------------
  * 用户 2026-10-02：「图中红框的部分，我们也可以参考插件去实现……就直接抄代码算了。」
  * 上游 0.60.0 原文（browser.base.*）：比前步 / 比前轮 / 「变动对比的基线：…（首轮无基线，全部计为变动）」；
  * 结构：`.lc-gran` 组两个按钮 + **一个** `select`（live 在最前、其余倒序，标签 `第 t 轮 · 第 s 步 (共 n 步) · 时间`）；

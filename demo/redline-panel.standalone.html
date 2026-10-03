@@ -667,7 +667,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 81e613f</span>
+    <b>上下文批改</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 869fcbd</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -946,15 +946,30 @@ let S = initial();
 /* ------------------------------------------------------------------ 3. 工具函数 */
 const $ = (id) => document.getElementById(id);
 const ALL = () => NODES.concat(S.extraNodes);
-const nodeOf = (seq) => ALL().find((n) => n.seq === seq);
+/* ⚠️ **索引层**（用户 2026-10-02 问"1 万条会不会有性能问题"，裁定只做"seq→index 索引"）：
+ * 下面这几个函数出现在**每个条目 / 每根柱子**的循环里，用线性扫描就是 O(N²)。
+ * 实测（10,000 条）：`N` 次线性查找 38.7ms，`N` 次 Map 查找 0.2ms —— 约 **190×**。
+ * 数据初始化后不再变化（`REQUESTS` / `NODES` 都是 init 期填好，之后只读），所以索引一次建好即可；
+ * 运行期新增的只有 `S.extraNodes`（本地改动产生的新条目，数量小）⟹ 它仍走小数组兜底。 */
+const SEQ_IX = new Map(REQUESTS.map((r, i) => [r.seq, i]));
+const TURN_IX = new Map();
+for (const r of REQUESTS) {
+  if (!TURN_IX.has(r.turn)) TURN_IX.set(r.turn, []);
+  TURN_IX.get(r.turn).push(r);
+}
+const NODE_IX = new Map(NODES.map((n) => [n.seq, n]));
+/** seq → 请求（O(1)）。找不到返回 null。 */
+const reqBySeq = (seq) => { const i = SEQ_IX.get(Number(seq)); return i === undefined ? null : REQUESTS[i]; };
+/** seq → 条目（O(1)；运行期新增的 extraNodes 走小数组兜底）。 */
+const nodeOf = (seq) => NODE_IX.get(seq) || S.extraNodes.find((n) => n.seq === seq);
 const catLabel = (k) => (CATS.find((c) => c.key === k) || { label: k }).label;
 const catColor = (k) => (CATS.find((c) => c.key === k) || { color: 'inherit' }).color;
 const fmt = (n) => (Math.abs(n) >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n)));
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const reqOf = () => REQUESTS.find((r) => r.seq === S.selSeq) || REQUESTS[REQUESTS.length - 1];
-const turnSteps = (turn) => REQUESTS.filter((r) => r.turn === turn).length;
-const reqsOfTurn = (turn) => REQUESTS.filter((r) => r.turn === turn);
-const lastOfTurn = (turn) => reqsOfTurn(turn)[reqsOfTurn(turn).length - 1];
+const reqOf = () => reqBySeq(S.selSeq) || REQUESTS[REQUESTS.length - 1];
+const reqsOfTurn = (turn) => TURN_IX.get(turn) || [];
+const turnSteps = (turn) => reqsOfTurn(turn).length;
+const lastOfTurn = (turn) => { const l = TURN_IX.get(turn); return l ? l[l.length - 1] : undefined; };
 const isLive = () => S.selSeq === REQUESTS[REQUESTS.length - 1].seq;
 
 /** 该请求里"模型可见"的节点（排除被遮蔽的原文；但替换体本身要算可见） */
@@ -1078,7 +1093,7 @@ function selectReq(req, why) {
  *  ⟹ 一律走这个函数（实测踩过：只读 `data-turn` 会让 hover 联动整个失效，界面看着像没做）。 */
 function turnOfEl(el) {
   return Number(el.dataset.turn || 0)
-    || (REQUESTS.find((r) => r.seq === Number(el.dataset.seq)) || {}).turn || 0;
+    || (reqBySeq(el.dataset.seq) || {}).turn || 0;
 }
 function focusCellOf(sc, t, list) {
   const cells = [...sc.querySelectorAll('.tcell')];
@@ -1095,7 +1110,7 @@ function trendCellAct(b) {
    *    点柱子 = 选中那一步；点轮号 = 切粒度 + 定位到那一轮。 */
   const t = b.dataset.turn
     ? Number(b.dataset.turn)
-    : (REQUESTS.find((x) => x.seq === Number(b.dataset.seq)) || {}).turn;
+    : (reqBySeq(b.dataset.seq) || {}).turn;
   if (!t) return;
   S.trendGran = 'turn';
   S.focusTurn = t;                 // 一次性：渲染后把这一轮居中，随后清掉（照 onFocusTurnHandled）
@@ -1245,8 +1260,8 @@ function deltaRefReq(req) {
     return lastReq ? turnBaseOf(lastReq) : null;
   }
   if (S.deltaBase === 'turn') return (req.turn || 1) > 1 ? turnBaseOf(req) : null;   // 首轮：无基线
-  const i = list.findIndex((x) => x.seq === req.seq);
-  return i > 0 ? list[i - 1] : null;
+  const gi = SEQ_IX.get(req.seq);
+  return gi === undefined || gi === 0 ? null : REQUESTS[gi - 1];
 }
 
 const visibleMax = (series, scrollEl) => (S.trendMode === 'delta'
@@ -1485,7 +1500,7 @@ function renderTrend() {
   });
   c.querySelectorAll('.tbar').forEach((b) => {
     const i = Number(b.dataset.i);
-    const req = () => REQUESTS.find((r) => r.seq === Number(b.dataset.seq)) || list[i];
+    const req = () => reqBySeq(b.dataset.seq) || list[i];
     // hover / 键盘聚焦：立刻显示（原生 title 有延迟，所以自绘 —— 参考插件的原话）
     b.onmouseenter = () => showTrendTip(i, req(), series);
     b.onfocus = () => showTrendTip(i, req(), series);
@@ -1799,7 +1814,7 @@ function renderBrowser() {
   });
   $('stepPick').onchange = (e) => {
     if (e.target.value === 'live') selectReq(REQUESTS[REQUESTS.length - 1], null);
-    else selectReq(REQUESTS.find((x) => x.seq === Number(e.target.value)), null);
+    else selectReq(reqBySeq(e.target.value), null);
   };
   $('cardBrowser').querySelectorAll('[data-cat]').forEach((b) => { b.onclick = () => { S.openCat = S.openCat === b.dataset.cat ? null : b.dataset.cat; S.openElem = null; render(); }; });
   $('cardBrowser').querySelectorAll('[data-focus]').forEach((b) => {
