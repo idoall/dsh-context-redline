@@ -111,7 +111,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 199 / 共 269**（DOING 9 · TODO 53 · WAIT🙋 8）· 一条命令看全貌：`node scripts/progress.mjs` |
+| 进度 | `docs/10`：**DONE 200 / 共 270**（DOING 10 · TODO 52 · WAIT🙋 8）· 一条命令看全貌：`node scripts/progress.mjs` |
 | 当前卡点 | **四件事之外，我这边没有未做的离线工作**：① **你重启 `dsh web`** → 我复验 M1-02（挂载日志 / 两面板并存 / console 无注册错误）+ 你点着看界面（M3-22）；② **授权包②**（专用可弃会话）→ M4.5 的 8 条真机探针 → **之后才允许进 M5**（硬门禁已在 docs/04 落纸）；③ **四个决策**（首轮 δ / M4-06 默认粒度 / M4-07 统计卡格子 / 要不要跳 `docs/12` 的入口）；④ **授权包④**（push / tag / npm）。仓库内：`tsc` / `oxlint` / `check-docs` / `namespace-contract` / 4 个门禁 lane / 全量 vitest / demo 两条自检 —— 一条命令 `node scripts/release-check.mjs` → 全部通过（共 10 步） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -653,3 +653,18 @@ tip 两行口径（`tip.turn1`）。**颜色不抄**，仍走我们的主题令�
    插件（复制基线）= `轮数 / 步数 / 人类输入 / 工具调用 / 缓存命中 / 费用 / 子 Agent 费用`。
    `docs/03` 只钉了三张卡的名字、**没钉卡内格子** ⟹ 这不是"文档 vs demo"而是"demo vs 基线"；
    照 demo 换就是**改交互**，按纪律留给你在人工门禁定夺（换掉会把"轮数/步数/费用"这些读数拿掉）。
+
+## D39 · 入口命名：**不许与上游那个插件重名**（用户 2026-10-04 明确）
+
+用户原话：「在**对话轨迹、上下文**那里，我们不应该跟之前的插件重复，我们应该叫**上下文批改**」。
+
+- 落点是**一个共用标签**：`src/client/i18n.ts` 的 `key = tab` —— 会话视图页签（`conversation.view`）、
+  右侧栏胶囊（`sidebar.right.pane.tab`）、面板自己的标题（`icon.tsx` 的 `redline-title-label`）**三处都读它**。
+  改成 zh `上下文批改` / en `Context Redline`；`locale/{zh,en}.json` 的展示名与描述同步。
+- **加了一条机械门禁**（`namespace-contract` 面 5）：入口标签**不许等于上游那两个裸词**（`上下文` / `Context`），
+  且必须带我们的产品名（`批改` / `Redline`）。**反向验证**：改回裸词 → 立刻红。
+  这样"两个插件在界面上看起来是同一个东西"这种回归不会悄悄发生。
+- 连带改了上游 lane 里 8 处锁旧标签的断言（`index` / `icon` / `sidebar` / `contextJump` 的夹具也把假页签标签改成新名）。
+- **要看到它**：`tsdown` 已重打 `lib/client.js`（里面已是「上下文批改」）⟹ **硬刷新页面即可**，不必再重启。
+- 描述里**故意不写**上游包名 —— 面 5 的"代码/文案里不许出现上游包名"是有意的护栏（身份泄漏），
+  所以共存那句话用"上游那个上下文插件"表述。

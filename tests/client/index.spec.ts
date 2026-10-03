@@ -59,7 +59,7 @@ describe('client entry: dictionaries', () => {
     assert.equal(dicts.zh, DICT_ZH)
     assert.equal(dicts.en, DICT_EN)
     // The bound translate resolves through the active-locale → en chain.
-    assert.equal(ctx.locale.bind('dsh-context-redline')('tab'), 'Context')
+    assert.equal(ctx.locale.bind('dsh-context-redline')('tab'), 'Context Redline')
     ctx.dispose()
     assert.equal(ctx.locale.namespaces.has('dsh-context-redline'), false)
   })
@@ -67,7 +67,7 @@ describe('client entry: dictionaries', () => {
   test('the zh active locale binds the zh dictionary arm', () => {
     const ctx = new TestClientCtx({ locale: 'zh' })
     applyTo(ctx)
-    assert.equal(ctx.locale.bind('dsh-context-redline')('tab'), '上下文')
+    assert.equal(ctx.locale.bind('dsh-context-redline')('tab'), '上下文批改')
     ctx.dispose()
   })
 })
@@ -83,7 +83,7 @@ describe('client entry: conversation.view slot', () => {
     assert.equal(registration.id, 'redline')
     assert.equal(registration.order, 20)
     assert.equal(registration.locale, 'dsh-context-redline')
-    assert.equal(registration.label?.(), 'Context')
+    assert.equal(registration.label?.(), 'Context Redline')
 
     const el = component({ sessionId: 's1', useProjection: () => undefined }) as ReactElement
     assert.equal(typeof el.type, 'function')
@@ -97,7 +97,7 @@ describe('client entry: conversation.view slot', () => {
   test('the tab label translates to zh under an zh locale', () => {
     const ctx = new TestClientCtx({ locale: 'zh' })
     applyTo(ctx)
-    assert.equal(ctx.slots.of('conversation.view')[0].registration.label?.(), '上下文')
+    assert.equal(ctx.slots.of('conversation.view')[0].registration.label?.(), '上下文批改')
     ctx.dispose()
   })
 })
@@ -393,7 +393,7 @@ describe('client entry: right Sidebar Context tab', () => {
     assert.equal(definitions.length, 1)
     assert.equal(definitions[0].id, 'dsh-context-redline')
     assert.equal(definitions[0].kind, 'dsh-context-redline')
-    assert.equal(definitions[0].title?.(), 'Context')
+    assert.equal(definitions[0].title?.(), 'Context Redline')
     const bodies = ctx.slots.of('sidebar.right.pane.tab')
     assert.equal(bodies.length, 1)
     assert.equal(bodies[0].registration.key, 'dsh-context-redline')

@@ -308,6 +308,23 @@ check('5 文案', 'locale 命名空间 = 包名，且注册/绑定都用它', ()
   return PKG_NAME
 })
 
+check('5 文案', '入口标签不与上游同名（用户 2026-10-04：对话轨迹/上下文那里要叫「上下文批改」）', () => {
+  // The conversation-view tab, the right Sidebar's chip and the panel's own title
+  // all read ONE label (`i18n` key `tab`). If any of them is the bare upstream word
+  // the two plugins look like the same thing in the UI — which is exactly what the
+  // user asked us to stop doing. The upstream words are banned OUTRIGHT; the label
+  // must carry our product name.
+  const text = read('src/client/i18n.ts')
+  const labels = matches(text, /'tab':\s*'([^']+)'/g)
+  assert(labels.length >= 2, `expected a zh + en label, found ${labels.length}`)
+  const banned = ['上下文', 'Context']
+  for (const label of labels) {
+    assert(!banned.includes(label), `入口标签 "${label}" 与上游同名 —— 必须写成「上下文批改」/「Context Redline」`)
+    assert(/批改|Redline/.test(label), `入口标签 "${label}" 没带我们的产品名`)
+  }
+  return labels.join(' / ')
+})
+
 check('5 文案', 'locale/*.json 的展示名带我们的包名', () => {
   assert(localeFiles.length > 0, 'locale/ 下没有 json')
   for (const file of localeFiles) {

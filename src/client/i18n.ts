@@ -6,7 +6,7 @@
 export type Translate = (key: string, params?: Record<string, string | number>) => string
 
 export const DICT_ZH: Record<string, string> = {
-  'tab': '上下文',
+  'tab': '上下文批改',
   'sidebar.guideDescription': '查看上下文的构成、统计、演变。',
   'cat.system': '系统提示词', 'cat.tools': '工具定义', 'cat.user': '用户消息',
   'cat.inject': '注入内容', 'cat.skill': '技能注入', 'cat.assistant': '助手消息', 'cat.tool': '工具结果',
@@ -352,7 +352,7 @@ export const DICT_ZH: Record<string, string> = {
 }
 
 export const DICT_EN: Record<string, string> = {
-  'tab': 'Context',
+  'tab': 'Context Redline',
   'sidebar.guideDescription': 'Inspect context composition, stats, and evolution.',
   'cat.system': 'System Prompt', 'cat.tools': 'Tool Schemas', 'cat.user': 'User Messages',
   'cat.inject': 'Injected Context', 'cat.skill': 'Skill Injections', 'cat.assistant': 'Assistant Messages', 'cat.tool': 'Tool Results',

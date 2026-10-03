@@ -64,14 +64,14 @@ describe('makeContextTabTitle — the chip-title seat', () => {
     const m = await mount(h(Title))
     assert.equal(query<SVGSVGElement>(m.container, 'svg').getAttribute('width'), '16')
     const label = query<HTMLSpanElement>(m.container, '.redline-title-label')
-    assert.equal(text(label), 'Context')
+    assert.equal(text(label), 'Context Redline')
     await m.unmount()
   })
 
   test('follows the bound translate at render (zh label)', async () => {
     const Title = makeContextTabTitle(makeKit('zh').t)
     const m = await mount(h(Title))
-    assert.equal(text(m.container), '上下文')
+    assert.equal(text(m.container), '上下文批改')
     await m.unmount()
   })
 })

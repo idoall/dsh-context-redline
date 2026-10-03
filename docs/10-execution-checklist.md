@@ -171,7 +171,7 @@
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
 | M1-01 | 🙋 授权包①（**M1 收口动作**）：装配进 `web` profile ✅ **已完成（2026-10-04，用户选 A）**；**等你重启 `dsh web`**；我随后复验 | WAIT🙋 | → 备份 + 2 行声明，证据见 M1-14；**只剩重启**（`dsh web` 一律由用户本人执行） |
-| M1-02 | 复验：插件日志 `host loaded (/api/dsh-context-redline)`、两个面板并存、console 无注册错误 | TODO | 只读日志 + 浏览器 |
+| M1-02 | 复验：插件日志 `host loaded (/api/dsh-context-redline)`、两个面板并存、console 无注册错误 | DOING | → ✅ **用户 2026-10-04 重启已确认**：`dsh web` pid **30490 → 62954**（启动时间 Oct 3 16:10 → **Oct 4 06:37**）。静态组成复验：`dsh --profile web --dump-config` **exit 0**、`dsh-context-redline` 在合成树里出现 3 次。⚠️ **剩下的一半只能目视**（我做不了）：`dsh web` 的日志不是我能读的文件（`~/.dsh/dsh-web.log` 是 supervisor 的重启记录，不是插件挂载日志），HTTP 探测要当前 token（我拿不到，旧 token 401）；Playwright 打开 GUI 也因缺 token 得 401。⟹ **请你硬刷新后看一眼**：右侧/对话页签里两个插件各自都在、新入口名是「**上下文批改**」、浏览器 console 无 `already registered` / `loaded without registering` |
 | M1-03 | 从上游 tag `v0.59.2` 复制 `src/`（不带 `.git`、不带上游 `.github/workflows`） | DONE | → `git -C <upstream-clone> archive v0.59.2 src locale icon.svg cordis.patch.yml tests \| tar -x`；`find src -type f \| wc -l` = **110**（与 `docs/04` M1 风险的 110 一致）；`tests/` 复制后删掉 `tests/compat/**`+`tests/client/compat/**`+`tests/host/compat/**`+`tests/baselines.ts`（理由见 `UPSTREAM.md` §3.4）`src/**`、`tests/**`、`locale/**`、`icon.svg`、`cordis.patch.yml` |
 | M1-04 | 路由改名：`/api/dsh-context/{detail,balance,backfill}` → `/api/dsh-context-redline/*` | DONE | → 三个常量改成 `${REDLINE_API_PREFIX}/*`；`namespace-contract` 面 2「3 处 /api 字面量全部在我们前缀下」+「上游路由零命中」；`channel` lane 在**真 cordis** 上 boot 主机入口、抓真实注册的 4 条路由（`redline`/`detail`/`balance`/`backfill`）断言无上游路径 `src/host/{detail,balance,backfill}.ts`、`src/shared/redline-route.ts` |
 | M1-05 | 投影改名：`contextTimeline\|contextHeaders\|contextActivity` → `redlineTimeline\|redlineHeaders\|redlineActivity` 并定版 `stateVersion` | DONE | → `key:` 字面量 + schema 标识符 + `SessionProjectionStateMap` 键 + `fallback.ts` 的 `PROBE_KEYS` 一起改；面 3 报 `redlineActivity · redlineHeaders · redlineTimeline`；上游 3 个 key 零命中；`host` lane 的 fold 断言按新 key 全绿 `src/host/{timeline,headers,activity,fallback}.ts`、`src/shared/types.ts` |
@@ -229,7 +229,7 @@
 
 ---
 
-## 5. M3 · 右侧界面（**28 / 33 DONE**，按当前 demo 重写后的计划 · 开工第一步已做）
+## 5. M3 · 右侧界面（**29 / 34 DONE**，按当前 demo 重写后的计划 · 开工第一步已做）
 
 > ✅ **2026-10-04：本节已按"当前 demo 是唯一界面准绳"重写**。旧版（2026-10-01）有 12 行写着 `批注` / `版本历史` /
 > `固定块` / `未生效吸顶` / `应用到会话` / `官方团队区块` / `待处理结果` —— 这些交互已被用户 2026-10-02 的裁定**删除**
@@ -278,6 +278,7 @@
 | M3-30 | **不可编辑态 → 人话原因**（R2.3 / R4.7 汇总表的界面落点）：助手消息 / 被遮蔽原文 / 被压缩埋掉 / 系统提示词 / 工具定义 / 会话不在本进程 / 轮次未闭合 —— 每一态给出"原因 + 我该怎么办"，**能力为 false 时入口不出现**（不是禁用了还能点） | DONE | → **每一态都有人话**：助手消息 → `助手消息改不了`；被接替/被压缩 → 一句原因、零按钮；宿主保护的两类 → 不渲染动作区；**轮次未闭合 / 会话不在本进程 → 编辑器里写明句子并禁用 `保存`**（与 demo 的 `blocked`＝「轮次未闭合 或 不在本进程」逐字一致），且**主机侧同样拒绝**（`redline/turn-open` / `redline/not-live`）—— 界面禁用是体验，主机拒绝是安全网。护栏：`tests/edit/turn-state.spec.ts`（9 条纯函数）、`tests/channel/redline-ops.spec.ts`（`turnState` op + 两条拒绝 + "同一保存只因轮次闭合就通过"）、`tests/client-ui/redline-edit.spec.ts`（两种态各断言句子在 + `保存` 禁用 + 点了也不到存储）。**4 个变异反向验证**：边界判定写死已闭合 / 主机不拒 turn-open / 主机不拒 not-live / 界面不传 blocked —— 全部变红。⚠️ 反向验证**抓到我自己一条空壳护栏**：`not-live` 那条一开始是"读不到也报 not-live"，把 liveness 判断删掉它照样绿 → 已改成用"**行可读但本进程不 host**"的会话隔离该判断。⚠️ 已知简化：fold 用同一个 `gone` 同时表示"被改写过"与"被压缩埋掉"，所以两族说法还没分开（要分开得让 fold 暴露原因，不猜） |
 | M3-31 | 【作废】~~**帮助入口**（R7.1 + D6 连带要求）：从不可用态与说明处可跳到「这一态是什么意思 / 我该怎么办」汇总表~~ —— **`docs/03` R7.1 自己写着**："当前 demo **没有**单独的总体「帮助」按钮或「指给我看」入口"，它的帮助形态是右上角**讲解模式**（给可交互元素编号 → 点开右侧讲解抽屉）。⟹ 按"demo 为准"，**不做**一个 demo 没有的总体帮助入口（那是新增交互）。**内容侧已经到位**：`docs/12-user-guide.md`（本轮写好）就是 R4.7 那张"这一态是什么意思 / 我该怎么办"的权威表，而界面里每个 `?` 与不可编辑行的 `title` 已经承担了就地说明。**若你要一个能从界面跳到 `docs/12` 的入口，那是新增交互，说一声我再做** | DONE | → 作废依据：`docs/03` R7.1 原文 + `docs/12` 已交付 |
 | M3-33 | **客户端通道**（M3 的前置）：`src/client/redlineChannel.ts` —— `node.read` / `draft.list` / `draft.update` / `draft.drop` 四个调用的浏览器侧封装；URL 必须 import `REDLINE_CHANNEL_ROUTE`（不许手写），**失败一律回稳定码、绝不抛**（编辑器才能"保留输入 + 显示原因"） | DONE | → 先红后绿：`tests/client-logic/redline-channel.spec.ts`（新 lane）8 条，写测试时模块不存在 → 全红；实现后 8/8。**顺带修掉一个真实隐患**：`src/client/{timelineSource,overview,balance}.ts` 原本**各手写一份** `/api/dsh-context-redline/*` 字面量（上游的设计）→ 常量一改就静默 404，已改为 import `src/shared/redline-route.ts` 的常量；`namespace-contract` 新增一条"客户端里一个 `/api` 字面量都没有"（反向验证：塞回一个字面量 → 立刻红，即使那个字面量是**对的**也红）`src/client/redlineChannel.ts`、`src/client/{timelineSource,overview,balance}.ts`、`tests/client-logic/**`、`vitest.config.ts`、`scripts/namespace-contract.mjs` |
+| M3-34 | **入口命名不与上游重名**（用户 2026-10-04：「在对话轨迹、上下文那里，我们不应该跟之前的插件重复，我们应该叫上下文批改」） | DONE | → 改的是**一个共用标签**：`src/client/i18n.ts` 的 `tab` 键（会话页签 / 右侧栏胶囊 / 面板标题三处都读它）→ zh `上下文批改`、en `Context Redline`；`locale/{zh,en}.json` 的展示名与描述同步（描述里**不写**上游包名，因为面 5 禁止）。**新增门禁**：`namespace-contract` 面 5 —— 入口标签**不许等于上游那两个裸词**，且必须带我们的产品名；**反向验证**：把标签改回 `上下文` → 立刻红（原文：`入口标签 "上下文" 与上游同名`）。连带：上游 `client` lane 里 8 处断言锁的是旧标签（`index`/`icon`/`sidebar`/`contextJump`）→ 一并更新为新标签；`tsdown` 已重打，**硬刷新即可看到** |
 | M3-32 | **作废批次说明**（M3-01/04/05/07/08/09/11/12/13/18/19/20）：这些行写于 2026-10-01，随后被用户删除或移阶段 —— `docs/11` **D10**（冻结）、**D14**（固定块/漂移/重注入/压缩）、**D15**（所有保存都是临时保存 ⟹ 没有 apply/未生效吸顶）、**D18**（批注）、**D19**（行上只有「编辑」+ 无版本历史）、**D22**（步卡片整张删除）；团队与压缩属 **M5** | DONE | → `docs/11` D10/D14/D15/D18/D19/D22（不写代码） |
 
 ---
@@ -405,15 +406,15 @@
 | X 横切 | 8 | **2** | 4 | 1 | 1 |
 | M0 文档集 | 22 | **22** | 0 | 0 | 0 |
 | M0.5 交互 demo | 88 | **87** | 0 | 0 | 1 |
-| M1 骨架与身份 | 14 | **12** | 0 | 1 | 1 |
+| M1 骨架与身份 | 14 | **12** | 1 | 0 | 1 |
 | M2 编辑面 | 34 | **32** | 0 | 2 | 0 |
-| M3 右侧界面 | 33 | **28** | 0 | 4 | 1 |
+| M3 右侧界面 | 34 | **29** | 0 | 4 | 1 |
 | M4 轮次联动 | 7 | **4** | 0 | 3 | 0 |
 | M4.5 能力验证 | 19 | **4** | 4 | 8 | 3 |
 | M5 编排 | 28 | **1** | 0 | 26 | 1 |
 | M6 入口与发布 | 12 | **7** | 1 | 4 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **269** | **199** | **9** | **53** | **8** |
+| **合计** | **270** | **200** | **10** | **52** | **8** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 
