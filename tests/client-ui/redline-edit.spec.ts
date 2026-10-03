@@ -93,6 +93,88 @@ async function typeInto(area: HTMLTextAreaElement, value: string): Promise<void>
   })
 }
 
+describe('⓪b M3-03 · the two-level (turn → step) picker and the baseline switch', () => {
+  /** Two turns: turn 1 has two steps, turn 2 one — plus three user nodes so counts grow. */
+  const multi = tl({
+    requests: [
+      req({ seq: 10, turn: 1, step: 0, user: 100, total: 100 }),
+      req({ seq: 20, turn: 1, step: 1, user: 200, total: 200 }),
+      req({ seq: 30, turn: 2, step: 0, user: 300, total: 300 }),
+    ],
+    nodes: [node({ seq: 5, cat: 'user', text: 'a', tokens: 100 }), node({ seq: 15, cat: 'user', text: 'b', tokens: 100 }), node({ seq: 25, cat: 'user', text: 'c', tokens: 100 })],
+  })
+
+  const options = (m: Mounted, id: string): string[] =>
+    queryAll(m.container, `#${id} option`).map(o => o.textContent ?? '')
+  /** The user category row's two δ markers (null when absent). */
+  const userDeltas = (m: Mounted): { count: string | null, tokens: string | null } => {
+    const row = queryAll(m.container, '.redline-br-cat-row')[2] as HTMLElement
+    const c = row.querySelector('.redline-br-delta')
+    const tk = row.querySelector('.redline-br-tdelta')
+    return { count: c?.textContent ?? null, tokens: tk?.textContent ?? null }
+  }
+  const pickStep = async (m: Mounted, id: string, value: string): Promise<void> => {
+    await act(async () => {
+      const sel = query<HTMLSelectElement>(m.container, `#${id}`)
+      sel.value = value
+      sel.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+  }
+
+  test('the turn list is one option per turn, labelled with that turn\'s step count', async () => {
+    const m = await mountBrowser(multi, controller())
+    assert.deepEqual(options(m, 'turnPick'), [
+      DICT_EN['browser.turnPick'].replace('{t}', '1').replace('{n}', '2'),
+      DICT_EN['browser.turnPick'].replace('{t}', '2').replace('{n}', '1'),
+    ])
+    await m.unmount()
+  })
+
+  test('the step list holds only the SHOWN turn\'s steps, and 当前（下一次请求） only on the last turn', async () => {
+    const m = await mountBrowser(multi, controller())
+    // Default = live = the last turn: its single step plus the live entry.
+    assert.equal(options(m, 'stepPick').length, 2)
+    assert.ok(options(m, 'stepPick').includes(DICT_EN['browser.live']), 'the live entry is offered on the last turn')
+    // Switching to turn 1 re-lists THAT turn's two steps and drops the live entry.
+    await pickStep(m, 'turnPick', '1')
+    assert.equal(options(m, 'stepPick').length, 2)
+    assert.ok(!options(m, 'stepPick').includes(DICT_EN['browser.live']), 'no live entry on an earlier turn')
+    assert.equal(query<HTMLSelectElement>(m.container, '#stepPick').value, '20', "the turn picker lands on that turn's LAST step")
+    await m.unmount()
+  })
+
+  test('the baseline group is two buttons with the verbatim title, defaulting to 比前轮', async () => {
+    const m = await mountBrowser(multi, controller())
+    const group = query(m.container, '#baseGrp')
+    assert.equal(group.getAttribute('title'), DICT_EN['browser.base.tip'])
+    const btns = queryAll(group, 'button')
+    assert.deepEqual(btns.map(b => b.textContent), [DICT_EN['browser.base.step'], DICT_EN['browser.base.turn']])
+    assert.equal(btns[0]!.getAttribute('aria-pressed'), 'false')
+    assert.equal(btns[1]!.getAttribute('aria-pressed'), 'true', 'default is 比前轮')
+    await m.unmount()
+  })
+
+  test('switching the baseline changes the δ markers (the whole point of the switch)', async () => {
+    const m = await mountBrowser(multi, controller())
+    // Turn 1 step 1 (seq 20) — the FIRST turn, so 比前轮 has no baseline and the
+    // demo's own code renders no marker there (see the note in docs/10 M3-03).
+    await pickStep(m, 'turnPick', '1')
+    assert.deepEqual(userDeltas(m), { count: null, tokens: null }, '比前轮 on the first turn: no baseline, no marker')
+    assert.equal(query<HTMLSelectElement>(m.container, '#turnPick').value, '1')
+    // 比前步 reads the preceding record (seq 10), which already held one user node.
+    await act(async () => { (queryAll(m.container, '#baseGrp button')[0] as HTMLElement).click() })
+    assert.deepEqual(userDeltas(m), { count: '+1', tokens: '+100' }, 'vs. the previous step: one more user node, +100 tokens')
+    // …and on the LAST turn both baselines have a reference (its previous turn's
+    // last step IS the preceding record there), so both agree.
+    await pickStep(m, 'turnPick', '2')
+    assert.deepEqual(userDeltas(m), { count: '+1', tokens: '+100' })
+    await act(async () => { (queryAll(m.container, '#baseGrp button')[1] as HTMLElement).click() })
+    assert.equal(queryAll(m.container, '#baseGrp button')[1]!.getAttribute('aria-pressed'), 'true')
+    assert.deepEqual(userDeltas(m), { count: '+1', tokens: '+100' })
+    await m.unmount()
+  })
+})
+
 describe('⓪ the browser shell provides the category tree the demo fixed', () => {
   test('all seven categories render as rows, in CATS order', async () => {
     const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'hello' })]), controller())

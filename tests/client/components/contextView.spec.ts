@@ -19,7 +19,7 @@ import type { UseChatLike } from '../../../src/client/services'
 import type { ContextTimeline } from '../../../src/shared/types'
 import { DICT_EN } from '../../../src/client/i18n'
 import { TestClientCtx, TestLocale, asClientCtx } from '../helpers/harness'
-import { click, flush, hover, makeKit, mount, query, queryAll, silenceWindowErrors, text, unhover, until } from '../helpers/kit'
+import { click, flush, hover, makeKit, mount, query, queryAll, silenceWindowErrors, stepPickOf, text, unhover, until } from '../helpers/kit'
 
 // pluginInfo's npm-registry probe stays inert (and '0.0.0-dev' short-circuits
 // it anyway).
@@ -338,7 +338,7 @@ describe('ContextView — interactions', () => {
 
   test('pinning a bar selects its step in the browser; unpinning returns to live', async () => {
     const m = await mountRich('sv-pin')
-    const pick = query<HTMLSelectElement>(m.container, 'select.redline-br-pick')
+    const pick = stepPickOf(m)
     assert.equal(pick.value, 'live')
 
     const bar4 = query(m.container, '.redline-bar[data-seq="4"]')
@@ -356,7 +356,7 @@ describe('ContextView — interactions', () => {
 
   test('brief rows locate their node in the browser (input, mid response, live response)', async () => {
     const m = await mountRich('sv-brief')
-    const pick = query<HTMLSelectElement>(m.container, 'select.redline-br-pick')
+    const pick = stepPickOf(m)
 
     // Pin the second bar: brief = opener + inputs (node 3) + response (node 4).
     await click(query(m.container, '.redline-bar[data-seq="4"]'))
@@ -587,7 +587,7 @@ describe('ContextView — file activity card', () => {
 
   test('turn aggregates label the scope; op clicks reveal the result in the browser', async () => {
     const { m, card } = await mountFiles('sv-files-locate')
-    const pick = query<HTMLSelectElement>(m.container, 'select.redline-br-pick')
+    const pick = stepPickOf(m)
 
     await click(buttonByText(m.container, DICT_EN['gran.turn']))
     // Turn 1's aggregate (two steps) labels the scope as a turn.
@@ -659,7 +659,7 @@ describe('ContextView — file activity card', () => {
     assert.ok(text(card).includes('Fix the failing test'))
     // The click lands on the parent run_code node (seq 3 → step 4's surface).
     await click(query(card, '.redline-fa-op'))
-    const pick = query<HTMLSelectElement>(m.container, 'select.redline-br-pick')
+    const pick = stepPickOf(m)
     assert.equal(pick.value, '4')
     assert.ok(text(query(m.container, '.redline-br-elem-on')).includes('Fix the failing test'))
     await m.unmount()
@@ -1155,7 +1155,7 @@ describe('ContextView — chat→Context jump', () => {
     assert.ok(buttonByText(m.container, DICT_EN['gran.turn']).className.includes('redline-gran-on'), 'granularity flips to turn')
     assert.equal(queryAll(m.container, '.redline-bar').length, 2, 'the chart renders turn aggregates')
     assert.ok(query(m.container, '.redline-bar[data-seq="4"]').className.includes('redline-bar-selected'), 'the reply\'s turn bar is pinned')
-    assert.equal(query<HTMLSelectElement>(m.container, 'select.redline-br-pick').value, '4')
+    assert.equal(stepPickOf(m).value, '4')
     assert.equal(takeContextFocus('sv-jump'), null, 'the relay is one-shot')
     await m.unmount()
   })
@@ -1194,7 +1194,7 @@ describe('ContextView — chat→Context jump', () => {
     // The sidebar landing keeps this view mounted; a later jump must re-pin it.
     await act(async () => { requestContextFocus('sv-rejump', 4) })
     assert.ok(query(m.container, '.redline-bar[data-seq="4"]').className.includes('redline-bar-selected'), 'the later record re-pins')
-    assert.equal(query<HTMLSelectElement>(m.container, 'select.redline-br-pick').value, '4')
+    assert.equal(stepPickOf(m).value, '4')
     assert.equal(takeContextFocus('sv-rejump'), null, 'the record was consumed')
     await m.unmount()
   })
@@ -1277,13 +1277,13 @@ describe('ContextView — the split generation (slim head + detail channel)', ()
     assert.deepEqual(values.slice(0, 2), ['1', '3'], 'turns/steps from the head counters')
     assert.ok(text(m.container).includes(DICT_EN['detail.loading']))
     assert.equal(queryAll(m.container, '.redline-bar').length, 0, 'the chart waits for the detail')
-    assert.equal(queryAll(m.container, '.redline-br-pick option').length, 1, 'the picker holds only the live row')
+    assert.equal(queryAll(m.container, '#stepPick option').length, 1, 'the picker holds only the live row')
 
     // The detail lands: every card renders its real content, the notes clear.
     await until(() => queryAll(m.container, '.redline-bar').length === 3, 'the detail never landed')
     assert.ok(!text(m.container).includes(DICT_EN['detail.loading']))
     assert.ok(text(m.container).includes('heads-up'), 'the events list serves the detail')
-    assert.equal(queryAll(m.container, '.redline-br-pick option').length, 4, 'live + three steps')
+    assert.equal(queryAll(m.container, '#stepPick option').length, 4, 'live + three steps')
     assert.ok(text(m.container).includes('reply three'), 'the brief rows serve the detail')
     assert.ok(text(m.container).includes(DICT_EN['files.empty']), 'no file ops in this detail')
     await m.unmount()

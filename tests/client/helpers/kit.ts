@@ -149,3 +149,47 @@ export function wheel(el: Element, deltaX: number, deltaY: number): boolean {
 }
 
 export type { ReactElement, ReactNode }
+
+/**
+ * Drive the browser's TWO-LEVEL picker to one step (or `live`).
+ *
+ * The single dropdown the reference plugin shipped was replaced on purpose
+ * (`docs/03` R1.13, `docs/05` §1.5): the step list holds only the SHOWN turn's
+ * steps, so a caller must name the turn first. This helper finds the owning turn
+ * by trying each one — which also means a spec cannot accidentally "pass" by
+ * relying on a step being visible from wherever the picker happened to be.
+ *
+ * @param value - a step's seq (`data-seq`) or `'live'`.
+ */
+export async function pickStep(m: Mounted, value: string): Promise<void> {
+  const setValue = async (sel: HTMLSelectElement, next: string): Promise<void> => {
+    await act(async () => {
+      sel.value = next
+      sel.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+  }
+  const step = query<HTMLSelectElement>(m.container, '#stepPick')
+  const turn = query<HTMLSelectElement>(m.container, '#turnPick')
+  if (value === 'live') {
+    // A no-op change would still fire the component's handler (and its outward
+    // report), so only touch the select when it actually moves.
+    if (step.value !== 'live') await setValue(step, 'live')
+    return
+  }
+  // Each turn option carries its last step's seq, so the owning turn is found in
+  // one move instead of by trial-selecting turns (which fired extra change events
+  // and made callers observe reports for turns they never asked for).
+  const owner = queryAll<HTMLOptionElement>(m.container, '#turnPick option')
+    .find(o => Number(o.dataset.lastSeq ?? 'NaN') >= Number(value))
+  if (owner !== undefined && turn.value !== owner.value) await setValue(turn, owner.value)
+  const fresh = query<HTMLSelectElement>(m.container, '#stepPick')
+  if (!queryAll<HTMLOptionElement>(fresh, 'option').some(o => o.value === value)) {
+    throw new Error(`no turn owns step ${value}`)
+  }
+  await setValue(fresh, value)
+}
+
+/** The step dropdown (`#stepPick`) — the one that names a step. */
+export function stepPickOf(m: Mounted): HTMLSelectElement {
+  return query<HTMLSelectElement>(m.container, '#stepPick')
+}

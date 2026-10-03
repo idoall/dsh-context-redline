@@ -620,6 +620,13 @@ export function makeContextBrowser(
     const { data, headers } = props
     // 'live' = the current surface (the NEXT request's context); number = a retained step's seq.
     const [sel, setSel] = useState<'live' | number>('live')
+    /**
+     * The δ baseline (`docs/03` R1.13, copied verbatim from the reference plugin's
+     * 0.60.0 `browser.base.*`): `turn` compares against the PREVIOUS TURN's last
+     * step (one stable unit whatever step is shown), `step` against the immediately
+     * preceding record. Default `turn`, like the demo.
+     */
+    const [base, setBase] = useState<'step' | 'turn'>('turn')
     const [openCat, setOpenCat] = useState<string | null>(null)
     const [openElem, setOpenElem] = useState<string | null>(null)
     // The open category's row-filter text plus the tools' row order. The
@@ -752,11 +759,30 @@ export function makeContextBrowser(
       setOpenElem(null)
     }
 
-    // δ baselines against the PREVIOUS TURN's last request — one stable unit whatever step/live surface is shown (turn T reads against turn
-    // T−1's final step), avoiding the misleading 'change' a same-turn neighbour would imply.
+    // The two-level picker's own facts: the turn list, which turn is shown, and that
+    // turn's steps. Live (or a seq retained away) falls back to the LAST turn — the
+    // live surface belongs to the turn that is still running.
+    const turns = useMemo(() => [...new Set(requests.map(r => r.turn ?? 1))].sort((a, b) => a - b), [requests])
+    const lastTurn = turns.length > 0 ? turns[turns.length - 1] ?? 1 : 1
+    const selTurn = req !== null && req.turn !== undefined && turns.includes(req.turn) ? req.turn : lastTurn
+    const requestsOfTurn = useMemo(() => requests.filter(r => (r.turn ?? 1) === selTurn), [requests, selTurn])
+
+    // δ baseline, the demo's `deltaRefReq` verbatim (which is the reference plugin's
+    // 0.60.0 rule): live surface → 比前步 reads the LAST request, 比前轮 its previous
+    // turn's last step; a shown step → 比前轮 its previous turn's last step,
+    // 比前步 the immediately preceding record. The first turn has NO baseline, so
+    // everything counts as a change there (the upstream `zeroBase` behaviour).
+    const lastReq = requests.length > 0 ? requests[requests.length - 1] ?? null : null
+    const turnBaseOf = (r: RequestRecord): RequestRecord | null =>
+      (r.turn ?? 1) > 1 ? lastOfTurn(requests, (r.turn ?? 1) - 1) : null
     const refReq = req === null
-      ? requests.length > 0 ? requests[requests.length - 1] : null
-      : lastOfTurn(requests, (req.turn ?? 0) - 1)
+      ? (base === 'step' ? lastReq : lastReq !== null ? turnBaseOf(lastReq) : null)
+      : base === 'turn'
+        ? turnBaseOf(req)
+        : (() => {
+          const gi = requests.findIndex(r => r.seq === req.seq)
+          return gi <= 0 ? null : requests[gi - 1] ?? null
+        })()
     const prevView = refReq !== null ? assemble(data, headers, refReq.seq) : null
     const prevByCat = prevView !== null ? byCatOf(prevView) : null
 
@@ -1232,18 +1258,58 @@ export function makeContextBrowser(
               {t('browser.dna')}
             </button>
           </span>
-          <span className="redline-br-hint">{t('browser.deltaHint')}</span>
+          {/* 对比基线：两个按钮逐字照参考插件 0.60.0 的 `lc-gran` + `browser.base.tip`（`docs/03` R1.13） */}
+          <span className="redline-gran" id="baseGrp" role="group" title={t('browser.base.tip')}>
+            <button
+              type="button"
+              className={'redline-gran-btn' + (base === 'step' ? ' redline-gran-on' : '')}
+              aria-pressed={base === 'step'}
+              onClick={() => { setBase('step') }}
+            >{t('browser.base.step')}</button>
+            <button
+              type="button"
+              className={'redline-gran-btn' + (base === 'turn' ? ' redline-gran-on' : '')}
+              aria-pressed={base === 'turn'}
+              onClick={() => { setBase('turn') }}
+            >{t('browser.base.turn')}</button>
+          </span>
+          {/* 两级选择器（轮 → 步）：列表规模从 N（整段历史）降到 T + S。
+              `docs/05` §1.5 的量级保护（实测单下拉 4,000 项 75.0ms vs 两级 9.2ms），
+              这是本插件**有意偏离上游**的那一处。 */}
           <select
             className="redline-br-pick"
+            id="turnPick"
+            value={String(selTurn)}
+            onChange={(e) => {
+              const turn = Number(e.target.value)
+              const last = lastOfTurn(requests, turn)
+              if (last !== null) pick(String(last.seq))
+            }}
+          >
+            {turns.map(turn => (
+              <option
+                key={turn}
+                value={String(turn)}
+                data-turn={String(turn)}
+                data-last-seq={String(lastOfTurn(requests, turn)?.seq ?? '')}
+              >
+                {t('browser.turnPick', { t: turn, n: stepsOf(turn) })}
+              </option>
+            ))}
+          </select>
+          <select
+            className="redline-br-pick"
+            id="stepPick"
             value={seq === null ? 'live' : String(seq)}
             onChange={(e) => { pick(e.target.value) }}
           >
-            <option value="live">{t('browser.live')}</option>
-            {requests.slice().reverse().map(r => (
-              <option key={r.seq} value={String(r.seq)}>
-                {t('detail.step', { t: r.turn ?? 0, s: r.step ?? 0, n: stepsOf(r.turn) }) + ' · ' + fmtTime(r.time)}
+            {requestsOfTurn.map(r => (
+              <option key={r.seq} value={String(r.seq)} data-seq={String(r.seq)}>
+                {t('browser.stepPick', { s: r.step ?? 0, n: stepsOf(r.turn) }) + ' · ' + fmtTime(r.time)}
               </option>
             ))}
+            {/* 「当前（下一次请求）」只出现在**末轮**（`docs/03` R1.13） */}
+            {selTurn === lastTurn ? <option value="live">{t('browser.live')}</option> : null}
           </select>
         </div>
 

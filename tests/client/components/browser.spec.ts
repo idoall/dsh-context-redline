@@ -12,7 +12,7 @@ import { DICT_EN } from '../../../src/client/i18n'
 import { UNKNOWN_TOOL_SOURCE, type ContextHeaders, type ContextTimeline, type HeaderEpochContent, type RequestRecord, type SurfaceNode } from '../../../src/shared/types'
 import { headersOf, type ConversationNodeLike, type ImageLoader } from '../../../src/client/services'
 import { createContextSettings } from '../../../src/client/settings'
-import { click, flush, hover, makeKit, mount, query, queryAll, text, unhover, type Mounted } from '../helpers/kit'
+import { click, flush, hover, makeKit, mount, pickStep, query, queryAll, stepPickOf, text, unhover, type Mounted } from '../helpers/kit'
 import type { RedlineDraftController } from '../../../src/client/redlineDrafts'
 
 const kit = makeKit()
@@ -72,13 +72,6 @@ async function typeToolSearch(m: Mounted, value: string): Promise<void> {
   })
 }
 
-async function pickStep(m: Mounted, value: string): Promise<void> {
-  const sel = query<HTMLSelectElement>(m.container, 'select.redline-br-pick')
-  await act(async () => {
-    sel.value = value
-    sel.dispatchEvent(new Event('change', { bubbles: true }))
-  })
-}
 
 /**
  * A stub local-edit controller: the specs here exercise the BROWSER's rendering,
@@ -132,13 +125,15 @@ describe('ContextBrowser live surface', () => {
     })
     const m = await mount(h(Browser, props({ data })))
     assert.ok(text(query(m.container, '.redline-card-title-text')).includes('Context Browser'))
-    assert.ok(text(query(m.container, '.redline-br-hint')).includes('vs previous turn'))
-    const sel = query<HTMLSelectElement>(m.container, 'select.redline-br-pick')
+    assert.equal(query(m.container, '#baseGrp').getAttribute('title'), DICT_EN['browser.base.tip'])
+    // The STEP select holds only the SHOWN turn's steps, plus the live entry on the
+    // last turn (`docs/03` R1.13); the turn select precedes it.
+    const sel = stepPickOf(m)
     assert.equal(sel.value, 'live')
     const options = queryAll(sel, 'option').map(o => text(o))
-    assert.equal(options.length, 4, 'live + one option per request')
-    assert.equal(options[0], 'Live (Next Request)')
-    assert.ok(options.some(o => o.includes('Turn 0 · Step 0')), 'requests without turn/step degrade to zeroes')
+    assert.equal(options.length, 4, 'live + the shown (last) turn\u2019s steps')
+    assert.equal(options[options.length - 1], 'Live (Next Request)', 'the live entry comes last')
+    assert.ok(options.some(o => o.includes('Step 0')), 'the steps of the shown turn are listed')
     const meta = text(query(m.container, '.redline-br-meta'))
     assert.ok(meta.includes('Live · Next Request'))
     assert.ok(meta.includes('Estimated ≈ 350'))
@@ -220,7 +215,7 @@ describe('ContextBrowser live surface', () => {
     await m.unmount()
   })
 
-  test('delta pills read against the previous turn’s last step; live reads the last request', async () => {
+  test('delta pills follow the baseline switch (比前轮 default; 比前步 reads the previous record)', async () => {
     const data = tl({
       current: { system: 1, tools: 2, user: 99, inject: 0, skill: 0, assistant: 0, tool: 0, total: 102 },
       requests: [
@@ -245,8 +240,13 @@ describe('ContextBrowser live surface', () => {
     await pickStep(m, '1')
     assert.equal(queryAll(m.container, '.redline-br-delta').length, 0)
     assert.equal(queryAll(m.container, '.redline-br-tdelta').length, 0)
-    // Live: baseline is the most recent request.
+    // Live under the DEFAULT baseline (比前轮): the previous turn's last step (seq 4,
+    // user 40) measured against the live surface's `current` figure (99).
     await pickStep(m, 'live')
+    assert.equal(text(query(m.container, '.redline-br-delta')), '+2')
+    assert.equal(text(query(m.container, '.redline-br-tdelta')), '+59')
+    // 比前步 measures the live surface against the most recent request instead.
+    await click(queryAll(m.container, '#baseGrp button')[0]!)
     assert.equal(text(query(m.container, '.redline-br-delta')), '+1')
     assert.equal(text(query(m.container, '.redline-br-tdelta')), '+49')
     await m.unmount()
@@ -322,7 +322,7 @@ describe('ContextBrowser live surface', () => {
     // A pinned step trimmed out of retention falls back to live too.
     await m.update(h(Browser, props({ data, previewSeq: null, pinSeq: 999 })))
     assert.ok(text(query(m.container, '.redline-br-meta')).includes('Live · Next Request'))
-    assert.equal(query<HTMLSelectElement>(m.container, 'select.redline-br-pick').value, 'live')
+    assert.equal(stepPickOf(m).value, 'live')
     await m.unmount()
   })
 })
@@ -1729,7 +1729,7 @@ describe('ContextBrowser focus bridges', () => {
     await m.update(h(Browser, props({ data, headers, pinSeq: 10 })))
     assert.ok(text(query(m.container, '.redline-br-meta')).includes('Turn 1 · Step 0'))
     assert.equal(queryAll(m.container, '.redline-br-body').length, 0, 'pinning resets the accordion')
-    assert.equal(query<HTMLSelectElement>(m.container, 'select.redline-br-pick').value, '10')
+    assert.equal(stepPickOf(m).value, '10')
     await m.update(h(Browser, props({ data, headers, pinSeq: null })))
     assert.ok(text(query(m.container, '.redline-br-meta')).includes('Live · Next Request'))
     await m.unmount()
@@ -1742,7 +1742,7 @@ describe('ContextBrowser — the split generation detail states', () => {
       redline: stubRedline(), data: tl({}), headers: null, detailState: 'loading' }))
     assert.ok(text(m.container).includes(DICT_EN['detail.loading']))
     // The picker still offers the live surface (the sections read zero until the detail lands).
-    assert.equal(queryAll(m.container, '.redline-br-pick option').length, 1)
+    assert.equal(queryAll(m.container, '#stepPick option').length, 1)
     await m.unmount()
   })
 

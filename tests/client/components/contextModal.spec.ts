@@ -444,7 +444,7 @@ describe('ContextModal — the split generation', () => {
     assert.ok(text(m.container).includes(DICT_EN['detail.loading']))
     // The detail lands: the browser serves the step picker + the sections.
     await until(() => !text(m.container).includes(DICT_EN['detail.loading']), 'the modal detail never landed')
-    assert.equal(queryAll(m.container, '.redline-br-pick option').length, 2, 'live + the one served step')
+    assert.equal(queryAll(m.container, '#stepPick option').length, 2, 'live + the one served step')
     assert.ok(text(m.container).includes('1 Item'), 'the assistant section counts the served node')
     await m.unmount()
   })
