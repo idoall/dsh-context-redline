@@ -16,6 +16,16 @@ const EXPLAIN = {
   'ui.switch': { t: '状态开关', what: '模拟宿主侧的真实状态（轮次是否闭合 / 会话是否在本进程 / 官方团队是否可用 / 草稿条数 / 压缩是否忙 / 回流是否确认）。', effect: '切换后界面的按钮可见性与文案立即按规范变化。', rev: '可随时切回', confirm: '不需要', refs: ['docs/03 R4.4 / R4.6 / R5.2 / R5.3'] },
 
   /* —— 趋势区的四个新开关（参照参考插件） —— */
+  'browser.base': {
+    t: '变动的对比基线',
+    what: '**一句话**：决定每条分类行前面那个 `+N` / `−N` 是**跟谁比**。\n'
+      + '**比前步**＝与上一步比（看这一步比刚才多了/少了什么）；**比前轮**＝与**上一轮的最后一步**比（看这一轮整体比上一轮多了/少了什么）。\n'
+      + '**为什么要有它**：同一轮里的相邻两步差别很小，看起来像"没变"；跨轮比才看得出趋势。\n'
+      + '**首轮没有基线**：第一轮全部计为变动（不会显示 0）。',
+    effect: '只换对比基准，不改任何数据。',
+    rev: '随时点另一个。',
+    confirm: '不需要。',
+    refs: ['参考插件 dsh-context 0.60.0 的 browser.base.*', 'docs/03 R2.1'] },
   'trend.gran': { t: '按轮次 / 按步骤', what: '切换趋势图的粒度：按轮次 = 一轮一根柱（合并该轮各步，柱下标步数）；按步骤 = 一次请求一根柱。', effect: '只换画法；点柱子的含义随之变化——按轮次点柱子 = 选这一轮（右侧显示该轮末步），按步骤点柱子 = 选那一步。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.3', '参考插件 trendChart: granularity'] },
   'trend.mode': { t: '总计 / 增量', what: '一根柱代表"这次请求的上下文总量"还是"比上一次请求多了多少"。', effect: '增量模式下负值向下画（上下文变小，通常是压缩/裁剪之后）。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.4', '参考插件 trendChart: mode'] },
   'trend.adaptive': { t: '自适应刻度', what: '打开时，纵轴最大值按"当前可见的那几根柱"算；关闭时按整段历史算。', effect: '长会话里远处的尖峰不会把眼前的柱子压成一条线。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.5', '参考插件 trendChart: adaptive'] },
@@ -189,7 +199,7 @@ const initial = () => ({
   trendGran: 'turn', trendMode: 'total', trendAdaptive: true, trendCat: null,
   selTurn: RICH_TURN, selSeq: REQUESTS[REQUESTS.length - 1].seq,
   openCat: 'user', openElem: null,
-  editor: null, editorError: null, editorOk: null, focusTurn: null, trendEnter: true,
+  editor: null, editorError: null, editorOk: null, focusTurn: null, trendEnter: true, deltaBase: 'turn',
   drafts: {}, applied: [], extraNodes: [], children: [], pendingSeen: false
 });
 
@@ -483,6 +493,24 @@ function chartScale(parts, scrollEl) {
   const upPx = Math.round(maxUp * deltaScale);
   return { maxTotal, maxUp, maxDown, deltaScale, upPx, downPx: CHART_H - upPx };
 }
+/* ⚠️ **行上 δ 的对比基线**（照参考插件 0.60.0 `browser.tsx` 逐字抄）：
+ *   `turnBaseOf(r) = lastOfTurn(requests, (r.turn ?? 0) - 1)`  ← 上一轮的**最后一步**
+ *   live（没选具体步）：比前步 → 最后一条请求；比前轮 → 最后一条请求的上一轮末步
+ *   选了一步：  比前轮 → req 的上一轮末步；比前步 → req 的上一条记录
+ *   首轮没有基线 ⟹ 全部计为变动（上游的 `zeroBase`）。 */
+const turnBaseOf = (r) => lastOfTurn(Math.max(1, (r.turn || 1) - 1));
+function deltaRefReq(req) {
+  const list = REQUESTS;
+  const lastReq = list.length ? list[list.length - 1] : null;
+  if (req === null || req === undefined) {
+    if (S.deltaBase === 'step') return lastReq;
+    return lastReq ? turnBaseOf(lastReq) : null;
+  }
+  if (S.deltaBase === 'turn') return (req.turn || 1) > 1 ? turnBaseOf(req) : null;   // 首轮：无基线
+  const i = list.findIndex((x) => x.seq === req.seq);
+  return i > 0 ? list[i - 1] : null;
+}
+
 const visibleMax = (series, scrollEl) => (S.trendMode === 'delta'
   ? chartScale(window.__trendParts || [], scrollEl).maxUp
   : chartScale(window.__trendParts || [], scrollEl).maxTotal);
@@ -988,14 +1016,17 @@ function renderBrowser() {
   const byCat = {}; CATS.forEach((c) => { byCat[c.key] = nodes.filter((n) => n.cat === c.key); });
   const gone = goneMap();
   $('cardBrowser').innerHTML = `
-    <div class="card-title">上下文浏览器 <span class="hint">DNA 模式</span>
+    <div class="card-title">上下文浏览器 <span class="hint" title="按模型读取上下文的次序逐条展示每一项：系统提示词、工具定义，然后是按时间排列的消息">DNA 模式</span>
       <span class="grow" style="flex:1"></span>
-      <span class="pickwrap" data-explain="turn.pick"><select class="btn sm" id="turnPick" title="选轮次">
-        ${Array.from({ length: TOTAL_TURNS }, (_, i) => i + 1).map((t) => `<option value="${t}" ${t === S.selTurn ? 'selected' : ''}>第 ${t} 轮（共 ${turnSteps(t)} 步）</option>`).join('')}
-      </select></span>
+      ${/* 对比基线（照参考插件 0.60.0 的 .lc-gran + browser.base.* 文案逐字抄） */ ''}
+      <span class="gran" role="group" title="变动对比的基线：比前步＝与上一步对比；比前轮＝与上一轮最后一步对比（首轮无基线，全部计为变动）" data-explain="browser.base">
+        <button type="button" class="granbtn${S.deltaBase === 'step' ? ' on' : ''}" data-base="step" data-explain="browser.base">比前步</button>
+        <button type="button" class="granbtn${S.deltaBase === 'turn' ? ' on' : ''}" data-base="turn" data-explain="browser.base">比前轮</button>
+      </span>
+      ${/* 步骤下拉（照上游：live 在最前、其余**倒序**，标签 = 第 t 轮 · 第 s 步 (共 n 步) · 时间） */ ''}
       <span class="pickwrap" data-explain="step.pick"><select class="btn sm" id="stepPick" title="选步骤">
-        ${reqsOfTurn(S.selTurn).map((x) => `<option value="${x.seq}" ${x.seq === S.selSeq ? 'selected' : ''}>第 ${x.step} 步（共 ${turnSteps(S.selTurn)} 步） · ${x.time}</option>`).join('')}
         <option value="live" ${isLive() ? 'selected' : ''}>当前（下一次请求）</option>
+        ${REQUESTS.slice().reverse().map((x) => `<option value="${x.seq}" ${x.seq === S.selSeq ? 'selected' : ''}>第 ${x.turn} 轮 · 第 ${x.step} 步 (共 ${turnSteps(x.turn)} 步) · ${x.time}</option>`).join('')}
       </select></span>
     </div>
     <div class="cap" style="margin-bottom:6px">${esc(isLive() ? '当前 · 下一次请求' : `第 ${r.turn} 轮 · 第 ${r.step} 步（共 ${turnSteps(r.turn)} 步）`)} · 估算合计 ≈ ${fmt(total)} tokens${markerOf(r) ? ` · ✂ ${esc(markerOf(r).label)}` : ''}</div>
@@ -1004,19 +1035,30 @@ function renderBrowser() {
       const vis = list.filter((n) => gone[n.seq] === undefined || isReplacement(n.seq));
       const t = vis.reduce((s, n) => s + n.tokens, 0);
       const open = S.openCat === c.key;
+      /* δ 两个标记：逐字照参考插件 0.60.0 的行结构（`lc-br-delta` / `lc-br-tdelta` + `-up| -down`）。
+       * 首轮没有基线 ⟹ prev 计 0，于是"全部计为变动"（上游 zeroBase 的口径）。 */
+      const ref = deltaRefReq(reqOf());
+      const prevN = ref ? nodesOfReq(ref, true).filter((n) => n.cat === c.key) : null;
+      const prevT = ref ? prevN.reduce((sum, n) => sum + n.tokens, 0) : null;
+      const countDelta = prevN ? vis.length - prevN.length : null;
+      const tokenDelta = prevT !== null ? t - prevT : null;
       return `<div>
         <button class="catrow" data-cat="${c.key}" aria-expanded="${open}" data-explain="cat.toggle">
           <span class="chev"></span>
           <i class="swatch${S.trendCat === c.key ? ' focused' : ''}" data-focus="${c.key}" style="background:${c.color}" title="点色块 = 趋势图只画这一类"></i>
           <span class="label">${c.label}</span><span class="grow"></span>
           <span class="count">${vis.length} 项${list.length > vis.length ? `（+${list.length - vis.length} 被遮蔽）` : ''}</span>
-          <span class="tokens">≈${fmt(t)}</span><span class="pct">${total ? Math.round(t / total * 100) : 0}%</span>
+          ${countDelta !== null && countDelta !== 0 ? `<span class="delta ${countDelta > 0 ? 'up' : 'down'}">${countDelta > 0 ? '+' : ''}${countDelta}</span>` : ''}
+          <span class="tokensgrp">${tokenDelta !== null && tokenDelta !== 0 ? `<span class="tdelta ${tokenDelta > 0 ? 'up' : 'down'}">${tokenDelta > 0 ? '+' : ''}${fmt(tokenDelta)}</span>` : ''}<span class="tokens">≈${fmt(t)}</span></span>
+          <span class="pct">${total ? Math.round(t / total * 100) : 0}%</span>
         </button>
         ${open ? `<div class="catbody">${list.map(rowHtml).join('') || '<div class="cap">（这一步没有这类内容）</div>'}</div>` : ''}
       </div>`;
     }).join('')}</div>`;
 
-  $('turnPick').onchange = (e) => selectReq(lastOfTurn(Number(e.target.value)), `已选第 ${e.target.value} 轮（末步）`);
+  $('cardBrowser').querySelectorAll('[data-base]').forEach((b) => {
+    b.onclick = () => { S.deltaBase = b.dataset.base; render(); toast(S.deltaBase === 'turn' ? '对比基线：比前轮（与上一轮最后一步比）' : '对比基线：比前步（与上一步比）'); };
+  });
   $('stepPick').onchange = (e) => {
     if (e.target.value === 'live') selectReq(REQUESTS[REQUESTS.length - 1], null);
     else selectReq(REQUESTS.find((x) => x.seq === Number(e.target.value)), null);

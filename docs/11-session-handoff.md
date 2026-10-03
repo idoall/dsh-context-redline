@@ -107,7 +107,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**本轮在改文档**：文档 review 裁定 D1–D8 见本文末 + `scripts/check-docs.mjs`（机器把关） |
-| 进度 | `docs/10`：**DONE 109 / 共 244**（DOING 4 · TODO 123 · WAIT🙋 8） |
+| 进度 | `docs/10`：**DONE 110 / 共 245**（DOING 4 · TODO 123 · WAIT🙋 8） |
 | 当前卡点 | **M05-15 交互定稿** 与 **M5-28 起点口径确认**（都等用户点头）；文档 review 轮已收口（75 → 0，由 `scripts/check-docs.mjs` 把关）；M1 可在仓库内自验，**授权包①（装配 + 用户重启）是 M1 的收口动作** |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -462,3 +462,18 @@ tip 两行口径（`tip.turn1`）。**颜色不抄**，仍走我们的主题令�
 **③ 死讲解词**：只删**真正无人引用**的 9 条。
 
 **⚠️ 我犯的错（第三次同类）**：先断言"demo 里已无任何 `?`"（grep 只找了 `data-help="字面量"`，漏了 `${q('act.edit')}` 这种模板调用），于是删掉 `q()` → demo 立刻 `q is not defined`。已 `git checkout -- demo/demo.js` 恢复到最后一次绿，重查后确认：demo 里**还有**编辑器「保存」按钮左上角的 `?`（实测 Δx=-8 / Δy=-9，点了弹说明）。**结论**：`q()` / `wireHelpButtons` / 那条静态规则（"动态出现的按钮要用左上角飘的 ?"）都**必须保留**。
+
+
+## D30 · 上下文浏览器标题栏照上游 0.60.0 抄（用户 2026-10-02「直接抄代码」）
+
+**关键前提**：用户说的是**实装的上游 0.60.0**（`~/.dsh/profiles/web/node_modules/dsh-context`），而本地源码 clone 只到 **v0.59.2** —— `比前步/比前轮` 是 0.60.0 新增的。0.60.0 的 npm 包**只有编译产物**，所以我从 `lib/client.js` 里挖出：
+· 文案：`browser.base.step`=比前步、`browser.base.turn`=比前轮、`browser.base.tip`="变动对比的基线：比前步＝与上一步对比；比前轮＝与上一轮最后一步对比（首轮无基线，全部计为变动）"；
+· 结构：`<span class="lc-gran" role="group" title=…>` 两个 `lc-gran-btn`（选中加 `lc-gran-on`）+ **一个** `select.lc-br-pick`（`当前（下一次请求）` 在最前，其余**倒序**，标签 `第 t 轮 · 第 s 步 (共 n 步) · 时间`）；
+· 基线算法：`refReq = req===null ? (deltaBase==='step' ? lastReq : lastReq?turnBaseOf(lastReq):null) : (deltaBase==='turn' ? turnBaseOf(req) : prevRecordOf(req))`，`turnBaseOf(r)=lastOfTurn(requests,(r.turn??0)-1)`；
+· 行上两个 δ 标记：`lc-br-delta lc-br-delta-up|down`（数量）与 `lc-br-tdelta lc-br-tdelta-up|down`（token），**非 0 才渲染**。
+
+**我们照抄后**：标题栏 = `上下文浏览器 · DNA 模式 · 比前步 比前轮 · [下拉]`；行上出现 δ 两个标记（随基线变）。颜色仍走我们的令牌（用户此前裁定"颜色不抄"）。
+**一处我主动标出来的行为变化**：我们原来有**两个**下拉（轮 + 步），上游只有**一个** —— 抄完删掉了「轮」那个（轮的选择仍可：点趋势图柱子 / 轮号条 / 在下拉里选，每条选项都带"第 t 轮 · 第 s 步"）。
+**仍未做（不在红框内，等用户定）**：`DNA 模式` 现在仍是**静态标签**；上游它是**可点切换**（切成"按模型读取上下文的次序"视图）——要做就得实现那个视图。
+
+**过程失误**：第一次插护栏时锚点少了"上下文"三个字，`str.replace` **静默没命中**，我却打印了"护栏已加"（177 项没变就是这个原因）。已改成"先匹配锚点再替换，写完立刻自检关键字符串"；重插后 177 → **187**。

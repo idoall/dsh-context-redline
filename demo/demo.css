@@ -637,3 +637,18 @@ body.explain [data-explain].explain-num::after {
 @keyframes tbar-in { from { transform: scaleY(0); } to { transform: scaleY(1); } }
 .tbar.enter .tbar-fill { transform-origin: 50% 100%; animation: tbar-in .35s cubic-bezier(.4, 0, .2, 1) calc(var(--i, 0) * 15ms) backwards; }
 .tbar.enter.tbar-diverge, .tbar.enter .tbar-diverge { animation: none; }   /* 增量模式两臂各自定位，不叠整体缩放 */
+
+/* ===== 上下文浏览器：标题栏的「对比基线」切换组 + 行上的两个 δ 标记（照参考插件 0.60.0 的结构；颜色用我们的令牌） ===== */
+/* 上游 .lc-gran / .lc-gran-btn / .lc-gran-on：一个成组的小开关 */
+.gran { display: flex; gap: 2px; background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 1px; flex: none; }
+.granbtn {
+  border: 0; background: transparent; color: var(--dsw-alias-label-secondary);
+  font: inherit; font-size: 11px; line-height: 1; padding: 4px 8px; border-radius: 4px; cursor: pointer;
+}
+.granbtn:hover { color: var(--dsw-alias-label-primary); }
+.granbtn.on, .granbtn.on:hover { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); }
+/* 上游 .lc-br-delta / .lc-br-tdelta（数量变动 / token 变动） */
+.delta, .tdelta { font-size: 11px; font-variant-numeric: tabular-nums; border-radius: 4px; padding: 0 4px; }
+.delta.up, .tdelta.up { color: var(--ds-color-green); background: color-mix(in srgb, var(--ds-color-green) 12%, transparent); }
+.delta.down, .tdelta.down { color: var(--ds-color-orange); background: color-mix(in srgb, var(--ds-color-orange) 12%, transparent); }
+.tokensgrp { display: inline-flex; align-items: baseline; gap: 6px; }

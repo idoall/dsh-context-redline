@@ -94,7 +94,7 @@ const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendCellAct, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
-  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editorHtml, orchAct, nodeOf, rowHtml, BAR_W, BAR_GAP, spanW, chartW, focusCellOf, turnOfEl };`;
+  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editorHtml, orchAct, nodeOf, rowHtml, BAR_W, BAR_GAP, spanW, chartW, focusCellOf, turnOfEl, deltaRefReq };`;
 
 /**
  * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
@@ -985,6 +985,40 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('子会话行：身份行右侧有 ›（状态 + 箭头，一眼知道可进）', /class="chev"[^>]*>›</.test(card));
   S.children = []; api.render();
   check('块不许加彩色焦点标记（无记录时同样）', !/is-focus/.test(registry.get('cardOrch').innerHTML));
+}
+
+/* ---------------- 上下文浏览器标题栏：照上游 0.60.0 抄的「对比基线」+ 单个步骤下拉 ----------------
+ * 用户 2026-10-02：「图中红框的部分，我们也可以参考插件去实现……就直接抄代码算了。」
+ * 上游 0.60.0 原文（browser.base.*）：比前步 / 比前轮 / 「变动对比的基线：…（首轮无基线，全部计为变动）」；
+ * 结构：`.lc-gran` 组两个按钮 + **一个** `select`（live 在最前、其余倒序，标签 `第 t 轮 · 第 s 步 (共 n 步) · 时间`）；
+ * 行上是两个 δ 标记（数量变动 + token 变动，非 0 才显示）。 */
+{
+  const S = api.S();
+  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.selTurn = api.TOTAL_TURNS; api.render();
+  const html = registry.get('cardBrowser').innerHTML;
+  check('浏览器标题栏：基线切换组「比前步 / 比前轮」都在', /data-base="step"[^>]*>比前步</.test(html) && /data-base="turn"[^>]*>比前轮</.test(html));
+  check('浏览器标题栏：基线组的 title 逐字照上游（含"首轮无基线，全部计为变动"）',
+    /变动对比的基线：比前步＝与上一步对比；比前轮＝与上一轮最后一步对比（首轮无基线，全部计为变动）/.test(html));
+  check('浏览器标题栏：只有一个步骤下拉（上游就是一个；原来的"轮"下拉已删）',
+    (html.match(/<select/g) || []).length === 1 && !/id="turnPick"/.test(html));
+  check('浏览器标题栏：下拉首项 = 当前（下一次请求）', /<option value="live"[^>]*>当前（下一次请求）/.test(html));
+  check('浏览器标题栏：下拉选项标签 = 第 t 轮 · 第 s 步 (共 n 步) · 时间',
+    /第 \d+ 轮 · 第 \d+ 步 \(共 \d+ 步\) · \d{2}:\d{2}/.test(html));
+  const reqOpts = [...html.matchAll(/<option value="(\d+)"[^>]*>第 (\d+) 轮/g)];
+  check('浏览器标题栏：请求选项**倒序**（live 之后第一条 = 最新一次请求）',
+    reqOpts.length > 0 && Number(reqOpts[0][2]) === api.TOTAL_TURNS, `首条=${reqOpts[0] ? reqOpts[0][2] : null} 期望=${api.TOTAL_TURNS}`);
+  check('浏览器标题栏：行上有 δ 两个标记（数量变动 + token 变动，非 0 才给）',
+    /class="delta (up|down)"/.test(html) && /class="tdelta (up|down)"/.test(html));
+  const req2 = api.REQUESTS.find((r) => (r.turn || 1) > 1 && r.step === 2);
+  S.deltaBase = 'turn';
+  const refTurn = api.deltaRefReq(req2);
+  S.deltaBase = 'step';
+  const refStep = api.deltaRefReq(req2);
+  check('δ 基线（比前轮）：取"上一轮的最后一步"', !!refTurn && refTurn.turn === (req2.turn - 1), `turn=${refTurn ? refTurn.turn : null} 期望=${req2.turn - 1}`);
+  check('δ 基线（比前步）：取"上一条记录"', !!refStep && refStep.seq < req2.seq, `seq=${refStep ? refStep.seq : null} 本=${req2.seq}`);
+  S.deltaBase = 'turn';
+  check('δ 基线（首轮）：没有基线（返回 null，于是全部计为变动）', api.deltaRefReq(api.REQUESTS[0]) === null);
+  S.deltaBase = 'turn'; api.render();
 }
 
 /* ---------------- 上下文趋势框：照上游 dsh-context 抄来的**结构**（用户 2026-10-02「照抄它这一块区域」） ----------------
