@@ -37,8 +37,8 @@
 - **M2 编辑面：仓库内部分已完成（29/34 DONE）** —— 本地改动存储 / 全文读取 / 按底层事件类型的能力判定 /
   通道 `node.read` + `draft.*`；**每条保存用例都断言会话零写入**（`Session.append` 调用数 0 **且**日志偏移不增长）。
   剩 5 条 TODO 都是"随 M3/M5 一起做"的。
-- **M3 及之后：未开工**。**M3 开工的第一步**要先把 docs/10 的 M3-01…M3-22 按**当前 demo** 重写
-  （那些旧行还写着已被删掉的批注 / 版本历史 / 固定块 / 未生效吸顶）。
+- **M3：计划已按当前 demo 重写（14/32）** —— 12 行已被删掉的旧计划标 `作废`（保留 ID）+ 补 9 行 demo 已确认的工作；
+  界面实现（M3-24…M3-31）是下一步。**客户端改动硬刷新即可**（`docs/01` F16），不必再重启。
 - 本轮新发现的平台事实：`docs/01` **F39**（设置服务的 `register` 面已无）/ **F40**（CSS 类名前缀静默撞车）/
   **F41**（上游 lane 的依赖闭包）/ **F42**（本仓库改为 registry 直装、**不建**符号链接）/ **F43**（官方的 `extractSessionEventText` 插件 import 不到）。
 
@@ -54,7 +54,7 @@
 【第一件事（先跑这几条，确认基线没坏）】
   git log --oneline -3
   pnpm install                     # 只有这一条（不建符号链接，见 docs/01 F42）
-  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：256 / 153 / 4 / 91 / 8」
+  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：265 / 167 / 4 / 86 / 8」
   node demo/check-static.mjs       # 期望：✅ 静态契约检查通过
   node demo/check-runtime.mjs      # 期望：共 193 项，失败 0 项
   ./node_modules/.bin/tsc --noEmit ; ./node_modules/.bin/tsdown
@@ -117,7 +117,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 154 / 共 256**（DOING 4 · TODO 90 · WAIT🙋 8） |
+| 进度 | `docs/10`：**DONE 167 / 共 265**（DOING 4 · TODO 86 · WAIT🙋 8） |
 | 当前卡点 | **M1 的收口 = 授权包①**（装进 `web` profile + **你**重启 `dsh web` → 我复验 M1-02 / M1-14）；另有 **M05-15 交互定稿**。M1+M2 仓库内部分**已全绿**，且**已装配进 `web` profile**（`dump-config` exit 0、两插件并排无冲突）——**只剩你重启 `dsh web`**；M2 的本地保存链已可用，**但界面还是上游的**（M3 才接线） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
