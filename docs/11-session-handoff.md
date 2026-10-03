@@ -27,43 +27,37 @@
 4) docs/03-ui-spec.md —— 界面规格（R 编号；用户就是按 R 编号提意见的）
 5) 需要平台事实时读 docs/01-platform-facts.md（每条都标了 实测 / 推断）
 
-【现在在哪（2026-10-04）】
-- M0 文档集：完成（过了 7 轮外部模型评审）。
-- M0.5 可交互 demo：已交付且**已浏览器实测**（1440/880/879/390，数据+截图在 demo/screenshots/）；
-  自检：node demo/check-static.mjs（静态契约）+ node demo/check-runtime.mjs（**193/193**）。
-- **M1 骨架与身份：仓库内部分已完成（11/14 DONE）** —— `src/` 从 tag `v0.59.2` 复制 110 个文件 + 命名空间分家；
-  `tsc --noEmit` exit 0 / `tsdown` exit 0 / 自有 lane `edit`+`channel` **67/67** / `namespace-contract` 24 项 0 失败 / `oxlint` 0 error。
-  **只剩 M1-01（授权包①：装 profile + 你重启）与装完后的复验（M1-02/M1-14）** —— 这是**唯一还需要你本人动作**的一步。
-- **M2 编辑面：仓库内部分已完成（29/34 DONE）** —— 本地改动存储 / 全文读取 / 按底层事件类型的能力判定 /
-  通道 `node.read` + `draft.*`；**每条保存用例都断言会话零写入**（`Session.append` 调用数 0 **且**日志偏移不增长）。
-  剩 5 条 TODO 都是"随 M3/M5 一起做"的。
-- **M3：计划已按当前 demo 重写（14/32）** —— 12 行已被删掉的旧计划标 `作废`（保留 ID）+ 补 9 行 demo 已确认的工作；
-  界面实现（M3-24…M3-31）是下一步。**客户端改动硬刷新即可**（`docs/01` F16），不必再重启。
-- 本轮新发现的平台事实：`docs/01` **F39**（设置服务的 `register` 面已无）/ **F40**（CSS 类名前缀静默撞车）/
-  **F41**（上游 lane 的依赖闭包）/ **F42**（本仓库改为 registry 直装、**不建**符号链接）/ **F43**（官方的 `extractSessionEventText` 插件 import 不到）。
+【现在在哪（2026-10-04 收尾时的实测状态）】
+- **docs/10：196 / 269 DONE（≈73%），DOING 8，TODO 57，WAIT🙋 8**。`node scripts/progress.mjs` 一条命令看全貌。
+- **M1 12/14**：仓库内全绿；**只剩"你重启 dsh web"→ 我复验 M1-02**。
+- **M2 29/34**：本地草稿 / 全文读取（`node.read`）/ 按底层事件类型的能力判定 / 通道 `node.read`+`draft.*`；
+  **每条保存都断言会话零写入**。
+- **M3 28/33**：右侧界面**已接上** —— 行内只有 `编辑`（改不了的给一句原因）、一个 `已改（本地）` + `丢弃这条改动`、
+  行下内联编辑器（**预填全文**、按真实类型给字段、`Esc`/`Cmd+Enter`）、工具结果的「编辑」收在「高级编辑」后；
+  **两级（轮→步）选择器 + `比前步/比前轮` 基线开关**；轮次未闭合 / 不在本进程 → **禁用保存 + 写明句子**（主机侧同样拒绝）。
+  新增**门禁 lane `client-ui`**（jsdom + 真 React）。
+- **M4 4/7**：趋势卡加了**规模读数**；M4-01 **作废**（demo 里没有 R1.3 说的两个数字）；剩余见"四个决策"。
+- **M4.5 4/19 + 3 DOING**：**离线半边已清完** —— 新平台事实 **F44**（"更早切点"能造但**没有回程通道**）、
+  **F45**（fork/spawn 能力表；**种子空 ⟹ 子会话不带历史**）、V12 静态答案（官方**禁的是工具**、服务与两个 provider 在册）、
+  能力开关默认值、失败决策表、同步变更表。**剩 8 条真机探针**（要授权包②）。
+- **M6 7/12 + 1 DOING**：`docs/12-user-guide.md`（用户帮助）、`scripts/progress.mjs`（进度）、`scripts/release-check.mjs`（发布前自检 10 步）、
+  `CHANGELOG.md`、SPDX `MIT AND Apache-2.0`、README 双语 + 截图 + 安装/使用/限制、版本/tag 策略。
 
-【硬约束（不可违反）】
-- 只动本仓库；**不 push、不开 PR**（各自需单独授权）。
-- **不改 DSH 安装目录、不改 ~/.dsh**（只读核实平台事实是允许的）。
-- **`dsh web` 重启一律由用户本人执行**（这台机的实例承载他自己的会话）。
-- 不产生任何 AI 生成内容（进入会话的每个字都必须人写）。
-- 界面/交互改动：**先在 demo/ 里做**，用户确认后再搬进插件。
-- **不建 `node_modules/@deepseek-ai` 符号链接**（`docs/01` F42）；装依赖只有 `pnpm install` 一条。
-- 文档改动后必须 `node scripts/check-docs.mjs` 退出码 0；改了 demo.css/js 必须 `node demo/build-standalone.mjs` 重打包。
+【只剩这四件事需要用户（其余我全部自验）】
+1. **重启 `dsh web`** —— 之后我做 M1-02 复验（挂载日志 / 两面板并存 / console 无注册错误），
+   然后**他硬刷新就能点着看**（人工门禁 M3-22），顺带定夺"首轮 δ 显不显示"。
+2. **授权包②**（专用可弃会话）—— M4.5 的 **8 条真机探针**（清单在 docs/10 §7 节头）。
+   ⚠️ **硬门禁**：M4.5 全绿前**不许进 M5 写编排代码**（docs/04 已落纸）。
+3. **四个决策**（各自影响面已写清，定了就能做完）：
+   · 首轮 δ 显不显示（demo 代码不显示、它的 title 文案说"全部计为变动"）；
+   · **M4-06** 默认粒度跟 demo（按轮次，要连带改 ~18 处上游断言）还是保留按步骤；
+   · **M4-07** 统计卡照 demo 换 3 格（模型可见条目/用户消息/注入内容）还是保留基线 7 格；
+   · 要不要一个从界面跳到 `docs/12` 的入口（`docs/03` R7.1 写着 demo **没有**它 ⟹ 属新增交互）。
+4. **授权包④**（push / 打 tag / 发 npm）—— 我这边已备好 CHANGELOG、SPDX、`files` 白名单与安装说明。
 
-【第一件事（先跑这几条，确认基线没坏）】
-  git log --oneline -3
-  pnpm install                     # 只有这一条（不建符号链接，见 docs/01 F42）
-  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：269 / 196 / 8 / 57 / 8」
-  node demo/check-static.mjs       # 期望：✅ 静态契约检查通过
-  node demo/check-runtime.mjs      # 期望：共 193 项，失败 0 项
-  ./node_modules/.bin/tsc --noEmit ; ./node_modules/.bin/tsdown
-  node scripts/namespace-contract.mjs                                # 期望：24 项 0 失败
-  node scripts/release-check.mjs                       # 一条命令跑完 10 步，逐项打印判定行（期望：全部通过）
-  dsh --profile web --dump-config | grep -A1 'dsh-context-redline'   # 期望：两插件并排、无冲突
-基线全绿后，问用户选哪条路：① 点头走**授权包①**（装进 web profile + 他重启 → 我复验 M1-02/M1-14）
-② 继续 **M2**（编辑面 TDD：本地草稿 / 全文读取 / 按底层事件类型的能力判定 / 所有保存临时化）
-③ 先写用户帮助（M6-11，权威来源已就位：docs/03 R4.7 + R7.1）。
+【这一轮（第 17 轮）之后，我不会再重复做已经做完的事】
+如果上面四件事都还没发生，下轮我会做"减法"性质的收尾：把本文档与 AGENTS §5 再核一遍、
+把 docs/10 里仍然 `TODO` 但**已不可能先做**的行标注依赖关系，然后**停下来**——因为再往下每一步都需要用户动作。
 ```
 
 ---
@@ -117,8 +111,8 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 184 / 共 269**（DOING 8 · TODO 57 · WAIT🙋 8） |
-| 当前卡点 | **M1 的收口 = 授权包①**（装进 `web` profile + **你**重启 `dsh web` → 我复验 M1-02 / M1-14）；另有 **M05-15 交互定稿**。M1+M2 仓库内部分**已全绿**，且**已装配进 `web` profile**（`dump-config` exit 0、两插件并排无冲突）——**只剩你重启 `dsh web`**；M2 的本地保存链已可用，**但界面还是上游的**（M3 才接线） |
+| 进度 | `docs/10`：**DONE 196 / 共 269**（DOING 8 · TODO 57 · WAIT🙋 8）· 一条命令看全貌：`node scripts/progress.mjs` |
+| 当前卡点 | **四件事之外，我这边没有未做的离线工作**：① **你重启 `dsh web`** → 我复验 M1-02（挂载日志 / 两面板并存 / console 无注册错误）+ 你点着看界面（M3-22）；② **授权包②**（专用可弃会话）→ M4.5 的 8 条真机探针 → **之后才允许进 M5**（硬门禁已在 docs/04 落纸）；③ **四个决策**（首轮 δ / M4-06 默认粒度 / M4-07 统计卡格子 / 要不要跳 `docs/12` 的入口）；④ **授权包④**（push / tag / npm）。仓库内：`tsc` / `oxlint` / `check-docs` / `namespace-contract` / 4 个门禁 lane / 全量 vitest / demo 两条自检 —— 一条命令 `node scripts/release-check.mjs` → 全部通过（共 10 步） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
 | 浏览器工具 | 已恢复且**本会话已实测跑通**（`navigate/resize/screenshot/evaluate/console_messages`）；限制：headless、无触屏（`pointer:coarse` 不命中） |
