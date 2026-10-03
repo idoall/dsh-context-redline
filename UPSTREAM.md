@@ -91,3 +91,18 @@ git -C <upstream-clone> show v0.59.2:src/client/components/browser.tsx
 # 我们的改动面（M1 之后）
 diff -rq <(git -C <upstream-clone> archive v0.59.2 | tar -xO 2>/dev/null) src/   # 逐文件人工核对
 ```
+
+### 3.2 复用范围：**趋势块直接沿用上游组件，不重写**（用户 2026-10-02 定）
+
+| 层 | 上游文件 | 体量（`wc -l`，v0.59.2） | 我们的做法 |
+|---|---|---|---|
+| ① 趋势组件本体 | `src/client/components/trendChart.tsx`、`stackedBar.tsx`、`requestDetail.tsx`、`src/client/styles/trendChart.css` | 717 + 248 + 309 + 128 = **1402** | **原样保留**（只做命名空间相关的改动），视觉与交互不重写 |
+| ② 直接依赖 | `categories.ts`、`format.ts`、`viewkit.ts`、`brief.ts`、`callSummary.ts`、`overscroll.ts`、`shared/types.ts` | ≈ 700+ | 原样保留 |
+| ③ 宿主半边（柱子的数字来源） | `src/host/*.ts`（`fold.ts` 1533、`timeline.ts` 425、`backfill.ts` 340、`balance.ts` 276、`attribution.ts` 263、`activity.ts` 263…） | **4673** | 原样保留（同时按本文 §3.1 改名） |
+
+**结论**：这三层一起才算"复用趋势块"；只搬 ① 会缺 `RequestRecord`（turn/step/每类 token/时间/事件标记），组件渲染不出来。
+参考体量：上游客户端共 **69 个文件 / 13927 行**。
+
+**这意味着什么**（写清楚，免得后面有人以为要重写）：
+- `demo/` 是**交互门禁用的静态原型**（纯 HTML/JS），**不是**最终客户端；它只负责把"契约与视觉"和上游对齐（已对齐 3 处：刻度带对齐公式、选中态状态行、点轮号条行为，见 `docs/03` R1.1.1 / R1.1.2）。
+- 最终客户端在 M1 从基线 `v0.59.2` 起来，**趋势块不重写**；我们要写的是**编辑能力**（M2/M3）。

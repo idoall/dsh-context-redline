@@ -107,7 +107,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**本轮在改文档**：文档 review 裁定 D1–D8 见本文末 + `scripts/check-docs.mjs`（机器把关） |
-| 进度 | `docs/10`：**DONE 102 / 共 237**（DOING 4 · TODO 123 · WAIT🙋 8） |
+| 进度 | `docs/10`：**DONE 103 / 共 238**（DOING 4 · TODO 123 · WAIT🙋 8） |
 | 当前卡点 | **M05-15 交互定稿** 与 **M5-28 起点口径确认**（都等用户点头）；文档 review 轮已收口（75 → 0，由 `scripts/check-docs.mjs` 把关）；M1 可在仓库内自验，**授权包①（装配 + 用户重启）是 M1 的收口动作** |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -410,3 +410,12 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 **与"点柱子"的区别**：点柱子 = 选中那一步（状态行跟着变）；点轮号 = 切到轮粒度 + 把那一轮居中，**选择不变**。
 **实现坑**：按轮次模式的刻度格是 `list.map()` 出来的，只有 `data-seq` ⟹ 定位必须回退"按第几格找"，否则**静默失效**。
 现已：① 回退查找；② 找不到时如实报「定位失败」；③ 护栏覆盖两种粒度（字符串契约）+ 定位成功（有 DOM 时）。
+
+
+## D25 · 趋势块：**直接复用上游组件，不重写**（用户 2026-10-02 问「全部复用代码」）
+
+**答**：可以，而且这本就是既定路线 —— `UPSTREAM.md` §1 写明我们的**复制基线 = 上游 tag `v0.59.2` 全仓**，所以趋势块跟着基线一起来，不需要"额外抄"。新增的是 `UPSTREAM.md` §3.2（复用范围三层）与本文的这条裁定。
+
+**三层边界（`wc -l` 实测）**：① 组件本体 `trendChart.tsx`(717) + `stackedBar.tsx`(248) + `requestDetail.tsx`(309) + `trendChart.css`(128) = **1402**；② 直接依赖（`categories`/`format`/`viewkit`/`brief`/`callSummary`/`overscroll`/`shared/types`）≈ 700+；③ **宿主半边 `src/host/*.ts` = 4673**（`fold.ts` 1533 最大）—— 柱子的数字全来自这里。只搬 ① 会缺 `RequestRecord`。
+
+**因此**：`demo/` 只承担"契约与视觉对齐"（静态原型，不重写趋势块）；M1 起来后这三层**原样保留**，只做 §3.1 的 8 项命名空间改名；我们真正要写的是**编辑能力**（M2/M3）。
