@@ -50,57 +50,89 @@
 | 6 | 插件 `name` / bundle 注册 id | `dsh-context` | `dsh-context-redline`（= 包名，客户端 bundle 的注册 id 必须等于包名） | DSH 的 `dsh-client-modules` 按包名校验，不一致会抛 `loaded without registering "<id>"` |
 | 7 | 数据目录 | 无（上游只读） | `$DSH_HOME/dsh-context-redline` | 我们自己的草稿/固定块/快照存放处 |
 | 8 | 其余命名面（**静默撞车**，最容易漏） | `SETTINGS_NAMESPACE` / `SIDEBAR_CONTEXT_ID` / `SIDEBAR_CONTEXT_KIND` 都是 `dsh-context`；localStorage key `dsh-context:platform-balance` | 一律换成 `dsh-context-redline` 系 | 逐项取值与出处见 [`docs/01` F4](docs/01-platform-facts.md)；机器断言必须用带排除的正则 `dsh-context(?!-redline)` |
+| 9 | **CSS 类名前缀**（**静默撞车**，M1 实测新增） | 整套 chrome 用 `lc-*`（468 个不同类名；实装 0.60.0 的 `lib/client.js` 里 572 处） | 一律换成 `redline-*`（类名 + CSS 变量 `--redline-i` + Tailwind 动画键 `--animate-redline-*`/`@keyframes redline-*` + `data-redline-*`） | 插件的样式是**不分层地注进同一个 document**（`document.head.appendChild(<style>)`），同特异性下后注入者顶掉先注入者、不报错。实测与理由见 [`docs/01` F40](docs/01-platform-facts.md) |
+| 10 | **客户端斜杠命令名** | `/context`（`src/client/command.ts` 的 `COMMAND`） | `/redline` | 斜杠命令名是全局的；与上游面板并存时不能两边都占 `/context`。与 `docs/02` §5.3 的 `/redline` 口径一致 |
 
-### 3.2 上游文件的改动点（预计很小，v2 的经验值可作量级参考）
+### 3.2 上游文件的改动点（**M1 实际改了什么**，2026-10-04）
 
-v2 相对上游 `v0.59.0` 的**全部**改动只有 12 个路径、其中对上游既有文件的改动合计约 240 行：
+> 下表是 §3.1 那 10 项落地的**实际**改动面与读数（`node scripts/namespace-contract.mjs` 逐面把关）。
+> 计数口径：`src` + `tests` + `locale` 全量文本替换，逐条复核过"注释里的出处说明不计入违规"。
 
-| 上游文件 | v2 的改动量 | 我们的预计改动 |
+| 上游文件 / 目录 | 实际改动 | 读数（M1 执行时） |
 |---|---|---|
-| `src/client/components/browser.tsx` | +52 / −3 | 挂动作条与内联编辑器；**轮次选择 prop**；遮蔽行的原因提示 |
-| `src/client/components/contextView.tsx` | +116 / −0 | 编辑层 hook 接线；轮次 → 浏览器的联动；快照/子会话面板 |
-| `src/client/i18n.ts` | +66 / −2 | 新文案（编辑/批注/不变量/快照/子会话）；**补齐上游缺的 key** |
-| `src/client/index.ts` | +8 / −2 | 样式 import、slot id、locale ns |
-| `src/host/index.ts` | +9 / −1 | 挂我们的通道与编排服务 |
-| 其余上游文件 | 未改 | **尽量不改**——改动越少，将来挑上游 UI 改进越省事 |
+| `src/host/{timeline,headers,activity}.ts` | 投影 key `context*` → `redline*`（key 字面量、schema 标识符、`SessionProjectionStateMap` 键、`fallback.ts` 的 `PROBE_KEYS` 一起改） | 三个 key：`redlineTimeline` / `redlineHeaders` / `redlineActivity` |
+| `src/host/{detail,balance,backfill}.ts` | 路由常量 `/api/dsh-context/*` → `/api/dsh-context-redline/*`（含注释里的出处） | 3 处 `/api` 字面量全部在我们的前缀下 |
+| `src/host/index.ts` | **+1 行接线**：`watchRedlineChannel(ctx)`（挂在 baseline gate **之前**，两侧都生效） | `apply` 里第一句 |
+| `src/host/settings.ts` | 仅加一段**实测注释**指向 `docs/01` F39（`register` 面在 0.2.0-rc.2 已不存在，本模块恒为 inert）；逻辑未改 | 见 `docs/10` M3-23 |
+| `src/host/version.ts`、`src/host/backfill.ts`、`src/host/logShapes.ts`、`src/host/compat.ts`、`src/host/attribution.ts`、`src/shared/*.ts` | 包名 / 注释 / 模块标识符 `dsh-context` → `dsh-context-redline`（含 `SETTINGS_NAMESPACE`、错误码前缀、logger 标签） | `/dsh-context(?!-redline)/` 零命中 |
+| `src/shared/version.ts` | `BASELINE_DSH_VERSION` `0.1.5-rc.1` → **`0.2.0-rc.2`**（= 我们的 `engines.dsh` 下界，`docs/11` D1） | 闸的基线与 `engines.dsh` 一致 |
+| `src/client/index.ts` | slot id `context`/`context-jump`/`context-modal`/`context-overview` → `redline*`；locale `NS`、`settings.plugin.item` / `plugins.bundle.config` 的 `key` 全换 | 5 个 id，全部 `redline*` |
+| `src/client/sidebar.ts` | `SIDEBAR_CONTEXT_ID` / `SIDEBAR_CONTEXT_KIND` → 包名 | `dsh-context-redline` |
+| `src/client/command.ts` | `COMMAND` `/context` → `/redline` | 与 `docs/02` §5.3 一致 |
+| `src/client/**`（16 张 CSS + 36 个组件 + 工具模块） | **`lc-` → `redline-` 全量改名**（类名、`--lc-i`、`--animate-lc-*`、`@keyframes lc-*`、`data-lc-current`） | `src`+`tests` 共 **3043** 处，`lc-[a-z]` 零命中（面 8 同时扫 `.tsx` 与 `.css`） |
+| `src/client/components/{stackedBar,images}.tsx` | 改名后有 3 行注释超过 140 列 → 重新折行（`@stylistic/max-len`） | `oxlint` 0 error |
+| `locale/{zh,en}.json` | 展示名与描述里的包名、`/context` → `/redline` | 2 个字典 |
+| `cordis.patch.yml` | `id`/`name` → `dsh-context-redline`（带一段说明为什么必须等于包名） | 面 1 |
+| `tests/host/{index,version}.spec.ts`、`tests/client/{command,index}.spec.ts`、版本探针夹具 | 断言里的旧命名空间值 / 旧命令名 / 旧基线版本**跟着改**（改的断言，不是放宽断言） | `host` lane 全绿 |
+| `tests/client/setup.ts` | 加 `ResizeObserver` 桩（jsdom 没有，harness primitives 的 Tooltip 需要） | 见 `docs/01` F41 |
+| `tests/{compat,baselines.ts}`、`tests/host/settings.spec.ts` | **删除**：前两者是"对多个上游基线跑矩阵"的 lane（我们只支持一个运行时，且它需要网络与 `DSH_REPO`）；后者测的是 0.2.0-rc.2 已移除的 `SettingsProvider` / `register(ns, schema)` | 见 §3.4 与 `docs/01` F39 |
+
+**没改的**（刻意保持原样，改动越少越好）：`src/host/fold.ts`（1533 行，柱子的数字全来自它）、
+`src/client/components/trendChart.tsx` / `stackedBar.tsx` / `requestDetail.tsx` / `styles/trendChart.css` 的**逻辑与视觉**、
+`src/client/{categories,format,viewkit,brief,callSummary,overscroll}.ts`、`src/shared/types.ts` 的结构（只改 key 名）。
 
 ### 3.3 我们新增的文件（不是上游的）
 
-计划（M1 起逐步落地，目录按 **D3 定版**）：`src/redline/**`（纯逻辑：编辑面与编排面的纯函数部分）、`src/host/redline-channel.ts`（**唯一**上游接线文件）、`src/shared/redline-route.ts`（两半共用的路由与请求形状）；测试 `tests/edit/**`、`tests/channel/**`（`*.spec.ts`）。
-
-> ⚠️ **归档线旧名**（`src/edit/**`、`src/edit/pure/**`、`src/orchestrate/**`、`tests/redline/**`、`test/**` 单数）**不再使用**；它们只允许出现在带「归档 / 历史 / 旧」字样的说明里（`node scripts/check-docs.mjs` 会判红）。
+| 文件 | 作用 |
+|---|---|
+| `src/shared/redline-route.ts` | 两半共用的路由常量（4 条，含 `/api` 前缀）、RPC 信封、`RedlineCall` 解析。**唯一**允许拼路由的地方（防 404，`docs/01` F1） |
+| `src/shared/redline-errors.ts` | 稳定错误码表（`redline/*`）+ wire 文案 + `isRedlineErrorCode`。**它是客户端的查找键**（`docs/03` R4.7），改名 = 契约变更 |
+| `src/shared/redline-paths.ts` | 数据目录常量 `dsh-context-redline`（`docs/02` §6）。纯逻辑，不 import `node:*` |
+| `src/host/redline-channel.ts` | **我们唯一的上游接线文件**（`docs/11` D3.1）：注册 `/api/dsh-context-redline/redline`、按 `op` 分发、回统一信封。**M1 的 `OPS` 表是空的**（任何 op 回 `redline/unknown-op`），M2 往里填 |
+| `tests/edit/namespace.spec.ts` | `edit` lane 起步用例：路由/错误码/数据目录/信封的契约断言 |
+| `tests/channel/redline-route.spec.ts` | `channel` lane 起步用例：**真 cordis 上 boot 主机入口**、抓真实注册的路由、断言命名空间 + 信封行为 |
+| `scripts/namespace-contract.mjs` | M1 的机器门禁（**11 个面** / 24 项），见 `docs/04` M1 DoD；逐面反向验证过 |
+| `.github/workflows/ci.yml` | 自建 CI（不继承上游的 `ci.yml`/`publish.yml`；见 §4） |
 
 ### 3.4 明确**不**复用上游/归档代码的部分
 
 - 早期那次尝试 里**不应带走**的东西：`simulator.editMessage`（无 importer 的重复编辑器）、`message-types.ts`、forge 前缀路由（这些都属于**早期那次尝试**，本仓库**不复用**；教训见 `docs/01`）。
-- 上游的告警/遥测类入口：如"检查新版本""社交预览"等与本地编辑无关的部分，M1 复制时按需裁掉。
+- 上游的告警/遥测类入口：如"检查新版本""社交预览"等与本地编辑无关的部分，M1 复制时按需裁掉（`scripts/` 下上游的 `publish.sh`/`register.sh`/`web.sh`/`watch.sh`/`diff-fold.ts` **未复制**）。
+- `tests/compat/**` + `tests/baselines.ts`：上游的**多基线兼容矩阵** lane —— 它要 `DSH_REPO` 与网络下载各 tag 的 vendored cordis，而我们**只支持一个运行时**（`>=0.2.0-rc.2 <0.3.0`），留着它只会引入"红是常态"。删除时的连带清理：`tests/{client,host}/compat/**`。
+- `tests/host/settings.spec.ts`：测的是 0.2.0-rc.2 **已移除**的 `SettingsProvider` 基类与 `register(ns, schema)`（`docs/01` F39）。**不是**"为了让测试变绿而放宽断言"——被测 API 在这个运行时上不存在，且该 lane 本来就不是门禁。
+- `src/host/settings.ts` 的注册效果：在 0.2.0-rc.2 上**inert**（见 `docs/01` F39）；是否保留整套偏好面由 `docs/10` **M3-23** 决定。
 
-## 4. 骨架配置文件来源（**M1 必须补全此表**）
+## 4. 骨架配置文件来源（M1 已落地 · 每个文件从哪来、改了什么、怎么验）
 
-M0 阶段工作区里已有的骨架文件，以及它们该怎么处理：
+> M1-09 的产物。**"来自 tag `v0.59.2`"= 逐字复制后按本表改动**；"自建"= 本仓库新写。
+> 所有改动都有一句**为什么**，以及一条**能跑的验证**。
 
-| 文件 | 现状 | M1 要做 |
-|---|---|---|
-| `.gitignore` | 我们自己维护（含 `.dsh-code-index/`、`coverage/` 等） | 保留 |
-| `.npmrc` | 沿用归档线的 `auto-install-peers=false` | 保留并写进 M1 的配置来源表 |
-| `.oxlintrc.json` | **来自早期那次尝试**（12KB，其规则按当时的目录结构写） | 按新目录裁剪；确认与本仓库实际文件集合匹配后再启用 |
-| `.github/workflows/**` | ⚠️ **已删除**（原本是上游/归档线带来的 `ci.yml` + `publish.yml`，前者会跑当前不存在的 `pnpm run verify`，后者直通 npm 发布流程） | **自建**：按 `docs/04` M1 的 DoD 第 3 条写，**不继承**上游的 workflow |
-| `package.json` / `tsconfig.json` / `tsdown.config.ts` / `vitest.config.ts` | M0 尚无（M1 才建） | 按 M1 的"配置来源表"逐项记录：来自哪个 tag 的哪个路径、保留什么、改成什么 redline 值、怎么验证 |
+| 文件 | 来源 | 保留什么 | 改成什么（redline 值） | 怎么验 |
+|---|---|---|---|---|
+| `package.json` | 来自 tag `v0.59.2`（同名文件） | `type`/`main`/`types`/`exports`/`files`/`engines.node`（`^22.19.0 \|\| >=24.0.0`）的形状；`dsh.bundle.patch` + `dsh.client.{platform,inject}` 的结构 | `name`/`version`(0.1.0)/`description`/`license`(MIT，见 README)/`icon`/`scripts`/`keywords`；`engines.dsh = >=0.2.0-rc.2 <0.3.0`（顶层，按 manifest 类型定义）；peer 上界 `<0.3.0`；`devDependencies` 里 `@deepseek-ai/*` 全部**钉到 `0.2.0-rc.2`**；**删掉**上游的 `dsh.compatibility.dshReleases`（0.1.x 时代的兼容矩阵，已由 `engines.dsh` 取代）；**删掉** `prepare: husky && tsdown`（不许 `pnpm install` 顺手构建） | `node scripts/namespace-contract.mjs` 面 1 + 面 11；`pnpm install` 后 `tsc`/`tsdown`/`vitest` 全绿 |
+| `tsconfig.json` | 来自 tag `v0.59.2` | `target/module/moduleResolution/lib/jsx/strict/noEmit/skipLibCheck/isolatedModules/verbatimModuleSyntax/forceConsistentCasing` | `lib` 加 `DOM.Iterable`；`types` 从 `[]` 改为 `["node"]`；`include` **加 `tests/**` 与两个 config 文件**（`docs/11` 实施共识 §4：护栏测试必须进 `tsc --noEmit`，否则等于半个护栏）；**`noUncheckedIndexedAccess` 不加**（上游没开；加了会与上游代码的既有写法冲突，实测一次报 1262 个错） | `./node_modules/.bin/tsc --noEmit` → 退出码 0 |
+| `tsconfig.tests.json` | 上游有 | — | **不再需要**：单一 `tsconfig.json` 已含 `tests/**` 且带 node 类型（合并的理由见上一行） | 同上（少一条命令，覆盖不变） |
+| `tsdown.config.ts` | 来自 tag `v0.59.2`，**逐字复制** | 全部：平台外置模块表、bundle purity 门、CSS 三通道（module/inline/global，Tailwind 编译 + lightningcss）、`__DSH_CTX_*` 的 define、客户端 banner/footer | **零改动**（banner 的注册 id 来自 `pkg.name`，改包名即自动对齐——`docs/01` F3 的护栏） | `pnpm run build` → `lib/client.js` banner = `load({ id: "dsh-context-redline"`（面 1 断言构建产物）+ `lib/index.js` 导出 `{Config, apply, inject, name}` |
+| `vitest.config.ts` | 来自 tag `v0.59.2` | reporters、jsdom + primitives 内联、`tests/client/setup.ts` | lane 重排为 **`edit` / `channel`（自有，门禁）+ `host` / `client`（上游，非门禁）**；**删掉 `compat` lane**（见 §3.4）；coverage 保留但**不设 thresholds**（上游的 perFile 100% 是针对它自己的全量覆盖，我们 M1 只有起步用例，设了就是逼人写假测试） | `vitest run --project edit --project channel` → 15/15；`vitest run` → 1689/1689 |
+| `.oxlintrc.json` | 仓库自带（与 tag `v0.59.2` 的**逐字节相同**，实测 `diff` 为空） | 全部规则与 overrides | **零改动**：实测它已与本仓库文件集合匹配（`oxlint` 0 error / 0 warning，201 个文件） | `./node_modules/.bin/oxlint` → 退出码 0 |
+| `.npmrc` | 仓库自带（归档线遗产） | `auto-install-peers=false` | 保留。**代价要记住**：平台包不会自动补，缺一个就整片 lane 加载失败（`docs/01` F41 列了必须显式声明的清单） | 依赖清单见 `package.json` 的 `devDependencies` |
+| `.gitignore` | 仓库自带 | `node_modules/`、`lib/`、`coverage/`、`.dsh-code-index/`、`.playwright-mcp/` 等 | 保留（`lib/` 必须忽略：它是构建产物） | `git status --short` 里不出现 `lib/` |
+| `.github/workflows/ci.yml` | **自建** | — | `push` + `pull_request`；Node `24.15.0`（= `engines.node` 的下界实测环境）+ pnpm `10.33.1`；跑 `tsc` / `namespace-contract` / `tsdown` / `vitest --project edit --project channel`。**明确不把 `host`/`client` 当 required**（环境依赖，`docs/05` §1）。安装步骤里写明了**为什么不做**上游的"删链接 → install → 建链接"三段式（`docs/01` F42） | YAML 结构由 `docs/04` M1 DoD 3 逐条对照；本机等价序列已全绿（见 `docs/10` M1-13 证据） |
+| `scripts/namespace-contract.mjs` | **自建**（M1-11） | — | 11 个面 / 24 项断言；扫代码前**先剥注释**（注释里**应该**提到上游旧名，那是出处）；"上游旧值零命中"一律用带排除的正则 `dsh-context(?!-redline)`（`docs/01` F4） | 逐面反向验证（10 个 mutating 用例 + 1 个沙箱 symlink 用例，全部变红后恢复即绿），原始输出见 `docs/10` M1-12 |
+| `scripts/{watch,web,register,publish}.sh`、`scripts/diff-fold.ts` | 上游有 | — | **不复制**：`publish.sh` 直通 npm 发布、其余是上游的 dev 便利脚本（`docs/00` N8 / `AGENTS.md` §1 的"发布必须单独授权"） | 目录里只有 `check-docs.mjs` + `namespace-contract.mjs` |
+
+**两处刻意偏离上游的配置**（都要能说出为什么）：
+
+1. **不建 `node_modules/@deepseek-ai` 符号链接**（上游那套 `link-dsh-runtime.mjs` 流程）→ 见 `docs/01` F42：
+   链 profile 层在本机已解析不到内部包，而"链 + `pnpm install`"正是那个**真实发生过**的写穿故障。
+   registry 直装让这个风险结构性消失，并加了面 10 的断言防止有人"照文档"把它加回来。
+2. **单一 `tsconfig.json`（含 `tests/**`）**取代上游的 `tsconfig.json` + `tsconfig.tests.json` 两分法 →
+   见 `docs/11` 实施共识 §4（护栏测试必须被 `tsc --noEmit` 覆盖）。
 
 > **为什么删掉继承来的 CI**：CI 是要长期信任的门禁。留一个"从上游抄来、当前必然失败或会触发发布"的 workflow，
 > 比没有 CI 更坏——它会让"红"变成常态，也会让发布变成一次误点。
 
-## 5. 校验方式
-
-```bash
-# 上游原文随时可取（本机 clone）
-git -C <upstream-clone> show v0.59.2:src/client/components/browser.tsx
-
-# 我们的改动面（M1 之后）
-diff -rq <(git -C <upstream-clone> archive v0.59.2 | tar -xO 2>/dev/null) src/   # 逐文件人工核对
-```
-
-### 3.2 复用范围：**趋势块直接沿用上游组件，不重写**（用户 2026-10-02 定）
+### 3.5 复用范围：**趋势块直接沿用上游组件，不重写**（用户 2026-10-02 定）
 
 | 层 | 上游文件 | 体量（`wc -l`，v0.59.2） | 我们的做法 |
 |---|---|---|---|
@@ -114,3 +146,13 @@ diff -rq <(git -C <upstream-clone> archive v0.59.2 | tar -xO 2>/dev/null) src/  
 **这意味着什么**（写清楚，免得后面有人以为要重写）：
 - `demo/` 是**交互门禁用的静态原型**（纯 HTML/JS），**不是**最终客户端；它只负责把"契约与视觉"和上游对齐（已对齐 3 处：刻度带对齐公式、选中态状态行、点轮号条行为，见 `docs/03` R1.1.1 / R1.1.2）。
 - 最终客户端在 M1 从基线 `v0.59.2` 起来，**趋势块不重写**；我们要写的是**编辑能力**（M2/M3）。
+
+## 5. 校验方式
+
+```bash
+# 上游原文随时可取（本机 clone）
+git -C <upstream-clone> show v0.59.2:src/client/components/browser.tsx
+
+# 我们的改动面（M1 之后）
+diff -rq <(git -C <upstream-clone> archive v0.59.2 | tar -xO 2>/dev/null) src/   # 逐文件人工核对
+```

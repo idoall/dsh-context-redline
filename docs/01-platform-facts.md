@@ -570,11 +570,11 @@ SpawnTeammateRequest = {
 
 | # | 事实 | 位置 / 依据 |
 |---|---|---|
-| F14 | `pnpm install` 会**写穿** profile 符号链接（把悬空 symlink 写进共享 profile，曾真实发生并恢复） | 早期那次尝试 `AGENTS.md` §2.3（`scripts/link-dsh-runtime.mjs` 自身安全；危险的是 `pnpm install`） |
-| F15 | 安全安装顺序：`rm -f node_modules/@deepseek-ai` → `pnpm install --ignore-scripts` → `node scripts/link-dsh-runtime.mjs` | 同上 |
+| F14 | `pnpm install` 会**写穿** profile 符号链接（把悬空 symlink 写进共享 profile，曾真实发生并恢复） | 早期那次尝试 `AGENTS.md` §2.3（`scripts/link-dsh-runtime.mjs` 自身安全；危险的是 `pnpm install`）。⚠️ **本仓库的处置见 F42：我们不建那条链接** |
+| F15 | 安全安装顺序：`rm -f node_modules/@deepseek-ai` → `pnpm install --ignore-scripts` → `node scripts/link-dsh-runtime.mjs` | 同上。⚠️ 该顺序只适用于"`node_modules/@deepseek-ai` 是指向共享 profile 的符号链接"的 `link:` 型 dev checkout；**本仓库改成从 registry 直装**（F42） |
 | F16 | 客户端 bundle 由宿主**按需从磁盘读**并送到浏览器 → `tsc && tsdown` 之后**硬刷新即可**，不必重启 `dsh web` | 早期那次尝试 §2.5 的实测更正（2026-09-27） |
 | F17 | 深色主题的选择器是 **`body[data-ds-dark-theme]`**（不是 media query，也不在 `html` 上）→ 不写配置也能实测深色 | 早期那次尝试 §2.5（实测值：`--dsw-alias-bg-layer-1` 浅 `#fff` / 深 `#232324`；`bg-layer-2` 浅 `#fff` / 深 `#2c2c2e`） |
-| F18 | 两个 `@deepseek-ai` 依赖树**都不完整**：profile 层缺内部包、安装层缺 `react`/`react-dom`/`shiki`/`clsx` | 早期那次尝试 §2.5（2026-09-28 实测；`scripts/link-dsh-runtime.mjs` 默认链 profile 层） |
+| F18 | 两个 `@deepseek-ai` 依赖树**都不完整**：profile 层缺内部包、安装层缺 `react`/`react-dom`/`shiki`/`clsx` | 早期那次尝试 §2.5（2026-09-28 实测）。⚠️ **2026-10-04 实测更新**：本机 `~/.dsh/profiles/web/node_modules/@deepseek-ai` 只剩 **5** 个包，`node_modules/@deepseek-ai` 链向它**解析不到** `dsh-session` 等内部包 ⟹ 链 profile 层这条路在本机**已不成立**（F42） |
 | F19 | `ctx.sessionProjections` 是**注册表**，不是数据源；`stateOf(session,key)` / `snapshot(session,keys?)` 返回值 | `$DSH_PKG/dsh-session-projection/lib/types/index.d.ts` |
 | F20 | 宿主**没有**任何现成的"每请求上下文构成"投影；上游是靠自己的 fold 单元算出来并 `wire.view` 下发的 | 逐个枚举 0.2.0-rc.2 的 `SessionProjectionStateMap` 合并点：`turnOutline`/`contextBreakdown`/`tokenUsage`/`contextPressure`/`subagentCatalog`/`todos`/`goal`/`plan`… 无一是"每请求上下文清单" |
 | F21 | 斜杠命令：`ctx.commands.register({name (小写无斜杠), description, handler(invocation)})`，`invocation = {commandId, agent, rawInput, attachments, signal}` | `$DSH_PKG/dsh-commands/lib/types/index.d.ts`；`/compact` 是完整范例（`$DSH_SRC packages/compaction/command-compact/src/index.ts:104-118`） |
@@ -584,6 +584,74 @@ SpawnTeammateRequest = {
 | F25 | **子会话不进左侧会话列表**；导航入口是**父会话页头的血缘面包屑 + 后代数量触发器**；官方 UI 包 `dsh-client-ui-subagent`（5 个槽位，含右侧 Sidebar 打开子会话对话） | `$DSH_PKG/dsh-client-ui-subagent/README.zh.md`（原文见 §F13.1） |
 | F26 | **fork 子会话可以可续接**：fork provider 实现了 `prepareContinuable`（方法存在即能力）→ `startContinuable({provider:'fork'})` 可用 | `$DSH_PKG/dsh-subagent-fork-in-process/lib/index.js` 全文；`dsh-subagent/lib/types/types.d.ts:360-375`；见 §F13.2 |
 | F27 | 可续接子会话的回传由**运行时**负责：建时自动追加**返回指引**（`withContinuableReturnGuidance` —— ⛔ **插件禁止** import/调用它，只传人写的首条任务），settle 时往**父会话日志**追加 `subagent-settled` **结算通知** | `$DSH_PKG/dsh-subagent/lib/index.js:599,633`；见 §F12.1 |
+| F39 | **设置服务的注册面在 0.2.0-rc.2 已经没有了**：`@deepseek-ai/dsh-settings` 导出 `SettingsForms`（`describe/update/replace/mutate`）而**没有** `SettingsProvider`、**没有** `register(ns, schema)` ⟹ 上游那套"插件注册自己的偏好命名空间"的写法在这个运行时上**恒为 no-op**（需要改成"偏好声明为 loader Config 的 `.volatile()` 字段"或删掉） | §F39（本机实测） |
+| F40 | **插件的 CSS 会被注进同一个 document，且是不分层（unlayered）的全局规则** ⟹ 两个插件若共用类名前缀，**同特异性下后注入者顶掉先注入者**（不报错）。上游整套 chrome 用 `lc-*`（实装 0.60.0 的 `lib/client.js` 里 572 处、我们复制基线里 468 个不同类名）⟹ 必须换前缀 | §F40（本机实测） |
+| F41 | 在本机**离线跑上游的 host/client lane**，需要把平台包补齐到 `node_modules`：`@deepseek-ai/dsh-scope`（`dsh-session` 运行时 import）、`@deepseek-ai/dsh-client-store` + `zustand` + `immer`（`dsh-client-store` 运行时 import）、`shiki`/`@shikijs/langs`/`clsx`/`diff`/`@deepseek-ai/dsh-util-code-language`/`micromark-*`/`mdast-*`；jsdom 另需 `ResizeObserver` 桩 | §F41（本机实测） |
+
+### F39 · 设置服务：0.2.0-rc.2 **没有** `register(ns, schema)`
+
+实测（`node_modules/@deepseek-ai/dsh-settings/lib/types/index.d.ts`，与运行中的安装树同版本 `0.2.0-rc.2`）：
+
+| 项 | 实测值 |
+|---|---|
+| 导出的类 | `SettingsForms`（`ctx.settings: SettingsForms`）、`SettingsConflictError`；**没有 `SettingsProvider`** |
+| 服务方法 | `describe(options?)` / `update(ns, patch, expectedRevision?)` / `replace(ns, section, rev?)` / `mutate(ns, ops, rev?)` / `configure({auto}, owner?)` / `writable` / `documentPath` / `prepareDocument()` |
+| 是否有 `register(ns, schema)` | **没有**（`grep -c "register(ns" → 0`） |
+| 表单从哪来 | **loader entry 自己的 Config schema**（`schema.d.ts` 的 `volatileForm(schema)` / `projectForm` / `isVolatilePath`）——即"偏好"必须长在插件的 `config:` 块上 |
+
+**后果**：`src/host/settings.ts` 的 `installSettings()` 在这个运行时上**一定**在 `typeof service.register !== 'function'` 处返回（不抛错、也不注册）。
+上游源码的注释已经写明这是 V4+ 的已知形态，所以这是**上游已知的 inert 降级**，不是我们引入的缺陷；
+但**它意味着本插件当前不发布任何偏好命名空间**。处理口径见 `docs/10` **M3-23**（要么把偏好改写成 loader Config 的 `.volatile()` 字段，要么随 M3 的界面减法一起删掉）——**不许**当成"已经生效"。
+
+### F40 · 插件 CSS 的类名撞车是**静默**的（与 F1/F2 同类，但更隐蔽）
+
+实测依据：
+
+1. 样式注入方式（上游 `tsdown.config.ts` 的 `dsh-css-*` 通道）：每个 `.css` 被编译成一段字符串，在 factory 执行时
+   `document.createElement('style')` + `document.head.appendChild(tag)` —— **document 级、不分层**；
+2. 实装 `dsh-context@0.60.0` 的 `lib/client.js` 里 `.lc-*` / `lc-*` 出现 **572** 次；
+3. 我们的复制基线（tag `v0.59.2`）里有 **468** 个不同的 `lc-*` 类名、`src` + `tests` 共 **3043** 处。
+
+两个插件**同时挂载**时，两边都把 `.lc-*` 规则注入同一张 CSSOM：同特异性下**后注入的覆盖先注入的**，
+于是"谁的样式生效"取决于加载顺序——不报错、控制台干净、界面看着"只是有点不对"。
+（上游 Tailwind 那部分通用工具类不受影响：两边同样的类名展开成同样的声明。）
+
+**结论（本仓库的处置）**：我们整套 chrome 前缀改成 **`redline-*`**（类名、CSS 自定义属性 `--redline-i`、
+Tailwind 动画键 `--animate-redline-*` / `@keyframes redline-*`、`data-redline-*` 一起改，保持一致）。
+机器护栏 = `scripts/namespace-contract.mjs` 的**面 8**（`.tsx` **与** `.css` 都扫，`lc-[a-z]` 零命中）。
+⚠️ 反向验证过程中发现过这条护栏的漏洞（只扫 `.ts`/`.tsx` 时，把 `.redline-root` 改回 `.lc-root` **不会红**），已修并复验。
+
+### F41 · 在本机跑上游 lane 所需的平台包闭包（实测）
+
+上游 `host` / `client` 两个 lane 要能**离线**跑起来，`node_modules` 里必须存在下面这些（自身都不是本仓库的业务依赖，纯环境）：
+
+| 缺谁 | 谁在运行时 import 它 | 症状 |
+|---|---|---|
+| `@deepseek-ai/dsh-scope` | `dsh-session/lib/index.js` | `Cannot find package '@deepseek-ai/dsh-scope'` |
+| `@deepseek-ai/dsh-client-store` | 客户端组件（`useProjection` 的 store） | `Failed to resolve import "@deepseek-ai/dsh-client-store"` |
+| `zustand` + `immer` | `dsh-client-store/lib/index.js` | `Cannot find package 'zustand'` |
+| `shiki` / `@shikijs/langs` | 富文本代码高亮 | `Failed to resolve import "shiki/core"` |
+| `clsx` / `diff` / `@deepseek-ai/dsh-util-code-language` / `micromark-*` / `mdast-*` | 富文本 / diff 渲染 | 同类 resolve 失败 |
+| `ResizeObserver`（jsdom 缺失） | harness primitives 的 Tooltip | `ReferenceError: ResizeObserver is not defined`（已用桩补，见 `tests/client/setup.ts`） |
+
+⚠️ `.npmrc` 是 `auto-install-peers=false`，所以这些**不会**被自动装上 —— 缺了就是 42 个测试文件整片加载失败。
+
+### F42 · 本仓库的依赖安装：**从 registry 直装，不建符号链接**（实测决定）
+
+`scripts/link-dsh-runtime.mjs` **在本仓库不存在**（它是早期那次尝试的脚本，那条线的目录与 git 历史都已丢失）。
+本机实测：**这条路现在也走不通** —— `~/.dsh/profiles/web/node_modules/@deepseek-ai` 只有 5 个包
+（`cosmokit`/`schemastery`/`dsh-browser-use`/`dsh-experimental-browser-use-playwright-mcp`/`dsh-experimental-browser-use-runtime`），
+链向它解析不到 `dsh-session` 等内部包；真正齐全的那棵树在**全局安装层**
+（`…/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai`，288 个包），而它**缺** `react`/`shiki`/`clsx` 等浏览器依赖。
+
+**因此 M1 的处置**：把需要的 `@deepseek-ai/*` **按 `0.2.0-rc.2` 显式写进 devDependencies，从 registry 直装**。
+这样做的两个好处：
+1. **F14 的写穿风险结构性消失** —— 没有符号链接，`pnpm install` 无处可穿；
+2. 版本可复现（`pnpm-lock.yaml`），且与 `engines.dsh` 的声明一致。
+
+**护栏**：`scripts/namespace-contract.mjs` 的**面 10** 断言 `node_modules/@deepseek-ai` **不是**符号链接，
+反向验证过（在临时根目录里造一个 symlink → 该面立刻红）。
+⛔ **不要**为了"照文档做"而重新创建那条链接 —— 那等于把一个**真实发生过**的故障模式搬回树里。
 
 ---
 

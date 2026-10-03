@@ -32,12 +32,13 @@
 
 | 项 | 内容 |
 |---|---|
-| 产物 | 新仓库骨架（`package.json`/`tsconfig`/`tsdown`/`vitest` lane/`scripts`/lint/**CI**）；从 tag `v0.59.2` 复制的 `src/`；**命名空间化改造**（`docs/01` F1–F4）；安全的依赖安装顺序（F14/F15）；**配置来源表**；`dsh --profile web --dump-config` 的挂载确认（F23、V1、V2） |
+| 产物 | 新仓库骨架（`package.json`/`tsconfig`/`tsdown`/`vitest` lane/`scripts`/lint/**CI**）；从 tag `v0.59.2` 复制的 `src/`（**110 个文件**）；**命名空间化改造**（`docs/01` F1–F4 + **F40 的 CSS 前缀**）；**依赖直装**（见下方 DoD 3 的更正）；**配置来源表**（`UPSTREAM.md` §4）；`dsh --profile web --dump-config` 的挂载确认（F23、V1、V2） |
 | 依赖 | M0 确认（**且 `docs/08` Q1/Q2/Q11 已拍板** —— ✅ 已满足：Q1 包名 = `dsh-context-redline`、Q2 本轮不做图 2 ②；⛔ Q11 的「A 完整回滚」**已被 2026-10-02 的硬约束取代**（界面不提供回滚，见 `docs/11` D19）） |
 | 测试 | `tsc --noEmit` exit 0；`vitest run --project edit --project channel` 可跑；**`namespace-contract` 检查绿**；`--dump-config` 无路由/投影 key 冲突 |
 | 验收人 | **自验**（机械可验）+ 你的 `dump-config` 抽看 |
 | 授权点 | 安装依赖（本地，不需授权）；**装进 web profile 需你单独授权** |
 | 风险 | 上游 `src/` 实测有 **110 个文件**（`git ls-tree -r v0.59.2 src | wc -l` = 110），命名空间化漏一处就**静默降级**（同 key 投影会被顶掉）→ 因此不能只靠人眼 grep |
+| **仓库内完成情况（2026-10-04）** | ✅ **11/14 DONE**：`tsc --noEmit` exit 0 · `tsdown` exit 0 · 自有 lane `edit`+`channel` **15/15** · 含上游 lane 全跑 **96 文件 1689/1689** · `namespace-contract` **11 面 24 项 0 失败**（逐面反向验证）· `oxlint` 0 error。**只剩 M1-01（授权包①：装 profile + 你重启）与 M1-02 / M1-14（装完后的复验）** |
 
 **M1 的完成定义（DoD）**
 
@@ -56,7 +57,7 @@
 
    > grep（`grep -rn "dsh-context/" src/`）只能当**线索**，它抓不到无尾斜杠的写法、双引号/模板串、URL 分段、以及 `context` 这种短名。
 2. `tsc --noEmit` exit 0；`vitest run --project edit --project channel` 可跑。
-3. **`.github/workflows/ci.yml` 已提交**且内容明确：`push` + `pull_request` 触发；固定 Node（与 `engines` 一致）与 pnpm 版本；**安全安装顺序**（`rm -f node_modules/@deepseek-ai` → `pnpm install --ignore-scripts` → `node scripts/link-dsh-runtime.mjs`）；必跑 `tsc --noEmit`、`tsdown`、`vitest --project edit --project channel`、`namespace-contract`；**`host`/`client` lane 明确不作为 required check**（环境缺口，`docs/05` §1）。
+3. **`.github/workflows/ci.yml` 已提交**且内容明确：`push` + `pull_request` 触发；固定 Node（与 `engines` 一致）与 pnpm 版本；**从 registry 直装**（`docs/01` **F42** 更正了本节原来的"删链接 → install → 建链接"三段式：那条链接在本机已解析不到内部包，且 `pnpm install` 写穿它正是真实发生过的故障 —— **不建链接**，并加一条断言防止有人把它加回来）；必跑 `tsc --noEmit`、`tsdown`、`vitest --project edit --project channel`、`namespace-contract`；**`host`/`client` lane 明确不作为 required check**（环境缺口，`docs/05` §1）。
 4. **配置来源表**已写入 `UPSTREAM.md`：`package.json` / `tsconfig.json` / `tsdown.config.ts` / `vitest.config.ts` 各自**来自哪个 tag 的哪个路径**、哪些字段保留、哪些必须改成 redline 值、以及各自的验证命令。
 5. `dsh --profile web --dump-config` 输出里没有路由/投影 key 冲突。
 

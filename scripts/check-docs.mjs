@@ -75,6 +75,16 @@ scanLines('目录', DOCS, /src\/edit\/|src\/orchestrate\/|tests\/redline\/|(^|[^
 
 /* ---------- ②′ src/host 只能放我们的接线文件（且带 redline- 前缀） ---------- */
 {
+  // D3.1（docs/11）：`src/host/` 下**我们自己的**接线文件必须带 `redline-` 前缀；
+  // 但**上游复制过来的文件**原名保留、只在必须接线处改动（docs/11 D3.1 明确点了
+  // `src/host/index.ts`、`settings.ts`），所以它们必须在豁免名单里 ——
+  // 否则一提上游文件名就判红，等于逼人把出处从文档里删掉。
+  // 名单 = 复制基线 tag v0.59.2 的 `src/host/*.ts`（实测 18 个），加上入口 index。
+  const UPSTREAM_HOST_FILES = new Set([
+    'index', 'activity', 'attribution', 'backfill', 'balance', 'compat', 'config', 'detail',
+    'fallback', 'fold', 'headers', 'logShapes', 'pricing', 'settings', 'stepIdentity',
+    'timeline', 'toolSources', 'version',
+  ])
   const t = read('docs/10-execution-checklist.md')
   if (t) {
     t.split('\n').forEach((line, i) => {
@@ -82,10 +92,10 @@ scanLines('目录', DOCS, /src\/edit\/|src\/orchestrate\/|tests\/redline\/|(^|[^
       if (!m) return
       for (const hit of m) {
         const name = hit.replace('src/host/', '').replace('.ts', '')
-        if (!name.startsWith('redline-') && name !== 'index') {
-          problems.push(`[目录] docs/10-execution-checklist.md:${i + 1} src/host/${name}.ts 不合 D3.1`
-            + `（src/host/ 只放 redline-*.ts 接线文件；逻辑放 src/redline/**）\n      ↳ ${line.trim().slice(0, 110)}`)
-        }
+        if (name.startsWith('redline-') || UPSTREAM_HOST_FILES.has(name)) continue
+        problems.push(`[目录] docs/10-execution-checklist.md:${i + 1} src/host/${name}.ts 不合 D3.1`
+          + `（我们自己的 src/host 接线文件必须带 redline- 前缀；上游文件原名保留，逻辑放 src/redline/**）`
+          + `\n      ↳ ${line.trim().slice(0, 110)}`)
       }
     })
   }

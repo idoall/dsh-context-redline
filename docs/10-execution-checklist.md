@@ -161,24 +161,29 @@
 
 ---
 
-## 3. M1 · 骨架与身份（**0 / 14**）—— 仓库内可自验；授权包① 是**收口动作**（D4）
+## 3. M1 · 骨架与身份（**11 / 14 DONE**）—— 仓库内可自验 ✅；授权包① 是**收口动作**（D4）
+
+> **2026-10-04 执行记录**：仓库内部分**已全部完成并全绿**。当前**只剩 M1-01（授权包①，等你点头）与 M1-02（装完后的复验）**。
+> 结论：`src/` 从 tag `v0.59.2` 复制 **110 个文件**；`tsc --noEmit` 退出码 0；`tsdown` 退出码 0（`lib/index.js` 150.56 kB、`lib/client.js` 597.20 kB，banner `load({ id: "dsh-context-redline"`）；
+> 自有 lane `edit`+`channel` **15/15**；上游 `host`+`client` lane **96 个文件 1689/1689**；`namespace-contract` **24 项 0 失败**（11 个面，逐面反向验证过）；`oxlint` 0 error；
+> 仓库原有三件套 `check-docs` / `check-static` / `check-runtime`（193 项）仍全绿。
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
 | M1-01 | 🙋 授权包①（**M1 收口动作**）：把本仓库装配进 `web` profile；**你**重启 `dsh web`；我做复验 | WAIT🙋 | 仅授权包内由 Lead 操作 profile（先备份）；**teammate 永不触碰 `$DSH_HOME/**`** |
 | M1-02 | 复验：插件日志 `host loaded (/api/dsh-context-redline)`、两个面板并存、console 无注册错误 | TODO | 只读日志 + 浏览器 |
-| M1-03 | 从上游 tag `v0.59.2` 复制 `src/`（不带 `.git`、不带上游 `.github/workflows`） | TODO | `src/**`、`package.json` |
-| M1-04 | 路由改名：`/api/dsh-context/{detail,balance,backfill}` → `/api/dsh-context-redline/*` | TODO | `src/host/**` |
-| M1-05 | 投影改名：`contextTimeline\|contextHeaders\|contextActivity` → `redlineTimeline\|redlineHeaders\|redlineActivity` 并定版 `stateVersion` | TODO | `src/host/**` |
-| M1-06 | 插槽 id / 文案命名空间 / 消息 kind / 数据目录 四处分家 | TODO | `src/client/**`、`src/host/**`、`locale/**` |
-| M1-07 | 客户端 bundle 注册 id = 包名（否则 `loaded without registering`） | TODO | `package.json`、客户端入口 |
-| M1-08 | 依赖安装按安全顺序（防 `pnpm install` 写穿共享 profile 链接） | TODO | `node_modules/@deepseek-ai`、`scripts/link-dsh-runtime.mjs` |
-| M1-09 | 配置来源表：每个配置文件从哪来、改了什么、为什么 | TODO | `UPSTREAM.md` §4 |
-| M1-10 | 自建 CI（上游 workflows 已删；它会跑不存在的 `pnpm run verify`） | TODO | `.github/workflows/**`、`package.json` scripts |
-| M1-11 | `namespace-contract` 机器检查覆盖 8 个面 | TODO | `scripts/namespace-contract.mjs` |
-| M1-12 | 反向验证：手工改坏一处命名空间 → 检查必须变红 | TODO | `scripts/namespace-contract.mjs` |
-| M1-13 | `tsc --noEmit` exit 0 + `vitest run --project edit --project channel` 可跑 | TODO | `tsconfig.json`、`vitest.config.ts` |
-| M1-14 | `dsh --profile web --dump-config` 无路由/投影冲突 | TODO | 只读命令 |
+| M1-03 | 从上游 tag `v0.59.2` 复制 `src/`（不带 `.git`、不带上游 `.github/workflows`） | DONE | → `git -C <upstream-clone> archive v0.59.2 src locale icon.svg cordis.patch.yml tests \| tar -x`；`find src -type f \| wc -l` = **110**（与 `docs/04` M1 风险的 110 一致）；`tests/` 复制后删掉 `tests/compat/**`+`tests/client/compat/**`+`tests/host/compat/**`+`tests/baselines.ts`（理由见 `UPSTREAM.md` §3.4）`src/**`、`tests/**`、`locale/**`、`icon.svg`、`cordis.patch.yml` |
+| M1-04 | 路由改名：`/api/dsh-context/{detail,balance,backfill}` → `/api/dsh-context-redline/*` | DONE | → 三个常量改成 `${REDLINE_API_PREFIX}/*`；`namespace-contract` 面 2「3 处 /api 字面量全部在我们前缀下」+「上游路由零命中」；`channel` lane 在**真 cordis** 上 boot 主机入口、抓真实注册的 4 条路由（`redline`/`detail`/`balance`/`backfill`）断言无上游路径 `src/host/{detail,balance,backfill}.ts`、`src/shared/redline-route.ts` |
+| M1-05 | 投影改名：`contextTimeline\|contextHeaders\|contextActivity` → `redlineTimeline\|redlineHeaders\|redlineActivity` 并定版 `stateVersion` | DONE | → `key:` 字面量 + schema 标识符 + `SessionProjectionStateMap` 键 + `fallback.ts` 的 `PROBE_KEYS` 一起改；面 3 报 `redlineActivity · redlineHeaders · redlineTimeline`；上游 3 个 key 零命中；`host` lane 的 fold 断言按新 key 全绿 `src/host/{timeline,headers,activity,fallback}.ts`、`src/shared/types.ts` |
+| M1-06 | 插槽 id / 文案命名空间 / 消息 kind / 数据目录 四处分家 | DONE | → 面 4（5 个 slot id 全 `redline*`、sidebar id/kind = 包名、斜杠命令 `/redline`）+ 面 5（`NS` = 包名、`locale.register(NS)`/`bind(NS)`、两个字典带包名）+ 面 6（**0 个 `MessageSourceMap` kind**，与上游一致）+ 面 7（`REDLINE_DATA_DIR_NAME = 'dsh-context-redline'` 且 harness home 拼接只剩 `src/host/version.ts` 一处）`src/client/{index,sidebar,command}.ts`、`locale/*.json`、`src/shared/redline-paths.ts` |
+| M1-07 | 客户端 bundle 注册 id = 包名（否则 `loaded without registering`） | DONE | → 面 1 四条断言全绿：`package.json name`、`cordis.patch.yml` 的 `id`/`name`、tsdown 用 `pkg.name` 生成 banner、**构建产物** `lib/client.js` 的实际 banner（`load({\s*id:\s*"dsh-context-redline"`）；反向验证：改 `package.json` 的 name → 立刻红 `package.json`、`cordis.patch.yml`、`tsdown.config.ts` |
+| M1-08 | 依赖安装按安全顺序（防 `pnpm install` 写穿共享 profile 链接） | DONE | → **改口径并留证**：本仓库**不建** `node_modules/@deepseek-ai` 符号链接，改为从 registry 按 `0.2.0-rc.2` 直装（`docs/01` **F42**：本机 profile 层只剩 5 个包、链它解析不到 `dsh-session`；链+install 正是那个真实发生过的写穿故障）。面 10 断言它不是符号链接，沙箱反向验证过（造 symlink → 红）。平台包闭包清单见 `docs/01` **F41** `package.json`、`node_modules/@deepseek-ai`（只读检查） |
+| M1-09 | 配置来源表：每个配置文件从哪来、改了什么、为什么 | DONE | → 11 个文件逐行成表（来源 / 保留 / 改成什么 / 怎么验）+ 两处刻意偏离上游的理由 `UPSTREAM.md` §4 |
+| M1-10 | 自建 CI（上游 workflows 已删；它会跑不存在的 `pnpm run verify`） | DONE | → `push` + `pull_request`；Node `24.15.0` + pnpm `10.33.1`；`tsc` → `namespace-contract` → `tsdown` → `vitest --project edit --project channel`；**`host`/`client` 明确不设 required**；文件里写明为什么不做上游的三段式安装（F42）。本机等价序列已全绿（见 M1-13） `.github/workflows/ci.yml`、`package.json` 的 `scripts.verify` |
+| M1-11 | `namespace-contract` 机器检查覆盖 **11 个面**（原写 8 个面；M1 实测补出 3 个） | DONE | → **24 项 0 失败**。11 个面 = ①身份 ②路由 ③投影 ④插槽 ⑤文案 ⑥消息来源 ⑦数据目录 ⑧上游旧值（含 **CSS `lc-` 前缀**，`.tsx` **与** `.css` 都扫）⑨lane 纯度（自有 lane 不碰 node/DOM/React；client 不许 import host/redline）⑩依赖（不许符号链接）⑪版本（`engines.dsh` ↔ 版本闸基线）。新增的 3 个面来自实测：**CSS 类名前缀**（`docs/01` F40）、**lane 纯度**（`docs/05` §1 承诺的机械校验）、**符号链接**（F42） `scripts/namespace-contract.mjs` |
+| M1-12 | 反向验证：手工改坏一处命名空间 → 检查必须变红 | DONE | → **11 个用例全部变红、恢复即绿**（原始输出）：面1 包名 / 面2 路由前缀 / 面3 投影 key / 面4 slot id / 面5 locale ns / 面7 数据目录 / 面8 localStorage / **面8 CSS 前缀** / 面9 `node:` 污染 / 面11 版本 / **面10 沙箱 symlink**。⚠️ **反向验证抓到一个真漏洞**：面 8 原来只扫 `.ts`/`.tsx`，把 `.redline-root` 改回 `.lc-root` **不会红** → 已把 `.css` 纳入扫描并复验；另有自有 lane 的 4 个变体也全部变红（route 常量指回上游 / 错误码改名 / 主机入口不挂通道 / 信封形状被改） `scripts/namespace-contract.mjs`、`tests/{edit,channel}/**` |
+| M1-13 | `tsc --noEmit` exit 0 + `vitest run --project edit --project channel` 可跑 | DONE | → `tsc --noEmit` **exit 0**；`vitest run --project edit --project channel` = **2 文件 15/15**；`vitest run`（四个 lane 全跑）= **96 文件 1689/1689**；`tsdown` exit 0；`oxlint` 0 error / 201 文件 `tsconfig.json`、`vitest.config.ts` |
+| M1-14 | `dsh --profile web --dump-config` 无路由/投影冲突（**属于授权包①**，需先把本仓库加进 profile） | TODO | → 离线部分已由 `channel` lane 覆盖：在**真 cordis** 上 boot 真插件、抓真实注册的路由并断言命名空间；剩下的是装进 profile 后的静态合成确认。只读命令 |
 
 ---
 
@@ -217,7 +222,13 @@
 
 ---
 
-## 5. M3 · 右侧界面（**0 / 22**，按 M05-15 定稿搬）
+## 5. M3 · 右侧界面（**1 / 23**，按 M05-15 定稿搬）
+
+> ⚠️ **本节的 M3-01…M3-22 行写于 2026-10-01，其中多行仍写着 `批注` / `版本历史` / `固定块` / `未生效吸顶` / `应用到会话`
+> —— 这些交互已被用户 2026-10-02 的裁定**删掉**（`docs/11` D14/D15/D18/D19/D10）。**
+> 现行界面契约**只有** `docs/03` 的「当前 demo」段落与 `demo/`；开工 M3 的**第一步**就是把这 22 行按 demo 重写
+> （`apply`/`回滚`/`批注`/`固定块`/`漂移`/`压缩`/`派活`/`团队操作` 一行都不许再出现在实现范围内）。
+> 在此之前**不要**照这些行的字面做界面。
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
@@ -243,6 +254,7 @@
 | M3-20 | 降级：`ctx.agentTeams` 不存在时对接点全隐（不报错、不留空面板） | TODO | `src/client/**` |
 | M3-21 | 视觉与可达性：深浅主题、640px 无横向滚动、触控 ≥44px、Esc/Cmd+Enter | TODO | `src/client/**` |
 | M3-22 | 🙋 人工门禁 30 条（你逐条看）+ 与 demo 的逐条一致性核对 | WAIT🙋 | `docs/03-ui-spec.md` §7 |
+| M3-23 | **设置面按 0.2.0-rc.2 收口**（M1 实测新发现，`docs/01` F39）：`dsh-settings` 已无 `register(ns, schema)`、也无 `SettingsProvider` ⟹ 上游那套"插件注册偏好命名空间"在本运行时**恒为 no-op**。二选一：① 把偏好声明成 loader `Config` 的 `.volatile()` 字段（rc.2 的表单模型），或 ② 随 M3 的界面减法**删掉**整套 `installSettings` + 客户端设置卡（当前 demo 没有设置面）。**不许**留着不说、也不许当成"已生效" | TODO | `src/host/settings.ts`、`src/host/config.ts`、`src/client/{settings.ts,settingsJump.ts}`、`src/client/components/settingsCard.tsx`、`src/client/index.ts` |
 
 ---
 
@@ -355,16 +367,19 @@
 | X 横切 | 8 | **2** | 4 | 1 | 1 |
 | M0 文档集 | 25 | **25** | 0 | 0 | 0 |
 | M0.5 交互 demo | 82 | **81** | 0 | 0 | 1 |
-| M1 骨架与身份 | 14 | **0** | 0 | 13 | 1 |
+| M1 骨架与身份 | 14 | **11** | 0 | 2 | 1 |
 | M2 编辑面 | 28 | **1** | 0 | 27 | 0 |
-| M3 右侧界面 | 22 | **1** | 0 | 20 | 1 |
+| M3 右侧界面 | 23 | **1** | 0 | 21 | 1 |
 | M4 轮次联动 | 4 | **0** | 0 | 4 | 0 |
 | M4.5 能力验证 | 19 | **0** | 0 | 16 | 3 |
 | M5 编排 | 28 | **1** | 0 | 26 | 1 |
 | M6 入口与发布 | 12 | **0** | 0 | 12 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **249** | **114** | **4** | **123** | **8** |
+| **合计** | **250** | **125** | **4** | **113** | **8** |
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
-> 当前卡点：**M05-15 交互定稿（等你）** 与 **M5-28 起点口径确认（等你点头：接不接受"更早的冻结记录不能当起点"）**。
-> **M1 的收口才是授权包①**：先在仓库内把骨架与命名空间做完、构建与护栏全绿，**然后**装配进 profile 并请你重启（D4）。
+> 当前卡点：**M1 的收口动作 = 授权包①（装进 web profile + 你重启，见 M1-01）**；
+> 另有 **M05-15 交互定稿（等你）**。
+> **M1 的仓库内部分已全绿**（11/14 DONE，剩下 2 条都要装进 profile 才能做）：`tsc` / `tsdown` /
+> `vitest`（自有 lane 15/15、含上游 lane 共 1689/1689）/ `namespace-contract`（24 项 0 失败）/ `oxlint` 全绿。
+> **下一步（M2）**：在 `tests/edit/**` 先写红、再实现本地草稿 + 全文读取 + 按底层事件类型的能力判定。

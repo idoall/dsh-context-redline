@@ -1,0 +1,66 @@
+import { type ReactElement } from 'react'
+import type { PartsPart } from '../categories'
+import type { Headline } from '../headline'
+import type { ViewKit } from '../viewkit'
+import { AUTO_COMPACT_RATIO } from './stackedBar'
+import type { StackedBarProps } from './stackedBar'
+
+type LegendFn = (props: {
+  parts: PartsPart[]
+  hoverKey?: string | null
+  onHoverKey?: (key: string | null) => void
+}) => ReactElement
+
+export interface CurrentCompositionProps {
+  head: Headline
+  subtitle?: string
+  hoverKey?: string | null
+  onHoverKey?: (key: string | null) => void
+}
+
+export function makeCurrentComposition(
+  kit: ViewKit,
+  StackedBar: (props: StackedBarProps) => ReactElement,
+  Legend: LegendFn,
+): (props: CurrentCompositionProps) => ReactElement {
+  const { t, fmt } = kit
+  return function CurrentComposition(props: CurrentCompositionProps): ReactElement {
+    const head = props.head
+    const reserve = head.window != null && head.window > 0
+      ? { ratio: AUTO_COMPACT_RATIO, label: t('overview.compactReserve', { pct: Math.round(AUTO_COMPACT_RATIO * 100) }) }
+      : undefined
+    return (
+      <div className="redline-card" data-redline-current>
+        <div className="redline-card-title">
+          <span className="redline-card-title-text">{t('overview.title')}</span>
+          {props.subtitle !== undefined && props.subtitle !== ''
+            ? <span className="redline-card-sub">{props.subtitle}</span>
+            : null}
+        </div>
+        <div className="redline-overview-num">
+          <b>{fmt(head.tokens)}</b>
+          <span>
+            {head.window
+              ? ' / ' + fmt(head.window) + ' tokens'
+              : ' ' + t('overview.estimate')}
+          </span>
+          {head.pct !== null ? (
+            <span className="redline-overview-pct">
+              <b>{`${head.pct}%`}</b>
+              {t('overview.used')}
+            </span>
+          ) : null}
+        </div>
+        <StackedBar
+          parts={head.parts}
+          height={16}
+          max={head.window}
+          hoverKey={props.hoverKey}
+          onHoverKey={props.onHoverKey}
+          reserve={reserve}
+        />
+        <Legend parts={head.parts} hoverKey={props.hoverKey} onHoverKey={props.onHoverKey} />
+      </div>
+    )
+  }
+}

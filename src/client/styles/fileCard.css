@@ -1,0 +1,52 @@
+/* The File Activity card: purpose filter chips, meta strip, file rows and the expanded op log (fileCard.tsx). */
+/*
+ ---- File Activity card: the header chips double as purpose/form filters (the shared redline-gran toggle look with an ops count);
+ the meta strip carries the totals at the left and the count/latest sort toggle at the right; rows speak the browser's
+ element-row anatomy (chevron, fact chips, right-aligned time) and expand into a per-operation log on a tree-guide rail. ----
+ */
+.redline-fa-ctl, .redline-br-toolctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.redline-fa-ctl .redline-gran { margin-left: 0; }
+.redline-fa-n { margin-left: 4px; font-weight: 700; opacity: 0.75; }
+.redline-fa-search, .redline-br-tool-search { flex: 1; min-width: 80px; font: inherit; font-size: 12px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 3px 8px; outline: none; }
+.redline-fa-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 6px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
+/* The sort toggle rides the meta strip's right edge — the shared .redline-gran's own auto margin does the push. */
+.redline-fa-meta .redline-fa-sort { flex: none; }
+/* The aggregate delta pill carries the card's one styled tip (the shared `.redline-tip` chrome) — it sits outside the scrolling list, so the bubble never clips. */
+.redline-fa-meta-delta { position: relative; }
+.redline-fa-meta-tip { top: calc(100% + 6px); left: 0; max-width: 260px; white-space: normal; line-height: 1.5; }
+/* An expanded file reads as one contained card: layer-2 fill inside a hairline frame. */
+.redline-fa-item { border: 1px solid transparent; border-radius: 8px; transition: background-color var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out), border-color var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out); }
+.redline-fa-item-on { background: var(--dsw-alias-bg-layer-2); border-color: var(--dsw-alias-border-l2); }
+.redline-fa-row { display: flex; align-items: center; gap: 7px; width: 100%; border: 0; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; padding: 6px 8px; cursor: pointer; text-align: left; border-radius: 7px; transition: background-color var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out); }
+.redline-fa-form { flex: none; width: 20px; height: 14px; display: flex; align-items: center; justify-content: center; font-size: 11px; opacity: 0.85; }
+.redline-fa-lang { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 13px; padding: 0 2px; border-radius: 4px; font-size: 8px; font-weight: 700; line-height: 1; }
+/* The chevron sits close to the icon: only half the row gap stays visible. */
+.redline-fa-row .redline-br-chev { margin-right: -2px; }
+.redline-fa-path { min-width: 0; word-break: break-all; }
+.redline-fa-file { cursor: pointer; }
+.redline-fa-path em { font-style: normal; color: var(--dsw-alias-label-secondary); }
+/* Per-purpose count badges: pill chips, one fixed tint per purpose (read = brand, write = success, search = warn). */
+.redline-fa-badge { flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.redline-fa-badge i { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.redline-fa-b-read { color: var(--dsw-alias-brand-primary); background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent); }
+.redline-fa-b-write { color: var(--dsw-alias-state-success-primary); background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent); }
+.redline-fa-b-search { color: var(--dsw-alias-state-warn-primary); background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 14%, transparent); }
+/* Kind chips wear their badge color in every state (plain colored text while idle, so the group reads at a glance); the active chip adds the filled tint. Hover keeps the kind color over the generic brighten rule. */
+.redline-fa-chip-read, .redline-fa-chip-read:hover { color: var(--dsw-alias-brand-primary); }
+.redline-fa-chip-write, .redline-fa-chip-write:hover { color: var(--dsw-alias-state-success-primary); }
+.redline-fa-chip-search, .redline-fa-chip-search:hover { color: var(--dsw-alias-state-warn-primary); }
+.redline-fa-chip-read.redline-gran-on, .redline-fa-chip-read.redline-gran-on:hover { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent); color: var(--dsw-alias-brand-primary); }
+.redline-fa-chip-write.redline-gran-on, .redline-fa-chip-write.redline-gran-on:hover { background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 14%, transparent); color: var(--dsw-alias-state-success-primary); }
+.redline-fa-chip-search.redline-gran-on, .redline-fa-chip-search.redline-gran-on:hover { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 14%, transparent); color: var(--dsw-alias-state-warn-primary); }
+.redline-fa-delta { flex: none; display: inline-flex; gap: 5px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.redline-fa-up { color: var(--dsw-alias-state-success-primary); }
+.redline-fa-down { color: var(--dsw-alias-state-error-primary); }
+.redline-fa-time { flex: none; color: var(--dsw-alias-label-secondary); font-size: 11px; font-variant-numeric: tabular-nums; }
+/* The expanded op log hangs on a tree-guide rail aligned under the row chevron. */
+.redline-fa-ops { margin: 0 8px 8px 15px; padding: 2px 0 2px 10px; border-left: 2px solid var(--dsw-alias-border-l1); display: flex; flex-direction: column; gap: 1px; }
+.redline-fa-op { display: flex; align-items: center; gap: 8px; min-width: 0; border: 0; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; font-size: 11px; padding: 3px 6px; text-align: left; border-radius: 5px; transition: background-color var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out); }
+.redline-fa-op-link { cursor: pointer; }
+.redline-fa-op-time { flex: none; margin-left: auto; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
+.redline-fa-op-tool { flex: none; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-secondary); }
+.redline-fa-op-detail { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-secondary); }
+.redline-fa-read { flex: none; color: var(--dsw-alias-brand-primary); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }

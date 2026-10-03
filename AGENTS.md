@@ -73,20 +73,26 @@
 **结论在生产代码里的落点**：能力判定（纯函数）必须**按底层事件类型**给按钮，而不是按分类猜；
 每一种行类型的按钮集合都要有单测锁定（`docs/05` A17）。
 
-### 2.4 `pnpm install` 会**写穿**运行时符号链接
+### 2.4 ⚠️ `pnpm install` 会**写穿**符号链接 —— 所以**本仓库不建那条链接**
 
-`scripts/link-dsh-runtime.mjs` 把 `node_modules/@deepseek-ai` 做成指向共享 profile 的符号链接；
+早期那次尝试 里，`scripts/link-dsh-runtime.mjs` 把 `node_modules/@deepseek-ai` 做成指向共享 profile 的符号链接；
 此后 `pnpm install` 要写该目录，会**穿过链接**把悬空 symlink 写进**共享 profile 目录**（已真实发生过）。
 
+**2026-10-04 实测更正（`docs/01` F42）——这条路在本机已经走不通，也不该走**：
+
+- `~/.dsh/profiles/web/node_modules/@deepseek-ai` 现在只剩 **5** 个包（`cosmokit`/`schemastery`/`browser-use` 两包/`browser-use-runtime`），
+  链向它**解析不到** `dsh-session` 等内部包；
+- 真正齐全的树在**全局安装层**（`…/lib/node_modules/@deepseek-ai/dsh/node_modules/@deepseek-ai`，288 个包），而它**缺** `react`/`shiki`/`clsx` 等浏览器依赖。
+
+**本仓库的处置**：需要的 `@deepseek-ai/*` 按 `0.2.0-rc.2` 写进 `devDependencies`，**从 registry 直装**。
+
 ```bash
-rm -f node_modules/@deepseek-ai
-pnpm install --ignore-scripts          # --ignore-scripts 避开 prepare → build → clean-lib
-node scripts/link-dsh-runtime.mjs
+pnpm install        # 只有这一条；没有 link 步骤，也就没有写穿风险
 ```
 
-- `link-dsh-runtime.mjs` 自身**安全**（对链接本身 rmSync，不跟进目标）；危险的是 `pnpm install`。
-- 两层 `@deepseek-ai` 依赖树**都不完整**（profile 层缺内部包、安装层缺 `react` 等浏览器依赖）→
-  **别把链接指向安装层**。
+- 护栏：`node scripts/namespace-contract.mjs` 的**面 10** 断言 `node_modules/@deepseek-ai` **不是**符号链接（沙箱里反向验证过）。
+- ⛔ **不要**为了"照旧文档做"而重新创建那条链接 —— 那等于把一个真实发生过的故障模式搬回树里。
+- `.npmrc` 是 `auto-install-peers=false` ⟹ 平台包不会自动补；必须显式声明的清单见 `docs/01` **F41**（缺一个就整片 lane 加载失败）。
 
 ### 2.5 其它已核实的平台事实
 
@@ -109,9 +115,13 @@ node scripts/link-dsh-runtime.mjs
 ## 3. 测试与验证
 
 ```bash
-./node_modules/.bin/tsc --noEmit                                     # 类型检查（exit 0 是底线）
+pnpm install                                                         # 只有这一条（不建符号链接，见 §2.4 / docs/01 F42）
+./node_modules/.bin/tsc --noEmit                                     # 类型检查（exit 0 是底线；含 tests/**）
 ./node_modules/.bin/tsdown                                           # 构建（不要跑 clean-lib.mjs）
-./node_modules/.bin/vitest run --project edit --project channel      # 自有护栏
+./node_modules/.bin/vitest run --project edit --project channel      # 自有护栏（门禁）
+node scripts/namespace-contract.mjs                                  # 命名空间门禁（11 个面 / 24 项）
+./node_modules/.bin/oxlint                                           # 风格与类型感知规则
+./node_modules/.bin/vitest run --project host --project client       # 上游 lane（非门禁；环境依赖，docs/05 §1）
 dsh --profile web --dump-config                                      # 静态确认挂载与命名空间
 ```
 
@@ -165,16 +175,16 @@ dsh --profile web --dump-config                                      # 静态确
 ## 5. 当前状态
 
 > **进度看板（唯一状态源）**：[`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) —— **细粒度任务表**
-> （ID / 子任务 / 状态 / **文件动作（范围冻结）**），当前 **DONE 114 / 共 249**，需要用户的步骤标 `WAIT🙋`。
+> （ID / 子任务 / 状态 / **文件动作（范围冻结）**），当前 **DONE 125 / 共 250**，需要用户的步骤标 `WAIT🙋`。
 > **每次收尾必须回来同步它**（含 §11 进度总览），否则就会出现第二个"真相"。
 
 | 阶段 | 状态 |
 |---|---|
 | **M0** 文档集 | ✅ **已完成**：`docs/00`–`docs/09`（`docs/07` 已按用户要求删除、编号不复用），过 7 轮外部模型评审（R1–R7）。**用户 2026-09-30 的全部拍板已落地**：Q1 包名、Q2 不做图 2 ②、Q6 可续接、Q11 **A 完整回滚**、Q12 **A′ 对接官方**；其余问题已给**默认值**（不再需要逐项确认） |
 | **M0.5** 静态可交互 demo（交互门禁） | ✅ 第一版已交付（`demo/`，含逐步讲解模式）；✅ **已做浏览器实测**（1440/880/879/390 视口，原始数据在 [`demo/screenshots/measure-log.md`](demo/screenshots/measure-log.md)）；**等用户逐条按 R 编号确认交互**（`docs/10` M05-15） |
-| **M1** 骨架与身份（复制 tag `v0.59.2` + 命名空间化） | ⬜ **未开始** —— **仓库内可自验**（骨架 / `tsc` / `tsdown` / `vitest` 全绿）。**装配进 profile（授权包 ①）是 M1 的收口动作，不是第一步**；`dsh web` 重启一律由用户本人执行（D4） |
-| **M2** 编辑面（TDD；⛔ 回滚已不做，见 `docs/11` D19） | ⬜ |
-| **M3** 右侧可编辑界面（人工门禁） | ⬜ |
+| **M1** 骨架与身份（复制 tag `v0.59.2` + 命名空间化） | 🟡 **仓库内已完成（11 / 14）**：`src/` 从 tag `v0.59.2` 复制 **110 个文件** + 命名空间分家；`tsc --noEmit` exit 0 · `tsdown` exit 0 · 自有 lane **15/15** · 含上游 lane **1689/1689** · `namespace-contract` **11 面 24 项 0 失败**（逐面反向验证）· `oxlint` 0 error。**只剩授权包 ①（装进 `web` profile + 你重启，D4）与装完后的复验**；`dsh web` 重启一律由你本人执行 |
+| **M2** 编辑面（TDD；⛔ 回滚已不做，见 `docs/11` D19） | ⬜ **下一步** |
+| **M3** 右侧可编辑界面（人工门禁） | ⬜ 开工第一步：把 `docs/10` M3 的 22 行按**当前 demo** 重写（那些行还写着已删的批注/版本历史/固定块） |
 | **M4** 轮次联动（人工门禁） | ⬜ |
 | **M4.5** 平台能力验证（**M5 的硬前置**；含 V12/V13） | ⬜ |
 | **M5** 子会话 → 压缩 → **对接官方团队**（冻结已删，`docs/11` D10） | ⬜ |

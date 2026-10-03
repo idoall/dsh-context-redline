@@ -1,0 +1,11 @@
+# Bundle patch layer: the row loads the package's main entry as the host half
+# (a plain Cordis plugin); the `dsh.client` declaration makes the web app load
+# its ./client bundle as the browser half.
+#
+# The id/name MUST equal the package name: the Host half's entry `name` export,
+# the client bundle's `__ModuleLoader__.load({ id })` banner (tsdown.config.ts
+# reads `pkg.name`) and this loader row are one identity. A mismatch raises
+# `loaded without registering "<id>"` at boot (`docs/01` F3).
+- insert:
+    - id: dsh-context-redline
+      name: dsh-context-redline

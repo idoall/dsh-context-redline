@@ -27,17 +27,18 @@
 4) docs/03-ui-spec.md —— 界面规格（R 编号；用户就是按 R 编号提意见的）
 5) 需要平台事实时读 docs/01-platform-facts.md（每条都标了 实测 / 推断）
 
-【现在在哪（2026-10-01）】
+【现在在哪（2026-10-04）】
 - M0 文档集：完成（过了 7 轮外部模型评审）。
 - M0.5 可交互 demo：已交付且**已浏览器实测**（1440/880/879/390，数据+截图在 demo/screenshots/）；
-  自检：node demo/check-static.mjs（静态契约）+ node demo/check-runtime.mjs（**239/239**）。
-  用户已就"快照与子会话 / 读数的纪律 / 钉住的职责"等多轮细节定稿；**M05-15 交互定稿仍在等他最终点头**。
-- 文档 review 轮：**已收口**（75 项不一致 → 0），并新增机器检查 node scripts/check-docs.mjs（**必须 exit 0**）；
-  8 条裁定见本文件文末（D1–D7 + **D8 起点口径**）。另：另一模型的**只读评审（R8）**已落地 ——
-  最重要一条是"**冻结记录不是可选种子**"（平台没有指定切点的参数，`docs/01` F38），已全线改口径；
-  随后用户又提两条：**弹出窗文案太 AI 化**（已全部改人话，`docs/03` R5.1 逐字）与**「（那排轮号）17 点了没有反应」**
-  （已定位并修：按轮次模式不弹提示 + 刻度带没有选中态 + 序号/✂ 只有 16×15 / 24×16px 手指点不到；见 `docs/03` R1.10 与 `docs/10` M05-56）。
-- M1 及之后：**未开工**；**插件代码仍是零行**（`src/`、`package.json`、`node_modules` 都不存在）。
+  自检：node demo/check-static.mjs（静态契约）+ node demo/check-runtime.mjs（**193/193**）。
+- **M1 骨架与身份：仓库内部分已完成（11/14 DONE）** —— `src/` 从 tag `v0.59.2` 复制 110 个文件 + 命名空间分家；
+  `tsc --noEmit` exit 0 / `tsdown` exit 0 / 自有 lane `edit`+`channel` 15/15 / 含上游 lane 96 文件 1689/1689 /
+  `node scripts/namespace-contract.mjs` 24 项 0 失败 / `oxlint` 0 error。
+  **只剩 M1-01（授权包①：装 profile + 你重启）与装完后的复验（M1-02/M1-14）**。
+- **M2 及之后：未开工**。**M3 开工的第一步**要先把 docs/10 的 M3-01…M3-22 按**当前 demo** 重写
+  （那些旧行还写着已被删掉的批注 / 版本历史 / 固定块 / 未生效吸顶）。
+- 本轮新发现的平台事实：`docs/01` **F39**（设置服务的 `register` 面已无）/ **F40**（CSS 类名前缀静默撞车）/
+  **F41**（上游 lane 的依赖闭包）/ **F42**（本仓库改为 registry 直装、**不建**符号链接）。
 
 【硬约束（不可违反）】
 - 只动本仓库；**不 push、不开 PR**（各自需单独授权）。
@@ -45,15 +46,21 @@
 - **`dsh web` 重启一律由用户本人执行**（这台机的实例承载他自己的会话）。
 - 不产生任何 AI 生成内容（进入会话的每个字都必须人写）。
 - 界面/交互改动：**先在 demo/ 里做**，用户确认后再搬进插件。
+- **不建 `node_modules/@deepseek-ai` 符号链接**（`docs/01` F42）；装依赖只有 `pnpm install` 一条。
 - 文档改动后必须 `node scripts/check-docs.mjs` 退出码 0；改了 demo.css/js 必须 `node demo/build-standalone.mjs` 重打包。
 
 【第一件事（先跑这几条，确认基线没坏）】
   git log --oneline -3
-  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：221 / 83 / 4 / 125 / 9」
+  pnpm install                     # 只有这一条（不建符号链接，见 docs/01 F42）
+  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：250 / 125 / 4 / 113 / 8」
   node demo/check-static.mjs       # 期望：✅ 静态契约检查通过
-  node demo/check-runtime.mjs      # 期望：共 239 项，失败 0 项
-基线全绿后，问用户选哪条路：① 说"开始" → 在**仓库内**做 M1（骨架 + 命名空间分家，可自验，
-不需要他重启；到收口才请他重启）② 先写用户帮助（M6-11，权威来源已就位：docs/03 R4.7 + R7.1）。
+  node demo/check-runtime.mjs      # 期望：共 193 项，失败 0 项
+  ./node_modules/.bin/tsc --noEmit ; ./node_modules/.bin/tsdown
+  node scripts/namespace-contract.mjs                                # 期望：24 项 0 失败
+  ./node_modules/.bin/vitest run --project edit --project channel    # 期望：15/15
+基线全绿后，问用户选哪条路：① 点头走**授权包①**（装进 web profile + 他重启 → 我复验 M1-02/M1-14）
+② 继续 **M2**（编辑面 TDD：本地草稿 / 全文读取 / 按底层事件类型的能力判定 / 所有保存临时化）
+③ 先写用户帮助（M6-11，权威来源已就位：docs/03 R4.7 + R7.1）。
 ```
 
 ---
@@ -106,9 +113,9 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 |---|---|
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
-| 最新提交 | 以 `git log -1` 为准（哈希不写死）；**本轮在改文档**：文档 review 裁定 D1–D8 见本文末 + `scripts/check-docs.mjs`（机器把关） |
-| 进度 | `docs/10`：**DONE 114 / 共 249**（DOING 4 · TODO 123 · WAIT🙋 8） |
-| 当前卡点 | **M05-15 交互定稿** 与 **M5-28 起点口径确认**（都等用户点头）；文档 review 轮已收口（75 → 0，由 `scripts/check-docs.mjs` 把关）；M1 可在仓库内自验，**授权包①（装配 + 用户重启）是 M1 的收口动作** |
+| 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 的仓库内部分已落地**（骨架 + 从 tag `v0.59.2` 复制 `src/` 110 个文件 + 命名空间分家 + 门禁） |
+| 进度 | `docs/10`：**DONE 125 / 共 250**（DOING 4 · TODO 113 · WAIT🙋 8） |
+| 当前卡点 | **M1 的收口 = 授权包①**（装进 `web` profile + **你**重启 `dsh web` → 我复验 M1-02 / M1-14）；另有 **M05-15 交互定稿**。M1 仓库内部分**已全绿**（`tsc` / `tsdown` / 自有 lane 15/15 / 含上游 lane 1689/1689 / `namespace-contract` 24 项 0 失败 / `oxlint` 0 error） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
 | 浏览器工具 | 已恢复且**本会话已实测跑通**（`navigate/resize/screenshot/evaluate/console_messages`）；限制：headless、无触屏（`pointer:coarse` 不命中） |
@@ -531,3 +538,41 @@ tip 两行口径（`tip.turn1`）。**颜色不抄**，仍走我们的主题令�
 - 未来插件架构/测试表仍可保留，但必须标明是 M1–M6 计划，不得让它看起来像当前 demo 已实现。
 
 发现的规则冲突已保留为显式待定：`docs/05` §1.5 的“不要把整段历史塞入一个控件”与步骤选择器规模保护；用户随后已选择 B，两级轮→步已落地。
+
+
+## D34 · **M1 落地记录**（2026-10-04 · 助手执行，用户 2026-10-04 说"开始实施"）
+
+> 本文档此前反复写"M1 未开始、插件代码仍是零行"。**从今天起不再是零行**：`src/` / `tests/` / `package.json` / `tsconfig.json` /
+> `tsdown.config.ts` / `vitest.config.ts` / `.github/workflows/ci.yml` / `scripts/namespace-contract.mjs` 都已存在。
+
+**做了什么**（`docs/10` M1-03…M1-13，逐条证据在该表里）：
+
+1. `git -C <upstream-clone> archive v0.59.2 src locale icon.svg cordis.patch.yml tests | tar -x` → **110 个 src 文件**；
+2. 命名空间分家（`docs/01` F1–F4 + 新事实 **F40**）：路由 / 投影 key / slot id / locale ns / 消息 kind / 数据目录 / **CSS 类名前缀 `lc-`→`redline-`** / 客户端斜杠命令 `/context`→`/redline` / 版本闸基线 `0.1.5-rc.1`→`0.2.0-rc.2`；
+3. 我方新文件：`src/shared/redline-{route,errors,paths}.ts`、`src/host/redline-channel.ts`（`OPS` 表**空**：M1 只证明路由/命名空间/信封就位）、两个自有 lane 的起步用例；
+4. 门禁：`scripts/namespace-contract.mjs`（**11 个面 / 24 项**）、自建 CI；`docs/04` M1 DoD 的 5 条逐条对上。
+
+**读数（原始）**：`tsc --noEmit` **exit 0** · `tsdown` **exit 0**（`lib/index.js` 150.56 kB / `lib/client.js` 597.20 kB，banner `load({ id: "dsh-context-redline"`）·
+`vitest --project edit --project channel` **2 文件 15/15** · `vitest run`（四 lane）**96 文件 1689/1689** · `namespace-contract` **24 项 0 失败** ·
+`oxlint` **0 error / 201 文件** · `check-docs` exit 0（250 / 125 / 4 / 113 / 8）· `demo/check-static` ✅ · `demo/check-runtime` 193/0。
+
+**反向验证（M1-12，全部"改坏 → 红 → 改回"）**：面1 包名 / 面2 路由 / 面3 投影 / 面4 slot / 面5 locale / 面7 数据目录 / 面8 localStorage /
+**面8 CSS 前缀** / 面9 `node:` 污染 / 面11 版本 / **面10 沙箱 symlink**；自有 lane 另 4 个变体（route 常量指回上游 / 错误码改名 / 入口不挂通道 / 信封形状被改）。
+⚠️ **反向验证抓到一个真漏洞**：面 8 原来只扫 `.ts`/`.tsx`，把 `.redline-root` 改回 `.lc-root` **不会红** → 已把 `.css` 纳入（`docs/01` F40）。**教训：护栏写完必须逐面改坏验一次。**
+
+**本轮新发现的平台事实（都已写进 `docs/01`）**：
+
+| # | 事实 | 为什么会踩 |
+|---|---|---|
+| **F39** | `dsh-settings` 在 0.2.0-rc.2 **没有** `SettingsProvider`、**没有** `register(ns, schema)`（服务是 `SettingsForms`，表单来自 loader `Config` 的 `.volatile()` 字段） | 上游那套"插件注册偏好命名空间"在这个运行时上**恒为 no-op**；处理口径 = `docs/10` **M3-23** |
+| **F40** | 插件 CSS 是**不分层注进同一个 document** 的全局规则 ⟹ 两个插件共用类名前缀时后注入者**静默**顶掉先注入者 | 上游整套 chrome 用 `lc-*`（实装 0.60.0 里 572 处）⟹ 我们整套改 `redline-*` |
+| **F41** | 离线跑上游 lane 需要的平台包闭包（`dsh-scope` / `dsh-client-store` + `zustand` + `immer` / `shiki` / `clsx` / `diff` / `micromark-*` / `mdast-*`）+ jsdom 的 `ResizeObserver` 桩 | `.npmrc` 是 `auto-install-peers=false`，缺一个就 42 个测试文件整片加载失败 |
+| **F42** | 本仓库**不建** `node_modules/@deepseek-ai` 符号链接，**从 registry 直装**；`docs/01` F14/F15 的三段式安装**已作废** | 实测 profile 层只剩 5 个包、链它解析不到 `dsh-session`；而"链接 + `pnpm install`"正是真实发生过的写穿故障 |
+
+**偏离既定文档的两处（都以实测为准改了文档，不是偷偷改代码）**：
+① 依赖安装方式（`docs/04` M1 DoD 3 / `docs/05` §3 / `AGENTS.md` §2.4 已同步改）；
+② `tsconfig.json` 单文件含 `tests/**`（取代上游的 `tsconfig.json` + `tsconfig.tests.json` 两分法，依据 `docs/11` 实施共识 §4）。
+
+**下一步**：① 需要你点头的只有 **M1-01 授权包①**（装进 `web` profile + **你**重启 → 我复验）；
+② 仓库内继续 **M2**（编辑面：先写红 → 本地草稿 / 全文读取 / 按底层事件类型的能力判定 / 所有保存临时化）；
+③ M3 开工**第一步**是把 `docs/10` 的 M3-01…M3-22 按**当前 demo** 重写（那些行还写着已删的批注/版本历史/固定块——见该节顶部的警示）。

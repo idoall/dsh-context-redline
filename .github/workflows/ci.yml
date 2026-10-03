@@ -1,0 +1,54 @@
+name: ci
+
+# Our OWN workflow, written for this repo (`UPSTREAM.md` §4). Upstream's
+# `ci.yml` ran `pnpm run verify`, which does not exist here, and its
+# `publish.yml` went straight to npm — a red-by-default workflow is worse than
+# none, and a publish workflow is one misclick away from a release.
+#
+# The required checks are exactly the ones that are green on a clean machine
+# (`docs/04` M1 DoD 3):
+#   · tsc --noEmit            (types, src + tests)
+#   · node scripts/namespace-contract.mjs   (the M1 naming gate)
+#   · pnpm run build          (tsdown: host + client bundles)
+#   · vitest --project edit --project channel   (our own lanes)
+#
+# The upstream `host` / `client` lanes are NOT required: they are
+# environment-dependent (they boot the real harness registries and the real
+# client primitives — `docs/05` §1), and a flaky upstream lane must not gate our
+# own editing guardrails.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+
+      # Plain install from the registry, pinned to the runtime we support
+      # (0.2.0-rc.2 in package.json devDependencies).
+      #
+      # ⚠️ This deliberately does NOT do the `rm -f node_modules/@deepseek-ai`
+      # → `pnpm install` → `scripts/link-dsh-runtime.mjs` dance that
+      # `docs/01` F14/F15 records: that sequence belongs to a `link:`-installed
+      # dev checkout whose `node_modules/@deepseek-ai` is a symlink into the
+      # shared profile, and `pnpm install` writes THROUGH such a symlink. We
+      # never create it, so the hazard is structurally absent —
+      # `namespace-contract` face 10 asserts it stays absent. Do not reintroduce
+      # the symlink to "follow the doc": it would move a real failure mode back
+      # into the tree.
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run typecheck
+      - run: node scripts/namespace-contract.mjs
+      - run: pnpm run build
+      - run: pnpm run test

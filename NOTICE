@@ -22,3 +22,17 @@ carried MIT-licensed code from `dsh-context-console` by **anweat**; the new line
 described here does **not** reuse that code, so no MIT notice from it is carried
 forward. See [`docs/07-v2-archive.md`](docs/07-v2-archive.md) for the audit of
 what was and was not reused.
+
+---
+
+> ⚠️ **Correction (2026-10-04, verified):** the paragraph above is **no longer accurate** and is kept only as history.
+> This repository has **no** `v2-upstream-base` branch and **no** `v2-archive-20260928` tag (`git branch -a` → `main` only;
+> `git tag` → empty), and `docs/07-v2-archive.md` **does not exist** (it was deleted at the user's request, and its number
+> is not reused). The earlier line's directory and git history are gone, so there is no archived code here for that
+> paragraph to describe. What this repository actually contains:
+>
+> 1. files copied from upstream `dsh-context` at tag `v0.59.2` (Apache-2.0, see [`LICENSE-Apache-2.0`](LICENSE-Apache-2.0)),
+>    renamed into our own namespaces — the exact list is [`UPSTREAM.md`](UPSTREAM.md) §3.1/§3.2;
+> 2. our own code (MIT, see [`LICENSE`](LICENSE)) — [`UPSTREAM.md`](UPSTREAM.md) §3.3.
+>
+> No `dsh-context-console` (anweat / MIT) code is present.

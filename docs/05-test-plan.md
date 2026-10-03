@@ -111,16 +111,22 @@
 ## 3. 环境与前置
 
 ```bash
-# 装依赖（顺序不能变；见 docs/01 F14/F15）
-rm -f node_modules/@deepseek-ai
-pnpm install --ignore-scripts
-node scripts/link-dsh-runtime.mjs
+# 装依赖：**从 registry 直装**（本仓库不建 node_modules/@deepseek-ai 符号链接 ——
+# 理由与实测见 docs/01 F42：profile 层已解析不到内部包，且"链接 + pnpm install"
+# 就是那个真实发生过的写穿故障）
+pnpm install
 
 # 必须能过的命令
 ./node_modules/.bin/tsc --noEmit
 ./node_modules/.bin/tsdown
 ./node_modules/.bin/vitest run --project edit --project channel
-node scripts/namespace-contract.mjs        # M1 的命名空间自检（docs/04 M1 DoD）
+node scripts/namespace-contract.mjs        # M1 的命名空间自检（11 个面，docs/04 M1 DoD）
+
+# 上游两个 lane（非门禁；环境依赖，见 §1）
+./node_modules/.bin/vitest run --project host --project client
+
+# 仓库原有的文档/demo 自检（改文档或 demo 之后必须重跑）
+node scripts/check-docs.mjs ; node demo/check-static.mjs ; node demo/check-runtime.mjs
 ```
 
 - **不许**跑 `scripts/clean-lib.mjs`（删 `lib/` 会让 `link:` 安装的插件客户端半边直接失效）。
