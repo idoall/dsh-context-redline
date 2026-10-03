@@ -158,3 +158,22 @@ git -C <upstream-clone> show v0.59.2:src/client/components/browser.tsx
 # 我们的改动面（M1 之后）
 diff -rq <(git -C <upstream-clone> archive v0.59.2 | tar -xO 2>/dev/null) src/   # 逐文件人工核对
 ```
+
+## 6. 许可声明的**准确写法**（M6-08，2026-10-04 复核）
+
+本仓库同时包含两类代码，因此 SPDX 许可表达式必须把两者都写出来：
+
+| 部分 | 许可 | 依据 |
+|---|---|---|
+| 从上游 `dsh-context` tag `v0.59.2` 复制的文件（改名后的实现） | **Apache-2.0** | [`LICENSE-Apache-2.0`](LICENSE-Apache-2.0)（**逐字保留**，201 行；含 `Version 2.0, January 2004` 与 `APPENDIX: How to apply` 两处规范标记） |
+| 我们自己的代码（编辑层、编排层、命名空间化） | **MIT** | [`LICENSE`](LICENSE) |
+
+- `package.json` 的 `license` 字段是 **`MIT AND Apache-2.0`**（SPDX 表达式）。
+  ⚠️ **先前写的是 `MIT` 一个词，那是不准确的**：Apache-2.0 的代码不能只按 MIT 发布
+  （虽然 MIT 与 Apache-2.0 兼容，但"兼容"不等于"可以用其中一个的名字覆盖两者的义务"）。
+- `NOTICE` 随包发布（Apache-2.0 §4(d) 要求保留），`files` 白名单里同时带上
+  `LICENSE` / `LICENSE-Apache-2.0` / `NOTICE` / `UPSTREAM.md` —— 最后一份是"我们改了什么"的清单，
+  按 §4(b) 属于必须随分发提供的信息。
+- 复核动作（可重跑）：`ls LICENSE* NOTICE UPSTREAM.md`（三份都在）、
+  `shasum -a 256 LICENSE-Apache-2.0`（与上游原始文件比对不变）、
+  以及 `node -e` 遍历 `package.json.files` 确认每个条目都真实存在。

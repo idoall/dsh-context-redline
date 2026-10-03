@@ -31,7 +31,8 @@
     "README.zh.md",
     "LICENSE",
     "LICENSE-Apache-2.0",
-    "NOTICE"
+    "NOTICE",
+    "UPSTREAM.md"
   ],
   "scripts": {
     "build": "tsdown",
@@ -69,7 +70,7 @@
     "edit",
     "ui"
   ],
-  "license": "MIT",
+  "license": "MIT AND Apache-2.0",
   "dependencies": {
     "zod": "^4.4.3"
   },
