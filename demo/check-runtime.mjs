@@ -94,7 +94,7 @@ const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendCellAct, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
-  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editTurnUserMessage, turnLastUser, editorHtml, editTurnInject, turnLastInject, orchAct, nodeOf, rowHtml };`;
+  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editTurnUserMessage, turnLastUser, editorHtml, editTurnInject, turnLastInject, orchAct, nodeOf, rowHtml, BAR_W, BAR_GAP, spanW, chartW };`;
 
 /**
  * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
@@ -701,6 +701,42 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   api.rowAct({ dataset: { act: 'annotate', seq: String(asst.seq) } });
 
   S.drafts = {}; S.editor = null; api.render();
+}
+
+/* ---------------- ⚠️ **刻度带必须与柱体列对齐**（用户 2026-10-02 报"错位"，用户体验细节） ----------------
+ * 口径照参考插件 `dsh-context`：柱体行（`.lc-chart`）与轮号行（`.lc-turns`）**同一个 gap**，
+ * 每一格宽度只算"它覆盖的柱子 + 它们**之间的** gap"，**不含尾随 gap**（`spanW(k)=k*BAR_W+(k-1)*BAR_GAP`）。
+ * 这里用**算术**锁住（桩里没有布局引擎）：格宽必须等于公式值、且所有格 + gap 之和 = 内容宽。
+ * 布局层面的实测（浏览器量边界）见 `demo/screenshots/measure-log.md` §22。 */
+{
+  const S = api.S();
+  const { BAR_W, BAR_GAP, spanW, chartW } = api;
+  const widthsOf = (html) => [...html.matchAll(/class="tcell[^"]*"[^>]*style="width:(\d+)px"/g)].map((m) => Number(m[1]));
+  const innerW = (html) => { const m = html.match(/class="trendinner"[^>]*style="width:(\d+)px"/); return m ? Number(m[1]) : null; };
+  const cellsOf = (html) => [...html.matchAll(/class="tcell[^"]*"[^>]*data-turn="(\d+)"/g)].map((m) => Number(m[1]));
+  const barsOf = (html) => (html.match(/class="tbar[ "\n]/g) || []).length;
+
+  // 按轮次：每格 = 1 根柱子
+  S.trendGran = 'turn'; S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; api.render();
+  let html = registry.get('cardTrend') ? registry.get('cardTrend').innerHTML : document.body.innerHTML;
+  let ws = widthsOf(html);
+  check('刻度带对齐（按轮次）：每格宽度 = 1 根柱子（不含尾随 gap）',
+    ws.length > 0 && ws.every((w) => w === spanW(1)), `首几格=${ws.slice(0, 5)} 期望=${spanW(1)}`);
+  check('刻度带对齐（按轮次）：格数 = 柱数', ws.length === barsOf(html), `${ws.length} 格 vs ${barsOf(html)} 柱`);
+
+  // 按步骤：每格 = 该轮步数对应的柱子跨度
+  S.trendGran = 'step'; api.render();
+  html = registry.get('cardTrend') ? registry.get('cardTrend').innerHTML : document.body.innerHTML;
+  ws = widthsOf(html);
+  const turns = cellsOf(html);
+  const exp = turns.map((t) => spanW(api.turnSteps(t)));
+  check('刻度带对齐（按步骤）：每格宽度 = 该轮柱子跨度的公式值（k*W+(k-1)*G）',
+    ws.length === exp.length && ws.every((w, i) => w === exp[i]), `实际=${ws.slice(0, 6)} 期望=${exp.slice(0, 6)}`);
+  const iw = innerW(html);
+  const sum = ws.reduce((a, b) => a + b, 0) + Math.max(0, ws.length - 1) * BAR_GAP;
+  check('刻度带对齐：所有格 + 格间 gap = 内容宽（内层宽度也不含尾随 gap）',
+    iw !== null && sum === iw && iw === chartW(barsOf(html)), `格和=${sum} 内容宽=${iw} 公式=${chartW(barsOf(html))}`);
+  S.trendGran = 'turn'; api.render();
 }
 
 /* ---------------- ⚠️ **行内动作白名单**（用户 2026-10-02：「上下文的编辑只有编辑就行了」） ----------------

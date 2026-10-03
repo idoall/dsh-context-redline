@@ -606,7 +606,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 94996cb</span>
+    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 9e8f4c3</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -1070,6 +1070,15 @@ function renderStats() {
 
 /* ---------- 5.1 上下文趋势（按轮次 / 按步骤 · 总计 / 增量 · 自适应 · 聚焦 · ✂） ---------- */
 const BAR_W = 14, BAR_GAP = 3, CHART_H = 112;
+/* ⚠️ **刻度带与柱体的对齐公式**（2026-10-02 用户报"错位"；照参考插件 `dsh-context` 的
+ *  `.lc-chart`（柱体行）+ `.lc-turns`（轮号行）口径：两行用**同一个 gap 与 padding**，
+ *  每一格的宽度只算"它覆盖的那几根柱子 + 它们**之间的** gap"，**不含尾随 gap**。
+ * 之前写成 `k*(BAR_W+BAR_GAP)`，而容器又有一条 `gap` ⟹ 每格多 1 个 gap，
+ *  到第 28 格累计偏 81px（实测：柱体 pitch 17px、刻度带 pitch 20px）。
+ *  跨 k 根柱子的正确宽度：k*BAR_W + (k-1)*BAR_GAP */
+const spanW = (k) => k * BAR_W + Math.max(0, k - 1) * BAR_GAP;
+/** 内容总宽 = n 根柱子 + (n-1) 个 gap（同样不含尾随 gap）。 */
+const chartW = (n) => spanW(n);
 
 /**
  * 每根柱子**按类别拆开**（照参考插件 dsh-context 的 trendChart）：
@@ -1255,7 +1264,7 @@ function renderTrend() {
       <div class="trendpos">
       <div class="chart-tip" id="trendTip" hidden></div>
       <div class="trendscroll" id="trendScroll">
-        <div class="trendinner" style="width:${list.length * (BAR_W + BAR_GAP)}px">
+        <div class="trendinner" style="width:${chartW(list.length)}px">
           <div class="markers">${markers.map((evs, i) => (evs.length
             ? `<span class="mark" data-marki="${i}" data-explain="trend.mark" style="left:${i * (BAR_W + BAR_GAP)}px;width:${BAR_W}px">✂${evs.length > 1 ? '×' + evs.length : ''}</span>`
             : '')).join('')}</div>
@@ -1294,9 +1303,9 @@ function renderTrend() {
           <div class="strip">${S.trendGran === 'step'
             ? [...new Set(list.map((r) => r.turn))].map((t) => {
                 const k = turnSteps(t);
-                return `<button class="tcell" data-turn="${t}" style="width:${k * (BAR_W + BAR_GAP)}px" title="第 ${t} 轮（共 ${k} 步）→ 选中末步" data-explain="trend.strip">${t}</button>`;
+                return `<button class="tcell" data-turn="${t}" style="width:${spanW(k)}px" title="第 ${t} 轮（共 ${k} 步）→ 选中末步" data-explain="trend.strip">${t}</button>`;
               }).join('')
-            : list.map((r) => `<button class="tcell${r.turn === S.selTurn ? ' is-sel' : ''}" data-seq="${r.seq}" data-explain="trend.strip" style="width:${BAR_W + BAR_GAP}px" title="第 ${r.turn} 轮 · 共 ${r.stepCount} 步 → 选中末步">${r.turn}</button>`).join('')}
+            : list.map((r) => `<button class="tcell${r.turn === S.selTurn ? ' is-sel' : ''}" data-seq="${r.seq}" data-explain="trend.strip" style="width:${spanW(1)}px" title="第 ${r.turn} 轮 · 共 ${r.stepCount} 步 → 选中末步">${r.turn}</button>`).join('')}
           </div>
         </div>
       </div>

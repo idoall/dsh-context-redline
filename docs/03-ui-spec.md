@@ -37,6 +37,31 @@
 - 标题格式：`第 25 轮（共 1 步，显示末步）`。
 - **不得**复用上游的 `pinSeq` prop 来实现（上游每次 `pinSeq` 变化会重置手风琴展开状态）；要新增一个独立的 `turnSel` 语义。
 
+### R1.1.1 ⚠️ 刻度带必须与柱体**逐列对齐**（用户 2026-10-02 报"错位"）
+
+**问题**：轮号刻度带与上面的柱体错位，越往右偏得越多（实测：柱体列距 17px、刻度带 20px ⟹ 第 28 格偏 81px）。
+
+**参考实现（`dsh-context`，源码 `~/.dsh/profiles/web/node_modules/dsh-context/lib/client.js`）**：
+柱体行与轮号行是**同一个滚动容器里的两行 flex**，两行用**完全相同的 `gap` 与左右 `padding`**：
+
+```css
+.lc-chart { display:flex; align-items:flex-end; gap:2px; width:max-content; min-width:100%; padding:18px 2px 0 }
+.lc-bar   { width:14px; flex:none }
+.lc-turns { display:flex; gap:2px; width:max-content; min-width:100%; padding:0 2px; margin-top:4px }
+```
+
+⟹ **每一格的宽度只算"它覆盖的那几根柱子 + 它们之间的 gap"，不含尾随 gap**：
+
+```text
+跨度 k 根柱子： spanW(k) = k*BAR_W + (k-1)*BAR_GAP
+整条内容宽：   chartW(n) = spanW(n) = n*BAR_W + (n-1)*BAR_GAP
+```
+
+**曾经的错误写法**：格宽 = `k*(BAR_W+BAR_GAP)`，而容器又有一条 `gap` ⟹ 每格多算 1 个 gap。
+**不变量（已加护栏，`demo/check-runtime.mjs`）**：① 按轮次：每格宽 = `spanW(1)` 且格数 = 柱数；
+② 按步骤：每格宽 = `spanW(turnSteps(t))`；③ 所有格之和 + 格间 gap = `chartW(柱数)` = 内层宽度。
+浏览器实测（边界级）见 [`demo/screenshots/measure-log.md`](demo/screenshots/measure-log.md) §22：两模式下每格边界与其覆盖的首/末柱体边界误差 ≤0.6px。
+
 ### R1.2 轮级与步级并存
 - 保留上游的步级下拉（`当前（下一次请求）` + 每个 step）。手动在下来里选一个 step = 退出轮级选择（标题变回 `第 T 轮 · 第 S 步 (共 N 步)`）。
 
