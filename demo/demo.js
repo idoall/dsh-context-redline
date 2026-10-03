@@ -20,22 +20,10 @@ const EXPLAIN = {
   'ui.switch': { t: '状态开关', what: '模拟宿主侧的真实状态（轮次是否闭合 / 会话是否在本进程 / 官方团队是否可用 / 草稿条数 / 压缩是否忙 / 回流是否确认）。', effect: '切换后界面的按钮可见性与文案立即按规范变化。', rev: '可随时切回', confirm: '不需要', refs: ['docs/03 R4.4 / R4.6 / R5.2 / R5.3'] },
 
   /* —— 趋势区的四个新开关（参照参考插件） —— */
-  'trend.read': {
-    t: '这张图怎么读',
-    what: '**一句话**：每一根柱子 = 一次请求（按步骤）或一轮的合计（按轮次），柱体按类别分色堆叠。\n'
-      + '**段高**＝该类这一次的上下文量；颜色与右侧分类树的色块一一对应（点分类树左边的色块可以只画某一类）。\n'
-      + '**纵轴刻度**：总计模式下是"这一段历史的量"；打开「自适应」后按当前可见范围重算（柱子会被拉高，方便看细节）。\n'
-      + '**增量模式**：每根柱子画的是"比上一次请求的增量" —— 涨的段在零线**上方**、跌的段在**下方**，颜色仍是类别。\n'
-      + '**怎么用**：点柱子 → 右侧上下文浏览器切到那一步；点下面的轮号 → 切到「按轮次」并把那一轮移到中间。',
-    effect: '只换视图，不改任何数据。',
-    rev: '随时切回总计 / 按轮次。',
-    confirm: '不需要。',
-    refs: ['docs/03 R1.5 / R1.6', '参考插件 dsh-context 的 trendChart'] },
   'trend.gran': { t: '按轮次 / 按步骤', what: '切换趋势图的粒度：按轮次 = 一轮一根柱（合并该轮各步，柱下标步数）；按步骤 = 一次请求一根柱。', effect: '只换画法；点柱子的含义随之变化——按轮次点柱子 = 选这一轮（右侧显示该轮末步），按步骤点柱子 = 选那一步。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.3', '参考插件 trendChart: granularity'] },
   'trend.mode': { t: '总计 / 增量', what: '一根柱代表"这次请求的上下文总量"还是"比上一次请求多了多少"。', effect: '增量模式下负值向下画（上下文变小，通常是压缩/裁剪之后）。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.4', '参考插件 trendChart: mode'] },
   'trend.adaptive': { t: '自适应刻度', what: '打开时，纵轴最大值按"当前可见的那几根柱"算；关闭时按整段历史算。', effect: '长会话里远处的尖峰不会把眼前的柱子压成一条线。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.5', '参考插件 trendChart: adaptive'] },
   'trend.cat': { t: '聚焦某一类', what: '点右侧分类树里的某一类，趋势图只画那一类的量（纵轴重新缩放）。', effect: '再点一次"全部"恢复。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.6', '参考插件 trendChart: focusCat'] },
-  'trend.jump': { t: '回到当前', what: '把趋势条滚回最右端（最新一次请求）。', effect: '只滚动视图。', rev: '不需要', confirm: '不需要', refs: ['docs/03 R1.7'] },
   'trend.pick': { t: '点一根柱子', what: '按轮次模式：选中这一轮（右侧切到该轮**末步**）；按步骤模式：选中那一步。**整列都可点**（不只是色块那一截）：移上去有底色与虚线框预览，点中后是实线框 + 底色，同一轮的其它柱子也会带整轮底色。', effect: '右侧浏览器的分类树、条数、token 全部跟着变。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.1 / R1.2'] },
   'trend.mark': { t: '✂ 压缩 / 剪枝标记', what: '表示这一刻上下文被压过：压缩（历史被摘要替换）或剪枝（工具输出被丢弃）。', effect: '每个事件只标在它之后的第一个请求上；按轮次时标在包含它的那一轮，一轮里有多个事件就显示 ✂×N。鼠标移上去看详情，点它可以跳到那一次。', rev: '只读', confirm: '不需要', refs: ['docs/03 R1.12', '参考插件 attachMarkers'] },
   'trend.strip': { t: '轮次刻度带（趋势图下面那排轮号）', what: '就是图下面那排 1…28 的号码格。**按轮次**模式：一格 = 一轮；**按步骤**模式：一格 = 一轮，格子的宽度 = 这一轮有几步。', effect: '点一格 = 选中那一轮的末步（选中的格子会描边，并弹一句提示）。⚠️ 手机上这排格子很窄（它是坐标轴，宽度跟着轮长走），要稳定选轮次请用上面的 `轮次` 下拉。讲解模式下**每类只标一个编号**（只标第一格），其余每格行为一样。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.10'] },
@@ -637,8 +625,6 @@ function renderTrend() {
 
   $('cardTrend').innerHTML = `
     <div class="card-title">上下文趋势
-      <span class="qwrap"><span class="qfloat" role="button" tabindex="0" data-help="trend.read"
-        title="这张图怎么读：点这里看说明（不影响按钮）">?</span></span>
       <span class="hint">${esc(granLabel)}${S.trendCat ? ` · 聚焦 <b style="color:${catColor(S.trendCat)}">${esc(catLabel(S.trendCat))}</b> <a href="#" data-act="clearCat">（全部）</a>` : ''} · 刻度 = <b id="trendAxisTopInline">${fmt(maxAll)}</b>${S.trendAdaptive ? '（自适应）' : ''}</span>
       <span class="grow" style="flex:1"></span>
       <button class="seg" data-trend="gran" data-v="turn" aria-pressed="${S.trendGran === 'turn'}" data-explain="trend.gran">按轮次</button>
@@ -648,7 +634,6 @@ function renderTrend() {
       <button class="seg" data-trend="mode" data-v="delta" aria-pressed="${S.trendMode === 'delta'}" data-explain="trend.mode">增量</button>
       <span class="segsep"></span>
       <button class="seg" data-trend="adaptive" aria-pressed="${S.trendAdaptive}" data-explain="trend.adaptive">自适应</button>
-      <button class="seg" data-act="jumpNow" data-explain="trend.jump">回到当前</button>
     </div>
     <div class="trendwrap">
       <div class="axis">
@@ -767,7 +752,6 @@ function renderTrend() {
   c.querySelectorAll('[data-act]').forEach((b) => {
     b.onclick = () => {
       const a = b.dataset.act;
-      if (a === 'jumpNow') { const sc = $('trendScroll'); sc.scrollLeft = sc.scrollWidth; applyTrendScale(); toast('已滚到最新一次请求'); return; }
       if (a === 'clearCat') { S.trendCat = null; render(); return; }
     };
   });

@@ -1018,8 +1018,12 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
       api.turnOfEl(barEl) === api.REQUESTS[0].turn && api.turnOfEl(cellEl) === api.REQUESTS[0].turn,
       `bar=${api.turnOfEl(barEl)} cell=${api.turnOfEl(cellEl)} 期望=${api.REQUESTS[0].turn}`);
   }
-  check('趋势框：长解释由标题旁的「?」承载（EXPLAIN 里有 trend.read）',
-    /data-help="trend.read"/.test(sHtml) && !!api.EXPLAIN['trend.read'] && /一句话/.test(api.EXPLAIN['trend.read'].what));
+  /* 用户 2026-10-02：「这个区域的问号不需要。回到当前不需要。」⟹ 趋势框里既没有「?」也没有「回到当前」，
+   * 这里锁死"删干净了"（别再被谁加回来）。 */
+  check('趋势框：没有「?」、也没有「回到当前」',
+    !/data-help="trend.read"/.test(sHtml) && !/data-act="jumpNow"/.test(sHtml) && !/>回到当前</.test(sHtml));
+  check('趋势框：两条已删的讲解词也不再留在 EXPLAIN 里（trend.read / trend.jump）',
+    !api.EXPLAIN['trend.read'] && !api.EXPLAIN['trend.jump']);
   S.trendGran = 'turn'; api.render();
 }
 
