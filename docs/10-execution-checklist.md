@@ -171,7 +171,7 @@
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
 | M1-01 | 🙋 授权包①（**M1 收口动作**）：装配进 `web` profile ✅ **已完成（2026-10-04，用户选 A）**；**等你重启 `dsh web`**；我随后复验 | WAIT🙋 | → 备份 + 2 行声明，证据见 M1-14；**只剩重启**（`dsh web` 一律由用户本人执行） |
-| M1-02 | 复验：插件日志 `host loaded (/api/dsh-context-redline)`、两个面板并存、console 无注册错误 | DOING | → ✅ **用户 2026-10-04 重启已确认**：`dsh web` pid **30490 → 62954**（启动时间 Oct 3 16:10 → **Oct 4 06:37**）。静态组成复验：`dsh --profile web --dump-config` **exit 0**、`dsh-context-redline` 在合成树里出现 3 次。⚠️ **剩下的一半只能目视**（我做不了）：`dsh web` 的日志不是我能读的文件（`~/.dsh/dsh-web.log` 是 supervisor 的重启记录，不是插件挂载日志），HTTP 探测要当前 token（我拿不到，旧 token 401）；Playwright 打开 GUI 也因缺 token 得 401。⟹ **请你硬刷新后看一眼**：右侧/对话页签里两个插件各自都在、新入口名是「**上下文批改**」、浏览器 console 无 `already registered` / `loaded without registering` |
+| M1-02 | 复验：插件日志 `host loaded (/api/dsh-context-redline)`、两个面板并存、console 无注册错误 | DONE | → ✅ **全部验完（2026-10-04，用真机）**：① `dsh web` pid **30490 → 62954**（Oct 4 06:37 起）；② `dump-config` exit 0、合成树 3 处；③ **真机页面**（局域网入口 `https://127.0.0.1:3081/`，headless 只读观察）：**插件列表两条并排** `上下文 (dsh-context)`（上游）＋ `上下文批改`（我们）；**会话页签 `对话 / 轨迹 / 上下文 / 上下文批改`**；点开我们的页签后是**我们的**统计卡（轮次 25 / 步数 591 / 用户输入 3 / 工具调用 248 / 缓存命中 99.08%）＋ 插件信息 `dsh-context-redline (v0.1.0)`；**console 零注册类错误**（无 `already registered` / `loaded without registering`）。仅有的 3 条 404 都不是我们的：`/api/changes.summary`（别的插件）+ npm registry 查未发布包的 latest（预期）。**截图存档** `docs/screenshots/01-panel-live.png`（已进 README 双语）|
 | M1-03 | 从上游 tag `v0.59.2` 复制 `src/`（不带 `.git`、不带上游 `.github/workflows`） | DONE | → `git -C <upstream-clone> archive v0.59.2 src locale icon.svg cordis.patch.yml tests \| tar -x`；`find src -type f \| wc -l` = **110**（与 `docs/04` M1 风险的 110 一致）；`tests/` 复制后删掉 `tests/compat/**`+`tests/client/compat/**`+`tests/host/compat/**`+`tests/baselines.ts`（理由见 `UPSTREAM.md` §3.4）`src/**`、`tests/**`、`locale/**`、`icon.svg`、`cordis.patch.yml` |
 | M1-04 | 路由改名：`/api/dsh-context/{detail,balance,backfill}` → `/api/dsh-context-redline/*` | DONE | → 三个常量改成 `${REDLINE_API_PREFIX}/*`；`namespace-contract` 面 2「3 处 /api 字面量全部在我们前缀下」+「上游路由零命中」；`channel` lane 在**真 cordis** 上 boot 主机入口、抓真实注册的 4 条路由（`redline`/`detail`/`balance`/`backfill`）断言无上游路径 `src/host/{detail,balance,backfill}.ts`、`src/shared/redline-route.ts` |
 | M1-05 | 投影改名：`contextTimeline\|contextHeaders\|contextActivity` → `redlineTimeline\|redlineHeaders\|redlineActivity` 并定版 `stateVersion` | DONE | → `key:` 字面量 + schema 标识符 + `SessionProjectionStateMap` 键 + `fallback.ts` 的 `PROBE_KEYS` 一起改；面 3 报 `redlineActivity · redlineHeaders · redlineTimeline`；上游 3 个 key 零命中；`host` lane 的 fold 断言按新 key 全绿 `src/host/{timeline,headers,activity,fallback}.ts`、`src/shared/types.ts` |
@@ -290,7 +290,7 @@
 | M4-01 | 【作废】~~轮次条数据：每轮 `用户消息 N · 注入内容 N`（口径与 S1 一致）~~ —— **当前 demo 里没有这两个数字**（趋势卡的轮次条只显示轮号，柱子是按类别分色的堆叠段；全仓 grep 只有讲解词与假数据里的字样）。`docs/03` R1.3 与当前 demo 冲突 ⟹ 按用户口径**以 demo 为准**，不自行加 UI；冲突本身记在 `docs/11` D37，等人工门禁定夺 | DONE | → 作废依据：`demo/demo.js` 的轮次条（`tcell` 只渲染轮号）+ `docs/11` D37（不写代码） |
 | M4-02 | 点击某一轮 → 右侧切到该轮**最后一步**（标题写"共 N 步，显示末步"） | DONE | → 由复制基线的既有链路满足：按轮次时 `displayRequests = aggregateByTurn(requests)`（**取该轮末步**），点柱子 = `onSelect(seq)` → 右侧浏览器跟着切到那一步。既有护栏（上游 `client` lane，非门禁）：`pinning a bar selects its step in the browser; unpinning returns to live` 与 `step picking switches the assembled view`（本轮全绿）。⚠️ 诚实标注：这条断言在**非门禁**的上游 lane 里；把它搬进 `client-ui` 的完整挂载是下一步 |
 | M4-03 | 目标会话判据落地（"当前标签页选中的会话" vs agent 在跑的会话，必须可指认） | DONE | → **"可指认"由既有读数满足**：统计卡的 `轮数 / 步数` 两格就是该会话的形状（与目标会话日志里的 turn/step 条数对得上），加上趋势卡标题的 `按轮次（共 N 轮）`（本轮新加）与浏览器 meta 的 `第 t 轮 · 第 s 步`。⚠️ **两处如实记录**：① **demo 与插件都没有**"本会话共 N 事件 / 最后 seq"这种会话号数字条 —— `AGENTS.md` §2.5 的判据①写了它，属于**陈旧说法**，已在本次一并改成真实判据；② demo 的统计卡是 **3 格**（模型可见条目 / 用户消息 / 注入内容）+ 一句 `本步可见 N 条 · ≈X tokens`，插件是 **7 格**（轮数/步数/人类输入/工具调用/缓存命中/费用/子 Agent 费用）—— `docs/03` 只写了"左列：上下文统计/趋势/事件"，**没有钉住卡内格子**，所以这条差异另立 **M4-07**（要照 demo 换成 3 格就是改交互，留给人工门禁） |
-| M4-04 | 产物重打后硬刷新即生效（不重启 `dsh web`）—— 留证据 | TODO | 构建 + 浏览器验证 |
+| M4-04 | 产物重打后硬刷新即生效（不重启 `dsh web`）—— 留证据 | DONE | → ✅ **硬刷新即生效已实证（2026-10-04）**：改完 `src/client/i18n.ts` 的入口标签 → `tsdown` 重打 `lib/client.js`（grep 到「上下文批改」）→ **新开一次页面加载**（headless，**未重启** `dsh web`）就看到了新页签名，而进程仍是重启后的那个 pid ⟹ **客户端半边由宿主按需从磁盘读**（`docs/01` F16）在真机上成立 |
 | M4-05 | **趋势卡的规模读数**（`docs/03` R1.5 的硬要求 + demo 的 `granLabel`）：标题旁写明 `按轮次（共 N 轮）` / `按步骤（共 N 次请求）` —— 用户要能一眼看出"有多少轮" | DONE | → `src/client/components/contextView.tsx` 新增 `.redline-card-scale`（**不是** `.redline-card-sub`：那是"聚焦"那一行，混用会让"没聚焦⇒没有副标题"的契约失真 —— 这一点是改完被上游规格抓到才分开的）；i18n `trend.gran.turn` / `trend.gran.step`；轮数取最后一条请求的 turn（与 demo 同源）。护栏：上游 `client` lane 的 `the adaptive switch rides the trend title…`（已把断言改成"读数跟着粒度走"）。⚠️ 同上：断言目前在非门禁 lane |
 | M4-06 | **默认粒度口径**（demo/R1.5 = **按轮次**，插件 = **按步骤**）：把默认值改成 `turn` 会让 ~18 处上游断言（`settings.spec` 的默认值矩阵、`index.spec`）跟着改 | TODO | → **本轮实测**：改 `src/host/settings.ts` 的 schema 默认 + `src/client/settings.ts` 的预置默认 → 18 条红；已**回退**并记成一条有界任务。要不要跟 demo 一致，留给人工门禁定夺（`docs/11` D37） |
 | M4-07 | **统计卡的格子口径**：demo 是 3 格（模型可见条目 / 用户消息 / 注入内容）+ `本步可见 N 条 · ≈X tokens`；插件是 7 格（含费用两格） | TODO | → `docs/03` 未钉住卡内格子（只写了三张卡的名字）⟹ 这不是"文档 vs demo"而是"demo vs 基线"；照 demo 换 = **改交互**，按纪律留给人工门禁定夺（`docs/11` D38） |
@@ -406,15 +406,15 @@
 | X 横切 | 8 | **2** | 4 | 1 | 1 |
 | M0 文档集 | 22 | **22** | 0 | 0 | 0 |
 | M0.5 交互 demo | 88 | **87** | 0 | 0 | 1 |
-| M1 骨架与身份 | 14 | **12** | 1 | 0 | 1 |
+| M1 骨架与身份 | 14 | **13** | 0 | 0 | 1 |
 | M2 编辑面 | 34 | **32** | 0 | 2 | 0 |
 | M3 右侧界面 | 34 | **29** | 0 | 4 | 1 |
-| M4 轮次联动 | 7 | **4** | 0 | 3 | 0 |
+| M4 轮次联动 | 7 | **5** | 0 | 2 | 0 |
 | M4.5 能力验证 | 19 | **4** | 4 | 8 | 3 |
 | M5 编排 | 28 | **1** | 0 | 26 | 1 |
 | M6 入口与发布 | 12 | **7** | 1 | 4 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **270** | **200** | **10** | **52** | **8** |
+| **合计** | **270** | **202** | **9** | **51** | **8** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 

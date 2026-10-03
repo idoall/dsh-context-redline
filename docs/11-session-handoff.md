@@ -111,7 +111,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 200 / 共 270**（DOING 10 · TODO 52 · WAIT🙋 8）· 一条命令看全貌：`node scripts/progress.mjs` |
+| 进度 | `docs/10`：**DONE 202 / 共 270**（DOING 9 · TODO 51 · WAIT🙋 8）· 一条命令看全貌：`node scripts/progress.mjs` |
 | 当前卡点 | **四件事之外，我这边没有未做的离线工作**：① **你重启 `dsh web`** → 我复验 M1-02（挂载日志 / 两面板并存 / console 无注册错误）+ 你点着看界面（M3-22）；② **授权包②**（专用可弃会话）→ M4.5 的 8 条真机探针 → **之后才允许进 M5**（硬门禁已在 docs/04 落纸）；③ **四个决策**（首轮 δ / M4-06 默认粒度 / M4-07 统计卡格子 / 要不要跳 `docs/12` 的入口）；④ **授权包④**（push / tag / npm）。仓库内：`tsc` / `oxlint` / `check-docs` / `namespace-contract` / 4 个门禁 lane / 全量 vitest / demo 两条自检 —— 一条命令 `node scripts/release-check.mjs` → 全部通过（共 10 步） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |

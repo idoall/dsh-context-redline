@@ -46,6 +46,15 @@ Five cards, in two columns ([`demo/`](demo/README.md) is the authority):
   **verbatim into the new session's first message**. A child session always starts at the parent's **last completed
   turn** — there is **no parameter** to pick an earlier cut point ([`docs/01`](docs/01-platform-facts.md) F38).
 
+![Context Redline running (real panel capture, 2026-10-04)](docs/screenshots/01-panel-live.png)
+
+> ⚠️ This is the **plugin's own live capture** (the 「上下文批改」 tab inside `dsh web`, 2026-10-04, a
+> 25-turn / 591-step session): the tabs read `对话 | 轨迹 | 上下文 | 上下文批改` (upstream still owns the
+> bare 「上下文」, ours no longer collides); the panel shows `高级编辑`, the `比前步 / 比前轮` pair
+> (**比前轮** pressed by default), the two-level picker `第 25 轮（共 10 步）`, and the per-category
+> deltas (`注入内容 +3` / `助手消息 +11` / `工具结果 +9`). The interactive demo remains the
+> **interface standard**: the shot above shows what it should look like, this one what it looks like now.
+
 ## Four rules to grasp at a glance
 
 1. Only what is **on the surface** reaches the model.
