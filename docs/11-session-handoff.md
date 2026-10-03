@@ -107,7 +107,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**本轮在改文档**：文档 review 裁定 D1–D8 见本文末 + `scripts/check-docs.mjs`（机器把关） |
-| 进度 | `docs/10`：**DONE 107 / 共 242**（DOING 4 · TODO 123 · WAIT🙋 8） |
+| 进度 | `docs/10`：**DONE 108 / 共 243**（DOING 4 · TODO 123 · WAIT🙋 8） |
 | 当前卡点 | **M05-15 交互定稿** 与 **M5-28 起点口径确认**（都等用户点头）；文档 review 轮已收口（75 → 0，由 `scripts/check-docs.mjs` 把关）；M1 可在仓库内自验，**授权包①（装配 + 用户重启）是 M1 的收口动作** |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
