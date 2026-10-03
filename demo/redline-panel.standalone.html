@@ -606,7 +606,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 b1a9a09</span>
+    <b>上下文批改台</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 46c17e4</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -718,7 +718,15 @@ const EXPLAIN = {
 
   'ui.advanced': { t: '高级编辑', what: '打开后，**工具结果**这一类的「编辑」入口才会出现。', effect: '默认收起的两类：工具结果（一轮几十条、"要动手"的概率低）与助手消息（平台本来就不给「编辑」，只有「批注」）。常用三类始终可见：用户消息 / 注入内容 / 技能注入 —— 它们都是"我告诉模型什么"，而且后两类每轮会被宿主重新注入（会漂）。', rev: '随时关掉，只是收起入口，不改任何数据', confirm: '不需要', refs: ['docs/03 R2.1 / R2.5'] },
   'act.edit': { t: '编辑（遮蔽原文）', what: '改写这一条的内容。', effect: '先把改动存成本地草稿（模型还看不到）；确认后才"应用到会话"，届时原文被替换、模型再也看不到原文（但日志里仍在）。', rev: '草稿可放弃；已应用的改动可用"版本历史"恢复', confirm: '提交时要', refs: ['docs/03 R2.2 / R3.3', 'docs/01 F7'] },
-  'act.annotate': { t: '批注（保留原文）', what: '不遮蔽原文，追加一条带「作废范围」的更正（一条普通 user 消息，不是伪造宿主内容）。', effect: '模型会同时看到原文与更正 —— 所以它是**请求式**的：靠措辞让模型照做，平台不保证。它会随快照（fork 种子）进子会话；不会被重新注入（不漂），但**长对话或压缩之后可能被摘要吞掉**。想要"确定生效"要用「编辑」+「应用到会话」。', rev: '不可撤销（追加即落地）', confirm: '提交时要（确认框里会写清它在快照里起什么作用）', refs: ['docs/03 R2.2 / R3.3.1', 'docs/01 F6'] },
+  'act.annotate': {
+    t: '写一句更正',
+    what: '**一句话**：这一条在平台上**改不了**（助手消息不能改写、被压缩埋掉的读不回），所以只能**写一句更正**告诉新会话"这条不算数、应该按什么来"。\n'
+      + '**为什么只有它有这个按钮**：能编辑的行（用户消息 / 注入内容 / 技能注入 / 工具结果）直接点「编辑」改就行 —— 同一个效果不需要两个入口。\n'
+      + '**它不做什么**：不改这一条、不删这一条（原文仍在日志里），当前会话的模型也看不到它。',
+    effect: '只写插件本地；点「开启子会话」时，这句更正与你的改写一起**逐字**写进新会话的第一句话。',
+    rev: '可以再点「写一句更正」继续改；或点「丢弃这条改动」清掉',
+    confirm: '不需要（本地保存，不出确认框）',
+    refs: ['docs/03 R2.1 / R4.6', 'docs/01 F7.2', 'docs/11 D18'] },
   'act.gotoCurrent': {
     t: '去改现在这条',
     what: '**一句话**：你点的那条**原文已经被遮蔽**（改不动了），这个按钮把你带到"**现在可见的那一条**"并直接打开编辑器。\n'
@@ -1490,13 +1498,17 @@ function ability(node) {
   const type = node.type;
   /* ⚠️ 三类"不能改"要分清（docs/03 R2.1 / R4.6）：
    *   · inert（系统提示词 / 工具定义）：**一个动作都不给**，也不渲染空动作区（宿主保护 node 0 的 system）；
-   *   · assistant/message：只给批注；
-   *   · 被遮蔽 / 被压缩埋掉：不给改写。
+   *   · assistant/message：**改不了** → 只给「写一句更正」（平台事实：replace 要求 sourceEventSeqs，而它禁带，见 docs/01 F7.2）；
+   *   · 被压缩埋掉：同理改不了 → 也只给「写一句更正」；
+   *   · 被遮蔽的原文：不给改写，但给「去改现在这条」（改写目标换成现在可见的那条）。
    * 「存为不变量」给的是**每轮会被宿主重新注入**的那两类：注入内容 + 技能注入（R2.1 表里的两个 ✅）。 */
   const inert = node.cat === 'system' || node.cat === 'tools';
   const canRewrite = !inert && !shadowed && type !== 'assistant/message' && !node.compacted;
+  /* ⚠️ 用户 2026-10-02 选 A：**「批注」这个概念删掉** —— 更正只留给"平台真的改不了"的行；
+   * 能编辑的行只有一个动作（编辑），不再有第二个说法相同、后果却不同的入口。 */
+  const canNote = !inert && !shadowed && !canRewrite;   // = 助手消息 / 被压缩埋掉
   return {
-    canRewrite, shadowed, isReplacement: repl, canAnnotate: !inert, inert,
+    canRewrite, shadowed, isReplacement: repl, canNote, inert,
     /* 「高级编辑」：**模型/工具回了什么**那一类（工具结果）。
      * 判据不是"会不会漂移"（只有每轮被重新注入的注入内容/技能注入才漂），而是"用户需要动手的概率"：
      * 工具结果一轮几十条、要改的概率低 —— 默认把「编辑」收起来，避免干扰；
@@ -1574,9 +1586,10 @@ function rowHtml(node) {
             ? '<span class="chip-soft" title="工具结果的「编辑」属于高级编辑：打开顶部「高级编辑」开关即可看到（避免几十条工具结果把常用动作淹掉）">高级编辑</span>'
             : `<button class="btn sm" data-act="edit" data-seq="${node.seq}" data-explain="act.edit">编辑</button>`)
           : (node.type === 'assistant/message'
-            ? `<span class="badge-asst" title="${esc(a.blockReason)}">助手消息仅可批注</span>`
+            ? `<span class="badge-asst" title="${esc(a.blockReason)}">助手消息改不了 · 只能写一句更正</span>`
             : `<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 14))}…</span>`))}
-      ${a.canAnnotate ? `<button class="btn sm" data-act="annotate" data-seq="${node.seq}" data-explain="act.annotate">批注</button>` : ''}
+      ${a.canNote ? `<button class="btn sm" data-act="annotate" data-seq="${node.seq}" data-explain="act.annotate">写一句更正</button>` : ''}
+      ${savedNoteOf(node.seq) ? '<span class="chip-draft" title="你为这一条写了一句本地更正：当前会话的模型看不到；开子会话时它会逐字带进新会话的第一句话">已写更正（本地）</span>' : ''}
       ${draftOf(node.seq)
         /* ⚠️ **硬约束**（用户 2026-10-02）：「所有的保存都是临时性保存，只有开启子会话的时候才会写进去。」
          * ⟹ 这里**不出现「应用到会话」**：保存只存本地；要让它生效就去点「开启子会话」。 */
@@ -1639,8 +1652,8 @@ function editorHtml() {
         <label class="field"><span>思考文本${DEST_CARRY}</span><textarea rows="2" id="edR">${esc(st.reasoning || '')}</textarea></label>
       </details>`)
     : st.kind === 'annotate' ? `
-      <label class="field"><span>理由${DEST_CARRY}<span class="cap">（写具体 —— "作废哪些、改成什么"；开子会话时这段会逐字带进新会话的第一句话，那边的模型才读到）</span></span><textarea rows="3" id="edWhy" placeholder="一句话说明为什么更正">${esc(st.reason || '')}</textarea></label>
-      <p class="cap">这条批注<b>只针对上面那一条</b>。如果你要作废的范围不止这一条，就直接写在理由里（例如"上面第 3、4 条都作废"）—— 模型读的正是这段理由，不需要你去选范围或记编号。</p>`
+      <label class="field"><span>更正内容${DEST_CARRY}<span class="cap">（写具体 —— "作废哪些、改成什么"；开子会话时这段会逐字带进新会话的第一句话，那边的模型才读到）</span></span><textarea rows="3" id="edWhy" placeholder="一句话说明为什么更正">${esc(st.reason || '')}</textarea></label>
+      <p class="cap">这一条在平台上<b>改不了</b>（助手消息不能改写 / 被压缩埋掉的读不回），所以只能写一句更正。它<b>只针对上面那一条</b>。如果你要作废的范围不止这一条，就直接写在理由里（例如"上面第 3、4 条都作废"）—— 模型读的正是这段理由，不需要你去选范围或记编号。</p>`
     : ''}
     ${blocked ? `<p class="eblocked">${S.sw.turnOpen ? '当前轮次还没结束 —— 改动只能在轮次边界提交。' : '这个会话不在本进程里，只能查看，不能编辑。'}</p>` : ''}
     ${S.editorError ? `<p class="emsg-err">${esc(S.editorError)}</p>` : ''}
@@ -1958,6 +1971,9 @@ function orchAct(b) {
              ['② 会写进去的改动', carryLines.length
                ? `${edits.length} 条改写 + ${notes.length} 条更正 —— 逐字拼在它的第一句话前面（当前会话看不到，只有那个新会话的模型读到）`
                : '（你还没保存过任何改动 —— 保存只存本地，开子会话时才写进去）'],
+             /* R4.3「本次清单」：把**逐字要写进去的内容**列出来（否则用户只能看到条数、看不到写的是什么）。 */
+             ...edits.map((d) => [`· 改写 #${d.seq}`, (d.text || '').slice(0, 120)]),
+             ...notes.map((n) => [`· 更正 ${n.where || '#' + n.seq}`, (n.text || '').slice(0, 120)]),
              ['③ 首条任务', '（写在下面那一栏 —— 必须你写；插件不生成任何内容）'],
              ['④ 不会带上', '这个会话的工具授权；本会话此后新聊的内容。'],
              ['⑤ 取消', '取消 = 什么都不发生（不建会话）']],

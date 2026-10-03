@@ -533,7 +533,7 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
     if (a.inert) return '（无动作条）';
     const out = [];
     if (a.canRewrite) out.push('编辑');
-    if (a.canAnnotate) out.push('批注');
+    if (a.canNote) out.push('写一句更正');
     if (a.pinnable) out.push('存为不变量');
     return out.join('+');
   };
@@ -545,12 +545,12 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   const expect = {
     'system/system/message': '（无动作条）',
     'tools': '（这一类没有行）',
-    'user/user/message': '编辑+批注',
-    'inject/user/message': '编辑+批注',
-    'skill/user/message': '编辑+批注',
-    'assistant/assistant/message': '批注',
-    'tool/tool/result': '编辑+批注',
-    'user/user/message/compacted': '批注'
+    'user/user/message': '编辑',
+    'inject/user/message': '编辑',
+    'skill/user/message': '编辑',
+    'assistant/assistant/message': '写一句更正',
+    'tool/tool/result': '编辑',
+    'user/user/message/compacted': '写一句更正'
   };
   for (const [k, v] of Object.entries(expect)) {
     if (k === 'tools') { check('按钮集合：工具定义（这一类在演示数据里没有行）', true, ''); continue; }
@@ -592,8 +592,10 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   const off = registry.get('cardBrowser').innerHTML;
   check('高级编辑关：工具结果行不显示「编辑」按钮', !editBtn(toolNode.seq).test(off));
   check('高级编辑关：但留「高级编辑」标记 + 说明在哪打开（R2.3 不许凭空消失）', /高级编辑/.test(off) && /打开顶部「高级编辑」开关/.test(off));
-  check('高级编辑关：批注仍然在（助手消息只能靠批注纠正）', /data-act="annotate"/.test(off));
-  S.sw.advanced = true; api.render();
+  S.openCat = 'assistant'; api.render();
+  check('高级编辑关：「写一句更正」仍然在（助手消息改不了，那是它唯一的纠正入口）',
+    /data-act="annotate"/.test(registry.get('cardBrowser').innerHTML));
+  S.sw.advanced = true; S.openCat = 'tool'; api.render();
   check('高级编辑开：工具结果的「编辑」出现', editBtn(toolNode.seq).test(registry.get('cardBrowser').innerHTML));
   S.sw.advanced = false; S.openCat = 'inject'; api.render();
   check('高级编辑关：注入内容的「编辑」不受影响（常用类始终可见）', /data-act="edit"/.test(registry.get('cardBrowser').innerHTML));
@@ -615,14 +617,25 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   document.getElementById('edWhy').value = '这条作废：改成先跑全量测试';
   api.render();
   const eh = registry.get('cardBrowser').innerHTML;
-  check('批注：编辑器里注明"只写本地 · 开子会话时才带进去"（去向标记）', /只写本地 · 开子会话时才带进去/.test(eh));
-  check('批注：提交按钮是「保存更正」（不是"提交到会话"）', /保存更正/.test(eh));
+  check('写一句更正：编辑器里注明"只写本地 · 开子会话时才带进去"（去向标记）', /只写本地 · 开子会话时才带进去/.test(eh));
+  check('写一句更正：提交按钮是「保存更正」（不是"提交到会话"）', /保存更正/.test(eh));
   const before = S.extraNodes.length;
   api.submitEditor();
-  check('批注：保存**不写会话**（事件数不变）', S.extraNodes.length === before, `extraNodes=${S.extraNodes.length}`);
-  check('批注：保存**只存本地**（本地改动表里多一条 note）',
+  check('写一句更正：保存**不写会话**（事件数不变）', S.extraNodes.length === before, `extraNodes=${S.extraNodes.length}`);
+  /* ⚠️ 用户 2026-10-02 选 A：**可编辑的行不再有第二个入口**（只有一个「编辑」）。
+   * 能力层先断言（稳），再到 DOM 上看助手行确实只剩「写一句更正」。 */
+  S.editor = null;
+  const injectNode = api.nodesOfReq(api.lastOfTurn(api.TOTAL_TURNS), true).find((n) => n.cat === 'inject');
+  const abInj = api.ability(injectNode);
+  check('可编辑的行：能力判定只有「编辑」（canNote=false、canRewrite=true）',
+    abInj.canRewrite === true && abInj.canNote === false, `canRewrite=${abInj.canRewrite} canNote=${abInj.canNote}`);
+  const asstNode = api.nodesOfReq(api.lastOfTurn(api.TOTAL_TURNS), true).find((n) => n.type === 'assistant/message');
+  const abAsst = api.ability(asstNode);
+  check('改不了的行：能力判定只有「写一句更正」（canRewrite=false、canNote=true）',
+    abAsst.canRewrite === false && abAsst.canNote === true, `canRewrite=${abAsst.canRewrite} canNote=${abAsst.canNote}`);
+  check('写一句更正：保存**只存本地**（本地改动表里多一条 note）',
     Object.values(S.drafts).some((d) => d.kind === 'note' && /全量测试/.test(d.text)));
-  check('批注：保存后编辑器收起来（本地保存没有确认框）', S.editor === null);
+  check('写一句更正：保存后编辑器收起来（本地保存没有确认框）', S.editor === null);
   S.extraNodes = []; S.applied = []; S.drafts = {}; S.editor = null; api.render();
 }
 
@@ -780,8 +793,8 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
     /结果文本<span class="chip-soft dest-model"/.test(hTool) && /标记为错误<span class="chip-soft dest-model"/.test(hTool));
   check('去向标记：用户消息的正文与思考文本都写明「只写本地 · 开子会话时才带进去」',
     /正文<span class="chip-soft dest-model"/.test(hUser) && /思考文本<span class="chip-soft dest-model"/.test(hUser) && /开子会话时才带进去/.test(hUser));
-  check('去向标记：批注的理由写明「只写本地 · 开子会话时才带进去」并提示怎么写具体',
-    /理由<span class="chip-soft dest-model"/.test(hAnn) && /开子会话时才带进去/.test(hAnn) && /写具体/.test(hAnn));
+  check('去向标记：「更正内容」栏写明「只写本地 · 开子会话时才带进去」并提示怎么写具体',
+    /更正内容<span class="chip-soft dest-model"/.test(hAnn) && /开子会话时才带进去/.test(hAnn) && /写具体/.test(hAnn));
   const all = html.join('\n') + hOrch;
   const kinds = new Set((all.match(/dest-(local|model)/g) || []));
   check('去向标记：全界面只用一种标记（硬约束下所有输入都是"本地暂存、开子会话才带进去"）',

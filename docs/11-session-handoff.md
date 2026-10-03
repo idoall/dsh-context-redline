@@ -107,7 +107,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**本轮在改文档**：文档 review 裁定 D1–D8 见本文末 + `scripts/check-docs.mjs`（机器把关） |
-| 进度 | `docs/10`：**DONE 95 / 共 230**（DOING 4 · TODO 123 · WAIT🙋 8） |
+| 进度 | `docs/10`：**DONE 96 / 共 231**（DOING 4 · TODO 123 · WAIT🙋 8） |
 | 当前卡点 | **M05-15 交互定稿** 与 **M5-28 起点口径确认**（都等用户点头）；文档 review 轮已收口（75 → 0，由 `scripts/check-docs.mjs` 把关）；M1 可在仓库内自验，**授权包①（装配 + 用户重启）是 M1 的收口动作** |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -328,3 +328,17 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 **根因**：`dropDraft` 的 `onOk` 只删了 `S.drafts` 并 `render()`；编辑器状态 `S.editor` 还在 ⟹ 编辑器继续显示那段（已被丢弃的）文字。
 **修法**：丢弃时若编辑器正开在这一行 → `S.editor = null`，并清 `historyFor` / `editorError` / `editorOk`；行上回到原文。
 **护栏**：新增 4 条；反向验证：删掉关闭编辑器那一行 → 立刻红（`❌ 丢弃本地改动：编辑器**收起来**`）。
+
+
+## D18 · **删掉「批注」这个概念**（用户 2026-10-02 选 A）
+
+> 用户先问「批注的意义是什么？感觉有点多余」，我给出两条路，用户选 **A**。
+
+**背景（平台事实）**：`assistant/message` **无法改写**（replace 要求 `sourceEventSeqs`，而它禁带 —— `docs/01` F7.2）；被压缩埋掉的也读不回。这两类是**真的改不了**，纠正它们只有"写一句更正"这一条路。
+而在**用户消息 / 注入内容 / 技能注入 / 工具结果**上，「编辑」已经完全覆盖 —— 批注只是同一效果的**第二个概念**。
+
+**A 方案的落地**：
+· 能力判定：`canNote = !inert && !shadowed && !canRewrite`（只给改不了的行）；可编辑的行只剩 `编辑`；
+· 按钮 `批注` → **`写一句更正`**；编辑器字段 `理由` → **`更正内容`**；助手消息徽章 → `助手消息改不了 · 只能写一句更正`；
+· 行上 `已写更正（本地）`；开子会话确认框补上**逐字清单**（每条改动一行）。
+· 护栏：A17 矩阵与"单一入口"能力断言（反向验证：把 `canNote` 退回 `!inert` → 立刻红）。
