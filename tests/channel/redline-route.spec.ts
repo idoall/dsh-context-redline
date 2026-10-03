@@ -121,12 +121,12 @@ describe('the redline channel envelope', () => {
   }
 
   test('an op outside the table answers the stable unknown-op code', async () => {
-    const reply = await post(await channel(), { op: 'node.read', sessionId: 's1' })
+    const reply = await post(await channel(), { op: 'no.such.op', sessionId: 's1' })
     assert.equal(reply.status, 200)
     assert.equal(reply.cacheControl, 'no-store')
     assert.deepEqual(reply.json, {
       ok: false,
-      error: { code: REDLINE_ERROR.unknownOp, message: 'unknown redline op: node.read' },
+      error: { code: REDLINE_ERROR.unknownOp, message: 'unknown redline op: no.such.op' },
     })
   })
 

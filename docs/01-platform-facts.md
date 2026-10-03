@@ -586,6 +586,7 @@ SpawnTeammateRequest = {
 | F27 | 可续接子会话的回传由**运行时**负责：建时自动追加**返回指引**（`withContinuableReturnGuidance` —— ⛔ **插件禁止** import/调用它，只传人写的首条任务），settle 时往**父会话日志**追加 `subagent-settled` **结算通知** | `$DSH_PKG/dsh-subagent/lib/index.js:599,633`；见 §F12.1 |
 | F39 | **设置服务的注册面在 0.2.0-rc.2 已经没有了**：`@deepseek-ai/dsh-settings` 导出 `SettingsForms`（`describe/update/replace/mutate`）而**没有** `SettingsProvider`、**没有** `register(ns, schema)` ⟹ 上游那套"插件注册自己的偏好命名空间"的写法在这个运行时上**恒为 no-op**（需要改成"偏好声明为 loader Config 的 `.volatile()` 字段"或删掉） | §F39（本机实测） |
 | F40 | **插件的 CSS 会被注进同一个 document，且是不分层（unlayered）的全局规则** ⟹ 两个插件若共用类名前缀，**同特异性下后注入者顶掉先注入者**（不报错）。上游整套 chrome 用 `lc-*`（实装 0.60.0 的 `lib/client.js` 里 572 处、我们复制基线里 468 个不同类名）⟹ 必须换前缀 | §F40（本机实测） |
+| F43 | **官方有一个现成的「事件 → 语义文本」提取器，但插件不能 import 它**：`@deepseek-ai/dsh-session-query` 导出 `extractSessionEventText(event)`；然而（a）它**不在 profile 层的依赖树里**（F42：那里只有 5 个包）⟹ 真机 import 解析不到；（b）加进 `peerDependencies` 会被 tsdown 当外部依赖、真机仍解析不到；（c）加进 `dependencies` 会把整包**内联**进宿主 bundle（复制一份）。⟹ 我们自己写 `src/redline/inspect.ts`，并用 `tests/edit/fulltext.spec.ts` 把它钉在与宿主一致的事件形状上 | §F43（本机实测，2026-10-04） |
 | F41 | 在本机**离线跑上游的 host/client lane**，需要把平台包补齐到 `node_modules`：`@deepseek-ai/dsh-scope`（`dsh-session` 运行时 import）、`@deepseek-ai/dsh-client-store` + `zustand` + `immer`（`dsh-client-store` 运行时 import）、`shiki`/`@shikijs/langs`/`clsx`/`diff`/`@deepseek-ai/dsh-util-code-language`/`micromark-*`/`mdast-*`；jsdom 另需 `ResizeObserver` 桩 | §F41（本机实测） |
 
 ### F39 · 设置服务：0.2.0-rc.2 **没有** `register(ns, schema)`
@@ -652,6 +653,29 @@ Tailwind 动画键 `--animate-redline-*` / `@keyframes redline-*`、`data-redlin
 **护栏**：`scripts/namespace-contract.mjs` 的**面 10** 断言 `node_modules/@deepseek-ai` **不是**符号链接，
 反向验证过（在临时根目录里造一个 symlink → 该面立刻红）。
 ⛔ **不要**为了"照文档做"而重新创建那条链接 —— 那等于把一个**真实发生过**的故障模式搬回树里。
+
+### F43 · 官方的事件文本提取器**不能**被插件 import（实测，2026-10-04）
+
+`@deepseek-ai/dsh-session-query` 除了服务之外还导出一个模块级函数：
+
+```ts
+export declare function extractSessionEventText(event: SessionEvent): string
+// "Structural boundaries, embedded raw streams, request envelopes, and unknown
+//  declaration-merged events contribute no text."
+```
+
+它正是「把一个事件变成可搜/可读的语义文本」的官方实现，看起来应该直接用它。**实测结论是不能，三条路都堵**：
+
+| 做法 | 结果 |
+|---|---|
+| 直接 `import` 它 | 真机解析**不到**该包 —— profile 层 `node_modules/@deepseek-ai` 只有 5 个包（F42），而插件是从 profile 装的 |
+| 加进 `peerDependencies`（tsdown 的 `neverBundle` 会把 peer 当外部依赖） | 编译期不内联了，**真机仍然解析不到** |
+| 加进 `dependencies` | 会被 tsdown **内联**进宿主 bundle —— 等于把官方包复制一份进我们插件（体积 + 版本漂移） |
+
+⟹ **我们自己实现**：`src/redline/inspect.ts`（纯函数、零依赖、两半都能 import），并用 `tests/edit/fulltext.spec.ts`
+把它**钉在**与宿主一致的事件形状上（`user/message` → `data.content`；`assistant/message`、`tool/result` → `data.message.content`；
+工具结果错误标记的三种拼法）。官方的**服务**（`ctx.sessionQuery.readSurface/readEvent`）我们照用 —— 那才是被支持的入口。
+
 
 ---
 

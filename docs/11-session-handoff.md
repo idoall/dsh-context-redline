@@ -32,13 +32,15 @@
 - M0.5 可交互 demo：已交付且**已浏览器实测**（1440/880/879/390，数据+截图在 demo/screenshots/）；
   自检：node demo/check-static.mjs（静态契约）+ node demo/check-runtime.mjs（**193/193**）。
 - **M1 骨架与身份：仓库内部分已完成（11/14 DONE）** —— `src/` 从 tag `v0.59.2` 复制 110 个文件 + 命名空间分家；
-  `tsc --noEmit` exit 0 / `tsdown` exit 0 / 自有 lane `edit`+`channel` 15/15 / 含上游 lane 96 文件 1689/1689 /
-  `node scripts/namespace-contract.mjs` 24 项 0 失败 / `oxlint` 0 error。
-  **只剩 M1-01（授权包①：装 profile + 你重启）与装完后的复验（M1-02/M1-14）**。
-- **M2 及之后：未开工**。**M3 开工的第一步**要先把 docs/10 的 M3-01…M3-22 按**当前 demo** 重写
+  `tsc --noEmit` exit 0 / `tsdown` exit 0 / 自有 lane `edit`+`channel` **67/67** / `namespace-contract` 24 项 0 失败 / `oxlint` 0 error。
+  **只剩 M1-01（授权包①：装 profile + 你重启）与装完后的复验（M1-02/M1-14）** —— 这是**唯一还需要你本人动作**的一步。
+- **M2 编辑面：仓库内部分已完成（29/34 DONE）** —— 本地改动存储 / 全文读取 / 按底层事件类型的能力判定 /
+  通道 `node.read` + `draft.*`；**每条保存用例都断言会话零写入**（`Session.append` 调用数 0 **且**日志偏移不增长）。
+  剩 5 条 TODO 都是"随 M3/M5 一起做"的。
+- **M3 及之后：未开工**。**M3 开工的第一步**要先把 docs/10 的 M3-01…M3-22 按**当前 demo** 重写
   （那些旧行还写着已被删掉的批注 / 版本历史 / 固定块 / 未生效吸顶）。
 - 本轮新发现的平台事实：`docs/01` **F39**（设置服务的 `register` 面已无）/ **F40**（CSS 类名前缀静默撞车）/
-  **F41**（上游 lane 的依赖闭包）/ **F42**（本仓库改为 registry 直装、**不建**符号链接）。
+  **F41**（上游 lane 的依赖闭包）/ **F42**（本仓库改为 registry 直装、**不建**符号链接）/ **F43**（官方的 `extractSessionEventText` 插件 import 不到）。
 
 【硬约束（不可违反）】
 - 只动本仓库；**不 push、不开 PR**（各自需单独授权）。
@@ -52,12 +54,12 @@
 【第一件事（先跑这几条，确认基线没坏）】
   git log --oneline -3
   pnpm install                     # 只有这一条（不建符号链接，见 docs/01 F42）
-  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：250 / 125 / 4 / 113 / 8」
+  node scripts/check-docs.mjs      # 期望：✅ 通过 + 「docs/10 计数自洽：256 / 153 / 4 / 91 / 8」
   node demo/check-static.mjs       # 期望：✅ 静态契约检查通过
   node demo/check-runtime.mjs      # 期望：共 193 项，失败 0 项
   ./node_modules/.bin/tsc --noEmit ; ./node_modules/.bin/tsdown
   node scripts/namespace-contract.mjs                                # 期望：24 项 0 失败
-  ./node_modules/.bin/vitest run --project edit --project channel    # 期望：15/15
+  ./node_modules/.bin/vitest run --project edit --project channel    # 期望：67/67
 基线全绿后，问用户选哪条路：① 点头走**授权包①**（装进 web profile + 他重启 → 我复验 M1-02/M1-14）
 ② 继续 **M2**（编辑面 TDD：本地草稿 / 全文读取 / 按底层事件类型的能力判定 / 所有保存临时化）
 ③ 先写用户帮助（M6-11，权威来源已就位：docs/03 R4.7 + R7.1）。
@@ -113,9 +115,9 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 |---|---|
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
-| 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 的仓库内部分已落地**（骨架 + 从 tag `v0.59.2` 复制 `src/` 110 个文件 + 命名空间分家 + 门禁） |
-| 进度 | `docs/10`：**DONE 125 / 共 250**（DOING 4 · TODO 113 · WAIT🙋 8） |
-| 当前卡点 | **M1 的收口 = 授权包①**（装进 `web` profile + **你**重启 `dsh web` → 我复验 M1-02 / M1-14）；另有 **M05-15 交互定稿**。M1 仓库内部分**已全绿**（`tsc` / `tsdown` / 自有 lane 15/15 / 含上游 lane 1689/1689 / `namespace-contract` 24 项 0 失败 / `oxlint` 0 error） |
+| 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
+| 进度 | `docs/10`：**DONE 153 / 共 256**（DOING 4 · TODO 91 · WAIT🙋 8） |
+| 当前卡点 | **M1 的收口 = 授权包①**（装进 `web` profile + **你**重启 `dsh web` → 我复验 M1-02 / M1-14）；另有 **M05-15 交互定稿**。M1+M2 仓库内部分**已全绿**（`tsc` / `tsdown` / 自有 lane **67/67** / `namespace-contract` 24 项 0 失败 / `oxlint` 0 error）；M2 的本地保存链已可用，**但界面还是上游的**（M3 才接线） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
 | 浏览器工具 | 已恢复且**本会话已实测跑通**（`navigate/resize/screenshot/evaluate/console_messages`）；限制：headless、无触屏（`pointer:coarse` 不命中） |
@@ -576,3 +578,32 @@ tip 两行口径（`tip.turn1`）。**颜色不抄**，仍走我们的主题令�
 **下一步**：① 需要你点头的只有 **M1-01 授权包①**（装进 `web` profile + **你**重启 → 我复验）；
 ② 仓库内继续 **M2**（编辑面：先写红 → 本地草稿 / 全文读取 / 按底层事件类型的能力判定 / 所有保存临时化）；
 ③ M3 开工**第一步**是把 `docs/10` 的 M3-01…M3-22 按**当前 demo** 重写（那些行还写着已删的批注/版本历史/固定块——见该节顶部的警示）。
+
+
+## D35 · **M2 落地记录**（2026-10-04 · 用户确认的 M2 范围）
+
+用户 2026-10-04 把 M2 定成一句话：**先写测试并确认变红，再实现「本地草稿保存 / 保存后继续编辑 /
+同一行再保存覆盖 / 丢弃改动并收起编辑器 / 全文读取（不能用 80 字预览）/ 能力判定按底层事件类型 /
+所有保存临时化，不能写入当前会话」**。落点与证据：
+
+| 要的能力 | 落点 | 证据 |
+|---|---|---|
+| 本地草稿保存 | `src/redline/drafts.ts` + 宿主 `writeTable()`（`.tmp` + rename 原子写） | `tests/edit/drafts.spec.ts`、`tests/channel/redline-ops.spec.ts` |
+| 保存后继续编辑 | `effectiveText/Reasoning/IsError` —— **行上显示、编辑器预填、"没实质改动"判定**三处共用"当前生效的那版" | `drafts.spec` "the version in effect"；反向验证：退回 `row.text` → 红 |
+| 同一行再保存覆盖 | `putEdit()` 同名键覆盖（一条一行） | `drafts.spec` "saving twice overwrites"；反向验证：改成叠加 → 红 |
+| 丢弃改动并收起编辑器 | `dropEdit()` + **行恢复原文**（"编辑器收起"是 M3 的渲染行为，数据侧的"回到原文"已在 `effectiveText` 锁死） | `drafts.spec` "dropping one leaves the other" |
+| 全文读取 | `src/redline/inspect.ts`（按事件类型取全文；多文本块以空行相接，逐字保留） | `fulltext.spec`：>200 字 / 4 段逐字往返，并**直接与 `firstText` 的 80 字结果对比**；反向验证：退回 `slice(0,80)` → 红 |
+| 能力判定按底层事件类型 | `src/redline/eligibility.ts`：`ability()` + `rowActions()` + 4 个稳定原因键 | `eligibility.spec` 的 A17 矩阵；反向验证：去掉 assistant 判定 → 红 |
+| 所有保存临时化 | 通道三个 `draft.*` op 只写我们的 JSON；`node.read` 只读 | `redline-ops.spec`：**每条保存都断言 `Session.append` 调用数 = 0 且 `session.seq` 没有增长**；反向验证：让 `draft.update` 顺手 append → 红 |
+
+**读数**：自有 lane `edit`+`channel` **6 文件 67/67**；`tsc --noEmit` exit 0；`tsdown` exit 0；
+`namespace-contract` 24 项 0 失败；`oxlint` 0 error；`check-docs` exit 0（256 / 153 / 4 / 91 / 8）。
+
+**反向验证**：8 个变异全部"改坏 → 红 → 改回"（本地改动不生效 / 叠加 / 改回与原文比 / 全文退回 80 字 /
+助手消息变可改写 / 会话 id 不净化 / 坏草稿当空表 / 保存顺手写会话）。
+
+**M2 明确没做的**（作废或移阶段，见 `docs/10` M2-34）：`apply`/`annotate`/`inject`/版本历史/回滚/固定块/漂移检查
+（`docs/11` D14/D15/D18/D19 删除）；团队与压缩 op 属 M5。
+
+**新平台事实 F43**：官方有 `extractSessionEventText(event)`，但插件**不能** import 它（三路都堵，见 `docs/01` F43）
+⟹ 我们自己实现 `src/redline/inspect.ts`，并用测试把它钉在与宿主一致的事件形状上。

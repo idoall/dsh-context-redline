@@ -333,17 +333,17 @@ check('7 数据目录', `数据目录常量 = ${DATA_DIR}`, () => {
     text.includes(`export const REDLINE_DATA_DIR_NAME = '${DATA_DIR}'`),
     'REDLINE_DATA_DIR_NAME 不是我们的目录名',
   )
-  // The home join is a host-side, single-site operation: upstream's version
-  // probe (host/version.ts) plus our data-dir constant. Anything else reaching
-  // for the harness home is a namespace leak.
-  const allowed = new Set(['src/host/version.ts'])
+  // Two kinds of file may touch the harness home: upstream's version probe
+  // (which reads manifests), and OUR code — but ours must reach our directory
+  // through the single constant, never with its own literal.
+  const upstreamProbe = new Set(['src/host/version.ts'])
   const joins = sourceFiles.filter(f => /dshHomePath|DSH_HOME/.test(codeOf(f)))
-  const strangers = joins.filter(f => !allowed.has(f))
+  const strangers = joins.filter(f => !upstreamProbe.has(f) && !codeOf(f).includes('REDLINE_DATA_DIR_NAME'))
   assert(
     strangers.length === 0,
-    `这些文件在拼 harness home，但只有 ${[...allowed].join(', ')} 允许：${strangers.join(', ')}`,
+    `这些文件在拼 harness home，但既不是上游的版本探针、也没走 REDLINE_DATA_DIR_NAME：${strangers.join(', ')}`,
   )
-  return `${DATA_DIR}（常量来源：src/shared/redline-paths.ts）`
+  return `${DATA_DIR}（常量来源：src/shared/redline-paths.ts；拼接点：${joins.join(', ')}）`
 })
 
 // ── Face 8: upstream old values, zero hits in CODE ─────────────────────────

@@ -37,7 +37,7 @@
 | X-07 | **恢复官方浏览器控制**（用户选 B）：**历史记录（当时装的是 rc.1；现行运行时已是 rc.2）** —— 装 `@deepseek-ai/dsh-browser-use@0.2.0-rc.1` + `@deepseek-ai/dsh-experimental-browser-use-playwright-mcp@0.2.0-rc.1`（peer 钉在运行时 0.2.0-rc.1；`@playwright/mcp@0.0.80` 经 `require.resolve` 验证可解析；chromium / headless-shell rev 1243 已在 `~/Library/Caches/ms-playwright`）→ 取消 patch 里那段 `insert` 注释 → `dump-config` exit 0 且两行在合成树里；`package.json` 差异仅预期两行、其它插件完好。**回退**：还原 `cordis.patch.yml.before-browser-use-restore-20260930-184704` + `dsh plugin --profile web remove` 那两包 + 重启。**生效范围＝新建会话**（本会话不受影响） | DONE | → **2026-09-30 新会话实测工具在位**（`browser_navigate/resize/screenshot/evaluate/console_messages` 均可用，已完成 M05-23/24 的实测）；另附一条限制：headless 无触屏，`(pointer: coarse)` 不命中 `$DSH_HOME/profiles/web/{cordis.patch.yml,package.json,pnpm-lock.yaml}`（已各备份一份） |
 | X-06 | 🙋 push（最后单独授权）：`git push -u origin main` | WAIT🙋 | 远端 `origin` |
 
-## 1. M0 · 文档集（**21 / 21 DONE**）
+## 1. M0 · 文档集（**22 / 22 DONE**）
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
@@ -66,7 +66,7 @@
 
 ---
 
-## 2. M0.5 · 交互 demo（**64 / 65 DONE**，剩定稿）
+## 2. M0.5 · 交互 demo（**87 / 88 DONE**，剩定稿）
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
@@ -187,38 +187,45 @@
 
 ---
 
-## 4. M2 · 编辑面（**0 / 28**）
+## 4. M2 · 编辑面（**29 / 34 DONE**）—— 按用户 2026-10-04 确认的范围：**只做本地保存那条链**
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
-| M2-01 | 读模型封装：`sessionQuery.readSurface()`（**全文**）+ `readEvent` | TODO | `src/host/redline-channel.ts` |
+| M2-01 | 读模型封装：`sessionQuery.readSurface()`（**全文**）+ `readEvent` | DONE | → 读一律走 `ctx.sessionQuery`：`resolveEvent()` 先 `readEvent({sessionId,seq})` 取 `window.target`（**全文**），取不到再回退 `readSurface()` 按 seq 找；签名照 0.2.0-rc.2 的 `.d.ts`（`readEvent` 回 `{session,inheritedEventCount,target,events,startSeq,endSeq}`）。**不碰**废弃的同步读 API ` |
 | M2-02 | 分类判定：表面节点 → 7 类（system/tools/user/inject/skill/assistant/tool） | TODO | `src/redline/classify.ts` |
 | M2-03 | 行身份链：`seq → 家族`（跨替换体串联，供版本历史与按钮判定共用） | TODO | `src/redline/identity.ts` |
-| M2-04 | 能力判定 a：`assistant/message` → `canRewrite:false` + `assistant-immutable` | TODO | `src/redline/eligibility.ts` |
-| M2-05 | 能力判定 b：被遮蔽的原始节点 → `canRewrite:false` + `shadowed-by:#seq` | TODO | `src/redline/eligibility.ts` |
-| M2-06 | 能力判定 c：替换体（当前可见）→ `canRewrite:true`（**连改可用的关键**） | TODO | `src/redline/eligibility.ts` |
-| M2-07 | 能力判定 d：被压缩埋掉 → 只能批注 + `compacted-region` | TODO | `src/redline/eligibility.ts` |
-| M2-08 | 能力判定 e：工具结果可编辑范围（内容文本 + `isError`；不得改工具名/参数结构） | TODO | `src/redline/eligibility.ts` |
-| M2-09 | 草稿存储：按会话分文件的 `.json` 原子写（`.tmp` + rename） | TODO | `src/redline/drafts.ts` |
+| M2-04 | 能力判定 a：`assistant/message` → `canRewrite:false` + `assistant-immutable` | DONE | → 面：`src/redline/eligibility.ts` 的 `ability()`；`assistant/message` → `canRewrite:false` + `blockReason:'assistant-immutable'`；`tests/edit/eligibility.spec.ts` 逐条锁定（含"被遮蔽 + 助手消息同时命中 → 助手优先"） |
+| M2-05 | 能力判定 b：被遮蔽的原始节点 → `canRewrite:false` + `shadowed-by:#seq` | DONE | → `shadowed:true` → `canRewrite:false` + `blockReason:'shadowed'`；**不给任何动作**（用户 2026-10-02「只有编辑」） |
+| M2-06 | 能力判定 c：替换体（当前可见）→ `canRewrite:true`（**连改可用的关键**） | DONE | → `isReplacement:true` 的行 `canRewrite:true` —— 这是"面板里改了还能再改"的依据；单测锁定 |
+| M2-07 | 能力判定 d：被压缩埋掉 → 只能批注 + `compacted-region` | DONE | → `compacted:true` → `canRewrite:false` + `blockReason:'compacted'`；**不给动作只给一句原因**（旧写的"只能批注"已随 D18 作废） |
+| M2-08 | 能力判定 e：工具结果可编辑范围（内容文本 + `isError`；不得改工具名/参数结构） | DONE | → 工具结果可改写范围 = 结果文本 + `isError`（`checkChange` 把 `isError` 的翻转也算实质改动，单测锁定）；工具名/参数不在可写面内 |
+| M2-09 | 草稿存储：按会话分文件的 `.json` 原子写（`.tmp` + rename） | DONE | → `src/redline/drafts.ts`（纯：记录形状/覆盖/丢弃/净化文件名/坏文件报错）+ 宿主侧 `writeTable()` 原子写（`.tmp-<pid>-<t>` + rename）。`tests/edit/drafts.spec.ts` 15 条 |
 | M2-10 | 轮次边界检查：open turn → 拒绝写会话类动作 + `turn-open` | TODO | `src/redline/write.ts` |
-| M2-11 | `apply`：组装替换事件（目标 = 当前可见 seq、保留遮蔽来源、append 到日志尾） | TODO | `src/redline/write.ts` |
-| M2-12 | `apply`：`sourceEventSeqs` 规则（覆盖被遮蔽节点；**assistant 不带**） | TODO | `src/redline/write.ts` |
-| M2-13 | `annotate`：追加带"作废范围"的普通 user 消息（结构化头部，非伪造宿主内容） | TODO | `src/redline/write.ts` |
-| M2-14 | `inject`：固定块正文作为普通消息追加（重注入入口） | TODO | `src/redline/write.ts` |
-| M2-15 | 版本历史查询：读全量日志 → 家族内每版（seq/时间/正文/类型） | TODO | `src/redline/history.ts` |
-| M2-16 | `apply.rollback`：目标 = 当前可见节点 → 追加替换使可见内容 = 选定版本 | TODO | `src/redline/write.ts` |
-| M2-17 | V8 未通过时的降级：读不到正文 → `history-unavailable`，**禁止用 80 字预览冒充** | TODO | `src/redline/history.ts` |
-| M2-18 | 固定块存储：`invariants`（标签/正文/作用域/版本/退休） | TODO | `src/redline/invariants.ts` |
-| M2-19 | 固定块作用域 workspace 级（新会话可见）+ 漂移检查（逐字比对当前 surface） | TODO | `src/redline/invariants.ts` |
+| M2-11 | 【作废】~~`apply`：组装替换事件（目标 = 当前可见 seq、保留遮蔽来源、append 到日志尾）~~ —— apply 已被硬约束删除（保存只写本地、唯一写入点是开子会话） | DONE | → 作废依据见 M2-34 |
+| M2-12 | 【作废】~~`apply`：`sourceEventSeqs` 规则（覆盖被遮蔽节点；**assistant 不带**）~~ —— 同上：没有 replace，就没有 sourceEventSeqs 规则要落 | DONE | → 作废依据见 M2-34 |
+| M2-13 | 【作废】~~`annotate`：追加带"作废范围"的普通 user 消息（结构化头部，非伪造宿主内容）~~ —— 批注已删（docs/11 D18/D19：行上只有「编辑」） | DONE | → 作废依据见 M2-34 |
+| M2-14 | 【作废】~~`inject`：固定块正文作为普通消息追加（重注入入口）~~ —— 固定块/重注入已删（docs/11 D14） | DONE | → 作废依据见 M2-34 |
+| M2-15 | 【作废】~~版本历史查询：读全量日志 → 家族内每版（seq/时间/正文/类型）~~ —— 版本历史已删（docs/11 D19：界面不提供回滚） | DONE | → 作废依据见 M2-34 |
+| M2-16 | 【作废】~~`apply.rollback`：目标 = 当前可见节点 → 追加替换使可见内容 = 选定版本~~ —— 回滚已删（docs/11 D19） | DONE | → 作废依据见 M2-34 |
+| M2-17 | 【作废】~~V8 未通过时的降级：读不到正文 → `history-unavailable`，**禁止用 80 字预览冒充**~~ —— 随版本历史一起删除（D19） | DONE | → 作废依据见 M2-34 |
+| M2-18 | 【作废】~~固定块存储：`invariants`（标签/正文/作用域/版本/退休）~~ —— 固定块已删（docs/11 D14） | DONE | → 作废依据见 M2-34 |
+| M2-19 | 【作废】~~固定块作用域 workspace 级（新会话可见）+ 漂移检查（逐字比对当前 surface）~~ —— 漂移检查已删（docs/11 D14） | DONE | → 作废依据见 M2-34 |
 | M2-20 | 计数与增量：事件数 / 字节（为"不膨胀"提供可核对数字） | TODO | `src/redline/metrics.ts` |
-| M2-21 | 测试 A1–A10（读模型/分类/能力判定/草稿/边界）先红后绿 | TODO | `tests/edit/**` |
-| M2-22 | 测试 A11–A16（固定块跨会话、漂移、应用、批注、**回滚逐字相等**） | TODO | `tests/edit/**` |
-| M2-23 | 测试 A17（按钮集合按事件类型锁定，**反向验证会红**） | TODO | `tests/edit/**` |
-| M2-24 | 测试 A18–A24（降级/失败码/压缩体检/团队 op 转发/服务缺失返回 `null`） | TODO | `tests/channel/**` |
-| M2-25 | 反向验证全表执行（逐条改坏 → 确认红 → 改回），结果贴 `docs/05` §6 | TODO | `test/**`、`docs/05-test-plan.md` |
+| M2-21 | 测试 A1–A10（读模型/分类/能力判定/草稿/边界）先红后绿 | DONE | → 读模型/全文/能力判定/草稿/边界：`tests/edit/{drafts,fulltext,eligibility,namespace}.spec.ts` **先红后绿**（新建时 3 个文件全红：模块不存在） |
+| M2-22 | 【作废】~~测试 A11–A16（固定块跨会话、漂移、应用、批注、**回滚逐字相等**）~~ —— 所测功能（固定块/漂移/应用/批注/回滚）已全部删除（D14/D18/D19） | DONE | → 作废依据见 M2-34 |
+| M2-23 | 测试 A17（按钮集合按事件类型锁定，**反向验证会红**） | DONE | → `tests/edit/eligibility.spec.ts` 的 A17 矩阵（7 类行 × 动作集合 + 4 个稳定原因键）；**反向验证**：去掉 `assistant/message` 判定 → 立刻红 |
+| M2-24 | 【作废】~~测试 A18–A24（降级/失败码/压缩体检/团队 op 转发/服务缺失返回 `null`）~~ —— 团队 op 转发属 M5（docs/10 §8）；压缩体检也随界面减法删除（D14） | DONE | → 作废依据见 M2-34 |
+| M2-25 | 反向验证全表执行（逐条改坏 → 确认红 → 改回），结果贴 `docs/05` §6 | DONE | → M2 的 8 个变异全部变红后恢复即绿（原始输出见 docs/11 D35）；M1 的 11 个面见 M1-12 |
 | M2-26 | 计数契约自测：S1/S1.1 口径与界面数字一致 | TODO | `tests/edit/**` |
-| M2-27 | 错误码 → 人话映射（`bad-range`/`no-change`/`turn-open`/`assistant-immutable`/`shadowed`/`history-unavailable`） | TODO | `src/redline/errors.ts` |
+| M2-27 | 错误码 → 人话映射（`bad-range`/`no-change`/`turn-open`/`assistant-immutable`/`shadowed`/`history-unavailable`） | DONE | → 稳定错误码表落在 `src/shared/redline-errors.ts`（`redline/empty-content` / `no-change` / `not-live` / `shadowed` / `bad-request` …）+ 客户端查找键 `isRedlineErrorCode`；人话文案由客户端按 `docs/03` R4.7 出（宿主只发码） |
 | M2-28 | 【D10 已取消】~~冻结快照记录~~（切点/条目数/备注/版本那一层整体删除，不再实现） | DONE | → `docs/11` D10（不写代码） |
+| M2-29 | **本地改动存储**（纯逻辑）：一条一行、再保存**覆盖**、丢弃、通知"与当前生效版本逐字比较"、文件名净化、坏文件**报错不静默** | DONE | → `src/redline/drafts.ts`（纯，不 import `node:*`）；`tests/edit/drafts.spec.ts` 15 条先红后绿；反向验证 3 条（本地改动不生效 / 叠加 / 改回与原文比）全部变红 |
+| M2-30 | **全文读取**（纯逻辑）：按底层事件类型取完整正文与思考文本 + 工具结果的 `isError`；**绝不等于 80 字预览** | DONE | → `src/redline/inspect.ts`；`tests/edit/fulltext.spec.ts` 先红后绿（>200 字 / 4 段逐字往返、并直接与 `firstText` 的 80 字结果对比）；反向验证：把实现退回 `slice(0,80)+collapse` → 立刻红。⚠️ **不 import** 官方 `extractSessionEventText`（profile 层解析不到该包；inlining 会复制一份）→ `docs/01` F43 |
+| M2-31 | **能力判定按底层事件类型**（纯逻辑）：7 类行的动作集合 + 4 个稳定原因键；工具结果属"高级" | DONE | → `src/redline/eligibility.ts`（`ability()` / `rowActions()`）；`tests/edit/eligibility.spec.ts` 的 A17 矩阵 |
+| M2-32 | **通道 op**：`node.read`（全文，走 `sessionQuery`）/ `draft.list` / `draft.update` / `draft.drop`；**只写我们自己的文件** | DONE | → `src/host/redline-channel.ts` 的 `OPS` 表；`tests/channel/redline-ops.spec.ts` 先红后绿。**硬约束的证据**：每条保存用例都断言 `session.append` 调用数 = 0 **且** `session.seq`（日志偏移）没有增长；反向验证：让 `draft.update` 顺手 append 一条事件 → 立刻红 |
+| M2-33 | M2 收尾：`tsc` / `tsdown` / 自有 lane / 全 lane / `namespace-contract` / `oxlint` 全绿 | DONE | → `tsc --noEmit` exit 0 · `tsdown` exit 0 · 自有 lane **6 文件 67/67** · 全 lane 见 docs/11 D35 · `namespace-contract` 24 项 0 失败 · `oxlint` 0 error |
+| M2-34 | **作废批次说明**（M2-11…M2-19 / M2-22 / M2-24）：这些行写于 2026-10-01，随后被用户的裁定删除或移阶段 —— 见 `docs/11` **D14**（固定块/漂移/重注入）、**D15**（所有保存都是临时保存 ⟹ 没有 apply）、**D18**（批注删除）、**D19**（行上只有「编辑」）、**D10**（冻结删除）；团队/压缩 op 属 **M5** | DONE | → `docs/11` D10/D14/D15/D18/D19（不写代码） |
+
 
 ---
 
@@ -365,17 +372,17 @@
 | 阶段 | 项数 | DONE | DOING | TODO | WAIT🙋 |
 |---|---|---|---|---|---|
 | X 横切 | 8 | **2** | 4 | 1 | 1 |
-| M0 文档集 | 25 | **25** | 0 | 0 | 0 |
-| M0.5 交互 demo | 82 | **81** | 0 | 0 | 1 |
+| M0 文档集 | 22 | **22** | 0 | 0 | 0 |
+| M0.5 交互 demo | 88 | **87** | 0 | 0 | 1 |
 | M1 骨架与身份 | 14 | **11** | 0 | 2 | 1 |
-| M2 编辑面 | 28 | **1** | 0 | 27 | 0 |
+| M2 编辑面 | 34 | **29** | 0 | 5 | 0 |
 | M3 右侧界面 | 23 | **1** | 0 | 21 | 1 |
 | M4 轮次联动 | 4 | **0** | 0 | 4 | 0 |
 | M4.5 能力验证 | 19 | **0** | 0 | 16 | 3 |
 | M5 编排 | 28 | **1** | 0 | 26 | 1 |
 | M6 入口与发布 | 12 | **0** | 0 | 12 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **250** | **125** | **4** | **113** | **8** |
+| **合计** | **256** | **153** | **4** | **91** | **8** |
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
 > 当前卡点：**M1 的收口动作 = 授权包①（装进 web profile + 你重启，见 M1-01）**；
