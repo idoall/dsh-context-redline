@@ -858,7 +858,8 @@ function rowHtml(node) {
         acts.push(`<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 16))}…</span>`);
       }
       if (draftOf(node.seq)) {
-        acts.push('<span class="chip-draft" title="已保存在插件本地：当前会话的模型看不到。点「开启子会话」时，改后的正文会逐字带进那个新会话的第一句话">已保存（本地）</span>');
+        /* ⚠️ 用户 2026-10-02：`已改（本地）` 与 `已保存（本地）` **说的是同一件事** ⟹ 只留 `#seq` 旁边那一个
+         *（rowHtml 顶部已经渲染），这里只放动作本身。 */
         acts.push(`<button class="btn sm ghost" data-act="dropDraft" data-seq="${node.seq}" data-explain="act.edit">丢弃这条改动</button>`);
       }
       return `<div class="actions" data-rowactions="${node.seq}">

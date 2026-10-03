@@ -908,8 +908,13 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   S.drafts[target.seq] = { seq: target.seq, kind: 'edit', text: '（本地改动）先跑全量测试', reasoning: '', err: false, cat: 'user', name: '' };
   api.render();
   const rows = registry.get('cardBrowser').innerHTML;
-  check('本地改动：行上给「已保存（本地）」标记 + 「丢弃这条改动」，且**没有**「应用到会话」',
-    /已保存（本地）/.test(rows) && /data-act="dropDraft"/.test(rows) && !/data-act="apply"/.test(rows), rows.slice(0, 120));
+  check('本地改动：行上给**一个**标记「已改（本地）」+「丢弃这条改动」，且**没有**「应用到会话」',
+    /已改（本地）/.test(rows) && /data-act="dropDraft"/.test(rows) && !/data-act="apply"/.test(rows), rows.slice(0, 140));
+  /* ⚠️ 用户 2026-10-02：「已改（本地）」和「已保存（本地）」是不是重复了？只留一个。
+   * ⟹ 同一行只能出现**一次**标记，且不许再出现"已保存（本地）"这个旧说法。 */
+  check('本地改动：标记只出现**一次**（不许「已改（本地）」+「已保存（本地）」并存）',
+    (rows.match(/已改（本地）/g) || []).length === 1 && !/已保存（本地）/.test(rows),
+    `已改=${(rows.match(/已改（本地）/g) || []).length} 已保存=${(rows.match(/已保存（本地）/g) || []).length}`);
   api.rowAct({ dataset: { act: 'dropDraft', seq: String(target.seq) } });
   registry.get('modalOk').onclick();
   check('丢弃本地改动：只清本地，不碰会话（applied 仍为空）', !S.drafts[target.seq] && S.applied.length === 0);
