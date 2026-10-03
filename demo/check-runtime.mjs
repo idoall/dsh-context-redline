@@ -94,7 +94,7 @@ const window = { __trendSeries: [], matchMedia: (q) => ({ matches: /max-width:\s
 const exposed = `;return { S:()=>S, setS:(v)=>{S=v}, initial, REQUESTS, NODES, TOTAL_TURNS, CATS,
   render, selectReq, trendCellAct, trendItems, applyTrendScale, doApply, submitEditor, rowAct, familyOf, versionsOf,
   trendTipRows, showTrendTip, hideTrendTip, EVENTS, markersOfReq, markersOfBar, firstReqAtOrAfter, openDrawer, closeDrawer,
-  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editorHtml, orchAct, nodeOf, rowHtml, BAR_W, BAR_GAP, spanW, chartW, focusCellOf };`;
+  nodesOfReq, markerOf, metricOf, reqsOfTurn, lastOfTurn, turnSteps, goneMapOf, ability, isReplacement, EXPLAIN, CATS, applyTheme, editorHtml, orchAct, nodeOf, rowHtml, BAR_W, BAR_GAP, spanW, chartW, focusCellOf, turnOfEl };`;
 
 /**
  * ⚠️ rAF 必须**后置**（排队，手动 flush），不能同步执行。
@@ -985,6 +985,42 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('子会话行：身份行右侧有 ›（状态 + 箭头，一眼知道可进）', /class="chev"[^>]*>›</.test(card));
   S.children = []; api.render();
   check('块不许加彩色焦点标记（无记录时同样）', !/is-focus/.test(registry.get('cardOrch').innerHTML));
+}
+
+/* ---------------- 上下文趋势框：照上游 dsh-context 抄来的**结构**（用户 2026-10-02「照抄它这一块区域」） ----------------
+ * 只锁"抄没抄对"的机械事实：① 标题旁一行短副标题（不再有那行 ~200 字长说明）；② 纵轴 5 档 + 虚线网格（总计模式）；
+ * ③ 轮号格交替底色；④ 柱子带 data-turn（hover 联动的依据）与 --i（逐根进入动画的延迟）；⑤ 长解释由「?」承载。 */
+{
+  const S = api.S();
+  S.trendGran = 'turn'; S.trendMode = 'total'; S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; api.render();
+  const html = registry.get('cardTrend').innerHTML;
+  check('趋势框：标题旁是**一行短副标题**（含"聚焦"与"刻度"），不再是那行 ~200 字长说明',
+    /class="hint"[^>]*>按轮次（共 \d+ 轮）[^<]*· 刻度 = <b id="trendAxisTopInline">/.test(html)
+    && !/柱体<b>按类别分色堆叠<\/b>：段高/.test(html), html.slice(0, 120));
+  check('趋势框：纵轴 5 档刻度齐全（上 / 3q / 中 / 1q / 0）',
+    ['trendAxisTop', 'trendAxisQ3', 'trendAxisMid', 'trendAxisQ1', 'trendAxisBottom'].every((id) => html.includes(`id="${id}"`)));
+  check('趋势框：总计模式有 4 条虚线网格 + 1 条实线零线', (html.match(/class="gl"/g) || []).length === 4
+    && (html.match(/class="gl zero"/g) || []).length === 1, `gl=${(html.match(/class="gl/g) || []).length}`);
+  S.trendMode = 'delta'; api.render();
+  const dHtml = registry.get('cardTrend').innerHTML;
+  check('趋势框：增量模式不画横向网格（零线由 .zeroline 表达，照上游 lc-grid-zero）',
+    !/class="gl"/.test(dHtml) && /class="zeroline"/.test(dHtml));
+  S.trendMode = 'total'; S.trendGran = 'step'; api.render();
+  const sHtml = registry.get('cardTrend').innerHTML;
+  check('趋势框：轮号格有**交替底色**（tcell alt）', /class="tcell alt"/.test(sHtml));
+  check('趋势框：柱子带 data-turn（hover 联动的依据）与 --i（逐根进入动画延迟）',
+    /class="tbar[^"]*" data-i="0" data-seq="[^"]*" data-explain="trend.pick"/.test(sHtml.replace(/\n\s*/g, ' '))
+    && /style="width:14px;--i:0"/.test(sHtml), sHtml.slice(sHtml.indexOf('class="tbar'), sHtml.indexOf('class="tbar') + 150));
+  {
+    const barEl = { dataset: { seq: String(api.REQUESTS[0].seq) } };              // 按轮次模式：只有 data-seq
+    const cellEl = { dataset: { seq: String(api.REQUESTS[0].seq) } };
+    check('趋势框 hover 联动：轮号解析对**两种粒度**都成立（只有 data-seq 也能解析出轮号）',
+      api.turnOfEl(barEl) === api.REQUESTS[0].turn && api.turnOfEl(cellEl) === api.REQUESTS[0].turn,
+      `bar=${api.turnOfEl(barEl)} cell=${api.turnOfEl(cellEl)} 期望=${api.REQUESTS[0].turn}`);
+  }
+  check('趋势框：长解释由标题旁的「?」承载（EXPLAIN 里有 trend.read）',
+    /data-help="trend.read"/.test(sHtml) && !!api.EXPLAIN['trend.read'] && /一句话/.test(api.EXPLAIN['trend.read'].what));
+  S.trendGran = 'turn'; api.render();
 }
 
 /* ---------------- 趋势图下方的「选中态状态行」（照参考插件 dsh-context 的 RequestDetail 头行） ----------------

@@ -41,6 +41,11 @@ for (const c of jsClasses) {
 /* 3) 讲解词典契约 */
 const explainKeys = new Set([...js.matchAll(/^\s*'([\w.]+)':\s*\{/gm)].map((m) => m[1]));
 const usedExplain = uniq([...js.matchAll(/data-explain="([^"]+)"/g)].map((m) => m[1]).filter((k) => !k.includes('$')));
+/* ⚠️ **「?」引用的讲解词也必须存在**（`data-help` 与 `data-explain` 是两套属性：
+ * 前者是标题旁那个小问号、后者是讲解模式下元素左上角的序号）——
+ * 少一个键，用户点「?」就是空的，界面上看不出来。 */
+const usedHelp = uniq([...js.matchAll(/data-help="([^"]+)"/g)].map((m) => m[1]).filter((k) => !k.includes('$')));
+for (const k of usedHelp) if (!explainKeys.has(k)) problems.push(`「?」引用的讲解词不存在：${k}`);
 for (const k of usedExplain) {
   if (!explainKeys.has(k)) problems.push(`data-explain 没有讲解词：${k}`);
 }

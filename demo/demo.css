@@ -158,9 +158,12 @@ body {
 .trendwrap { display: flex; gap: 6px; align-items: stretch; }
 .axis { position: relative; width: 40px; height: 150px; padding-top: 18px; color: var(--dsw-alias-label-secondary); font-size: 11px; flex: none; }
 .axis span { position: absolute; right: 0; line-height: 1; }
-.axis span:nth-child(1) { top: 13px; }
-.axis span:nth-child(2) { top: 69px; }
-.axis span:nth-child(3) { top: 125px; }
+/* 纵轴 5 档：位置数值与上游 `.lc-axis-*` 相同（13 / 41 / 69 / 97 / 125） */
+.axis .at-top { top: 13px; }
+.axis .at-q3  { top: 41px; }
+.axis .at-mid { top: 69px; }
+.axis .at-q1  { top: 97px; }
+.axis .at-bot { top: 125px; }
 /* 定位上下文：tooltip 必须挂在**滚动容器外面**——放里面会撑大 scrollWidth，
    让横向滚动条在每次 hover 时开合、整张卡片跟着跳（参考插件原话）。 */
 .trendpos { position: relative; flex: 1; min-width: 0; }
@@ -615,3 +618,22 @@ body.explain [data-explain].explain-num::after {
 .trenddetail .td-metric.down { color: var(--ds-color-orange); border-color: color-mix(in srgb, var(--ds-color-orange) 40%, transparent); }
 .trenddetail .td-sep { width: 1px; height: 12px; background: var(--dsw-alias-border-l2); }
 .trenddetail .td-cat { font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+/* ===== 上下文趋势：照上游 dsh-context 的 trendChart 结构与交互（颜色仍用我们的令牌） ===== */
+/* 虚线网格（上游 .lc-grid）：铺满可视宽度、不挡鼠标 */
+.grid { position: absolute; left: 0; right: 0; top: 0; height: 112px; pointer-events: none; z-index: 0; }
+.grid .gl { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--dsw-alias-border-l2); }
+.grid .gl.zero { border-top-style: solid; border-top-color: color-mix(in srgb, var(--dsw-alias-label-secondary) 45%, transparent); }
+
+/* 轮号格交替底色（上游 TURN_FILLS 的观感）——两格一循环，让"分段"一眼可辨 */
+.tcell.alt { background: var(--dsw-alias-bg-layer-2); }
+.tcell.alt:hover { background: var(--dsw-alias-interactive-bg-hover); }
+
+/* hover 联动（上游 activeTurn：悬停某一轮 → 那一轮的柱子 + 那一格一起亮） */
+.tbar.turn-hover { background: var(--dsw-alias-interactive-bg-hover); }
+.tcell.turn-hover { border-color: var(--dsw-alias-brand); color: var(--dsw-alias-label-primary); }
+
+/* 柱体逐根进入动画（上游 lc-bar-in）：只在切粒度 / 切模式 / 切自适应时播 */
+@keyframes tbar-in { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+.tbar.enter .tbar-fill { transform-origin: 50% 100%; animation: tbar-in .35s cubic-bezier(.4, 0, .2, 1) calc(var(--i, 0) * 15ms) backwards; }
+.tbar.enter.tbar-diverge, .tbar.enter .tbar-diverge { animation: none; }   /* 增量模式两臂各自定位，不叠整体缩放 */
