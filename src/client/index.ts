@@ -26,7 +26,6 @@ import { createElement as h } from 'react'
 import { DICT_EN, DICT_ZH } from './i18n'
 import { registerContextCommand } from './command'
 import { makeContextModal } from './components/contextModal'
-import { makeOverviewButton } from './components/overviewButton'
 import { makeOverviewPanel } from './components/overviewPanel'
 import { makeSettingsCard, makePluginConfigCard } from './components/settingsCard'
 import { modalStoreOf } from './modalStore'
@@ -129,19 +128,13 @@ function apply(ctx: ClientCtx): void {
   })
 
   // The Context Dashboard (see components/overviewPanel.tsx): the cross-session
-  // insight surface. The entry is a footer action — the harness stacks those
-  // directly above Settings on the sidebar foot; the overlay it opens renders
-  // from the frame-wide shell.overlay seat, and the module store
-  // (overviewStore.ts) carries the open flag between the two registrations.
-  // Both seats are root-scope list slots present since the supported baseline.
-  const OverviewButton = makeOverviewButton(kit, settings)
-  ctx.slots.inject('sidebar.footer.action', () => {
-    return ctx.slots.register(
-      { name: 'sidebar.footer.action', id: 'redline-overview', order: 10, locale: NS },
-      // Root-scope seats: the owner props (wide, the standard kit) arrive untyped.
-      props => h(OverviewButton, props as unknown as Parameters<typeof OverviewButton>[0]),
-    )
-  })
+  // insight surface. ⚠️ **The sidebar-foot ENTRY was removed on 2026-10-05** ——
+  // the user said 「左侧抽屉的底部，我们不需要上下文批改的这个提示。可以去掉」
+  // （the footer chip sat directly above Settings in the left drawer）。
+  // The overlay below stays registered: it is the panel itself, and the open flag
+  // still rides `overviewStore.ts`, so wiring a different opener later needs no
+  // panel work. NOTE: with no opener registered today the overlay is unreachable
+  // — flagged in `docs/10` M3-35 as a decision (keep for later wiring / remove).
   const OverviewPanel = makeOverviewPanel(ctx, kit)
   ctx.slots.inject('shell.overlay', () => {
     return ctx.slots.register(

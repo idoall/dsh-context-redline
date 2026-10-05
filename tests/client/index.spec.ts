@@ -199,20 +199,15 @@ describe('client entry: conversation.input.overlay slot', () => {
 })
 
 describe('client entry: Context Dashboard seats', () => {
-  test('registers the sidebar-foot entry and the frame overlay, both rendering', async () => {
+  test('registers the frame overlay; the sidebar-foot ENTRY was removed on request', async () => {
     const ctx = new TestClientCtx()
     applyTo(ctx)
 
-    const actions = ctx.slots.of('sidebar.footer.action')
-    assert.equal(actions.length, 1)
-    assert.equal(actions[0].registration.name, 'sidebar.footer.action')
-    assert.equal(actions[0].registration.id, 'redline-overview')
-    assert.equal(actions[0].registration.locale, 'dsh-context-redline')
-    const actionEl = actions[0].component({ wide: true }) as ReactElement
-    assert.equal((actionEl.type as { name: string }).name, 'OverviewButton')
-    const actionMount = await mount(actionEl)
-    assert.equal(query(actionMount.container, '.redline-ov-entry-label').textContent, 'Context Redline · Insights')
-    await actionMount.unmount()
+    // ⚠️ 2026-10-05 用户：「左侧抽屉的底部，我们不需要上下文批改的这个提示。可以去掉」
+    // The footer chip sat directly above Settings in the left drawer; it is gone.
+    // The overlay below stays registered (it is the panel itself) — see docs/10 M3-35
+    // for the open question of what should open it, if anything.
+    assert.equal(ctx.slots.of('sidebar.footer.action').length, 0, '底部入口不再注册')
 
     const overlays = ctx.slots.of('shell.overlay')
     assert.equal(overlays.length, 1)
@@ -227,16 +222,15 @@ describe('client entry: Context Dashboard seats', () => {
     ctx.dispose()
   })
 
-  test('the entry opens the overlay through the shared store', async () => {
+  test('the overlay stays registered (no opener wired today — docs/10 M3-35)', async () => {
     const ctx = new TestClientCtx()
     applyTo(ctx)
-    const actionEl = ctx.slots.of('sidebar.footer.action')[0].component({ wide: true }) as ReactElement
-    const actionMount = await mount(actionEl)
-    await click(query(actionMount.container, 'button.redline-ov-entry'))
+    // 入口已去掉，所以今天没有东西能打开它（真机上也点不到）；这条钉住"面板本身还在、
+    // 且默认是关着的"，将来接一个新的打开方式时只需要动 opener，不用动面板。
+    assert.equal(ctx.slots.of('sidebar.footer.action').length, 0)
     const overlayEl = ctx.slots.of('shell.overlay')[0].component({}) as ReactElement
     const overlayMount = await mount(overlayEl)
-    assert.ok(overlayMount.container.textContent!.includes('The session list is unavailable'))
-    await actionMount.unmount()
+    assert.equal(overlayMount.container.textContent, '', 'closed by default')
     await overlayMount.unmount()
     // Reset for other specs sharing the module store.
     const { overviewStore } = await import('../../src/client/overviewStore')
