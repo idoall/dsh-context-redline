@@ -251,6 +251,34 @@ describe('every save is temporary (the hard constraint)', () => {
   })
 })
 
+describe('the read-only probe (M4.5 包 A；真机调用需重启，见 docs/01 F46)', () => {
+  test('probe.services is a KNOWN op — it answers structure, not "unknown-op"', async () => {
+    const ops = await boot()
+    const reply = await call(ops, { op: 'probe.services', sessionId: ops.sessionId })
+    assert.equal(reply.ok, true, JSON.stringify(reply))
+    const v = value(reply) as Record<string, unknown>
+    assert.ok(typeof v.present === 'object' && v.present !== null, 'present 是对象')
+    assert.ok(Array.isArray(v.subagentsProviders), 'providers 是数组')
+    assert.ok(typeof v.subagentsHasStartContinuable === 'boolean', 'startContinuable 是布尔')
+    assert.equal(v.logReadable, true, '这个假会话的日志读得到')
+    assert.equal(typeof v.eventCount, 'number', '报了事件条数')
+  })
+
+  test('it reads and writes NOTHING: no draft file, no session append', async () => {
+    const ops = await boot()
+    await call(ops, { op: 'probe.services', sessionId: ops.sessionId })
+    assert.equal(existsSync(draftPath(ops)), false, '探针不写草稿')
+    assert.deepEqual(ops.sessionWrites, [], '探针不碰会话')
+  })
+
+  test('an unreadable session is reported as unreadable, not silently "fine"', async () => {
+    const ops = await boot()
+    const v = value(await call(ops, { op: 'probe.services', sessionId: 'somewhere-else' })) as Record<string, unknown>
+    assert.equal(v.logReadable, false, '读不到就说读不到')
+    assert.equal(v.eventCount, null)
+  })
+})
+
 describe('the turn boundary (docs/03 R4.3: the demo disables 保存 mid-turn)', () => {
   test('turnState answers known+closed for a hosted, finished session', async () => {
     const ops = await boot()
