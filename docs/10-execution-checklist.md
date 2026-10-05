@@ -314,7 +314,7 @@
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
 | M45-01 | 包 A（只读）：`ctx.agents.get(sessionId)` 对当前会话是否可得（V3） | DONE | → ✅ **V3 真机答完（2026-10-05）**：`ctx.agents` 在册（`get`/`create`/`resume`/`list`/`roots`/`isOwnedBy`/`announce`…34 个成员）；**`agents.get(id)` 的真假 = "本进程有没有加载这个会话"**：已加载的 `session-a05f659e`（4110 事件、闲置 2 天）→ **true**；只在磁盘上的 4 个会话 → **false**。⟹ **"闲置"不影响拿得到，"不在本进程"才拿不到** —— 与 UI 里 `known:false`（只能查看）要表达的完全一致，也解释了为什么我在面板上拿 4 天前的老会话试不出那一态（面板显示的会话已被加载）。见 F48 |
-| M45-02 | 包 A：能否读到替换前的**原文**（V8 关键） | TODO | 探针脚本 |
+| M45-02 | 包 A：能否读到替换前的**原文**（V8 关键） | TODO | 探针脚本  ⚠️ **2026-10-05 判定：这条不能靠只读验** —— 探了两个会话（4 / 4599 事件），日志里**带 `sourceEventSeqs` 的事件数都是 0**（本插件从不写会话 ⟹ 没有"被遮蔽的原文"可读）⟹ 要用**专用可弃会话**先真替换一次，再读回原文（写会话组，见 `docs/01` F49 ④） |
 | M45-03 | 包 A：`subagents.getProvider('fork')` 是否在册、`startContinuable` 是否可用（V12） | DONE | → ✅ **静态半边完成（2026-10-04）**：fork provider 有 `prepareContinuable`（**方法存在即能力**，F26）、`inheritsParentContext=true`、五项能力全 true（含 `agentOptions` —— M5 指定模型/推理档在 fork 路径上成立）；`spawn` provider 无 `prepareContinuable`、`inheritsParentContext=false`。见 `docs/01` **§F45**。**剩真机半边**：`subagents.getProvider('fork')` 在运行实例里确实在册（包 A） ✅ **真机半边完成（2026-10-05，`probe.services`）**：`subagents` 在册，**`getProvider('fork')` 与 `getProvider('spawn')` 都拿得到**，且 `startContinuable` / `start` / `prepareContinuable` / `registerProvider` / `list` / `interruptByParent` / `listChildren` / `listDescendants` / `drainContinuable*` / `requireContinuations` / `observeActivation` / `assertCapabilities` 都在（27 个成员），见 `docs/01` **F48** |
 | M45-04 | 包 A：`agentTeam` 投影可读性（V10）+ `tryMembership` 对 Lead 的判定（V13） | TODO | 探针脚本 |
 | M45-05 | 🙋 包 B（一次授权）：在**专用可弃会话**里真跑 替换 → 再替换 → 回滚（V7） | WAIT🙋 | 专用会话日志 |
