@@ -43,7 +43,8 @@ export type { DefaultFileSort, DefaultGranularity, DefaultPlacement, DefaultTool
 export const SettingsSchema = z.object({
   // Loose: a stale persisted value degrades to the default instead of breaking the section.
   defaultPlacement: z.union(['all', 'tab', 'sidebar']).default('all').loose(),
-  defaultGranularity: z.union(['step', 'turn']).default('step'),
+  // demo 的趋势图默认是「按轮次」（用户 2026-10-05：按 demo 去执行）
+  defaultGranularity: z.union(['step', 'turn']).default('turn'),
   defaultTrendMode: z.union(['total', 'delta']).default('total').loose(),
   defaultToolSort: z.union(['size', 'count', 'name']).default('count').loose(),
   defaultFileSort: z.union(['count', 'latest', 'path']).default('count').loose(),

@@ -48,14 +48,14 @@ describe('createContextSettings defaults', () => {
     assert.deepEqual(s.store.getSnapshot(), {
       status: 'loading',
       placement: 'all',
-      granularity: 'step',
+      granularity: 'turn',
       mode: 'total',
       toolSort: 'count',
       fileSort: 'count',
       writable: false,
     })
     assert.equal(s.defaultPlacement(), 'all')
-    assert.equal(s.defaultGranularity(), 'step')
+    assert.equal(s.defaultGranularity(), 'turn')
     assert.equal(s.defaultTrendMode(), 'total')
     assert.equal(s.defaultToolSort(), 'count')
     assert.equal(s.defaultFileSort(), 'count')
@@ -89,7 +89,7 @@ describe('set', () => {
     const s = createContextSettings()
     let calls = 0
     s.store.subscribe(() => { calls++ })
-    s.set('defaultGranularity', 'step')
+    s.set('defaultGranularity', 'turn')
     assert.equal(calls, 0)
   })
 
@@ -98,7 +98,7 @@ describe('set', () => {
     let calls = 0
     s.store.subscribe(() => { calls++ })
     s.set('defaultGranularity', 'bogus')
-    assert.equal(s.defaultGranularity(), 'step')
+    assert.equal(s.defaultGranularity(), 'turn')
     assert.equal(calls, 0)
   })
 
@@ -233,7 +233,7 @@ describe('attach', () => {
       assert.deepEqual(s.store.getSnapshot(), {
         status: 'ready',
         placement: 'all',
-        granularity: 'step',
+        granularity: 'turn',
         mode: 'total',
         toolSort: 'count',
         fileSort: 'count',
@@ -250,7 +250,7 @@ describe('attach', () => {
       writable: false,
     }))
     assert.equal(s.defaultPlacement(), 'all')
-    assert.equal(s.defaultGranularity(), 'step')
+    assert.equal(s.defaultGranularity(), 'turn')
     assert.equal(s.defaultTrendMode(), 'total')
     assert.equal(s.defaultToolSort(), 'count')
     assert.equal(s.defaultFileSort(), 'count')
@@ -287,7 +287,7 @@ describe('attach', () => {
       writable: false,
     }))
     assert.equal(s.defaultPlacement(), 'all')
-    assert.equal(s.defaultGranularity(), 'step')
+    assert.equal(s.defaultGranularity(), 'step', '显式给的值（不是默认值）照样被接受')
     assert.equal(s.defaultTrendMode(), 'total')
     assert.equal(s.defaultToolSort(), 'count')
     assert.equal(s.defaultFileSort(), 'count')
@@ -300,7 +300,7 @@ describe('attach', () => {
     s.set('defaultTrendMode', 'delta')
     s.attach(new TestSettingsScope({ status: 'ready', value: { defaultFileSort: 'latest' }, writable: false }))
     assert.equal(s.defaultPlacement(), 'tab', 'the in-session choice survives a section without the field')
-    assert.equal(s.defaultGranularity(), 'step')
+    assert.equal(s.defaultGranularity(), 'turn')
     assert.equal(s.defaultToolSort(), 'size', 'the in-session tool sort survives a section without the field')
     assert.equal(s.defaultFileSort(), 'latest')
     assert.equal(s.defaultTrendMode(), 'delta', 'the in-session choice survives a section without the field')
@@ -312,10 +312,10 @@ describe('attach', () => {
     s.attach(scope)
     let calls = 0
     s.store.subscribe(() => { calls++ })
-    scope.emit({ status: 'ready', value: { defaultGranularity: 'turn' }, writable: true })
+    scope.emit({ status: 'ready', value: { defaultGranularity: 'step' }, writable: true })
     assert.equal(calls, 1)
-    assert.equal(s.defaultGranularity(), 'turn')
-    scope.emit({ status: 'ready', value: { defaultGranularity: 'turn', defaultTrendMode: 'delta' }, writable: true })
+    assert.equal(s.defaultGranularity(), 'step')
+    scope.emit({ status: 'ready', value: { defaultGranularity: 'step', defaultTrendMode: 'delta' }, writable: true })
     assert.equal(calls, 2)
     assert.equal(s.defaultTrendMode(), 'delta')
     scope.emit({ status: 'ready', value: { defaultFileSort: 'path' }, writable: true })
@@ -330,9 +330,9 @@ describe('attach', () => {
     scope.emit({ status: 'ready', value: { defaultFileSort: 'path' }, writable: false })
     assert.equal(calls, 6)
     assert.equal(s.store.getSnapshot().writable, false)
-    scope.emit({ status: 'ready', value: { defaultGranularity: 'step' }, writable: false })
+    scope.emit({ status: 'ready', value: { defaultGranularity: 'turn' }, writable: false })
     assert.equal(calls, 7)
-    assert.equal(s.defaultGranularity(), 'step')
+    assert.equal(s.defaultGranularity(), 'turn', '这次 emit 真的把值从 step 改成了 turn ⟹ 会通知')
   })
 
   test('an identical scope snapshot does not notify listeners', () => {
@@ -358,6 +358,6 @@ describe('attach', () => {
     s.store.subscribe(() => { calls++ })
     scope.emit({ status: 'ready', value: { defaultGranularity: 'turn' }, writable: true })
     assert.equal(calls, 0)
-    assert.equal(s.defaultGranularity(), 'step')
+    assert.equal(s.defaultGranularity(), 'turn')
   })
 })

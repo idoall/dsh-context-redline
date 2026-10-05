@@ -294,7 +294,7 @@
 | M4-03 | 目标会话判据落地（"当前标签页选中的会话" vs agent 在跑的会话，必须可指认） | DONE | → **"可指认"由既有读数满足**：统计卡的 `轮数 / 步数` 两格就是该会话的形状（与目标会话日志里的 turn/step 条数对得上），加上趋势卡标题的 `按轮次（共 N 轮）`（本轮新加）与浏览器 meta 的 `第 t 轮 · 第 s 步`。⚠️ **两处如实记录**：① **demo 与插件都没有**"本会话共 N 事件 / 最后 seq"这种会话号数字条 —— `AGENTS.md` §2.5 的判据①写了它，属于**陈旧说法**，已在本次一并改成真实判据；② demo 的统计卡是 **3 格**（模型可见条目 / 用户消息 / 注入内容）+ 一句 `本步可见 N 条 · ≈X tokens`，插件是 **7 格**（轮数/步数/人类输入/工具调用/缓存命中/费用/子 Agent 费用）—— `docs/03` 只写了"左列：上下文统计/趋势/事件"，**没有钉住卡内格子**，所以这条差异另立 **M4-07**（要照 demo 换成 3 格就是改交互，留给人工门禁） |
 | M4-04 | 产物重打后硬刷新即生效（不重启 `dsh web`）—— 留证据 | DONE | → ✅ **硬刷新即生效已实证（2026-10-04）**：改完 `src/client/i18n.ts` 的入口标签 → `tsdown` 重打 `lib/client.js`（grep 到「上下文批改」）→ **新开一次页面加载**（headless，**未重启** `dsh web`）就看到了新页签名，而进程仍是重启后的那个 pid ⟹ **客户端半边由宿主按需从磁盘读**（`docs/01` F16）在真机上成立 |
 | M4-05 | **趋势卡的规模读数**（`docs/03` R1.5 的硬要求 + demo 的 `granLabel`）：标题旁写明 `按轮次（共 N 轮）` / `按步骤（共 N 次请求）` —— 用户要能一眼看出"有多少轮" | DONE | → `src/client/components/contextView.tsx` 新增 `.redline-card-scale`（**不是** `.redline-card-sub`：那是"聚焦"那一行，混用会让"没聚焦⇒没有副标题"的契约失真 —— 这一点是改完被上游规格抓到才分开的）；i18n `trend.gran.turn` / `trend.gran.step`；轮数取最后一条请求的 turn（与 demo 同源）。护栏：上游 `client` lane 的 `the adaptive switch rides the trend title…`（已把断言改成"读数跟着粒度走"）。⚠️ 同上：断言目前在非门禁 lane |
-| M4-06 | **默认粒度口径**（demo/R1.5 = **按轮次**，插件 = **按步骤**）：把默认值改成 `turn` 会让 ~18 处上游断言（`settings.spec` 的默认值矩阵、`index.spec`）跟着改 | TODO | → **本轮实测**：改 `src/host/settings.ts` 的 schema 默认 + `src/client/settings.ts` 的预置默认 → 18 条红；已**回退**并记成一条有界任务。要不要跟 demo 一致，留给人工门禁定夺（`docs/11` D37） |
+| M4-06 | **默认粒度口径**（demo/R1.5 = **按轮次**，插件 = **按步骤**）：把默认值改成 `turn` 会让 ~18 处上游断言（`settings.spec` 的默认值矩阵、`index.spec`）跟着改 | DONE | → **本轮实测**：改 `src/host/settings.ts` 的 schema 默认 + `src/client/settings.ts` 的预置默认 → 18 条红；已**回退**并记成一条有界任务。要不要跟 demo 一致，留给人工门禁定夺（`docs/11` D37）  → 按用户口径「**按 demo 去执行**」把默认档位定成 demo 的**按轮次**：`src/host/settings.ts` 与 `src/host/config.ts` 的 schema 默认 `step`→`turn`，`src/client/settings.ts` 初值同步；连带更新上游 lane 里锁旧默认的断言（`settings.spec` / `index.spec` / `host/config.spec`），而 `contextView.spec` 那批**按按步骤取数**的渲染用例改为**显式钉住 step**（`stepPinnedSettings()`），不让它们跟产品默认值一起变红 —— **改的是默认值，不是那些用例测的行为**。⚠️ **真机验证要一次重启**：这个默认值由**宿主**供给（客户端初值只是兜底），而宿主半边是开机加载的（`docs/01` F46）⟹ 现在真机上仍显示「按步骤」，重启后才会是「按轮次」。 |
 | M4-07 | **统计卡的格子口径**：demo 是 3 格（模型可见条目 / 用户消息 / 注入内容）+ `本步可见 N 条 · ≈X tokens`；插件是 7 格（含费用两格） | TODO | → `docs/03` 未钉住卡内格子（只写了三张卡的名字）⟹ 这不是"文档 vs demo"而是"demo vs 基线"；照 demo 换 = **改交互**，按纪律留给人工门禁定夺（`docs/11` D38） |
 
 ---
@@ -461,3 +461,4 @@
 > **M1 的仓库内部分已全绿**（11/14 DONE，剩下 2 条都要装进 profile 才能做）：`tsc` / `tsdown` /
 > `vitest`（自有 lane 15/15、含上游 lane 共 1689/1689）/ `namespace-contract`（24 项 0 失败）/ `oxlint` 全绿。
 > **下一步（M2）**：在 `tests/edit/**` 先写红、再实现本地草稿 + 全文读取 + 按底层事件类型的能力判定。
+

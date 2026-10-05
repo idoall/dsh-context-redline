@@ -28,7 +28,7 @@ describe('Config validator (cordis Standard Schema face)', () => {
     assert.deepEqual(resolvedPrefs, {
       ...DEFAULT_BOUNDS,
       defaultPlacement: 'all',
-      defaultGranularity: 'step',
+      defaultGranularity: 'turn',
       defaultTrendMode: 'total',
       defaultToolSort: 'count',
       defaultFileSort: 'count',
@@ -81,7 +81,7 @@ describe('preference fields (the Config-form generation surface)', () => {
   test('preferences resolve to schema defaults; a stale value degrades to its default (loose)', () => {
     const resolved = Config({ defaultGranularity: 'bogus' } as unknown as Config)
     assert.equal(deref(resolved.defaultPlacement), 'all')
-    assert.equal(deref(resolved.defaultGranularity), 'step')
+    assert.equal(deref(resolved.defaultGranularity), 'turn')
     assert.equal(deref(resolved.defaultTrendMode), 'total')
     assert.equal(deref(resolved.defaultToolSort), 'count')
     assert.equal(deref(resolved.defaultFileSort), 'count')

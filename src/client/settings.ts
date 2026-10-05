@@ -87,7 +87,7 @@ function prefsOf(value: unknown): Prefs {
 }
 
 export function createContextSettings(): ContextSettings {
-  let state: SettingsState = { status: 'loading', placement: 'all', granularity: 'step', mode: 'total', toolSort: 'count', fileSort: 'count', writable: false }
+  let state: SettingsState = { status: 'loading', placement: 'all', granularity: 'turn', mode: 'total', toolSort: 'count', fileSort: 'count', writable: false }
   let scope: SettingsScopeLike | undefined
   const listeners = new Set<() => void>()
   const publish = (next: SettingsState): void => {

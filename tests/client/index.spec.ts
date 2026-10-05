@@ -400,7 +400,7 @@ describe('client entry: settings card slot', () => {
       hooks: { contextSettings: { getSnapshot(): SettingsState } }
       set: (field: SettingsField, value: string) => void
     }
-    assert.equal(face.hooks.contextSettings.getSnapshot().granularity, 'step')
+    assert.equal(face.hooks.contextSettings.getSnapshot().granularity, 'turn')
     face.set('defaultGranularity', 'turn')
     assert.equal(face.hooks.contextSettings.getSnapshot().granularity, 'turn')
     assert.deepEqual(scope.sets, [{ field: 'defaultGranularity', value: 'turn' }])

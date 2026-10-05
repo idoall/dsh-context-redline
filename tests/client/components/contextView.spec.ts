@@ -82,7 +82,15 @@ function projectionsFor(data: ContextTimeline, extra: Record<string, unknown> = 
   return (key: string) => projections[key]
 }
 
-function makeView(ctx: TestClientCtx, settings = createContextSettings()) {
+/** 这些用例的取数是按「**按步骤**」写的（与产品默认无关）——把粒度**显式钉在 step**：
+ *  产品默认值已按 demo 改成「按轮次」（用户 2026-10-05「按 demo 去执行」），若这里跟着默认走，
+ *  成片的渲染断言会一起变红，而那些断言测的是别的事（hover / 增量 / 定位…）。 */
+function stepPinnedSettings() {
+  const real = createContextSettings()
+  return { ...real, defaultGranularity: (): 'step' | 'turn' => 'step' }
+}
+
+function makeView(ctx: TestClientCtx, settings = stepPinnedSettings()) {
   return makeContextView(asClientCtx(ctx), kit, settings)
 }
 

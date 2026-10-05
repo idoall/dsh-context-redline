@@ -93,7 +93,7 @@ export const Config = z.object({
   maxFileOps: count(DEFAULT_BOUNDS.maxFileOps),
   // Loose: a stale persisted value degrades to the default instead of failing the entry.
   defaultPlacement: volatileField(z.union(['all', 'tab', 'sidebar']).default('all').loose()),
-  defaultGranularity: volatileField(z.union(['step', 'turn']).default('step').loose()),
+  defaultGranularity: volatileField(z.union(['step', 'turn']).default('turn').loose()),
   defaultTrendMode: volatileField(z.union(['total', 'delta']).default('total').loose()),
   defaultToolSort: volatileField(z.union(['size', 'count', 'name']).default('count').loose()),
   defaultFileSort: volatileField(z.union(['count', 'latest', 'path']).default('count').loose()),
