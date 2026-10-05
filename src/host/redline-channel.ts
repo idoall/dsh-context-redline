@@ -238,7 +238,8 @@ const probeServices: RedlineOpHandler = async ({ ctx, call }) => {
   const keys = ['subagents', 'agents', 'agentTeams', 'compaction', 'sessionQuery', 'sessions', 'projection', 'slots', 'settings', 'tools', 'commands']
   const present: Record<string, string[]> = {}
   for (const key of keys) {
-    const svc = ctx.get(key) as Record<string, unknown> | undefined
+    // 运行期拿到的可能是任何东西（含 null）：类型里如实带上 null，别让 lint 以为那个判断多余
+    const svc = ctx.get(key) as Record<string, unknown> | undefined | null
     if (svc === undefined || svc === null) continue
     const proto = Object.getPrototypeOf(svc) as Record<string, unknown> | null
     const names = [...Object.getOwnPropertyNames(proto ?? {}), ...Object.keys(svc)]
@@ -250,8 +251,23 @@ const probeServices: RedlineOpHandler = async ({ ctx, call }) => {
   for (const name of ['fork', 'spawn', 'fork-in-process', 'spawn-in-process']) {
     if (typeof subagents?.getProvider === 'function' && subagents.getProvider(name) !== undefined) providers.push(name)
   }
+  // 顺带把"这个会话的日志读不读得到"也报出来 —— 这正是 V3/V6 想知道的（只读，读不到就如实说读不到）
+  let logReadable: boolean | string = 'no-listEvents'
+  let eventCount: number | null = null
+  const query = ctx.get('sessionQuery') as SessionQueryFace | undefined | null
+  if (typeof query?.listEvents === 'function' && sessionId !== '') {
+    try {
+      const events = await query.listEvents(sessionId)
+      logReadable = true
+      eventCount = Array.isArray(events) ? events.length : null
+    } catch {
+      logReadable = false
+    }
+  }
   return redlineOk({
     present,
+    logReadable,
+    eventCount,
     subagentsProviders: providers,
     subagentsHasStartContinuable: typeof (subagents as { startContinuable?: unknown } | undefined)?.startContinuable === 'function',
     agentForSession: typeof agents?.get === 'function' ? (sessionId !== '' && agents.get(sessionId) !== undefined) : 'no-agents.get',
