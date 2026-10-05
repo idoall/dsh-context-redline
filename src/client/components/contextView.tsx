@@ -8,33 +8,22 @@
 import { createElement as h, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type { ContextEventRecord, RequestRecord, SurfaceNode } from '../../shared/types'
 import { briefNodes, briefOf } from '../brief'
-import { headlineOf } from '../headline'
 import type { ContextViewProps } from '../services'
-import { contextBreakdownOf, contextPressureOf, conversationNodesOf, headersOf, imageLoaderOf, numOf, projectionOf, tokenUsageOf, unsupportedOf } from '../services'
+import { conversationNodesOf, headersOf, imageLoaderOf, projectionOf, tokenUsageOf, unsupportedOf } from '../services'
 import type { ClientCtx, ConversationNodeLike } from '../services'
 import { makeContentFetcher, makeHeaderFetcher, useHistoryFace } from '../historyPage'
 import { useTimelineSource } from '../timelineSource'
 import { makeDetailNote } from './detailNote'
-import { canOpenPathsOf, openPathVia, openResourceVia, workspaceOf } from '../services'
-import { activityOf, activityOfOps, locateStepOf, previewAddressOf } from '../fileActivity'
-import type { FileEntry, FileOp } from '../fileActivity'
 import type { ContextSettings } from '../settings'
 import type { ViewKit } from '../viewkit'
 import { makeAgentHeads } from '../agentHeads'
 import { makeContextBrowser } from './browser'
 import { useRedlineDrafts } from '../redlineDrafts'
-import { makeAgentGraph } from './agentGraph'
-import { makeDonut } from './donut'
-import { makeCurrentComposition } from './currentComposition'
 import { makeEventList } from './events'
-import { makeFileCard } from './fileCard'
-import { makePluginInfo } from './pluginInfo'
 import { makeUpgradeGate } from './upgradeGate'
 import { makeRequestDetail } from './requestDetail'
 import { countsOfRecords, makeStatsContext, makeSubagentCost } from './statsContext'
-import { makeStatsTiming } from './statsTiming'
-import { makeStatsTokens } from './statsTokens'
-import { makeLegend, makeStackedBar } from './stackedBar'
+import { makeStackedBar } from './stackedBar'
 import { aggregateByTurn, attachMarkers, jumpTargetOf, makeTrendChart, turnStepsOf } from './trendChart'
 
 import { subscribeContextFocus, takeContextFocus } from '../viewFocus'
@@ -55,25 +44,17 @@ export function makeContextView(
 ): (props: ContextViewProps) => ReactElement {
   const { t } = kit
   const StackedBar = makeStackedBar(kit)
-  const Legend = makeLegend(kit)
-  const CurrentComposition = makeCurrentComposition(kit, StackedBar, Legend)
   const TrendChart = makeTrendChart(kit)
   const RequestDetail = makeRequestDetail(kit, StackedBar)
   const EventList = makeEventList(kit)
-  const FileCard = makeFileCard(kit, settings)
-  const Donut = makeDonut(kit)
   // One page-scope cold-head cache serves both subagent-data readers: the
   // Agent network card's composition rings and the stats board's
   // subagent-cost cell fetch each relative once.
   const heads = makeAgentHeads(ctx)
   const StatsContext = makeStatsContext(kit, makeSubagentCost(ctx, heads))
-  const StatsTiming = makeStatsTiming(kit, Donut)
-  const StatsTokens = makeStatsTokens(kit, Donut)
-  const PluginInfo = makePluginInfo(kit)
   const UpgradeGate = makeUpgradeGate(kit)
   const DetailNote = makeDetailNote(kit)
   const ContextBrowser = makeContextBrowser(kit, StackedBar, settings)
-  const AgentGraph = makeAgentGraph(ctx, kit, heads)
   const ErrorBoundary = makeErrorBoundary(t)
 
   // The body renders under the error boundary: a corrupt projection value (past the timelineOf shape guard) degrades to a styled error
@@ -91,13 +72,11 @@ export function makeContextView(
     const data = source.data
     // Official token-meter `contextPressure` projection — the same key the chat's context ring reads; token-meter owns estimation, the Host
     // no longer mirrors it. Absent → derived fallback.
-    const pressure = projectionOf(props, 'contextPressure', contextPressureOf)
     // Official token-meter `tokenUsage` projection — the same data the chat stats line below the input box reads for its '缓存命中' figure, so
     // the stats board's cache-hit cell reuses it verbatim; absent → the cell drops to a dash instead of estimating.
     const usage = projectionOf(props, 'tokenUsage', tokenUsageOf)
     // Official token-meter `contextBreakdown` projection — the exact rows the chat ring's click-open panel shows, so the overview legend
     // reads identically by construction; absent → the fold's own same-estimator sums inside headlineOf.
-    const breakdown = projectionOf(props, 'contextBreakdown', contextBreakdownOf)
     // ⚠️ 临时只读探针（V10，2026-10-05）：宿主到底有没有注册 `subagentCatalog` / `subagentTiming` 两个投影。
     // 钩子**无条件调用、顺序稳定**（见 projectionOf 的约定），只在 `?redline-probe=1` 时把摘要写进 DOM；
     // 键名取自安装树 `@deepseek-ai/dsh-subagent` 的投影类型（真实只有这两个，不是三个）。
@@ -300,14 +279,6 @@ export function makeContextView(
     if (activeIdx < 0) activeIdx = pinnedIdx
     if (activeIdx < 0 && displayRequests.length > 0) activeIdx = displayRequests.length - 1
     const activeReq = activeIdx >= 0 ? displayRequests[activeIdx] : null
-    // File activity follows the same active bar: the EXCLUSIVE upper bound is the next RAW request's seq, so the picked step's own
-    // tool calls (results land before the next request) count too; the latest bar's null bound serves everything.
-    let filesBefore: number | null = null
-    if (activeReq !== null) {
-      // The active bar's seq always exists in the raw list (turn aggregates keep their last step's record).
-      const ri = requests.findIndex(r => r.seq === activeReq.seq)
-      filesBefore = ri + 1 < requests.length ? requests[ri + 1].seq : null
-    }
     // The active bar's semantic identity ("what this step was about"); pure derivation over the served nodes, null when nothing is known.
     const brief = useMemo(
       () => (activeReq !== null ? briefOf(briefList, displayRequests, activeIdx) : null),
@@ -319,56 +290,17 @@ export function makeContextView(
     // session-log coverage); older hosts keep the conversation-window derivation. Recomputed when the brief
     // source, the conversation join, or the upper bound moves — hover/select elsewhere (composition chips,
     // kind filters) leaves every input reference untouched, so the walk is skipped on those renders.
-    const fileActivity = useMemo(
-      () => {
-        if (data !== null && data.fileOps !== undefined) {
-          return activityOfOps(data.fileOps, data.archive, filesBefore)
-        }
-        return activityOf(briefList, convOf, filesBefore)
-      },
-      [data, briefList, convOf, filesBefore],
-    )
     // The session's workspace root — './'-relative row paths when known; read per
     // render (an observable snapshot), so the next projection push re-renders with it.
-    const workspace = typeof ctx.get === 'function' ? workspaceOf(ctx, typeof sessionId === 'string' ? sessionId : undefined) : undefined
     // The system-opener affordance rides the same ctx; both resolve before the early return.
     // The capability is an RPC answer now (the synchronous host-description fact is gone),
     // so it lands in state once the probe settles — inert file names until then; the
     // effect's cleanup drops an answer that arrives after the view unmounted.
-    const [canOpenPaths, setCanOpenPaths] = useState(false)
-    useEffect(() => {
-      let live = true
-      void canOpenPathsOf(ctx).then((can) => { if (live) setCanOpenPaths(can) })
-      return () => { live = false }
-    }, [ctx])
-    const fileOpener = useMemo(
-      () => (canOpenPaths ? openPathVia(ctx) : undefined),
-      [canOpenPaths, ctx],
-    )
     // The right-Sidebar preview opener (the same optional column the Context
     // tab itself registers into): resolved off `ctx` at mount, the face
     // re-proved per call, so an HMR reload's revocation never leaves a stale
     // opener. Absent face = no `onPreview` at all, and the card keeps its
     // system-open affordance untouched.
-    const previewOpener = useMemo(() => openResourceVia(ctx), [ctx])
-    const sessionKey = typeof sessionId === 'string' ? sessionId : undefined
-    const previewFile = useMemo(
-      () => previewOpener === undefined
-        ? undefined
-        : (entry: FileEntry): boolean => {
-          const address = previewAddressOf(entry.path, entry.form, entry.pattern, sessionKey, workspace)
-          return address !== undefined && previewOpener(address)
-        },
-      [previewOpener, sessionKey, workspace],
-    )
-    const locateFileOp = useCallback((op: FileOp): void => {
-      // A nested Code-Mode op has no surface row of its own — it reveals on
-      // its parent run_code result (whose removal stamp the op carries).
-      const seq = op.parent ?? op.seq
-      const step = locateStepOf(requests, seq, op.gone)
-      if (step === null) return
-      setNodeFocus({ step, seq, cat: 'tool' })
-    }, [requests])
     // A brief row's reveal target: inputs/opener live in the picked step's OWN assembled surface; the response node (seq === the
     // request's) first appears in the NEXT step's surface — or the live surface when the last bar is picked.
     const locateNode = useCallback((node: SurfaceNode, isResponse: boolean): void => {
@@ -394,13 +326,6 @@ export function makeContextView(
     // Provider-anchored CURRENT occupancy (contextPressure.projectedTokens): the headline, because the fixed 4-chars/token heuristic
     // undercounts CJK by ~10–15% — proportions stay heuristic but are anchored to the real billed total. Shared with the /redline popup
     // (headline.ts); composition rides the official `contextBreakdown` rows.
-    const head = headlineOf(data, pressure, breakdown)
-    let fileScope = t('files.scopeLatest')
-    if (activeReq !== null && filesBefore !== null) {
-      fileScope = activeReq.stepCount !== undefined && activeReq.stepCount > 1
-        ? t('detail.turn', { t: activeReq.turn ?? 0, n: activeReq.stepCount })
-        : t('detail.step', { t: activeReq.turn ?? 0, s: activeReq.step ?? 0, n: stepsOf(activeReq.turn) })
-    }
 
     // Turn highlight is hover-only: the turn strip hover wins, then the hovered bar's turn — no fallback, so a pinned or default selection
     // never keeps a turn glowing.
@@ -419,7 +344,6 @@ export function makeContextView(
     const activeLocale = localeSvc !== undefined && typeof localeSvc.getLocale === 'function'
       ? localeSvc.getLocale().active
       : 'en'
-    const subtitle = (data.model ?? '') + (data.provider ? ' · ' + data.provider : '')
     // The host's baseline gate (host/fallback.ts): the cards below render
     // the fallback's zeroed data while the modal names both versions and
     // urges the upgrade. Absent record = a supported harness, no gate.
@@ -427,14 +351,6 @@ export function makeContextView(
 
     // The three main-row cards, built once and laid out by the shared
     // arrangement below (every host uses the same row).
-    const compositionCard = (
-      <CurrentComposition
-        head={head}
-        subtitle={subtitle}
-        hoverKey={hoverCat}
-        onHoverKey={setHoverCat}
-      />
-    )
     const trendCard = (
       <div className="redline-card">
         <div className="redline-card-title">
@@ -563,12 +479,9 @@ export function makeContextView(
           <div className="redline-cols redline-head">
             <StatsContext counts={counts} humanInputs={data.humanInputs} toolCalls={data.toolCalls} usage={usage}
               cost={data.cost} locale={activeLocale} sessionId={typeof sessionId === 'string' ? sessionId : undefined} />
-            <PluginInfo />
           </div>
         )}
         <div className="redline-cols redline-head">
-          <StatsTokens usage={usage} current={data.current} breakdown={breakdown} />
-          <StatsTiming timing={data.timing ?? null} />
         </div>
 
         {/* One arrangement for every host: composition over trend in the left
@@ -577,7 +490,7 @@ export function makeContextView(
             rows wrap at it, and a sub-360px pane narrows the column instead
             of overflowing. */}
         <div className="redline-cols redline-cols-main">
-          <div className="redline-col flex-1 min-w-[min(360px,100%)]">{compositionCard}{trendCard}</div>
+          <div className="redline-col flex-1 min-w-[min(360px,100%)]">{trendCard}</div>
           {/* `redline-col-browser` stretches the browser card to the left column's
               height; the /redline modal, which draws its own stack, must stay
               content-sized. */}
@@ -607,20 +520,8 @@ export function makeContextView(
             </div>
             <EventList events={shownEvents} state={source.detailState} onRetry={source.retryDetail} />
           </div>
-          <FileCard activity={fileActivity} scope={fileScope} workspace={workspace}
-            onPreview={previewFile} onOpen={fileOpener} onLocate={locateFileOp}
-            state={source.detailState} onRetry={source.retryDetail} />
         </div>
 
-        <AgentGraph
-          sessionId={typeof sessionId === 'string' ? sessionId : undefined}
-          self={{
-            head,
-            billed: usage !== null ? numOf(usage.uncachedInputTokens) + numOf(usage.outputTokens)
-              + numOf(usage.cacheReadTokens) + numOf(usage.cacheWriteTokens) : null,
-            requests: requests.length,
-          }}
-        />
 
         <div className="redline-foot">{t('footer')}</div>
 

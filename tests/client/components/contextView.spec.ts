@@ -138,7 +138,7 @@ describe('ContextView — projection guards', () => {
   test('renders the full tab without a session id (the agent card anchors nothing)', async () => {
     const View = makeView(new TestClientCtx())
     const m = await mount(h(View, { useProjection: projectionsFor(timeline()) }))
-    assert.ok(text(m.container).includes(DICT_EN['overview.title']))
+    assert.ok(text(m.container).includes(DICT_EN['stats.title']))
     assert.ok(text(m.container).includes(DICT_EN.footer))
     await m.unmount()
   })
@@ -150,20 +150,19 @@ describe('ContextView — projection guards', () => {
       useProjection: projectionsFor(timeline(), {}),
     }))
     // Well-formed-but-empty: every section renders its empty state.
-    assert.ok(text(m.container).includes(DICT_EN['overview.title']))
     assert.ok(text(m.container).includes(DICT_EN['stats.title']))
     assert.ok(text(m.container).includes(DICT_EN['trend.empty']))
     assert.ok(text(m.container).includes(DICT_EN['events.empty']))
-    assert.ok(text(m.container).includes(DICT_EN['files.empty']))
     assert.ok(text(m.container).includes(DICT_EN['footer']))
     assert.ok(m.container.querySelector('.redline-br-cats') !== null)
-    // No model/provider: the composition card carries no subtitle.
-    const comp = queryAll(m.container, '.redline-card').find(c => text(c).includes(DICT_EN['overview.title']))
-    assert.ok(comp !== undefined && comp.querySelector('.redline-card-sub') === null)
+    // 被删的卡（当前上下文 / 文件活动 / 插件信息 / Token 统计 / 耗时统计）在这台运行时不该出现 —— demo 里没有它们。
+    for (const gone of [DICT_EN['overview.title'], DICT_EN['files.title']]) {
+      assert.ok(!text(m.container).includes(gone), '不该再出现：' + gone)
+    }
     await m.unmount()
   })
 
-  test('companion projections feed the headline, stats, and browser headers', async () => {
+  test('companion projections feed the browser headers', async () => {
     const View = makeView(new TestClientCtx())
     const m = await mount(h(View, {
       sessionId: 'sv-proj',
@@ -174,16 +173,8 @@ describe('ContextView — projection guards', () => {
         redlineHeaders: { headers: [{ seq: 1, time: T0, system: 'SYS', tools: [{ name: 'bash', tokens: 12 }] }] },
       }),
     }))
-    // Anchored headline: projected 100 of a 128k window.
-    assert.ok(text(m.container).includes(DICT_EN['overview.used']))
-    // The Token card's center is the chat stats line's whole-session billed
-    // total off the official tokenUsage projection (100 + 200 + 0 + 50), and
-    // the Context card's cache-hit cell shows the line's own rate two decimals
-    // deep (200 / 300, truncated).
-    const tokensCard = queryAll(m.container, '.redline-head > .redline-col-donut')[0]
-    assert.equal(query(tokensCard, '.redline-donut-center b').textContent, '350')
-    assert.ok(text(m.container).includes('66.66%'))
-    assert.ok(text(m.container).includes('m-only'))
+    // ⚠️ 「当前上下文」卡（含 anchored headline 与模型行）与 Token 统计卡已按 demo 删除 ——
+    // 原来钉这两张卡的断言随之去掉；本测现在只钉「伴随投影喂到浏览器头部」这部分。
     await m.unmount()
   })
 })
@@ -195,18 +186,18 @@ describe('ContextView — the sidebar host', () => {
 
     const tab = await mount(h(View, { useProjection: projections }))
     assert.equal(queryAll(tab.container, '.redline-stats').length, 1, 'the tab keeps the context stats')
-    assert.equal(queryAll(tab.container, '.redline-pi-grid').length, 1, 'the tab keeps the plugin info')
+    assert.equal(queryAll(tab.container, '.redline-pi-grid').length, 0, '插件信息卡已删（demo 没有这张）')
     await tab.unmount()
 
     const panel = await mount(h(View, { host: 'sidebar', useProjection: projections }))
     assert.equal(queryAll(panel.container, '.redline-stats').length, 0, 'the panel drops the context stats')
     assert.equal(queryAll(panel.container, '.redline-pi-grid').length, 0, 'the panel drops the plugin info')
-    assert.equal(queryAll(panel.container, '.redline-head > .redline-card').length, 2, 'the head row keeps its two donut cards')
-    assert.equal(queryAll(panel.container, '.redline-head > .redline-col-donut').length, 2, 'token usage and timing')
+    assert.equal(queryAll(panel.container, '.redline-head > .redline-card').length, 0, 'Token 统计/耗时统计已删（demo 没有这两张）')
+    assert.equal(queryAll(panel.container, '.redline-head > .redline-col-donut').length, 0, 'donut 两卡已删')
     await panel.unmount()
   })
 
-  test('both hosts arrange the main row as composition+trend beside the browser', async () => {
+  test('both hosts arrange the main row as trend beside the browser', async () => {
     const View = makeView(new TestClientCtx())
     const projections = projectionsFor(richTimeline())
 
@@ -214,8 +205,7 @@ describe('ContextView — the sidebar host', () => {
       const m = await mount(h(View, props))
       const cols = queryAll(m.container, '.redline-cols-main > .redline-col')
       assert.equal(cols.length, 2, 'one two-column split')
-      assert.ok(cols[0].querySelector('.redline-overview-num') !== null, 'composition leads the left column')
-      assert.ok(cols[0].querySelector('.redline-trend-ctl') !== null, 'the trend follows in the same column')
+            assert.ok(cols[0].querySelector('.redline-trend-ctl') !== null, 'the trend follows in the same column')
       assert.ok(cols[1].querySelector('.redline-br-dna-ctl') !== null, 'the browser owns the right column')
       await m.unmount()
     }
@@ -236,7 +226,7 @@ describe('ContextView — baseline gate', () => {
     assert.ok(text(card).includes('v0.1.1-rc.2'))
     assert.ok(text(card).includes('v0.1.5-rc.1'))
     // The cards keep rendering the fallback's zeroed data behind it.
-    assert.ok(text(m.container).includes(DICT_EN['overview.title']))
+    assert.ok(text(m.container).includes(DICT_EN['stats.title']))
     assert.ok(text(m.container).includes(DICT_EN['trend.empty']))
     assert.ok(text(m.container).includes(DICT_EN['events.empty']))
     // Dismissal reveals the (blank) cards.
@@ -253,7 +243,7 @@ describe('ContextView — baseline gate', () => {
       useProjection: projectionsFor(timeline({ unsupported: { current: 7 } })),
     }))
     assert.equal(m.container.querySelector('.redline-modal-backdrop'), null)
-    assert.ok(text(m.container).includes(DICT_EN['overview.title']))
+    assert.ok(text(m.container).includes(DICT_EN['stats.title']))
     await m.unmount()
   })
 })
@@ -276,13 +266,10 @@ async function mountRich(sessionId: string) {
 describe('ContextView — interactions', () => {
   test('renders the rich tab: stats, chart bars, markers, events, nodes, browser', async () => {
     const m = await mountRich('sv-rich')
-    assert.ok(text(m.container).includes('deepseek-v4-flash · deepseek'))
     assert.equal(queryAll(m.container, '.redline-bar').length, 3)
     // The compaction event lands as the ✂ marker on the first request after it.
     assert.equal(queryAll(m.container, '.redline-bar-marker').length, 1)
     assert.equal(queryAll(m.container, '.redline-event').length, 2)
-    assert.ok(text(m.container).includes(DICT_EN['files.title']))
-    assert.ok(text(m.container).includes(DICT_EN['files.scopeLatest']))
     assert.ok(text(m.container).includes(DICT_EN['browser.liveNow']))
     // Turn strip partitions the two turn groups (turn 1 + the turn-less 0).
     assert.deepEqual(queryAll(m.container, '.redline-turn-label').map(el => text(el)), ['1', '0'])
@@ -387,19 +374,6 @@ describe('ContextView — interactions', () => {
     await m.unmount()
   })
 
-  test('composition legend hover lights the linked browser category', async () => {
-    const m = await mountRich('sv-link')
-    const comp = queryAll(m.container, '.redline-card').find(c => text(c).includes(DICT_EN['overview.title']))
-    assert.ok(comp !== undefined)
-
-    const chip = query(comp, '.redline-legend .redline-chip')
-    await hover(chip)
-    assert.ok(query(m.container, '.redline-br-cat-row').className.includes('redline-br-cat-on'))
-    await unhover(chip)
-    assert.ok(!query(m.container, '.redline-br-cat-row').className.includes('redline-br-cat-on'))
-    await m.unmount()
-  })
-
   test('browser category hover lights the trend chart segments and the detail composition bar', async () => {
     const m = await mountRich('sv-link-trend')
     // Category rows render in CATS order; hover "tools" (second row).
@@ -415,12 +389,6 @@ describe('ContextView — interactions', () => {
     await unhover(toolsRow)
     assert.equal(query(m.container, '.redline-chart').hasAttribute('data-catdim'), false)
     assert.ok(!query(m.container, '.redline-detail .redline-stacked').className.includes('redline-stacked-dim'))
-
-    // The overview's 'free' track hover names no category — the trend card stays neutral (same filter as the browser link).
-    await hover(query(m.container, '.redline-stacked-free'))
-    assert.equal(query(m.container, '.redline-chart').hasAttribute('data-catdim'), false)
-    assert.ok(!query(m.container, '.redline-detail .redline-stacked').className.includes('redline-stacked-dim'))
-    await unhover(query(m.container, '.redline-stacked-free'))
     await m.unmount()
   })
 
@@ -514,359 +482,6 @@ describe('ContextView — interactions', () => {
     assert.equal(countEvents(), 1)
     await click(kindBtn('inject'))
     assert.equal(countEvents(), 2)
-    await m.unmount()
-  })
-})
-
-describe('ContextView — file activity card', () => {
-  /** Six steps with two file ops: a live read (seq 3) and an edit (seq 5) compacted away before seq 6 dispatched. */
-  function fileTimeline(): ContextTimeline {
-    const req = (seq: number, time: number, extra: Record<string, unknown> = {}) =>
-      ({ seq, time, system: 10, tools: 20, user: 10, inject: 0, assistant: 20, tool: 10, total: 70, ...extra })
-    return timeline({
-      requests: [
-        req(2, T0 + 1000, { turn: 1, step: 1 }),
-        req(4, T0 + 3000, { turn: 1, step: 2 }),
-        req(6, T0 + 5000), // two turn-less mid-session steps form their own aggregate
-        req(7, T0 + 6000),
-        req(8, T0 + 7000, { turn: 2, step: 1 }), // a single-step turn, not the last bar
-        req(9, T0 + 8000, { turn: 3, step: 1 }),
-      ],
-      nodes: [
-        { seq: 1, cat: 'user', tokens: 10, text: 'hi', time: T0 + 500 },
-        { seq: 2, cat: 'assistant', tokens: 20, text: 'r1', time: T0 + 1000 },
-        { seq: 3, cat: 'tool', tokens: 30, tool: 'read', time: T0 + 2000 },
-        { seq: 4, cat: 'assistant', tokens: 60, text: 'r2', time: T0 + 3000 },
-        { seq: 6, cat: 'assistant', tokens: 80, text: 'r3', time: T0 + 5000 },
-        { seq: 7, cat: 'assistant', tokens: 80, text: 'r3b', time: T0 + 6000 },
-        { seq: 8, cat: 'assistant', tokens: 80, text: 'r4', time: T0 + 7000 },
-        { seq: 9, cat: 'assistant', tokens: 80, text: 'r5', time: T0 + 8000 },
-      ],
-      archive: [
-        { seq: 5, cat: 'tool', tokens: 30, tool: 'edit', gone: 6, time: T0 + 4000 },
-      ],
-    })
-  }
-
-  const fileConv = [
-    { kind: 'tool', seq: 3, call: { name: 'read', argsRaw: JSON.stringify({ file_path: '/src/a.ts' }) } },
-    { kind: 'tool', seq: 5, call: { name: 'edit', argsRaw: JSON.stringify({ file_path: '/src/a.ts', old_string: 'a\nb', new_string: 'a' }) } },
-  ]
-
-  async function mountFiles(sessionId: string) {
-    const View = makeView(new TestClientCtx())
-    const m = await mount(h(View, {
-      sessionId,
-      useProjection: projectionsFor(fileTimeline()),
-      useChat: (sel =>
-        sel({
-          legacy: { nodes: fileConv } })) as UseChatLike,
-    }))
-    const card = queryAll(m.container, '.redline-card').find(c => text(c).includes(DICT_EN['files.title']))
-    assert.ok(card !== undefined)
-    return { m, card }
-  }
-
-  test('follows the chart pick: the scope label and the exclusive next-step bound', async () => {
-    const { m, card } = await mountFiles('sv-files-scope')
-    // Default (latest bar): everything served, edit delta included.
-    assert.ok(text(card).includes(DICT_EN['files.scopeLatest']))
-    assert.ok(text(card).includes('+1') && text(card).includes('−2'))
-
-    // Hovering the FIRST bar bounds the fold at the second request: the edit drops out.
-    await hover(query(m.container, '.redline-bar[data-seq="2"]'))
-    assert.ok(text(card).includes('Turn 1 · Step 1'))
-    assert.equal(queryAll(card, '.redline-fa-meta-delta').length, 0)
-    assert.equal(queryAll(card, '.redline-fa-row').length, 1)
-    assert.ok(!text(card).includes('+1'))
-
-    // The turn-less mid step falls back to zero labels and still bounds at the next request.
-    await hover(query(m.container, '.redline-bar[data-seq="6"]'))
-    assert.ok(text(card).includes('Turn 0 · Step 0'))
-    assert.ok(text(card).includes('+1'))
-
-    await unhover(query(m.container, '.redline-chart'))
-    assert.ok(text(card).includes(DICT_EN['files.scopeLatest']))
-    await m.unmount()
-  })
-
-  test('turn aggregates label the scope; op clicks reveal the result in the browser', async () => {
-    const { m, card } = await mountFiles('sv-files-locate')
-    const pick = stepPickOf(m)
-
-    await click(buttonByText(m.container, DICT_EN['gran.turn']))
-    // Turn 1's aggregate (two steps) labels the scope as a turn.
-    await hover(query(m.container, '.redline-bar[data-seq="4"]'))
-    assert.ok(text(card).includes(DICT_EN['detail.turn'].replace('{t}', '1').replace('{n}', '2')))
-    // The turn-less pair aggregates too: a turn label with zeroed turn.
-    await hover(query(m.container, '.redline-bar[data-seq="7"]'))
-    assert.ok(text(card).includes(DICT_EN['detail.turn'].replace('{t}', '0').replace('{n}', '2')))
-    // A single-step turn aggregate labels as a plain step.
-    await hover(query(m.container, '.redline-bar[data-seq="8"]'))
-    assert.ok(text(card).includes('Turn 2 · Step 1'))
-    await unhover(query(m.container, '.redline-chart'))
-
-    // Expand the file row: the compacted edit (seq 5) has no viewing step and
-    // its click is a no-op; the read (seq 3) reveals in step 4's surface.
-    await click(query(card, '.redline-fa-row'))
-    const ops = queryAll(card, '.redline-fa-op')
-    assert.equal(ops.length, 2)
-    await click(ops[0]) // edit, gone = 6: unlocatable
-    assert.equal(pick.value, 'live')
-    await click(ops[1]) // read at seq 3
-    assert.equal(pick.value, '4')
-    assert.ok(text(query(m.container, '.redline-br-elem-on')).includes('/src/a.ts'))
-    await m.unmount()
-  })
-
-  test('a nested PTC op reveals on its parent run_code result, not on its dispatch seq', async () => {
-    const ptcTimeline = timeline({
-      requests: [
-        { seq: 2, turn: 1, step: 1, time: T0 + 1000, system: 10, tools: 20, user: 10, inject: 0, assistant: 20, tool: 10, total: 70 },
-        { seq: 4, turn: 1, step: 2, time: T0 + 3000, system: 10, tools: 20, user: 10, inject: 0, assistant: 20, tool: 10, total: 70 },
-      ],
-      nodes: [
-        { seq: 2, cat: 'assistant', tokens: 20, text: 'r1', time: T0 + 1000 },
-        { seq: 3, cat: 'tool', tokens: 30, tool: 'run_code', time: T0 + 2000 },
-        { seq: 4, cat: 'assistant', tokens: 60, text: 'r2', time: T0 + 3000 },
-      ],
-    })
-    const ptcConv = [
-      {
-        kind: 'tool-result',
-        seq: 3,
-        call: { name: 'run_code', argsRaw: JSON.stringify({ code: 'await tools.edit(…)', description: 'Fix the failing test' }) },
-        subCalls: [
-          {
-            kind: 'tool-result',
-            seq: 2,
-            time: T0 + 1500,
-            call: { name: 'edit', argsRaw: JSON.stringify({ file_path: '/src/a.ts', old_string: 'a\nb', new_string: 'a' }) },
-            isError: false,
-            subCalls: [],
-          },
-        ],
-      },
-    ]
-    const View = makeView(new TestClientCtx())
-    const m = await mount(h(View, {
-      sessionId: 'sv-ptc-locate',
-      useProjection: projectionsFor(ptcTimeline),
-      useChat: (sel =>
-        sel({
-          legacy: { nodes: ptcConv } })) as UseChatLike,
-    }))
-    const card = queryAll(m.container, '.redline-card').find(c => text(c).includes(DICT_EN['files.title']))
-    assert.ok(card !== undefined)
-    await click(query(card, '.redline-fa-row'))
-    // The op is attributed to the nested tool, and says why (its program).
-    assert.ok(text(card).includes('edit'))
-    assert.ok(text(card).includes('Fix the failing test'))
-    // The click lands on the parent run_code node (seq 3 → step 4's surface).
-    await click(query(card, '.redline-fa-op'))
-    const pick = stepPickOf(m)
-    assert.equal(pick.value, '4')
-    assert.ok(text(query(m.container, '.redline-br-elem-on')).includes('Fix the failing test'))
-    await m.unmount()
-  })
-
-  test('the session workspace relativizes row paths; the host opener opens the resolved file', async () => {
-    const opened: string[] = []
-    const calls: string[] = []
-    const ctx = new TestClientCtx({
-      services: {
-        sessions: { list: { getSnapshot: () => ({ byId: { 'sv-files-open': { cwd: '/repo' } } }) } },
-        connection: {
-          isLoopback: true,
-          rpc: {
-            call: (_channel: string, endpoint: string, payload: unknown) => {
-              if (endpoint === 'session/canOpenWorkspacePath') return Promise.resolve({ ok: true, value: true })
-              calls.push(endpoint)
-              opened.push((payload as { args: { request: { path: string } } }).args.request.path)
-              return Promise.resolve({ ok: true, value: { opened: true } })
-            },
-          },
-        },
-      },
-    })
-    const conv = [
-      { kind: 'tool', seq: 3, call: { name: 'read', argsRaw: JSON.stringify({ file_path: '/repo/src/a.ts' }) } },
-    ]
-    const View = makeView(ctx)
-    const m = await mount(h(View, {
-      sessionId: 'sv-files-open',
-      useProjection: projectionsFor(fileTimeline()),
-      useChat: (sel =>
-        sel({
-          legacy: { nodes: conv } })) as UseChatLike,
-    }))
-    // The capability probe is an RPC round-trip: the answer lands in state on the next flush.
-    await flush()
-    const card = queryAll(m.container, '.redline-card').find(c => text(c).includes(DICT_EN['files.title']))
-    assert.ok(card !== undefined)
-    // The read inside the session cwd displays './'-relative…
-    const row = query(card, '.redline-fa-row')
-    assert.ok(row.querySelector('.redline-fa-path em')?.textContent === './src/')
-    // …and its name opens on the system through the session's open remote.
-    const name = query(row, '.redline-fa-file')
-    assert.equal(name.getAttribute('title'), DICT_EN['files.open'])
-    await click(name)
-    assert.deepEqual(opened, ['/repo/src/a.ts'])
-    assert.deepEqual(calls, ['session/openWorkspacePath'])
-    await m.unmount()
-  })
-
-  test('the Sidebar preview leads the name click; a refusal falls through to the system opener', async () => {
-    const previewed: string[] = []
-    const opened: string[] = []
-    const ctx = new TestClientCtx({
-      services: {
-        sessions: { list: { getSnapshot: () => ({ byId: { 'sv-preview': { cwd: '/repo' } } }) } },
-        connection: {
-          isLoopback: true,
-          rpc: {
-            call: (_channel: string, endpoint: string, payload: unknown) => {
-              if (endpoint === 'session/canOpenWorkspacePath') return Promise.resolve({ ok: true, value: true })
-              opened.push((payload as { args: { request: { path: string } } }).args.request.path)
-              return Promise.resolve({ ok: true, value: { opened: true } })
-            },
-          },
-        },
-        sidebarRight: { openResource: (address: string) => { previewed.push(address) } },
-      },
-    })
-    const conv = [
-      { kind: 'tool', seq: 3, call: { name: 'read', argsRaw: JSON.stringify({ file_path: '/repo/src/a.ts' }) } },
-    ]
-    const View = makeView(ctx)
-    const m = await mount(h(View, {
-      sessionId: 'sv-preview',
-      useProjection: projectionsFor(fileTimeline()),
-      useChat: (sel =>
-        sel({
-          legacy: { nodes: conv } })) as UseChatLike,
-    }))
-    await flush()
-    const card = queryAll(m.container, '.redline-card').find(c => text(c).includes(DICT_EN['files.title']))
-    assert.ok(card !== undefined)
-    const name = query(query(card, '.redline-fa-row'), '.redline-fa-file')
-    // The preview affordance leads where the column exists; the system open
-    // stays unreached.
-    assert.equal(name.getAttribute('title'), DICT_EN['files.preview'])
-    await click(name)
-    assert.deepEqual(previewed, ['dsh-resource://file/session/sv-preview/src/a.ts'])
-    assert.deepEqual(opened, [])
-    await m.unmount()
-  })
-
-  test('a Sidebar that refuses the address falls back to the system opener', async () => {
-    const opened: string[] = []
-    const ctx = new TestClientCtx({
-      services: {
-        sessions: { list: { getSnapshot: () => ({ byId: { 'sv-preview-no': { cwd: '/repo' } } }) } },
-        connection: {
-          isLoopback: true,
-          rpc: {
-            call: (_channel: string, endpoint: string, payload: unknown) => {
-              if (endpoint === 'session/canOpenWorkspacePath') return Promise.resolve({ ok: true, value: true })
-              opened.push((payload as { args: { request: { path: string } } }).args.request.path)
-              return Promise.resolve({ ok: true, value: { opened: true } })
-            },
-          },
-        },
-        // No preview type claims the address (or no surface is mounted): the throw
-        // is the face's own wiring-error report, and the card must fall back.
-        sidebarRight: { openResource: () => { throw new Error('no registered tab type claims it') } },
-      },
-    })
-    const conv = [
-      { kind: 'tool', seq: 3, call: { name: 'read', argsRaw: JSON.stringify({ file_path: '/repo/src/a.ts' }) } },
-    ]
-    const View = makeView(ctx)
-    const m = await mount(h(View, {
-      sessionId: 'sv-preview-no',
-      useProjection: projectionsFor(fileTimeline()),
-      useChat: (sel =>
-        sel({
-          legacy: { nodes: conv } })) as UseChatLike,
-    }))
-    await flush()
-    const card = queryAll(m.container, '.redline-card').find(c => text(c).includes(DICT_EN['files.title']))
-    assert.ok(card !== undefined)
-    await click(query(query(card, '.redline-fa-row'), '.redline-fa-file'))
-    assert.deepEqual(opened, ['/repo/src/a.ts'])
-    await m.unmount()
-  })
-
-  test('an unencodable path skips the preview and still opens on the system', async () => {
-    // Parsing resilience: a lone surrogate in a log path is unrepresentable in a
-    // resource address (the encoder throws), so the preview opener is never
-    // asked for one address and the system opener still takes the resolved path.
-    const opened: string[] = []
-    const previewed: string[] = []
-    const ctx = new TestClientCtx({
-      services: {
-        sessions: { list: { getSnapshot: () => ({ byId: { 'sv-preview-bad': { cwd: '/repo' } } }) } },
-        connection: {
-          isLoopback: true,
-          rpc: {
-            call: (_channel: string, endpoint: string, payload: unknown) => {
-              if (endpoint === 'session/canOpenWorkspacePath') return Promise.resolve({ ok: true, value: true })
-              opened.push((payload as { args: { request: { path: string } } }).args.request.path)
-              return Promise.resolve({ ok: true, value: { opened: true } })
-            },
-          },
-        },
-        sidebarRight: { openResource: (address: string) => { previewed.push(address) } },
-      },
-    })
-    const conv = [
-      { kind: 'tool', seq: 3, call: { name: 'read', argsRaw: JSON.stringify({ file_path: '\uD800' }) } },
-    ]
-    const View = makeView(ctx)
-    const m = await mount(h(View, {
-      sessionId: 'sv-preview-bad',
-      useProjection: projectionsFor(fileTimeline()),
-      useChat: (sel =>
-        sel({
-          legacy: { nodes: conv } })) as UseChatLike,
-    }))
-    await flush()
-    const card = queryAll(m.container, '.redline-card').find(c => text(c).includes(DICT_EN['files.title']))
-    assert.ok(card !== undefined)
-    await click(query(query(card, '.redline-fa-row'), '.redline-fa-file'))
-    assert.deepEqual(previewed, [])
-    assert.deepEqual(opened, ['/repo/\uD800'])
-    await m.unmount()
-  })
-
-  test('a capability probe that settles after unmount drops its answer', async () => {
-    let resolveProbe!: (value: unknown) => void
-    const ctx = new TestClientCtx({
-      services: {
-        connection: {
-          isLoopback: true,
-          rpc: { call: () => new Promise(resolve => { resolveProbe = resolve }) },
-        },
-      },
-    })
-    const View = makeView(ctx)
-    const m = await mount(h(View, {
-      sessionId: 'sv-open-late',
-      useProjection: projectionsFor(fileTimeline()),
-    }))
-    await m.unmount()
-    // The late "yes" arrives on a dead view: the stale answer is dropped whole.
-    resolveProbe({ ok: true, value: true })
-    await new Promise(resolve => setTimeout(resolve, 0))
-  })
-
-  test('a ctx without service access degrades the card wiring, not the view', async () => {
-    const View = makeView({} as unknown as TestClientCtx)
-    // No session id: the view stays on its loading screen; the workspace and
-    // opener wiring (both read ctx before the early return) resolve to nothing.
-    const m = await mount(h(View, { sessionId: '' }))
-    assert.ok(text(m.container).includes(DICT_EN.loading))
     await m.unmount()
   })
 })
@@ -979,7 +594,7 @@ describe('ContextView — targeted content fetch and image loading', () => {
       sessionId: 'sv-noimg',
       useProjection: projectionsFor(timeline()),
     }))
-    assert.ok(text(m.container).includes(DICT_EN['overview.title']))
+    assert.ok(text(m.container).includes(DICT_EN['stats.title']))
     await m.unmount()
   })
 })
@@ -1106,8 +721,6 @@ describe('ContextView — locale and settings', () => {
     assert.ok(buttonByText(m.container, DICT_EN['gran.delta']).className.includes('redline-gran-on'))
     // Turn aggregation applies at mount: two bars (turn 1 aggregate + turn-less).
     assert.equal(queryAll(m.container, '.redline-bar').length, 2)
-    // The File Activity card opens sorted by the 'path' preference, not by op count.
-    assert.deepEqual(queryAll(m.container, '.redline-fa-row').map(r => r.title), ['/a.ts', '/z.ts'])
     await m.unmount()
     detach()
   })
@@ -1143,7 +756,7 @@ describe('ContextView — error boundary', () => {
 
       fail = false
       await click(query(m.container, '.redline-error-retry'))
-      assert.ok(text(m.container).includes(DICT_EN['overview.title']))
+      assert.ok(text(m.container).includes(DICT_EN['stats.title']))
       assert.ok(!text(m.container).includes(DICT_EN.error))
       await m.unmount()
     } finally {
@@ -1204,7 +817,7 @@ describe('ContextView — chat→Context jump', () => {
     await m.unmount()
   })
 
-  test('the jump reveals the Current Composition card even over a restored position', async () => {
+  test('the jump selects the target step even over a restored position', async () => {
     const View = makeView(new TestClientCtx())
     const props = { sessionId: 'sv-jumpscroll', useProjection: projectionsFor(richTimeline()) }
 
@@ -1223,14 +836,14 @@ describe('ContextView — chat→Context jump', () => {
       return { top } as DOMRect
     })
 
-    // The jump remount: restore applies 42, then the jump resolves and the
-    // reveal scrolls the composition card to the scrollport's top (42 + 350).
+    // The jump remount: restore applies 42. ⚠️ 原本还会再叠一次"把【当前上下文】卡滚到视口顶"的揭示位移(350)，
+    // 但那张卡已按 demo 删除（demo 的 5 张卡里没有它）⟹ 现在只剩恢复值 42。这条仍钉住"跳转后选中的那一步会亮"。
     requestContextFocus('sv-jumpscroll', 4)
     const scroller2 = document.createElement('div')
     scroller2.setAttribute('data-conversation-scroll', '')
     scroller2.style.overflowY = 'auto'
     const m2 = await mountInScroller(h(View, props), scroller2)
-    assert.equal(scroller2.scrollTop, 392, 'restore(42) overridden by the card reveal delta(350)')
+    assert.equal(scroller2.scrollTop, 42, '恢复值生效；不再叠加已删卡的揭示位移')
     assert.ok(query(m2.container, '.redline-bar[data-seq="4"]').className.includes('redline-bar-selected'))
     await m2.unmount()
     gBCR.mockRestore()
@@ -1290,7 +903,6 @@ describe('ContextView — the split generation (slim head + detail channel)', ()
     assert.ok(text(m.container).includes('heads-up'), 'the events list serves the detail')
     assert.equal(queryAll(m.container, '#stepPick option').length, 4, 'live + three steps')
     assert.ok(text(m.container).includes('reply three'), 'the brief rows serve the detail')
-    assert.ok(text(m.container).includes(DICT_EN['files.empty']), 'no file ops in this detail')
     await m.unmount()
   })
 
@@ -1331,42 +943,3 @@ describe('ContextView — the split generation (slim head + detail channel)', ()
   })
 })
 
-describe('ContextView — the op-log generation (fileOps on the detail payload)', () => {
-  test('the File Activity card renders the fold-derived ops, no conversation join needed', async () => {
-    vi.stubGlobal('fetch', async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        ok: true,
-        value: {
-          rev: 1,
-          requests: [{ seq: 2, turn: 1, step: 1, time: T0, system: 1, tools: 2, user: 3, inject: 0, assistant: 4, tool: 5, total: 15 }],
-          events: [],
-          nodes: [],
-          droppedNodes: 0,
-          archive: [],
-          // The op log covers the full session — the conversation window
-          // join plays no role in this card on this generation.
-          fileOps: [
-            { seq: 1, path: '/ws/README.md', kind: 'read', tool: 'read', err: false, added: 0, removed: 0, read: { start: 1, count: 12 } },
-            { seq: 2, path: '/ws/src/a.ts', kind: 'write', tool: 'edit', err: false, added: 3, removed: 1 },
-          ],
-        },
-      }),
-    }))
-    const ctx = new TestClientCtx()
-    const View = makeView(ctx)
-    const m = await mount(h(View, {
-      sessionId: 'sv-opslog',
-      useProjection: projectionsFor(timeline({
-        counts: { turns: 1, steps: 1, injects: 0, compactions: 0, prunes: 0 },
-        detailRev: 1,
-      })),
-    }))
-    await until(() => text(m.container).includes('README.md'), 'the detail never landed')
-    assert.ok(text(m.container).includes('a.ts'), 'both served ops row')
-    assert.ok(text(m.container).includes('+3'), 'the edit delta shows')
-    assert.ok(!text(m.container).includes('No file reads'), 'not the empty state')
-    await m.unmount()
-  })
-})
