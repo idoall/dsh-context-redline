@@ -20,8 +20,8 @@ afterEach(() => {
 describe('OverviewButton', () => {
   test('the wide column renders icon and label; the rail renders the icon alone', async () => {
     const wide = await mount(h(Button, { wide: true }))
-    assert.equal(query(wide.container, '.redline-ov-entry-label').textContent, 'Context Insights')
-    assert.equal(query(wide.container, 'button.redline-ov-entry').getAttribute('aria-label'), 'Context Insights')
+    assert.equal(query(wide.container, '.redline-ov-entry-label').textContent, 'Context Redline · Insights')
+    assert.equal(query(wide.container, 'button.redline-ov-entry').getAttribute('aria-label'), 'Context Redline · Insights')
     assert.equal(queryAll(wide.container, '.redline-ov-entry-rail').length, 0)
     await wide.unmount()
 
@@ -49,7 +49,7 @@ describe('OverviewButton', () => {
   test('the zh locale renders the translated label', async () => {
     const ZhButton = makeOverviewButton(makeKit('zh'))
     const m = await mount(h(ZhButton, { wide: true }))
-    assert.equal(query(m.container, '.redline-ov-entry-label').textContent, '上下文洞察')
+    assert.equal(query(m.container, '.redline-ov-entry-label').textContent, '上下文批改 · 洞察')
     await m.unmount()
   })
 

@@ -211,7 +211,7 @@ describe('client entry: Context Dashboard seats', () => {
     const actionEl = actions[0].component({ wide: true }) as ReactElement
     assert.equal((actionEl.type as { name: string }).name, 'OverviewButton')
     const actionMount = await mount(actionEl)
-    assert.equal(query(actionMount.container, '.redline-ov-entry-label').textContent, 'Context Insights')
+    assert.equal(query(actionMount.container, '.redline-ov-entry-label').textContent, 'Context Redline · Insights')
     await actionMount.unmount()
 
     const overlays = ctx.slots.of('shell.overlay')

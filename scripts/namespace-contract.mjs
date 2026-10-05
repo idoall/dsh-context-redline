@@ -315,7 +315,15 @@ check('5 文案', '入口标签不与上游同名（用户 2026-10-04：对话�
   // user asked us to stop doing. The upstream words are banned OUTRIGHT; the label
   // must carry our product name.
   const text = read('src/client/i18n.ts')
-  const labels = matches(text, /'tab':\s*'([^']+)'/g)
+  // Every label the USER sees as "this plugin's entry" —— the conversation tab, the
+  // sidebar entry button, the overview panel title and the setting that toggles it.
+  const entryKeys = ['tab', 'ov.entry', 'ov.title', 'settings.insightsEntry']
+  const missing = entryKeys.filter((k) => !new RegExp(`'${k.replace('.', '\\.')}':`).test(text))
+  assert(missing.length === 0, `入口标签的键丢了：${missing.join(', ')}`)
+  const labels = []
+  for (const k of entryKeys) {
+    for (const v of matches(text, new RegExp(`'${k.replace('.', '\\.')}':\\s*'([^']+)'`, 'g'))) labels.push(v)
+  }
   assert(labels.length >= 2, `expected a zh + en label, found ${labels.length}`)
   const banned = ['上下文', 'Context']
   for (const label of labels) {

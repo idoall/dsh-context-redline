@@ -138,7 +138,7 @@ describe('OverviewPanel', () => {
     const { m } = await openPanel(ctx)
     assert.equal(pulls, 1, 'the baseline re-pull fires on open')
     assert.deepEqual(backfillPosts, ['/api/dsh-context-redline/backfill'], 'the warm-up trigger POST fires on open')
-    assert.ok(text(m.container).includes('Context Insights'))
+    assert.ok(text(m.container).includes('Context Redline · Insights'))
     // The head stays fixed; the one scroll region under it carries the 1:1
     // first row (the KPI band beside the last-7-days usage chart), the
     // aggregate stats pair, and the insight/session body.
@@ -449,7 +449,7 @@ describe('OverviewPanel', () => {
       overviewStore.set(true)
     })
     await flush()
-    assert.ok(text(m.container).includes('上下文洞察'))
+    assert.ok(text(m.container).includes('上下文批改 · 洞察'))
     assert.ok(text(m.container).includes('活跃会话'))
     assert.ok(text(m.container).includes('Token 统计'), 'the aggregate stats row rides the zh dictionary too')
     assert.ok(text(m.container).includes('系统提示词'), 'the Context tab\'s composition categories render in zh')
