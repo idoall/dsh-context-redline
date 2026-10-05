@@ -67,7 +67,16 @@
 | 一次性 | `ctx.subagents.start(name, …)` | ❌（除"模型自己用工具发起"那条路径）；结果只回到**调用方** | ❌ 终态、只读 | ❌ |
 | **可续接** | **`ctx.subagents.startContinuable({ provider:'fork', label（必填）, request:{ parent, prompt }, signal })`**（**实测签名**：`parent`/`prompt` 在 `request` 里，`label` 与 `signal` 在外层；见 §3.1.1） | **尽力而为**：运行时**在 `send_message` 可用时**自动追加返回指引；settle 时**尝试**往父会话投递 `subagent-settled` 结算通知 | ✅ 持久会话，按顺序收后续消息、可单独 Stop | ✅ **默认** |
 
-**为什么 v1 必须用可续接**：你要的是"**子会话完成时，主会话根据子会话结果继续后面的任务**"。
+> ⚠️ **真机纠正（2026-10-06）：`startContinuable` 的真实形状不是本文件原写的那样。**
+> 已按安装树 `@deepseek-ai/dsh-subagent` 的 `ContinuableStartSpec` 改正：
+> **`request.parent` 要的是"活的 parent Agent 对象"**（不是会话 id 字符串，用 `ctx.get('agents').get(sessionId)` 拿；
+> 它只对"本进程加载过的会话"有值 —— `docs/01` F48）、**`request.prompt` 要的是 `ContentBlock[]`**（不是字符串）、
+> **`signal` 是必填且在最外层**。第一版照旧文写的字符串传法，真机报
+> `Cannot read properties of undefined (reading 'header')`（它去读 Agent 的 header，读到 undefined）。
+> 已修在 `src/host/redline-channel.ts` 的 `child.start`，并把"正确形状"钉进 `tests/channel/child.spec.ts`
+> （parent 是 Agent、prompt 是 ContentBlock[]、signal 在）。**这条也说明：签名以安装树的 `.d.ts` 为准，别人转述的签名不算数。**
+
+**为什么 v1 必须用可续接****为什么 v1 必须用可续接**：你要的是"**子会话完成时，主会话根据子会话结果继续后面的任务**"。
 一次性形态下，若由**我们插件**直接发起，父会话**不会**被唤醒——结果只落到我们手里，于是只剩两条烂路：
 要么我们替父会话往会话里塞一条消息，要么让用户手工转达。
 

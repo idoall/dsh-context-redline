@@ -41,8 +41,12 @@ interface ChildOps {
   sessionWrites: string[]
   logOffset: () => number
   starts: Record<string, unknown>[]
+  /** 假的活 Agent：`request.parent` 该收到它。 */
+  agent: unknown
   setLog: (next: { type: string }[]) => void
 }
+
+let nullableAgentFor = ''
 
 async function boot(options: { withSubagents?: boolean } = {}): Promise<ChildOps> {
   const { withSubagents = true } = options
@@ -86,6 +90,13 @@ async function boot(options: { withSubagents?: boolean } = {}): Promise<ChildOps
       }
     },
   })
+  // 真机的 `request.parent` 要的是**活的 Agent 对象**（真机纠正见 channel 里的注释）⟹ 这里给一个可辨认的替身。
+  const fakeAgent = { header: { id: 'agent-stub' }, sessionId: 'will-be-replaced' }
+  ctx.provide('agents', {
+    get(id: string) {
+      return id === nullableAgentFor ? undefined : fakeAgent
+    },
+  })
   if (withSubagents) {
     ctx.provide('subagents', {
       async startContinuable(argument: Record<string, unknown>) {
@@ -108,7 +119,7 @@ async function boot(options: { withSubagents?: boolean } = {}): Promise<ChildOps
   assert.ok(channel !== undefined, 'the channel registered')
   return {
     ctx, channel, home, sessionId: session.id, sessionWrites,
-    logOffset: () => session.seq, starts,
+    logOffset: () => session.seq, starts, agent: fakeAgent,
     setLog: (next) => { log = next },
   }
 }
@@ -181,6 +192,18 @@ describe('child.start：全插件唯一的写入点', () => {
     assert.equal(ops.starts.length, 0)
   })
 
+  test('会话不在本进程（拿不到活 Agent）→ not-live，且一次都不发起', async () => {
+    const ops = await boot()
+    nullableAgentFor = ops.sessionId
+    try {
+      const reply = await call(ops, { op: 'child.start', sessionId: ops.sessionId, humanTask: '继续' })
+      assert.equal(code(reply), REDLINE_ERROR.notLive)
+      assert.equal(ops.starts.length, 0, '一次都不许发起')
+    } finally {
+      nullableAgentFor = ''
+    }
+  })
+
   test('运行时没有子会话服务 → 如实拒绝，不装作能开', async () => {
     const ops = await boot({ withSubagents: false })
     const reply = await call(ops, { op: 'child.start', sessionId: ops.sessionId, humanTask: '继续' })
@@ -196,10 +219,13 @@ describe('child.start：全插件唯一的写入点', () => {
     const argument = ops.starts[0]
     assert.equal(argument.provider, 'fork')
     assert.equal(typeof argument.label, 'string')
-    const request = argument.request as { parent: string, prompt: string }
-    assert.equal(request.parent, ops.sessionId)
-    assert.ok(request.prompt.includes('按改好的上下文继续'))
-    assert.ok(request.prompt.includes(EDITED), '改后正文逐字进去')
+    const request = argument.request as { parent: unknown, prompt: { type: string, text: string }[] }
+    assert.equal(request.parent, ops.agent, 'request.parent 必须是活的 Agent 对象（真机纠正）')
+    assert.ok(Array.isArray(request.prompt), 'prompt 必须是 ContentBlock[]')
+    assert.equal(request.prompt[0].type, 'text')
+    assert.ok(request.prompt[0].text.includes('按改好的上下文继续'))
+    assert.ok(request.prompt[0].text.includes(EDITED), '改后正文逐字进去')
+    assert.ok(argument.signal instanceof AbortSignal, 'signal 必填（真机纠正）')
     assert.deepEqual(ok.carriedSeqs, [1301])
     assert.equal(ops.sessionWrites.length, 0, '会话一个字都没写')
     assert.equal(ops.logOffset(), before, '日志 offset 不动')

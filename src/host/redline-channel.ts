@@ -79,11 +79,17 @@ interface SessionQueryFace {
 
 /** `ctx.subagents` 里我们真正要用的那一小块（签名按 `docs/06` §3.1.1 的实测）。 */
 interface SubagentsFace {
-  startContinuable?(options: {
+  startContinuable?(spec: {
     provider: string
     label: string
-    request: { parent: string; prompt: string }
-    signal?: AbortSignal
+    /**
+     * ⚠️ **真机纠正（2026-10-06）**：安装树里 `ContinuableStartSpec` 的 `request.parent` 要的是**活的 parent Agent
+     * 对象**（不是会话 id 字符串）、`request.prompt` 要的是 `ContentBlock[]`（不是字符串），而 `signal` 是**必填**且在外层。
+     * 第一版按 docs/06 §3.1.1 那句「parent/prompt 在 request 里」照传字符串 ⟹ 真机报
+     * `Cannot read properties of undefined (reading 'header')`（它去读 Agent 的 header，读到 undefined）。
+     */
+    request: { parent: unknown; prompt: readonly { type: string; text: string }[] }
+    signal: AbortSignal
   }): Promise<unknown>
 }
 
@@ -456,6 +462,10 @@ const startChild: RedlineOpHandler = async ({ ctx, call }) => {
   const humanTask = typeof call.humanTask === 'string' ? call.humanTask : ''
   const first = buildFirstTask({ humanTask, edits })
   if (!first.ok) return redlineFailure(REDLINE_ERROR.emptyTask, first.message)
+  // 活 Agent：真机的 request.parent 要的是它（agents.get 只对「本进程加载过的会话」有值 —— docs/01 F48）。
+  const agents = ctx.get('agents') as { get?: (id: string) => unknown } | undefined | null
+  const parent = typeof agents?.get === 'function' ? agents.get(sessionId) : undefined
+  if (parent === undefined) return fail(REDLINE_ERROR.notLive)
   const subagents = ctx.get('subagents') as SubagentsFace | undefined | null
   if (subagents === undefined || subagents === null || typeof subagents.startContinuable !== 'function') {
     return fail(REDLINE_ERROR.noSubagents)
@@ -464,7 +474,8 @@ const startChild: RedlineOpHandler = async ({ ctx, call }) => {
   const started = await subagents.startContinuable({
     provider: 'fork',
     label,
-    request: { parent: sessionId, prompt: first.prompt },
+    request: { parent, prompt: [{ type: 'text', text: first.prompt }] },
+    signal: new AbortController().signal,
   })
   return redlineOk({ label, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: started === undefined ? null : started })
 }
