@@ -341,11 +341,11 @@
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
 | M5-01 | `child.fork`（op 名以 `docs/02` §5.2 为准）优先路径：`agentTeams.spawnTeammate(lead,{context:'fork',provider:forkProvider,…})` | TODO | `src/redline/orchestrate.ts` |
-| M5-02 | 兜底路径：`subagents.startContinuable({provider:'fork'})`，界面如实标注"裸子会话" | TODO | `src/redline/orchestrate.ts`、`src/client/**` |
+| M5-02 | 兜底路径：`subagents.startContinuable({provider:'fork'})`，界面如实标注"裸子会话" | DOING | `src/redline/orchestrate.ts`、`src/client/**`  → ✅ 宿主路径已实现并锁住：**兜底路径 `subagents.startContinuable({provider:'fork', label, request:{parent, prompt}})`** 落在通道 op `child.start`（`src/host/redline-channel.ts`），纯逻辑在 `src/redline/orchestrate.ts`；`tests/channel/child.spec.ts` 6 条钉住（拒绝顺序 / 成功路径 / **会话零写入**）。⏳ 界面那句"裸子会话"的如实标注待客户端一起做 |
 | M5-03 | 可选注入 `agentTeams`：团队未启用时插件仍能加载、对接点全隐 | TODO | 插件入口 |
-| M5-04 | 首条任务必须人写（空则拒绝创建） | TODO | `src/redline/orchestrate.ts` |
-| M5-05 | 确认框五项内容生成 | TODO | `src/redline/orchestrate.ts`、`src/client/**` |
-| M5-06 | 取消零副作用：`child.list` 无新项 + 事件数不变 | TODO | `tests/channel/**` |
+| M5-04 | 首条任务必须人写（空则拒绝创建） | DONE | `src/redline/orchestrate.ts`  → `buildFirstTask` 空/纯空白即拒绝（`redline/empty-task`，并给出人话理由）；纯逻辑 + `child.start` 的拒绝顺序都在单测里（`tests/edit/orchestrate.spec.ts` 4 条 + `tests/channel/child.spec.ts`） |
+| M5-05 | 确认框五项内容生成 | DONE | `src/redline/orchestrate.ts`、`src/client/**`  → `forkConfirmItems()` 产出**恰好五项**（从哪儿开始 / 会带上的改动 / 第一句话由人写 / 会带什么不带什么 / 取消=什么都不发生），并有一条测试**禁止出现内部词**（provider·种子·切点·继承范围·fork）；`child.plan` 把它只读地报给界面 |
+| M5-06 | 取消零副作用：`child.list` 无新项 + 事件数不变 | DOING | `tests/channel/**`  → ✅ 已钉住一半：`tests/channel/child.spec.ts` 断言 `child.plan`（= 人还没点确认那一步）**不调 startContinuable、不写会话、不写草稿**；⏳ `child.list` 那一半待 M5 卡片 |
 | M5-07 | 官方对接（读）：`agentTeam` 投影 / `listTasks` → 面板显示官方那份数据 | TODO | `src/redline/team-bridge.ts` |
 | M5-08 | 官方对接（写）：`createTask({subject,description,blockedBy,writeScopes})` | TODO | `src/redline/team-bridge.ts` |
 | M5-09 | 官方对接（写）：`updateTask`（`expectedRevision` 过期被拒，不覆盖） | TODO | `src/redline/team-bridge.ts` |
@@ -413,10 +413,10 @@
 | M3 右侧界面 | 36 | **32** | 1 | 2 | 0 |
 | M4 轮次联动 | 7 | **6** | 0 | 1 | 0 |
 | M4.5 能力验证 | 19 | **6** | 3 | 7 | 3 |
-| M5 编排 | 28 | **3** | 0 | 24 | 1 |
+| M5 编排 | 28 | **5** | 2 | 20 | 1 |
 | M6 入口与发布 | 12 | **7** | 1 | 4 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **272** | **210** | **9** | **46** | **7** |
+| **合计** | **272** | **212** | **11** | **42** | **7** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 

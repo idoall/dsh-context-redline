@@ -27,6 +27,10 @@ export const REDLINE_ERROR = {
   noChange: 'redline/no-change',
   /** The draft empties both the visible text and the thinking text. */
   emptyContent: 'redline/empty-content',
+  /** 首条任务是人写的，空的不能开子会话（M5-04：不产生任何 AI 生成内容）。 */
+  emptyTask: 'redline/empty-task',
+  /** 这台运行时没有可用的子会话服务：别装作能开，如实说"只能人工搬运"。 */
+  noSubagents: 'redline/no-subagents',
   /** `assistant/message` cannot be rewritten on this platform (`docs/01` F7.2). */
   assistantImmutable: 'redline/assistant-immutable',
   /** The target is no longer a surface node (it was replaced) (`docs/01` F7). */
@@ -59,6 +63,8 @@ export const REDLINE_ERROR_MESSAGE: Readonly<Record<RedlineErrorCode, string>> =
   [REDLINE_ERROR.noDraft]: 'no local draft for that seq',
   [REDLINE_ERROR.noChange]: 'the draft does not change the effective text',
   [REDLINE_ERROR.emptyContent]: 'the draft has no content at all',
+  [REDLINE_ERROR.emptyTask]: 'the first task must be written by the human',
+  [REDLINE_ERROR.noSubagents]: 'this runtime exposes no subagents service',
   [REDLINE_ERROR.assistantImmutable]: 'assistant/message cannot be rewritten',
   [REDLINE_ERROR.shadowed]: 'that seq is no longer a surface node',
   [REDLINE_ERROR.badRange]: 'bad void range',

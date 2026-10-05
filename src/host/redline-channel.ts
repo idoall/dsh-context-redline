@@ -53,6 +53,7 @@ import {
 } from '../shared/redline-drafts'
 import { fullReasoningOf, fullTextOf, isErrorOf, seqOf, typeOf } from '../redline/inspect'
 import { turnStateOf, type TurnBoundaryEvent, type TurnState } from '../shared/redline-turn'
+import { buildFirstTask, forkConfirmItems } from '../redline/orchestrate'
 
 /** The host `connection` service, as far as this route consumes it. */
 interface ConnectionHostFace {
@@ -74,6 +75,16 @@ interface SessionQueryFace {
   readEvent?(request: { sessionId: string; seq: number }): Promise<unknown>
   readSurface?(sessionId: string): Promise<unknown>
   listEvents?(sessionId: string): Promise<readonly TurnBoundaryEvent[]>
+}
+
+/** `ctx.subagents` 里我们真正要用的那一小块（签名按 `docs/06` §3.1.1 的实测）。 */
+interface SubagentsFace {
+  startContinuable?(options: {
+    provider: string
+    label: string
+    request: { parent: string; prompt: string }
+    signal?: AbortSignal
+  }): Promise<unknown>
 }
 
 /** The host session store, as far as liveness is concerned. */
@@ -403,6 +414,62 @@ const dropDraft: RedlineOpHandler = async ({ ctx, call }) => {
 }
 
 /**
+ * 开子会话**之前**能问的全部事实（**只读**）：确认框五项 + 组装好的首条任务。
+ * 起点恒为"最后聊完的那一轮"（`docs/01` F38：平台没有更早的起点可用）。
+ */
+const planChild: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const drafts = await readTable(ctx, sessionId)
+  if (!drafts.ok) return drafts
+  // `DraftTable` 是按 seq 键控的 Record（不是数组）⟹ 取值再按 seq 排序，顺序才稳定
+  const edits = Object.values(drafts.value).sort((a, b) => a.seq - b.seq).map(edit => ({ seq: edit.seq, text: edit.text }))
+  const humanTask = typeof call.humanTask === 'string' ? call.humanTask : ''
+  const first = buildFirstTask({ humanTask, edits })
+  const position = '从最后聊完的那一轮开始'
+  return redlineOk({
+    items: forkConfirmItems({ position, humanTask, edits }),
+    carriedSeqs: edits.map(e => e.seq),
+    prompt: first.ok ? first.prompt : null,
+    refusal: first.ok ? null : { code: REDLINE_ERROR.emptyTask, message: first.message },
+  })
+}
+
+/**
+ * **开子会话**：全插件唯一的写入点（`AGENTS.md` §1 的"所有保存都是临时保存"）。
+ *
+ * 它只做三件事：组装首条任务（人写的话 + 逐字带入的改后正文）→ 调 `subagents.startContinuable`
+ * → 把实际写进去的内容回报给调用方记台账。除此之外**不写任何会话**（`session.append` 一次都不调）。
+ *
+ * 拒绝顺序（先说的先算）：会话不在本进程 → 轮次未闭合 → 首条任务为空 → 运行时没有子会话服务。
+ */
+const startChild: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const turn = await turnStateOfSession(ctx, sessionId)
+  if (!turn.known) return fail(REDLINE_ERROR.notLive)
+  if (turn.open) return fail(REDLINE_ERROR.turnOpen)
+  const drafts = await readTable(ctx, sessionId)
+  if (!drafts.ok) return drafts
+  // `DraftTable` 是按 seq 键控的 Record（不是数组）⟹ 取值再按 seq 排序，顺序才稳定
+  const edits = Object.values(drafts.value).sort((a, b) => a.seq - b.seq).map(edit => ({ seq: edit.seq, text: edit.text }))
+  const humanTask = typeof call.humanTask === 'string' ? call.humanTask : ''
+  const first = buildFirstTask({ humanTask, edits })
+  if (!first.ok) return redlineFailure(REDLINE_ERROR.emptyTask, first.message)
+  const subagents = ctx.get('subagents') as SubagentsFace | undefined | null
+  if (subagents === undefined || subagents === null || typeof subagents.startContinuable !== 'function') {
+    return fail(REDLINE_ERROR.noSubagents)
+  }
+  const label = '上下文批改 · ' + sessionId.slice(-8)
+  const started = await subagents.startContinuable({
+    provider: 'fork',
+    label,
+    request: { parent: sessionId, prompt: first.prompt },
+  })
+  return redlineOk({ label, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: started === undefined ? null : started })
+}
+
+/**
  * The op table. M2's entries; M3/M5 add theirs here and nowhere else.
  */
 const OPS = new Map<string, RedlineOpHandler>([
@@ -412,6 +479,8 @@ const OPS = new Map<string, RedlineOpHandler>([
   ['draft.list', listDrafts],
   ['draft.update', updateDraft],
   ['draft.drop', dropDraft],
+  ['child.plan', planChild],
+  ['child.start', startChild],
 ])
 
 /** One JSON reply on the channel. `no-store` matches every other plugin route. */
