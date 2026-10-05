@@ -313,9 +313,9 @@
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
-| M45-01 | 包 A（只读）：`ctx.agents.get(sessionId)` 对当前会话是否可得（V3） | TODO | 探针脚本（临时目录） |
+| M45-01 | 包 A（只读）：`ctx.agents.get(sessionId)` 对当前会话是否可得（V3） | DONE | → ✅ **V3 真机答完（2026-10-05）**：`ctx.agents` 在册（`get`/`create`/`resume`/`list`/`roots`/`isOwnedBy`/`announce`…34 个成员）；**`agents.get(id)` 的真假 = "本进程有没有加载这个会话"**：已加载的 `session-a05f659e`（4110 事件、闲置 2 天）→ **true**；只在磁盘上的 4 个会话 → **false**。⟹ **"闲置"不影响拿得到，"不在本进程"才拿不到** —— 与 UI 里 `known:false`（只能查看）要表达的完全一致，也解释了为什么我在面板上拿 4 天前的老会话试不出那一态（面板显示的会话已被加载）。见 F48 |
 | M45-02 | 包 A：能否读到替换前的**原文**（V8 关键） | TODO | 探针脚本 |
-| M45-03 | 包 A：`subagents.getProvider('fork')` 是否在册、`startContinuable` 是否可用（V12） | DOING | → ✅ **静态半边完成（2026-10-04）**：fork provider 有 `prepareContinuable`（**方法存在即能力**，F26）、`inheritsParentContext=true`、五项能力全 true（含 `agentOptions` —— M5 指定模型/推理档在 fork 路径上成立）；`spawn` provider 无 `prepareContinuable`、`inheritsParentContext=false`。见 `docs/01` **§F45**。**剩真机半边**：`subagents.getProvider('fork')` 在运行实例里确实在册（包 A） |
+| M45-03 | 包 A：`subagents.getProvider('fork')` 是否在册、`startContinuable` 是否可用（V12） | DONE | → ✅ **静态半边完成（2026-10-04）**：fork provider 有 `prepareContinuable`（**方法存在即能力**，F26）、`inheritsParentContext=true`、五项能力全 true（含 `agentOptions` —— M5 指定模型/推理档在 fork 路径上成立）；`spawn` provider 无 `prepareContinuable`、`inheritsParentContext=false`。见 `docs/01` **§F45**。**剩真机半边**：`subagents.getProvider('fork')` 在运行实例里确实在册（包 A） ✅ **真机半边完成（2026-10-05，`probe.services`）**：`subagents` 在册，**`getProvider('fork')` 与 `getProvider('spawn')` 都拿得到**，且 `startContinuable` / `start` / `prepareContinuable` / `registerProvider` / `list` / `interruptByParent` / `listChildren` / `listDescendants` / `drainContinuable*` / `requireContinuations` / `observeActivation` / `assertCapabilities` 都在（27 个成员），见 `docs/01` **F48** |
 | M45-04 | 包 A：`agentTeam` 投影可读性（V10）+ `tryMembership` 对 Lead 的判定（V13） | TODO | 探针脚本 |
 | M45-05 | 🙋 包 B（一次授权）：在**专用可弃会话**里真跑 替换 → 再替换 → 回滚（V7） | WAIT🙋 | 专用会话日志 |
 | M45-06 | 包 B：跨压缩 checkpoint 的版本能否恢复（V9） | WAIT🙋 | 专用会话日志 |
@@ -411,11 +411,11 @@
 | M2 编辑面 | 34 | **32** | 0 | 2 | 0 |
 | M3 右侧界面 | 35 | **31** | 1 | 2 | 0 |
 | M4 轮次联动 | 7 | **5** | 0 | 2 | 0 |
-| M4.5 能力验证 | 19 | **4** | 4 | 8 | 3 |
+| M4.5 能力验证 | 19 | **6** | 3 | 7 | 3 |
 | M5 编排 | 28 | **1** | 0 | 26 | 1 |
 | M6 入口与发布 | 12 | **7** | 1 | 4 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **271** | **204** | **10** | **50** | **7** |
+| **合计** | **271** | **206** | **9** | **49** | **7** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 
