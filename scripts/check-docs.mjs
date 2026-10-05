@@ -154,6 +154,7 @@ if (cl == null) {
     }
   }
   var DOC_TOTAL = n
+  var DOC_DONE = tot.DONE
 }
 
 /* ---------- ⑤ README 双语项数 ---------- */
@@ -166,6 +167,17 @@ if (DOC_TOTAL) {
     else if (Number(m[1]) !== DOC_TOTAL) {
       problems.push(`[README] ${f} 写「${m[1]}」，docs/10 实为「${DOC_TOTAL}」`)
     }
+  }
+  // AGENTS §5 的进度行必须与 docs/10 §11 **一致** —— 2026-10-05 发现它陈旧到 184/269 却没人报错，
+  // 根因是我改了文档却 `replace` 到不存在的串上（静默 no-op）。这条检查就是防它复发的。
+  const agentsText = read('AGENTS.md')
+  const am = agentsText == null ? null : /当前 \*\*DONE (\d+) \/ 共 (\d+)\*\*/.exec(agentsText)
+  if (am === null) {
+    problems.push('[AGENTS] §5 找不到「当前 **DONE x / 共 y**」进度行')
+  } else if (Number(am[1]) !== DOC_DONE || Number(am[2]) !== DOC_TOTAL) {
+    problems.push(`[AGENTS] §5 写「DONE ${am[1]} / 共 ${am[2]}」，与 docs/10 §11 的「DONE ${DOC_DONE} / 共 ${DOC_TOTAL}」不一致`)
+  } else {
+    notes.push(`AGENTS §5 与 docs/10 §11 一致：DONE ${DOC_DONE} / 共 ${DOC_TOTAL}`)
   }
   // README 双语必须成对
   const zh = read('README.zh.md'), en = read('README.md')
