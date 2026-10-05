@@ -227,6 +227,37 @@ function rowOf(seq: number, event: unknown): Record<string, unknown> {
  * Whether the panel may edit this session at all, and if not, why in machine terms.
  * The client shows the demo's sentence and disables `保存` BEFORE any round trip.
  */
+/**
+ * 真机探针（M4.5 包 A 的**只读**半边；2026-10-05 用户授予"授权包②"后加）：
+ * 把宿主**实际**提供的服务、以及它们的方法名外形报出来 —— 只回答"在不在 / 叫什么"，
+ * **不读任何会话内容、不写任何东西**。用途：把 `docs/01` §6 里 V1–V6/V10/V12/V13 那些
+ * "静态能读、真机未知"的条目落成实测。用完整名 `probe.services` 以免被误当业务能力。
+ */
+const probeServices: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call) ?? ''
+  const keys = ['subagents', 'agents', 'agentTeams', 'compaction', 'sessionQuery', 'sessions', 'projection', 'slots', 'settings', 'tools', 'commands']
+  const present: Record<string, string[]> = {}
+  for (const key of keys) {
+    const svc = ctx.get(key) as Record<string, unknown> | undefined
+    if (svc === undefined || svc === null) continue
+    const proto = Object.getPrototypeOf(svc) as Record<string, unknown> | null
+    const names = [...Object.getOwnPropertyNames(proto ?? {}), ...Object.keys(svc)]
+    present[key] = [...new Set(names)].filter(n => n !== 'constructor').slice(0, 40)
+  }
+  const subagents = ctx.get('subagents') as { getProvider?: (n: string) => unknown } | undefined
+  const agents = ctx.get('agents') as { get?: (id: string) => unknown } | undefined
+  const providers: string[] = []
+  for (const name of ['fork', 'spawn', 'fork-in-process', 'spawn-in-process']) {
+    if (typeof subagents?.getProvider === 'function' && subagents.getProvider(name) !== undefined) providers.push(name)
+  }
+  return redlineOk({
+    present,
+    subagentsProviders: providers,
+    subagentsHasStartContinuable: typeof (subagents as { startContinuable?: unknown } | undefined)?.startContinuable === 'function',
+    agentForSession: typeof agents?.get === 'function' ? (sessionId !== '' && agents.get(sessionId) !== undefined) : 'no-agents.get',
+  })
+}
+
 const readTurnState: RedlineOpHandler = async ({ ctx, call }) => {
   const sessionId = sessionIdOf(call)
   if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
@@ -313,6 +344,7 @@ const dropDraft: RedlineOpHandler = async ({ ctx, call }) => {
 const OPS = new Map<string, RedlineOpHandler>([
   ['node.read', readRow],
   ['turnState', readTurnState],
+  ['probe.services', probeServices],
   ['draft.list', listDrafts],
   ['draft.update', updateDraft],
   ['draft.drop', dropDraft],
