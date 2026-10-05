@@ -159,7 +159,6 @@ export type DefaultToolSort = 'size' | 'count' | 'name'
 export type DefaultPlacement = 'all' | 'tab' | 'sidebar'
 
 /** Whether the Context Insights panel's sidebar entry is offered at all. */
-export type InsightsEntry = 'show' | 'hide'
 
 export interface PluginSettings {
   defaultPlacement: DefaultPlacement
@@ -167,7 +166,6 @@ export interface PluginSettings {
   defaultTrendMode: DefaultTrendMode
   defaultToolSort: DefaultToolSort
   defaultFileSort: DefaultFileSort
-  insightsEntry: InsightsEntry
 }
 
 /** The section fields the settings card edits, as the Host schema names them. */

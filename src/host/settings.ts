@@ -37,7 +37,7 @@ export const SETTINGS_NAMESPACE = 'dsh-context-redline'
 
 // The preference vocabulary is declared once in shared/types.ts; re-exported
 // here so host-side consumers keep their canonical import path.
-export type { DefaultFileSort, DefaultGranularity, DefaultPlacement, DefaultToolSort, DefaultTrendMode, InsightsEntry, PluginSettings } from '../shared/types'
+export type { DefaultFileSort, DefaultGranularity, DefaultPlacement, DefaultToolSort, DefaultTrendMode, PluginSettings } from '../shared/types'
 
 /** Section schema: also the wire envelope the browser scope validates against. */
 export const SettingsSchema = z.object({
@@ -49,7 +49,6 @@ export const SettingsSchema = z.object({
   defaultFileSort: z.union(['count', 'latest', 'path']).default('count').loose(),
   // Loose so a stale value also reads as the default (`show`): a config
   // problem must never take the panel's entry away.
-  insightsEntry: z.union(['show', 'hide']).default('show').loose(),
 })
 
 /** Serve the namespace while a settings provider with the register face is composed; inert otherwise. */

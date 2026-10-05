@@ -21,7 +21,7 @@ function hookFor(state: SettingsState) {
 }
 
 function stateOf(partial: Partial<SettingsState> = {}): SettingsState {
-  return { status: 'ready', placement: 'all', granularity: 'step', mode: 'total', toolSort: 'count', fileSort: 'count', insightsEntry: 'show', writable: true, ...partial }
+  return { status: 'ready', placement: 'all', granularity: 'step', mode: 'total', toolSort: 'count', fileSort: 'count', writable: true, ...partial }
 }
 
 /** Menu items portaled into document.body while a select is open. */
@@ -65,7 +65,7 @@ describe('SettingsCard', () => {
     assert.equal(head.getAttribute('aria-label'), `${DICT_EN['settings.collapse']}: ${DICT_EN['settings.title']}`)
     assert.ok(card.className.includes('redline-settings-open'))
     const selects = queryAll(m.container, '.redline-settings-select')
-    assert.equal(selects.length, 6)
+    assert.equal(selects.length, 5)
     assert.ok(selects.every(s => (s as HTMLButtonElement).disabled))
     // Loading is not ready: no read-only note.
     assert.equal(m.container.querySelector('.redline-settings-note'), null)
@@ -104,29 +104,18 @@ describe('SettingsCard', () => {
     assert.equal(selects[0].getAttribute('aria-expanded'), 'false')
     assert.equal(document.body.querySelector('[role="menu"]'), null)
 
-    // The insights-entry row follows the placement one; its pick writes the
-    // visibility field.
-    assert.ok(text(m.container).includes(DICT_EN['settings.insightsEntry']))
-    assert.ok(text(selects[1]).includes(DICT_EN['insightsEntry.show']))
-    await click(selects[1])
-    assert.equal(selects[1].getAttribute('aria-expanded'), 'true')
-    const entryItems = menuItems()
-    assert.deepEqual(entryItems.map(i => text(i)), [DICT_EN['insightsEntry.show'], DICT_EN['insightsEntry.hide']])
-    await click(entryItems[1]) // 'Hide'
-    assert.deepEqual(calls, [['defaultPlacement', 'sidebar'], ['insightsEntry', 'hide']])
-    assert.equal(selects[1].getAttribute('aria-expanded'), 'false')
-    assert.equal(document.body.querySelector('[role="menu"]'), null)
+    // 洞察入口那一行已随洞察面删除（用户 2026-10-05 选二）—— 5 行，索引整体前移一位。
 
     // The granularity row follows.
-    assert.ok(text(selects[2]).includes(DICT_EN['gran.step']))
-    assert.ok(text(selects[3]).includes(DICT_EN['gran.total']))
+    assert.ok(text(selects[1]).includes(DICT_EN['gran.step']))
+    assert.ok(text(selects[2]).includes(DICT_EN['gran.total']))
     assert.ok(text(m.container).includes(DICT_EN['settings.toolSort']))
-    assert.ok(text(selects[4]).includes(DICT_EN['tool.sort.count']))
+    assert.ok(text(selects[3]).includes(DICT_EN['tool.sort.count']))
     assert.ok(text(m.container).includes(DICT_EN['settings.fileSort']))
-    assert.ok(text(selects[5]).includes(DICT_EN['files.sort.count']))
+    assert.ok(text(selects[4]).includes(DICT_EN['files.sort.count']))
 
-    await click(selects[2])
-    assert.equal(selects[2].getAttribute('aria-expanded'), 'true')
+    await click(selects[1])
+    assert.equal(selects[1].getAttribute('aria-expanded'), 'true')
     const items = menuItems()
     assert.equal(items.length, 2)
     assert.deepEqual(items.map(i => text(i)), [DICT_EN['gran.step'], DICT_EN['gran.turn']])
@@ -134,27 +123,25 @@ describe('SettingsCard', () => {
     await click(items[1]) // 'Turn'
     assert.deepEqual(calls, [
       ['defaultPlacement', 'sidebar'],
-      ['insightsEntry', 'hide'],
       ['defaultGranularity', 'turn'],
     ])
-    assert.equal(selects[2].getAttribute('aria-expanded'), 'false')
+    assert.equal(selects[1].getAttribute('aria-expanded'), 'false')
     assert.equal(document.body.querySelector('[role="menu"]'), null)
 
     // The trend-mode row writes the other field.
-    await click(selects[3])
+    await click(selects[2])
     const modeItems = menuItems()
     assert.deepEqual(modeItems.map(i => text(i)), [DICT_EN['gran.total'], DICT_EN['gran.delta']])
     await click(modeItems[1]) // 'Delta'
     assert.deepEqual(calls, [
       ['defaultPlacement', 'sidebar'],
-      ['insightsEntry', 'hide'],
       ['defaultGranularity', 'turn'],
       ['defaultTrendMode', 'delta'],
     ])
     assert.equal(document.body.querySelector('[role="menu"]'), null)
 
     // The tool-sort row leads the file-sort one.
-    await click(selects[4])
+    await click(selects[3])
     const toolItems = menuItems()
     assert.deepEqual(toolItems.map(i => text(i)), [
       DICT_EN['tool.sort.size'],
@@ -164,7 +151,6 @@ describe('SettingsCard', () => {
     await click(toolItems[2]) // 'By name'
     assert.deepEqual(calls, [
       ['defaultPlacement', 'sidebar'],
-      ['insightsEntry', 'hide'],
       ['defaultGranularity', 'turn'],
       ['defaultTrendMode', 'delta'],
       ['defaultToolSort', 'name'],
@@ -172,7 +158,7 @@ describe('SettingsCard', () => {
     assert.equal(document.body.querySelector('[role="menu"]'), null)
 
     // The file-sort row writes the last field.
-    await click(selects[5])
+    await click(selects[4])
     const sortItems = menuItems()
     assert.deepEqual(sortItems.map(i => text(i)), [
       DICT_EN['files.sort.count'],
@@ -182,7 +168,6 @@ describe('SettingsCard', () => {
     await click(sortItems[2]) // 'By path'
     assert.deepEqual(calls, [
       ['defaultPlacement', 'sidebar'],
-      ['insightsEntry', 'hide'],
       ['defaultGranularity', 'turn'],
       ['defaultTrendMode', 'delta'],
       ['defaultToolSort', 'name'],
@@ -251,7 +236,7 @@ describe('SettingsCard', () => {
       const card = query(m.container, '.redline-settings-card')
       assert.ok(card.className.includes('redline-settings-open'))
       assert.equal(query(m.container, '.redline-settings-head').getAttribute('aria-expanded'), 'true')
-      assert.equal(queryAll(m.container, '.redline-settings-select').length, 6)
+      assert.equal(queryAll(m.container, '.redline-settings-select').length, 5)
       assert.equal(scrolled.length, 1, 'the card scrolls itself into view')
       assert.deepEqual(scrolled[0].arg, { block: 'nearest' })
       assert.equal(scrolled[0].el, card)
@@ -304,7 +289,7 @@ describe('PluginConfigCard (the Plugins-page seat)', () => {
     await m2.unmount()
   })
 
-  test('renders the six rows flat — no card chrome, no expand request consumption', async () => {
+  test('renders the five rows flat — no card chrome, no expand request consumption', async () => {
     requestCardExpand()
     const m = await mount(h(PluginConfigCard, { useContextSettings: hookFor(stateOf({ status: 'loading', writable: false })) }))
     assert.equal(m.container.querySelector('.redline-settings-card'), null, 'no settings-section chrome')
@@ -312,7 +297,7 @@ describe('PluginConfigCard (the Plugins-page seat)', () => {
     assert.equal(m.container.querySelector('.redline-settings-head'), null)
     // The rows render immediately: no expand/collapse leg.
     const selects = queryAll<HTMLButtonElement>(m.container, '.redline-settings-select')
-    assert.equal(selects.length, 6)
+    assert.equal(selects.length, 5)
     assert.ok(selects.every(s => s.disabled), 'loading is not ready: the rows are disabled')
     assert.equal(m.container.querySelector('.redline-settings-note'), null)
     await m.unmount()
@@ -336,7 +321,7 @@ describe('PluginConfigCard (the Plugins-page seat)', () => {
     assert.equal(writable.container.querySelector('.redline-settings-note'), null)
     const enabled = queryAll<HTMLButtonElement>(writable.container, '.redline-settings-select')
     assert.ok(enabled.every(s => !s.disabled))
-    await click(enabled[5])
+    await click(enabled[4])
     const items = menuItems()
     assert.deepEqual(items.map(i => text(i)), [
       DICT_EN['files.sort.count'],

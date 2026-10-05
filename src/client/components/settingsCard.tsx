@@ -84,16 +84,7 @@ function PreferenceRows(props: { t: Translate; state: SettingsState; set?: Setti
         ]}
         onPick={(id) => { set?.('defaultPlacement', id) }}
       />
-      <PrefRow
-        label={t('settings.insightsEntry')}
-        value={state.insightsEntry}
-        disabled={disabled}
-        options={[
-          { id: 'show', label: t('insightsEntry.show') },
-          { id: 'hide', label: t('insightsEntry.hide') },
-        ]}
-        onPick={(id) => { set?.('insightsEntry', id) }}
-      />
+      {/* 「洞察入口」那个开关随洞察面一起删掉了（2026-10-05 用户选二）—— 不留"按了没反应"的开关。 */}
       <PrefRow
         label={t('settings.gran')}
         value={state.granularity}

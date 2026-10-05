@@ -317,7 +317,7 @@ check('5 文案', '入口标签不与上游同名（用户 2026-10-04：对话�
   const text = read('src/client/i18n.ts')
   // Every label the USER sees as "this plugin's entry" —— the conversation tab, the
   // sidebar entry button, the overview panel title and the setting that toggles it.
-  const entryKeys = ['tab', 'ov.entry', 'ov.title', 'settings.insightsEntry']
+  const entryKeys = ['tab', 'ov.entry', 'ov.title']
   const missing = entryKeys.filter((k) => !new RegExp(`'${k.replace('.', '\\.')}':`).test(text))
   assert(missing.length === 0, `入口标签的键丢了：${missing.join(', ')}`)
   const labels = []

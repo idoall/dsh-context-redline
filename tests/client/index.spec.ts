@@ -331,7 +331,7 @@ describe('client entry: configForms inject (the Config-form generation)', () => 
     const m = await mount(h(el.type as never, {
       useContextSettings: <T,>(sel: (state: SettingsState) => T): T => sel(store.getSnapshot()),
     }))
-    assert.equal(queryAll(m.container, '.redline-settings-select').length, 6)
+    assert.equal(queryAll(m.container, '.redline-settings-select').length, 5)
     assert.equal(m.container.querySelector('.redline-settings-head'), null, 'no settings-section chrome on this seat')
     await m.unmount()
     disposeRegistration()
@@ -421,7 +421,7 @@ describe('client entry: settings card slot', () => {
     assert.ok(query(m.container, '.redline-settings-card'))
     await click(query(m.container, '.redline-settings-head'))
     const selects = queryAll(m.container, '.redline-settings-select')
-    assert.equal(selects.length, 6)
+    assert.equal(selects.length, 5)
     for (const s of selects) assert.ok((s as HTMLButtonElement).disabled)
     await m.unmount()
     ctx.dispose()

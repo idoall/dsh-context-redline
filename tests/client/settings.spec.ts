@@ -52,7 +52,6 @@ describe('createContextSettings defaults', () => {
       mode: 'total',
       toolSort: 'count',
       fileSort: 'count',
-      insightsEntry: 'show',
       writable: false,
     })
     assert.equal(s.defaultPlacement(), 'all')
@@ -60,7 +59,6 @@ describe('createContextSettings defaults', () => {
     assert.equal(s.defaultTrendMode(), 'total')
     assert.equal(s.defaultToolSort(), 'count')
     assert.equal(s.defaultFileSort(), 'count')
-    assert.equal(s.insightsEntry(), 'show')
   })
 })
 
@@ -163,28 +161,28 @@ describe('set', () => {
     assert.equal(s.defaultPlacement(), 'sidebar')
   })
 
-  test('a rejected insights-entry write degrades to show when the scope carries no valid value', async () => {
-    // Fail open: the unpersisted echo must not keep the panel's entry hidden
-    // until the next reload — with nothing valid in the scope's truth, fall
-    // back to `show`.
+  test('a rejected placement write degrades to the default when the scope carries no valid value', async () => {
+    // Fail open: the unpersisted echo must not keep a bad value until the next
+    // reload — with nothing valid in the scope's truth, fall back to the default.
+    // （这条原先用已经删掉的 `insightsEntry` 当载体；逻辑本身仍在，改指 `defaultPlacement`。）
     const s = createContextSettings()
     const scope = new TestSettingsScope({ status: 'ready', value: {}, writable: true })
     s.attach(scope)
     scope.failSet = true
-    s.set('insightsEntry', 'hide')
-    assert.equal(s.insightsEntry(), 'hide', 'the optimistic echo lands first')
+    s.set('defaultPlacement', 'sidebar')
+    assert.equal(s.defaultPlacement(), 'sidebar', 'the optimistic echo lands first')
     await new Promise(resolve => setTimeout(resolve, 0))
-    assert.equal(s.insightsEntry(), 'show', 'the echo degrades instead of staying unpersisted')
+    assert.equal(s.defaultPlacement(), 'all', 'the echo degrades instead of staying unpersisted')
   })
 
-  test('a rejected insights-entry write rolls back to the scope\'s valid truth', async () => {
+  test('a rejected placement write rolls back to the scope\'s valid truth', async () => {
     const s = createContextSettings()
-    const scope = new TestSettingsScope({ status: 'ready', value: { insightsEntry: 'hide' }, writable: true })
+    const scope = new TestSettingsScope({ status: 'ready', value: { defaultPlacement: 'sidebar' }, writable: true })
     s.attach(scope)
     scope.failSet = true
-    s.set('insightsEntry', 'show')
+    s.set('defaultPlacement', 'tab')
     await new Promise(resolve => setTimeout(resolve, 0))
-    assert.equal(s.insightsEntry(), 'hide')
+    assert.equal(s.defaultPlacement(), 'sidebar')
   })
 })
 
@@ -199,7 +197,6 @@ describe('attach', () => {
         defaultTrendMode: 'delta',
         defaultToolSort: 'name',
         defaultFileSort: 'path',
-        insightsEntry: 'hide',
       },
       writable: true,
     })
@@ -211,7 +208,6 @@ describe('attach', () => {
       mode: 'delta',
       toolSort: 'name',
       fileSort: 'path',
-      insightsEntry: 'hide',
       writable: true,
     })
   })
@@ -241,7 +237,6 @@ describe('attach', () => {
         mode: 'total',
         toolSort: 'count',
         fileSort: 'count',
-        insightsEntry: 'show',
         writable: false,
       })
     }
@@ -251,7 +246,7 @@ describe('attach', () => {
     const s = createContextSettings()
     s.attach(new TestSettingsScope({
       status: 'ready',
-      value: { defaultPlacement: 'window', defaultGranularity: 'bogus', defaultTrendMode: 7, defaultToolSort: 'alpha', defaultFileSort: 'alpha', insightsEntry: 42 },
+      value: { defaultPlacement: 'window', defaultGranularity: 'bogus', defaultTrendMode: 7, defaultToolSort: 'alpha', defaultFileSort: 'alpha' },
       writable: false,
     }))
     assert.equal(s.defaultPlacement(), 'all')
@@ -259,7 +254,6 @@ describe('attach', () => {
     assert.equal(s.defaultTrendMode(), 'total')
     assert.equal(s.defaultToolSort(), 'count')
     assert.equal(s.defaultFileSort(), 'count')
-    assert.equal(s.insightsEntry(), 'show')
   })
 
   test('an invalid scope placement degrades to all instead of keeping the current one', () => {
@@ -273,22 +267,23 @@ describe('attach', () => {
     assert.equal(s.defaultPlacement(), 'all')
   })
 
-  test('an invalid scope insights entry degrades to show instead of keeping the current one', () => {
-    // Fail open on the read path too: a config problem must not leave the
-    // panel's entry hidden.
+  test('an invalid scope granularity is ignored — the current value stands', () => {
+    // 读路径的语义（settings.ts 的 `prefs.granularity ?? state.granularity`）：
+    // 看不懂的值【不当数】，保持当前值；只有 placement 有【退化到 all】的专门分支。
+    // （原用已删的 insightsEntry 当载体，改指 defaultGranularity。）
     const s = createContextSettings()
-    s.set('insightsEntry', 'hide')
-    assert.equal(s.insightsEntry(), 'hide')
-    const scope = new TestSettingsScope({ status: 'ready', value: { insightsEntry: 'visible' }, writable: false })
+    s.set('defaultGranularity', 'turn')
+    assert.equal(s.defaultGranularity(), 'turn')
+    const scope = new TestSettingsScope({ status: 'ready', value: { defaultGranularity: 'bogus' }, writable: false })
     s.attach(scope)
-    assert.equal(s.insightsEntry(), 'show')
+    assert.equal(s.defaultGranularity(), 'turn', '看不懂的值不当数，当前值保持')
   })
 
   test('explicit schema-default values are accepted', () => {
     const s = createContextSettings()
     s.attach(new TestSettingsScope({
       status: 'ready',
-      value: { defaultPlacement: 'all', defaultGranularity: 'step', defaultTrendMode: 'total', defaultToolSort: 'count', defaultFileSort: 'count', insightsEntry: 'show' },
+      value: { defaultPlacement: 'all', defaultGranularity: 'step', defaultTrendMode: 'total', defaultToolSort: 'count', defaultFileSort: 'count' },
       writable: false,
     }))
     assert.equal(s.defaultPlacement(), 'all')
@@ -296,21 +291,19 @@ describe('attach', () => {
     assert.equal(s.defaultTrendMode(), 'total')
     assert.equal(s.defaultToolSort(), 'count')
     assert.equal(s.defaultFileSort(), 'count')
-    assert.equal(s.insightsEntry(), 'show')
   })
 
   test('missing fields keep the current state', () => {
     const s = createContextSettings()
     s.set('defaultPlacement', 'tab')
     s.set('defaultToolSort', 'size')
-    s.set('insightsEntry', 'hide')
+    s.set('defaultTrendMode', 'delta')
     s.attach(new TestSettingsScope({ status: 'ready', value: { defaultFileSort: 'latest' }, writable: false }))
     assert.equal(s.defaultPlacement(), 'tab', 'the in-session choice survives a section without the field')
     assert.equal(s.defaultGranularity(), 'step')
-    assert.equal(s.defaultTrendMode(), 'total')
     assert.equal(s.defaultToolSort(), 'size', 'the in-session tool sort survives a section without the field')
     assert.equal(s.defaultFileSort(), 'latest')
-    assert.equal(s.insightsEntry(), 'hide', 'the in-session entry choice survives a section without the field')
+    assert.equal(s.defaultTrendMode(), 'delta', 'the in-session choice survives a section without the field')
   })
 
   test('scope updates republish to subscribers', () => {
@@ -337,9 +330,9 @@ describe('attach', () => {
     scope.emit({ status: 'ready', value: { defaultFileSort: 'path' }, writable: false })
     assert.equal(calls, 6)
     assert.equal(s.store.getSnapshot().writable, false)
-    scope.emit({ status: 'ready', value: { insightsEntry: 'hide' }, writable: false })
+    scope.emit({ status: 'ready', value: { defaultGranularity: 'step' }, writable: false })
     assert.equal(calls, 7)
-    assert.equal(s.insightsEntry(), 'hide')
+    assert.equal(s.defaultGranularity(), 'step')
   })
 
   test('an identical scope snapshot does not notify listeners', () => {
