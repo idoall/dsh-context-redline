@@ -122,7 +122,8 @@ pnpm install                                                         # 只有这
 ./node_modules/.bin/tsdown                                           # 构建（不要跑 clean-lib.mjs）
 ./node_modules/.bin/vitest run --project edit --project channel --project client-logic --project client-ui   # 自有护栏（门禁）
 node scripts/release-check.mjs                                       # 一条命令跑完全部门禁并打印判定行（发布前自检）
-node scripts/namespace-contract.mjs                                  # 命名空间门禁（11 个面 / 24 项）
+node scripts/namespace-contract.mjs                                  # 命名空间门禁（11 个面 / 26 项）
+node scripts/css-closure.mjs                                         # CSS 闭包：我们的样式出不去、别人的样式删了也不影响我们
 ./node_modules/.bin/oxlint                                           # 风格与类型感知规则
 ./node_modules/.bin/vitest run --project host --project client       # 上游 lane（非门禁；环境依赖，docs/05 §1）
 dsh --profile web --dump-config                                      # 静态确认挂载与命名空间

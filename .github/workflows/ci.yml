@@ -9,6 +9,7 @@ name: ci
 # (`docs/04` M1 DoD 3):
 #   · tsc --noEmit            (types, src + tests)
 #   · node scripts/namespace-contract.mjs   (the M1 naming gate)
+#   · node scripts/css-closure.mjs           (our CSS is a closure: nothing leaks out, nothing leaks in)
 #   · oxlint                  (style + type-aware rules; added 2026-10-04 after a
 #                              green-looking M2 commit shipped 23 lint errors —
 #                              it was never in this list, and the runner only read
@@ -55,5 +56,6 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run lint
       - run: node scripts/namespace-contract.mjs
+      - run: node scripts/css-closure.mjs   # CSS 闭包：我们的样式出不去、别人的删了也影响不到我们
       - run: pnpm run build
       - run: pnpm run test

@@ -87,6 +87,8 @@
 .redline-editor-adv summary { cursor: pointer; }
 .redline-editor-check { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
 .redline-editor-text { font: inherit; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base, transparent); border: 1px solid var(--dsw-alias-border-l1); border-radius: 5px; padding: 6px 8px; resize: vertical; }
+/* 「不可编辑」的状态说明（轮次未闭合 / 不在本进程）：不是报错，所以不用红字 */
+.redline-editor-blocked { font-size: 11px; color: var(--dsw-alias-label-secondary); }
 .redline-editor-err { font-size: 11px; color: var(--ds-color-red, #e5484d); }
 .redline-editor-actions { display: flex; align-items: center; gap: 8px; }
 /* 字段的「去向」标记（docs/03 R3.3.2）：只写本地 vs 会进会话，一眼可分 */

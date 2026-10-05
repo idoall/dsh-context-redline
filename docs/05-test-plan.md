@@ -124,6 +124,7 @@ pnpm install
 ./node_modules/.bin/tsdown
 ./node_modules/.bin/vitest run --project edit --project channel --project client-logic --project client-ui
 node scripts/namespace-contract.mjs        # M1 的命名空间自检（11 个面，docs/04 M1 DoD）
+node scripts/css-closure.mjs               # CSS 闭包（①出不去 ②进不来 ③自足；用户 2026-10-05 要求）
 
 # 上游两个 lane（非门禁；环境依赖，见 §1）
 ./node_modules/.bin/vitest run --project host --project client
