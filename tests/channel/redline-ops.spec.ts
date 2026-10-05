@@ -262,6 +262,12 @@ describe('the read-only probe (M4.5 包 A；真机调用需重启，见 docs/01 
     assert.ok(typeof v.subagentsHasStartContinuable === 'boolean', 'startContinuable 是布尔')
     assert.equal(v.logReadable, true, '这个假会话的日志读得到')
     assert.equal(typeof v.eventCount, 'number', '报了事件条数')
+    // 2026-10-05 扩的三个只读问题：服务路径探索 / V8 原文读回 / V13 Lead 判定
+    assert.ok(typeof v.ctxKeys === 'object' || typeof v.ctxKeys === 'string', 'ctxKeys（枚举不到就如实说）')
+    const shadow = v.shadow as Record<string, unknown>
+    assert.equal(typeof shadow.replaceish, 'number', 'V8：日志里带 sourceEventSeqs 的事件条数')
+    assert.ok(typeof shadow.readback === 'string', 'V8：读回结果一定是一句话/一个状态')
+    assert.ok(v.membership !== undefined, 'V13：membership 一定有个交代（拿不到就说拿不到）')
   })
 
   test('it reads and writes NOTHING: no draft file, no session append', async () => {

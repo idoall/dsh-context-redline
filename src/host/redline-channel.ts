@@ -233,6 +233,9 @@ function rowOf(seq: number, event: unknown): Record<string, unknown> {
  * **不读任何会话内容、不写任何东西**。用途：把 `docs/01` §6 里 V1–V6/V10/V12/V13 那些
  * "静态能读、真机未知"的条目落成实测。用完整名 `probe.services` 以免被误当业务能力。
  */
+/** 把 catch 到的任何东西变成一句话（不要 `as Error` + 可选链堆在一起）。 */
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
 const probeServices: RedlineOpHandler = async ({ ctx, call }) => {
   const sessionId = sessionIdOf(call) ?? ''
   const keys = ['subagents', 'agents', 'agentTeams', 'compaction', 'sessionQuery', 'sessions', 'projection', 'slots', 'settings', 'tools', 'commands']
@@ -264,8 +267,53 @@ const probeServices: RedlineOpHandler = async ({ ctx, call }) => {
       logReadable = false
     }
   }
+  // ── V2/V10 的路径探索：ctx 上到底挂了哪些服务（Cordis 的注册表通常可由 Object.keys 枚举）──
+  let ctxKeys: string[] | string = 'not-enumerable'
+  try {
+    const keys = Object.keys(ctx as unknown as Record<string, unknown>)
+    if (keys.length > 0) ctxKeys = keys.sort()
+  } catch { /* 枚举不到就如实说枚举不到 */ }
+  // ── V8：日志里"被遮蔽的原文"读不读得回来（回滚要用它；只读）──
+  const shadow: Record<string, unknown> = { replaceish: 0, readback: 'no-log' }
+  if (typeof query?.listEvents === 'function' && sessionId !== '') {
+    try {
+      const events = await query.listEvents(sessionId) as readonly Record<string, unknown>[]
+      const carriers = events.filter(e => Array.isArray((e as { sourceEventSeqs?: unknown }).sourceEventSeqs))
+      shadow.replaceish = carriers.length
+      // `.at(0)`：类型上真的可能 undefined（下标写法被当成非空，判断会被 lint 判成多余）
+      const first = carriers.at(0)
+      if (first !== undefined && typeof query.readEvent === 'function') {
+        const seqs = (first as { sourceEventSeqs?: number[] }).sourceEventSeqs ?? []
+        const target = seqs.at(0)
+        if (target === undefined) { shadow.readback = 'carrier-has-no-seq' } else {
+          const back = await query.readEvent({ sessionId, seq: target }) as { text?: unknown; target?: unknown } | null | undefined
+          const text = typeof back?.text === 'string' ? back.text : null
+          shadow.readback = text === null ? 'no-text-field' : (text === '' ? 'empty' : 'ok')
+          shadow.originalPrefix = text === null ? null : text.slice(0, 40)
+          shadow.targetShape = back === null || back === undefined ? 'null' : Object.keys(back).slice(0, 8)
+        }
+      }
+    } catch (error) {
+      shadow.readback = 'threw: ' + messageOf(error).slice(0, 60)
+    }
+  }
+  // ── V13：官方团队的 Lead 判定（只读试探）──
+  let membership: unknown = 'no-agentTeams'
+  const teams = ctx.get('agentTeams') as { tryMembership?: (id: string) => unknown; membership?: (id: string) => unknown } | undefined | null
+  if (teams !== undefined && teams !== null && sessionId !== '') {
+    try {
+      if (typeof teams.tryMembership === 'function') membership = { via: 'tryMembership', value: teams.tryMembership(sessionId) }
+      else if (typeof teams.membership === 'function') membership = { via: 'membership', value: teams.membership(sessionId) }
+      else membership = 'no-method'
+    } catch (error) {
+      membership = { threw: messageOf(error).slice(0, 60) }
+    }
+  }
   return redlineOk({
     present,
+    ctxKeys,
+    shadow,
+    membership,
     logReadable,
     eventCount,
     subagentsProviders: providers,
