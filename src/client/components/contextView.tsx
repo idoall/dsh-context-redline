@@ -98,6 +98,21 @@ export function makeContextView(
     // Official token-meter `contextBreakdown` projection — the exact rows the chat ring's click-open panel shows, so the overview legend
     // reads identically by construction; absent → the fold's own same-estimator sums inside headlineOf.
     const breakdown = projectionOf(props, 'contextBreakdown', contextBreakdownOf)
+    // ⚠️ 临时只读探针（V10，2026-10-05）：宿主到底有没有注册 `subagentCatalog` / `subagentTiming` 两个投影。
+    // 钩子**无条件调用、顺序稳定**（见 projectionOf 的约定），只在 `?redline-probe=1` 时把摘要写进 DOM；
+    // 键名取自安装树 `@deepseek-ai/dsh-subagent` 的投影类型（真实只有这两个，不是三个）。
+    const probeShape = (raw: unknown): string => {
+      if (raw === undefined) return 'undefined'
+      if (raw === null) return 'null'
+      if (Array.isArray(raw)) return 'array:' + String(raw.length)
+      if (typeof raw === 'object') return 'object:' + Object.keys(raw).slice(0, 6).join(',')
+      return typeof raw
+    }
+    const probeCatalog = projectionOf(props, 'subagentCatalog', raw => probeShape(raw))
+    const probeTiming = projectionOf(props, 'subagentTiming', raw => probeShape(raw))
+    const probeOut = typeof location !== 'undefined' && location.search.includes('redline-probe=1')
+      ? JSON.stringify({ catalog: probeCatalog, timing: probeTiming })
+      : null
     // `redlineHeaders` companion projection (full system prompt + tool schemas) for the Context browser; absent key = older Host half →
     // those sections degrade to tokens-only with a note.
     const headers = projectionOf(props, 'redlineHeaders', headersOf)
@@ -537,6 +552,7 @@ export function makeContextView(
 
     return (
       <div className="redline-root" ref={rootRef}>
+        {probeOut === null ? null : <div id="redline-probe-out" data-probe={probeOut} style={{ display: 'none' }} />}
 
         {/* The head band splits into two rows: the session's shape beside the
             plugin card at a 3:1 split, then the two donut cards together. The

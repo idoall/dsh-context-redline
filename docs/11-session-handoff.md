@@ -9,6 +9,10 @@
 
 ---
 
+> ⚠️ **临时探针（发布前必须删）**：① 宿主侧只读 op `probe.services`（`src/host/redline-channel.ts`）；
+> ② 客户端门控探针 `?redline-probe=1`（`src/client/components/contextView.tsx`，产出 `#redline-probe-out`）。
+> 两者都只读、都只服务 M4.5 的真机核实；**M6 发布前删掉**，别当成产品能力。
+
 ## A · 接着干（实施/推进用）
 
 ```text
