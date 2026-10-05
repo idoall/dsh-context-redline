@@ -358,9 +358,9 @@
 | M5-17 | 压缩后如实显示**实际**范围（不是预估） | TODO | `src/client/**` |
 | M5-18 | 结果回流：读父会话 `subagent-settled` + `pending_results` 已查看标记 | TODO | `src/redline/orchestrate.ts` |
 | M5-19 | 三态判定：已收到结算通知 / 有可关联的后续 `turn/start` / 未确认 | TODO | `src/redline/pending.ts` |
-| M5-20 | `plan.next` 次序机器化：waitTurn > applyDrafts > pinInvariants > startChild > compactChild > reviewChild | TODO | `src/redline/plan.ts` |
+| M5-20 | `plan.next` 次序机器化：waitTurn > applyDrafts > pinInvariants > startChild > compactChild > reviewChild | DONE | `src/redline/plan.ts`  → `src/redline/plan.ts`（纯函数，`tests/edit/plan.spec.ts` 10 条）✅ **规格更正**：原次序里的 `pinInvariants` **不实现** —— 固定块/不变量那一层已整套删除（`docs/11` D14、`docs/03`「已删除的卡」），照原文实现等于给界面塞一个永远为假的步骤。另外补了一个规格里隐含、但原先没建模的输入：**已提交进会话的改动条数**（§6 第 4 条的前提是「改完」，没有它就无法区分「没改过」和「改完已提交」）。 |
 | M5-21 | 不膨胀可观测：周期内父会话事件数/字节增量 + 逐条说明来源 | TODO | `src/redline/metrics.ts` |
-| M5-22 | 单测：`plan.next` 每种输入组合（含"到我这为止"） | TODO | `tests/edit/**` |
+| M5-22 | 单测：`plan.next` 每种输入组合（含"到我这为止"） | DONE | `tests/edit/**`  → `tests/edit/plan.spec.ts`：10 条覆盖每一种输入组合（含「轮次未闭合压过一切」「没改过 → idle」「在跑的子会话不提议压缩」「有结果可看时压缩优先」），另有一条**钉住次序不变量**与一条**钉住“不许出现 pinInvariants”**（防那条已被删的步骤复活）。 |
 | M5-23 | 单测：草稿不进种子（只写本地） | TODO | `tests/edit/**` |
 | M5-24 | 单测：团队服务缺失 → `team.*` 返回 `null` 且界面隐藏对接点 | TODO | `tests/channel/**` |
 | M5-25 | 🙋 端到端验收（授权包③，你在场点按钮）：**开子会话** → 建成员 → 压缩 → 回流（冻结已删，不在链路里） | WAIT🙋 | `docs/00-scope.md` S5.5 |
@@ -412,10 +412,10 @@
 | M3 右侧界面 | 35 | **31** | 1 | 2 | 0 |
 | M4 轮次联动 | 7 | **5** | 0 | 2 | 0 |
 | M4.5 能力验证 | 19 | **6** | 3 | 7 | 3 |
-| M5 编排 | 28 | **1** | 0 | 26 | 1 |
+| M5 编排 | 28 | **3** | 0 | 24 | 1 |
 | M6 入口与发布 | 12 | **7** | 1 | 4 | 0 |
 | M7+ 后续 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **271** | **206** | **9** | **49** | **7** |
+| **合计** | **271** | **208** | **9** | **47** | **7** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 
