@@ -199,7 +199,7 @@
 | M2-06 | 能力判定 c：替换体（当前可见）→ `canRewrite:true`（**连改可用的关键**） | DONE | → `isReplacement:true` 的行 `canRewrite:true` —— 这是"面板里改了还能再改"的依据；单测锁定 |
 | M2-07 | 能力判定 d：被压缩埋掉 → 只能批注 + `compacted-region` | DONE | → `compacted:true` → `canRewrite:false` + `blockReason:'compacted'`；**不给动作只给一句原因**（旧写的"只能批注"已随 D18 作废） |
 | M2-08 | 能力判定 e：工具结果可编辑范围（内容文本 + `isError`；不得改工具名/参数结构） | DONE | → 工具结果可改写范围 = 结果文本 + `isError`（`checkChange` 把 `isError` 的翻转也算实质改动，单测锁定）；工具名/参数不在可写面内 |
-| M2-09 | 草稿存储：按会话分文件的 `.json` 原子写（`.tmp` + rename） | DONE | → `src/redline/drafts.ts`（纯：记录形状/覆盖/丢弃/净化文件名/坏文件报错）+ 宿主侧 `writeTable()` 原子写（`.tmp-<pid>-<t>` + rename）。`tests/edit/drafts.spec.ts` 15 条 |
+| M2-09 | 草稿存储：按会话分文件的 `.json` 原子写（`.tmp` + rename） | DONE | → `src/redline/drafts.ts`（纯：记录形状/覆盖/丢弃/净化文件名/坏文件报错）+ 宿主侧 `writeTable()` 原子写（`.tmp-<pid>-<t>` + rename）。`tests/edit/drafts.spec.ts` 15 条 ✅ **真机补证（2026-10-05，用户授权 (A)）**：同一行先存【A-第一版】再存【B-第二版】→ 草稿文件里**只有 1 条** `seq 3358`、结尾是 B、**A 不存在** ⟹ 覆盖而非追加 |
 | M2-10 | 轮次边界检查：open turn → 拒绝写会话类动作 + `turn-open` | DONE | → **已实现（落点与原计划不同，如实记）**：原计划写 `src/redline/write.ts`，实际落在 **`src/shared/redline-turn.ts`（纯函数 `hasOpenTurn`/`turnStateOf`）+ `src/host/redline-channel.ts`** —— 写之前先问 `turnState`（异步 `listEvents` 数轮次边界）：轮次未闭合 → `redline/turn-open` 拒绝，**一个字都不写**（用例断言草稿文件不存在 + `session.append` 调用数 0）。护栏：`tests/edit/turn-state.spec.ts`（9 条）+ `tests/channel/redline-ops.spec.ts`（7 条）+ `tests/client-ui`（3 条）；**4 个变异反向验证全红**，其中一个抓出我自己的空壳护栏（见 M3-30） |
 | M2-11 | 【作废】~~`apply`：组装替换事件（目标 = 当前可见 seq、保留遮蔽来源、append 到日志尾）~~ —— apply 已被硬约束删除（保存只写本地、唯一写入点是开子会话） | DONE | → 作废依据见 M2-34 |
 | M2-12 | 【作废】~~`apply`：`sourceEventSeqs` 规则（覆盖被遮蔽节点；**assistant 不带**）~~ —— 同上：没有 replace，就没有 sourceEventSeqs 规则要落 | DONE | → 作废依据见 M2-34 |
