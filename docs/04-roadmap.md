@@ -173,6 +173,9 @@
 
 ## M5 · 子会话 → 压缩 → 指挥
 
+> **落地设计（2026-10-05 定稿）见 [`docs/06` §3.3](06-orchestration.md)**：调用面（`startContinuable` + 两个 provider 在册 / fork 种子为空 / `agents.get` 的语义 / **压缩要 agent 作用域的 ctx** / 子会话卡用 `subagentCatalog`+`subagentTiming` 两个投影）、唯一写入点的形状、实现顺序，以及**重启后一次跑完的写会话探针表**。
+> ⚠️ **所有宿主侧改动攒成一次重启**（`docs/01` F46）；客户端侧随时改、硬刷新即可。
+
 | 项 | 内容 |
 |---|---|
 | 产物 | `src/redline/`（编排判定，纯逻辑）+ `src/client/`（面板）+ `src/host/redline-channel.ts`（唯一上游接线）：**建子会话（A′ 对接官方）**（冻结记录已按 `docs/11` D10 删除）——**优先** `ctx.agentTeams.spawnTeammate(lead, { context:'fork', provider:<forkProvider>, … })`（进 roster 的正式成员，**种子 = 平台自算的"当前最后一个 `turn/end` 及其之前"**，见 `docs/01` F38），**兜底** `ctx.subagents.startContinuable({provider:'fork'})`（裸子会话，界面如实标注）；**官方对接**：`team.tasks`/`team.members` 读投影、`createTask`/`updateTask` 写官方任务板、`sendMessage` **经官方**派活、`interrupt`（团队成员）／`interruptByParent`（裸子会话）；`ctx.compaction.compactNow(...)` + 失败码映射；**结果回流可见性**（读父会话 `subagent-settled`）；`plan.next` 判定与面板。**可选注入** `agentTeams`（团队未启用时对接点全部消失） |
