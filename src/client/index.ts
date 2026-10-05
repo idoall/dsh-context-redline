@@ -26,7 +26,6 @@ import { createElement as h } from 'react'
 import { DICT_EN, DICT_ZH } from './i18n'
 import { registerContextCommand } from './command'
 import { makeContextModal } from './components/contextModal'
-import { makeOverviewPanel } from './components/overviewPanel'
 import { makeSettingsCard, makePluginConfigCard } from './components/settingsCard'
 import { modalStoreOf } from './modalStore'
 import type { ClientCtx } from './services'
@@ -135,13 +134,12 @@ function apply(ctx: ClientCtx): void {
   // still rides `overviewStore.ts`, so wiring a different opener later needs no
   // panel work. NOTE: with no opener registered today the overlay is unreachable
   // — flagged in `docs/10` M3-35 as a decision (keep for later wiring / remove).
-  const OverviewPanel = makeOverviewPanel(ctx, kit)
-  ctx.slots.inject('shell.overlay', () => {
-    return ctx.slots.register(
-      { name: 'shell.overlay', id: 'redline-overview', order: 10, locale: NS },
-      props => h(OverviewPanel, props as unknown as Parameters<typeof OverviewPanel>[0]),
-    )
-  })
+  // ⚠️ **整块"洞察面"已按用户要求删除**（2026-10-05：「我推荐选二」—— 它是参考插件 dsh-context 的功能，
+  // 我们的 demo 里没有；入口在更早一轮按同一要求拆掉）。删的是我们自己包里的那份复制品：
+  // overviewPanel / overviewButton / overviewCard / overviewTokens / overviewUsage / heatmap / balanceCapsule
+  // + overviewStore + 这处 `shell.overlay` 注册。**共用件一律保留**（`overview.ts` 是全仓核心装配、
+  // `donut` / `pluginInfo` / `agentTree` / `statsTokens·Timing` / `sliceList` / `currentComposition` 我们的面板在用）。
+  // 界线上不碰任何**别人的**插件与其样式。
 
   /** The injected face both preference cards ride: the settings store as the
    *  framework's hooks-compartment `useContextSettings` seat, plus the set verb. */

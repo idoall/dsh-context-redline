@@ -198,43 +198,17 @@ describe('client entry: conversation.input.overlay slot', () => {
   })
 })
 
-describe('client entry: Context Dashboard seats', () => {
-  test('registers the frame overlay; the sidebar-foot ENTRY was removed on request', async () => {
+describe('client entry: the Context Dashboard (洞察面) seats', () => {
+  test('the whole insights surface is REMOVED — no footer entry, no overlay seat', () => {
     const ctx = new TestClientCtx()
     applyTo(ctx)
 
-    // ⚠️ 2026-10-05 用户：「左侧抽屉的底部，我们不需要上下文批改的这个提示。可以去掉」
-    // The footer chip sat directly above Settings in the left drawer; it is gone.
-    // The overlay below stays registered (it is the panel itself) — see docs/10 M3-35
-    // for the open question of what should open it, if anything.
-    assert.equal(ctx.slots.of('sidebar.footer.action').length, 0, '底部入口不再注册')
-
-    const overlays = ctx.slots.of('shell.overlay')
-    assert.equal(overlays.length, 1)
-    assert.equal(overlays[0].registration.name, 'shell.overlay')
-    assert.equal(overlays[0].registration.id, 'redline-overview')
-    assert.equal(overlays[0].registration.locale, 'dsh-context-redline')
-    const overlayEl = overlays[0].component({}) as ReactElement
-    assert.equal((overlayEl.type as { name: string }).name, 'OverviewPanel')
-    const overlayMount = await mount(overlayEl)
-    assert.equal(overlayMount.container.textContent, '', 'closed by default')
-    await overlayMount.unmount()
-    ctx.dispose()
-  })
-
-  test('the overlay stays registered (no opener wired today — docs/10 M3-35)', async () => {
-    const ctx = new TestClientCtx()
-    applyTo(ctx)
-    // 入口已去掉，所以今天没有东西能打开它（真机上也点不到）；这条钉住"面板本身还在、
-    // 且默认是关着的"，将来接一个新的打开方式时只需要动 opener，不用动面板。
-    assert.equal(ctx.slots.of('sidebar.footer.action').length, 0)
-    const overlayEl = ctx.slots.of('shell.overlay')[0].component({}) as ReactElement
-    const overlayMount = await mount(overlayEl)
-    assert.equal(overlayMount.container.textContent, '', 'closed by default')
-    await overlayMount.unmount()
-    // Reset for other specs sharing the module store.
-    const { overviewStore } = await import('../../src/client/overviewStore')
-    overviewStore.set(false)
+    // 用户 2026-10-05：「我推荐选二」+ 界线上"只改我们自己的"。洞察面是参考插件 dsh-context 的功能，
+    // 我们的 demo 里没有 ⟹ 它那一整块（面板 / 入口 / 模块 store / insightsEntry 设置）已从**我们自己的包**里删掉。
+    // 这条钉住"删干净"：两个座位都不再注册 —— 将来若要重现它，按用户口径"自己做、自己重现"，
+    // 而不是留着半死的旧代码。
+    assert.equal(ctx.slots.of('sidebar.footer.action').length, 0, '底部入口不注册')
+    assert.equal(ctx.slots.of('shell.overlay').length, 0, '洞察面板的 overlay 座位也不注册')
     ctx.dispose()
   })
 })
