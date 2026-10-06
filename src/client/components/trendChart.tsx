@@ -125,8 +125,8 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
   // Neutral zebra, deliberately DISJOINT from the category palette — the strip must read as a partition layer, not a bottom segment of the
   // composition bars.
   const TURN_FILLS = [
-    'color-mix(in srgb, var(--color-neutral-500) 12%, transparent)',
-    'color-mix(in srgb, var(--color-neutral-500) 26%, transparent)',
+    'color-mix(in srgb, var(--redline-color-neutral-500) 12%, transparent)',
+    'color-mix(in srgb, var(--redline-color-neutral-500) 26%, transparent)',
   ]
   // Turn labels render at natural width (a 2-digit "12" is wider than a 14px turn bar) and overflow their block.
   // Every label must stay on the single line, so the strip shrinks ALL labels to one font size — the largest at

@@ -38,12 +38,12 @@ interface Slice {
 }
 
 const COLOR = {
-  ttft: 'var(--color-blue-500)',
-  reasoning: 'var(--color-violet-500)',
-  text: 'var(--color-pink-500)',
-  toolarg: 'var(--color-amber-500)',
-  tools: 'var(--color-teal-500)',
-  other: 'var(--color-slate-400)',
+  ttft: 'var(--redline-color-blue-500)',
+  reasoning: 'var(--redline-color-violet-500)',
+  text: 'var(--redline-color-pink-500)',
+  toolarg: 'var(--redline-color-amber-500)',
+  tools: 'var(--redline-color-teal-500)',
+  other: 'var(--redline-color-slate-400)',
 } as const
 
 /**

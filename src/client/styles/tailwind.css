@@ -39,36 +39,33 @@
  * loads this compiler alongside lightningcss's native binding, and two
  * copies of any native set in that realm break the napi calls.
  */
-@theme static {
+/*
+ * ⚠️ 两个 Tailwind 插件的**共享可变状态**必须清零（Code Review P1-1）：
+ * `--spacing` 与 `--color-*` 原来与参考插件 dsh-context 声明**同名同值**。
+ * 同值今天看不出问题，但任一侧改值，**后注入的那份会改掉对方**（以及可能还有宿主）
+ * 所有 `calc(var(--spacing) * N)` / `var(--color-*)` 的解析值，而且没有任何报错。
+ *
+ * 处置（只动我们自己的包）：
+ *   ① `--spacing` 用 `@theme inline` —— 工具类**直接写出 px 值**（实测 `gap-3{gap:12px}`，
+ *      不再是 `calc(var(--spacing) * N)`），而且产物里**连 `--spacing` 声明都不再出现**
+ *      ⟹ 我们与对方没有任何共享变量（由 `css-closure.mjs` 断言）；
+ *   ② 色板改成 `base.css` 里的普通变量 `--redline-color-*`：
+ *      ⚠️ **不能**放在 `@theme` 里改名 —— Tailwind 的 theme 命名空间是固定的，
+ *      改名后整块**不再发射**（实测过：产物里声明 0 次 ⟹ 颜色全失效）；
+ *   ③ 通用工具类编译后用 `:where(.redline-root, …)`（零特异性）收缩进我们自己的根
+ *      （见 `tsdown.config.ts`），规则再也匹配不到别人的 DOM；
+ *   ④ `--animate-*` 本来就是我们的前缀，留在 `@theme` 里正常发射。
+ * ⟹ 我们的样式不依赖任何与别人同名的东西；**别人删了/改了自己的样式也影响不到我们**。
+ */
+@theme inline {
   --spacing: 4px;
-  /*
-   * The plugin's accent palette as standard Tailwind color tokens, values
-   * lifted verbatim from this pinned tailwindcss's theme.css. `static` is
-   * load-bearing: the sibling sheets and the TS color fields consume these
-   * via plain var()/inline styles — never a compiled utility — and Tailwind's
-   * used-only emission would never see them. dsh itself defines no
-   * `--color-*` variables, so the canonical names stay collision-free.
-   */
-  --color-red-500: oklch(63.7% 0.237 25.331);
-  --color-orange-500: oklch(70.5% 0.213 47.604);
-  --color-amber-500: oklch(76.9% 0.188 70.08);
-  --color-green-500: oklch(72.3% 0.219 149.579);
-  --color-teal-500: oklch(70.4% 0.14 182.503);
-  --color-blue-500: oklch(62.3% 0.214 259.815);
-  --color-indigo-500: oklch(58.5% 0.233 277.117);
-  --color-violet-500: oklch(60.6% 0.25 292.717);
-  --color-purple-500: oklch(62.7% 0.265 303.9);
-  --color-pink-500: oklch(65.6% 0.241 354.308);
-  --color-slate-400: oklch(70.4% 0.04 256.788);
-  --color-neutral-500: oklch(55.6% 0 none);
-  /*
-   * The plugin's entrance/state animations as theme tokens — keyframes live
-   * here and emit only when their animate-* utility is used. Entrance delays
-   * ride the element-scoped --redline-i stagger slot inside the shorthand; the
-   * donut sweep omits its 100% keyframe on purpose (CSS lands on the
-   * element's own stroke-dasharray) and runs once on mount, so hover-driven
-   * re-renders never restart it.
-   */
+}
+
+/*
+ * 动画令牌（我们自己的前缀 ⟹ 无共享风险，仍走 `@theme`）。
+ * 色板**不在**这里 —— 见 `base.css` 的 `:root`（改名后 Tailwind 不会发射）。
+ */
+@theme static {
   --animate-redline-donut-in: redline-donut-in 0.45s cubic-bezier(0.4, 0, 0.2, 1) calc(var(--redline-i, 0) * 50ms) backwards;
   --animate-redline-stacked-in: redline-stacked-in 0.4s cubic-bezier(0.4, 0, 0.2, 1) calc(var(--redline-i, 0) * 40ms) backwards;
   --animate-redline-bar-in: redline-bar-in 0.35s cubic-bezier(0.4, 0, 0.2, 1) calc(var(--redline-i, 0) * 15ms) backwards;
@@ -80,6 +77,7 @@
   @keyframes redline-agent-flow { to { stroke-dashoffset: -9; } }
   @keyframes redline-agent-glow { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 }
+
 
 /* The client sources — the only place utility class lists appear. */
 @source "../";

@@ -33,7 +33,7 @@
 .redline-grid-q1 { top: 102px; }
 /* The SOLID zero baseline in BOTH modes — inline-positioned off the up-arm in delta, the chart floor
    (top 130px, right under the bars) under the '0' label in total; painted after the dashed guides. */
-.redline-grid-zero { top: 130px; border-top-style: solid; border-top-color: color-mix(in srgb, var(--color-neutral-500) 50%, transparent); }
+.redline-grid-zero { top: 130px; border-top-style: solid; border-top-color: color-mix(in srgb, var(--redline-color-neutral-500) 50%, transparent); }
 .redline-bar { position: relative; width: 14px; flex: none; height: 100%; display: flex; align-items: flex-end; cursor: pointer; border-radius: 2px; outline: 1px dashed transparent; outline-offset: 1px; transition: opacity var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out), background-color var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out), outline-color var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out); }
 .redline-chart-dim .redline-bar { opacity: 0.35; }
 .redline-chart-dim .redline-bar-in-turn { opacity: 1; }
@@ -57,7 +57,7 @@
  */
 .redline-bar-hovered { outline-color: var(--dsw-alias-brand-primary); }
 .redline-bar-selected { outline: 2px solid var(--dsw-alias-label-primary); outline-offset: 1px; }
-.redline-bar-in-turn { background: color-mix(in srgb, var(--color-neutral-500) 14%, transparent); }
+.redline-bar-in-turn { background: color-mix(in srgb, var(--redline-color-neutral-500) 14%, transparent); }
 .redline-bar-stack { display: flex; flex-direction: column-reverse; width: 100%; }
 .redline-bar-stack > div { width: 100%; }
 /*
@@ -109,8 +109,8 @@
  ends AT the pole, and the first flag lands 4 columns in (pole at 81px), wider than any label's reach
  leftward. Renders BEFORE the ✂ marker so the event glyph paints on top on a same-bar collision.
  */
-.redline-step-flag { position: absolute; right: -1px; top: -17px; bottom: 0; width: 1px; background: color-mix(in srgb, var(--color-neutral-500) 45%, transparent); pointer-events: none; }
-.redline-step-flag-label { position: absolute; top: 0; right: 0; box-sizing: border-box; padding: 1px 3px; border: 1px solid color-mix(in srgb, var(--color-neutral-500) 45%, transparent); border-radius: 3px; background: var(--dsw-alias-bg-layer-1); font-size: 9px; line-height: 1; font-weight: 600; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
+.redline-step-flag { position: absolute; right: -1px; top: -17px; bottom: 0; width: 1px; background: color-mix(in srgb, var(--redline-color-neutral-500) 45%, transparent); pointer-events: none; }
+.redline-step-flag-label { position: absolute; top: 0; right: 0; box-sizing: border-box; padding: 1px 3px; border: 1px solid color-mix(in srgb, var(--redline-color-neutral-500) 45%, transparent); border-radius: 3px; background: var(--dsw-alias-bg-layer-1); font-size: 9px; line-height: 1; font-weight: 600; color: var(--dsw-alias-label-secondary); white-space: nowrap; }
 /*
  Turn strip: NEUTRAL zebra fills (inline, see TURN_FILLS) — never the category palette, or the strip reads as a detached bottom segment of the bars.
  */

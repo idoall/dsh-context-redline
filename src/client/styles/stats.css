@@ -57,7 +57,7 @@ a.redline-stat:hover { border-color: var(--dsw-alias-label-secondary); }
 .redline-col-donut .redline-donut-row { flex: 1; }
 .redline-donut { position: relative; flex: none; }
 .redline-donut svg { display: block; }
-.redline-donut-track { stroke: color-mix(in srgb, var(--color-neutral-500) 18%, transparent); }
+.redline-donut-track { stroke: color-mix(in srgb, var(--redline-color-neutral-500) 18%, transparent); }
 /* The legend row ↔ segment hover link: hovering either side dims the ring's
    other slices to 0.35 (the stacked bars' idiom) while the active one stays
    solid; the center figures stay at rest. */

@@ -1,4 +1,29 @@
 /*
+ * 我们的色板：**普通 CSS 变量**，不经过 Tailwind（Code Review P1-1）。
+ * 为什么不用 `@theme`：Tailwind 的 theme 命名空间是**固定**的（`--color-*`），
+ * 一旦改名就整块不发射（实测：产物里声明 0 次 ⟹ 我们所有 `var(--redline-color-*)` 全部失效）。
+ * 放这里则有两条好处：① 名字只属于我们 ⟹ 别的插件改自己的色板影响不到我们；
+ * ② 我们不再声明任何与别人同名的 `--color-*` ⟹ 也不会改掉别人的观感。
+ * 值取自本仓 pin 的 tailwindcss 4.3.3 的 theme.css。
+ * 完整性由 `scripts/css-closure.mjs` 守着：每个 `var(--redline-color-*)` 读取点
+ * 都必须能在我们自己的样式里找到同名声明。
+ */
+:root {
+--redline-color-red-500: oklch(63.7% 0.237 25.331);
+--redline-color-orange-500: oklch(70.5% 0.213 47.604);
+--redline-color-amber-500: oklch(76.9% 0.188 70.08);
+--redline-color-green-500: oklch(72.3% 0.219 149.579);
+--redline-color-teal-500: oklch(70.4% 0.14 182.503);
+--redline-color-blue-500: oklch(62.3% 0.214 259.815);
+--redline-color-indigo-500: oklch(58.5% 0.233 277.117);
+--redline-color-violet-500: oklch(60.6% 0.25 292.717);
+--redline-color-purple-500: oklch(62.7% 0.265 303.9);
+--redline-color-pink-500: oklch(65.6% 0.241 354.308);
+--redline-color-slate-400: oklch(70.4% 0.04 256.788);
+--redline-color-neutral-500: oklch(55.6% 0 none);
+}
+
+/*
  * Shared base for every plugin surface: the Context tab's root/card chrome,
  * the `.redline-gran` segmented toggle, list-column anatomy, empty/error states,
  * and the composer-hiding rule. Imported FIRST of the plugin's sheets —

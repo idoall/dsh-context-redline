@@ -94,6 +94,57 @@ function sourceAssetPath(source: string, importer: string): string {
 // drive the oxide scanner here. Every other sheet stays plain CSS.
 const TAILWIND_ENTRY = 'tailwind.css'
 
+/**
+ * 我们自己的 DOM 根标记（Code Review P1-1）。通用工具类（`.flex` / `.gap-3` …）与
+ * 参考插件 dsh-context **同名同款**，而两个插件的样式表都注入同一个 document ⟹
+ * 后注入的那份会改掉对方的观感（今天同值所以看不见）。
+ *
+ * 处置：只把**我们编译出来的 Tailwind 工具类**用 `:where(...)` 收缩进这些根里。
+ * `:where()` 的特异性为 **0** ⟹ 选择器的特异性与收缩前**完全一样**（不会翻转级联顺序），
+ * 但规则**再也匹配不到别人的 DOM**。
+ */
+const REDLINE_UTILITY_ROOTS = ['.redline-root', '.redline-modal-backdrop', '.redline-jump']
+
+/** 把工具类表里每条规则的每个选择器，包进我们的根（后代 + 自身两种形态）。 */
+function scopeUtilitiesToRedline(css: string): string {
+  const where = `:where(${REDLINE_UTILITY_ROOTS.join(', ')})`
+  const scopeSelector = (sel: string): string => {
+    const trimmed = sel.trim()
+    if (trimmed === '') return trimmed
+    // ⚠️ `:root` / `:host` 是**变量声明块**（我们的色板），绝不能收缩：
+    // 收缩后规则匹配不到任何元素 ⟹ 我们自己的 `var(--redline-color-*)` 全部失效。
+    // `@keyframes`/`@property` 是 at-rule，调用方本来就按块分流跳过。
+    if (trimmed === ':root' || trimmed === ':host') return trimmed
+    return `${where} ${trimmed}, ${trimmed}:where(${REDLINE_UTILITY_ROOTS.join(', ')})`
+  }
+  const scopePrelude = (prelude: string): string =>
+    prelude.split(',').map(scopeSelector).join(', ')
+  let out = ''
+  let prelude = ''
+  let depth = 0
+  // 逐字符扫描，只在**最外层**（depth 0）改写选择器；块内原样保留。
+  for (let i = 0; i < css.length; i += 1) {
+    const ch = css[i]
+    if (ch === '{') {
+      const head = prelude.trim()
+      if (depth === 0 && !head.startsWith('@')) out += scopePrelude(head) + '{'
+      else out += head + '{'
+      depth += 1
+      prelude = ''
+    } else if (ch === '}') {
+      depth -= 1
+      out += '}'
+      prelude = ''
+    } else if (ch === ';' && depth === 0) {
+      out += prelude + ';'
+      prelude = ''
+    } else {
+      prelude += ch
+    }
+  }
+  return out + prelude
+}
+
 interface WatchCapable {
   addWatchFile(file: string): void
 }
@@ -168,11 +219,14 @@ function cssChannels(id: string) {
       // The Tailwind entry compiles to a CSS string first; every other sheet
       // hands its Buffer straight to lightningcss. Either way the binding
       // reads the TypedArray, so the code must never arrive as a string.
-      const code = basename(fileId) === TAILWIND_ENTRY
+      const isTailwind = basename(fileId) === TAILWIND_ENTRY
+      const code = isTailwind
         ? Buffer.from(await compileTailwindSheet(this, fileId, raw.toString()))
         : raw
       const { code: css } = transform({ filename: fileId, code, minify: true })
-      return styleInjectionModule(id, fileId, css.toString())
+      const text = css.toString()
+      // 只收缩**我们自己的**工具类（`src/client/styles/tailwind.css` 那张表）。
+      return styleInjectionModule(id, fileId, isTailwind ? scopeUtilitiesToRedline(text) : text)
     },
   }]
 }

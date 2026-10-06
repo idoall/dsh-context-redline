@@ -18,7 +18,7 @@
  * 只读、退出码 0/1。用法：node scripts/css-closure.mjs [--verbose]
  */
 
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, dirname, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -144,6 +144,106 @@ for (const path of walk(join(ROOT, 'src'))) {
   const text = stripCss(readFileSync(path, 'utf8'))
   const hit = /\.redline-[a-z0-9-]+\s*(?:,|\{)/i.exec(text)
   if (hit !== null) problems.push(`[②进不来] ${relative(ROOT, path)}: 在样式目录之外定义了规则 \`${hit[0].slice(0, 40)}\``)
+}
+
+// ── ②′ 与参考插件的**共享可变状态**必须清零（Code Review P1-1）────────────────────
+// 背景：两个插件把样式注入**同一个 document**。历史上双方都声明 `--spacing` 与一组
+// `--color-*`（逐字同值），还有几十个同名通用工具类（也逐字同款）。同值所以看不出问题，
+// 但任一侧改值/改声明，**后注入的那份会改掉对方**，而且没有任何报错。
+//
+// 我们的闭包（只动我们自己的包）：
+//   · 色板：普通 CSS 变量 `--redline-color-*`（`base.css` 的 `:root`），不再声明 `--color-*`；
+//   · 间距：`@theme inline` ⟹ 工具类直接写出 px，**我们不再发射 `--spacing`**；
+//   · 通用工具类：编译后用 `:where(.redline-root, …)`（**零特异性**）收缩进我们自己的根，
+//     规则再也匹配不到别人的 DOM。
+// 下面把它变成可机械检验的性质 —— 其中 (a2)/(a3) 正是"自己把色板改坏"能立刻发现的那条。
+const OUR_BUNDLE = join(ROOT, 'lib/client.js')
+const UPSTREAM_BUNDLE = join(process.env.HOME ?? '', '.dsh/profiles/web/node_modules/dsh-context/lib/client.js')
+
+// (a) 源码级：不许再读别人的色板 / 共享间距变量。
+for (const path of walk(join(ROOT, 'src'))) {
+  const text = stripCss(readFileSync(path, 'utf8'))
+  const rel = relative(ROOT, path)
+  for (const m of text.matchAll(/var\(--color-[a-z0-9-]+\)/g)) {
+    problems.push(`[②′闭包] ${rel}: 仍在读别人的色板变量 \`${m[0]}\` —— 必须用我们的 \`--redline-color-*\``)
+  }
+  for (const m of text.matchAll(/var\(--spacing\)/g)) {
+    problems.push(`[②′闭包] ${rel}: 仍在读 \`var(--spacing)\` —— 工具类已内联成 px，我们的样式不该再依赖它`)
+  }
+}
+
+if (!existsSync(OUR_BUNDLE)) {
+  notes.push('跨插件/自足检查：还没有 `lib/client.js`（先 `pnpm run build`）⟹ 本轮跳过产物级检查')
+} else {
+  const ours = readFileSync(OUR_BUNDLE, 'utf8')
+  // (a2) **我们自己的变量必须自足**：每个 `var(--redline-color-*)` 读取点都要有同名声明。
+  const declared = new Set([...ours.matchAll(/--redline-color-[a-z0-9-]+(?=:)/g)].map((m) => m[0]))
+  const readVars = new Set([...ours.matchAll(/var\((--redline-color-[a-z0-9-]+)\)/g)].map((m) => m[1]))
+  const undeclared = [...readVars].filter((v) => !declared.has(v))
+  if (undeclared.length > 0) {
+    problems.push(`[②′自足] 我们读了但没有声明的色板变量：${undeclared.join(', ')} —— `
+      + '色板必须写在我们自己的样式里（曾经把 `@theme` 的键改名导致整块不发射 ⟹ 颜色全失效）')
+  }
+  notes.push(`色板自足：声明 ${declared.size} 个 / 读取 ${readVars.size} 个${undeclared.length === 0 ? '，全部有声明' : ''}`)
+  // (a3) 我们**不许**声明与别人同名的变量（`--color-*` / `--spacing`）。
+  const sharedDecls = [...new Set([...ours.matchAll(/--color-[a-z0-9-]+(?=:)/g)].map((m) => m[0]))]
+  if (sharedDecls.length > 0) {
+    problems.push(`[②′跨插件] 我们仍在声明与别人同名的变量：${sharedDecls.join(', ')} —— 后注入者会覆盖对方（也可能被对方覆盖）`)
+  }
+  if (/--spacing\s*:/.test(ours)) {
+    problems.push('[②′跨插件] 我们仍在发射 `--spacing` —— `@theme inline` 后它不该出现（对方正在用 calc(var(--spacing)*N) 算间距，我们不该参与）')
+  }
+
+  // (b) 工具类必须收缩进我们自己的根：只对**抽出来的 CSS 文本**逐条规则扫（不能扫 JS，对象字面量会被误判）。
+  const sheets = []
+  for (const hit of ours.matchAll(/"((?:[^"\\]|\\.)*)"/g)) {
+    try {
+      const parsed = JSON.parse(`"${hit[1]}"`)
+      if (typeof parsed === 'string' && parsed.includes('{') && parsed.length > 200) sheets.push(parsed)
+    } catch { /* 非字符串字面量 */ }
+  }
+  let checked = 0
+  let unscoped = 0
+  for (const sheet of sheets) {
+    let depth = 0
+    let prelude = ''
+    for (const ch of sheet) {
+      if (ch === '{') {
+        const head = prelude.trim()
+        if (depth === 0 && !head.startsWith('@')) {
+          for (const one of splitTopLevel(head)) {
+            const classes = [...one.matchAll(/\.([A-Za-z_][\w-]*)/g)].map((m) => m[1])
+            const foreign = classes.filter((c) => !c.startsWith('redline-') && !c.startsWith('lc-'))
+            if (foreign.length === 0) continue
+            checked += 1
+            if (!/:where\(\.redline-/.test(one)) {
+              unscoped += 1
+              if (unscoped <= 3) problems.push(`[②′闭包] 通用工具类规则没有收缩进我们的根：\`${one.trim().slice(0, 80)}\``)
+            }
+          }
+        }
+        depth += 1
+        prelude = ''
+      } else if (ch === '}') {
+        depth -= 1
+        prelude = ''
+      } else if (ch === ';' && depth === 0) {
+        prelude = ''
+      } else prelude += ch
+    }
+  }
+  notes.push(`工具类作用域化：${sheets.length} 张样式表里检查了 ${checked} 条含"别人的类名"的规则，未收缩 ${unscoped} 条`)
+
+  // (c) 拿得到对方包时：只核对"我们是否还共享变量名"，工具类声明差异只作提示（有意解耦）。
+  if (existsSync(UPSTREAM_BUNDLE)) {
+    const theirs = readFileSync(UPSTREAM_BUNDLE, 'utf8')
+    const rootVars = (text) => new Set([...text.matchAll(/:root[^{]*\{([^}]*)\}/g)].flatMap((m) => [...m[1].matchAll(/(--[a-z0-9-]+)\s*:/g)].map((x) => x[1])))
+    const shared = [...rootVars(ours)].filter((v) => rootVars(theirs).has(v))
+    if (shared.length > 0) problems.push(`[②′跨插件] 我们与对方仍共享变量名：${shared.join(', ')}`)
+    notes.push(`跨插件：与对方共享的变量名 ${shared.length} 个（应为 0）`)
+  } else {
+    notes.push('跨插件对照：拿不到对方的包 ⟹ 跳过（源码 + 产物级的自足检查仍已执行）')
+  }
 }
 
 // ── ③ 自足：组件 `className` 里用到的 redline- 类必须在样式里有定义 ─────────────

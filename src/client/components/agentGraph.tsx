@@ -47,9 +47,9 @@ const CAPTION_H = 60
 /** Fallback arc color for pressure-only nodes (no composition data), by fill ratio. */
 export function ringColorOf(pct: number | null): string {
   if (pct === null) return 'var(--dsw-alias-border-l1)'
-  if (pct >= 90) return 'var(--color-red-500)'
-  if (pct >= 70) return 'var(--color-amber-500)'
-  return 'var(--color-green-500)'
+  if (pct >= 90) return 'var(--redline-color-red-500)'
+  if (pct >= 70) return 'var(--redline-color-amber-500)'
+  return 'var(--redline-color-green-500)'
 }
 
 export function makeAgentGraph(
