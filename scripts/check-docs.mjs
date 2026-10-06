@@ -155,6 +155,7 @@ if (cl == null) {
   }
   var DOC_TOTAL = n
   var DOC_DONE = tot.DONE
+  var DOC_DONE = tot.DONE
 }
 
 /* ---------- ⑤ README 双语项数 ---------- */
@@ -184,6 +185,18 @@ if (DOC_TOTAL) {
   if (zh && en) {
     const h = (t) => (t.match(/^\|\s*\[/gm) || []).length
     if (h(zh) !== h(en)) notes.push(`README 双语表格行数不同（zh ${h(zh)} / en ${h(en)}）—— 请人工确认是否成对`)
+  }
+}
+
+/* ---------- ⑤′ docs/11 的进度行必须与 docs/10 实算一致 ---------- */
+if (typeof DOC_TOTAL === 'number') {
+  const h = read('docs/11-session-handoff.md')
+  if (h) {
+    const m = /\|\s*进度\s*\|\s*`docs\/10`：\*\*DONE (\d+) \/ 共 (\d+)\*\*/.exec(h)
+    if (!m) problems.push('[docs/11] 找不到「进度」行（应为 `DONE x / 共 y` 格式）')
+    else if (Number(m[1]) !== DOC_DONE || Number(m[2]) !== DOC_TOTAL) {
+      problems.push(`[docs/11] 进度行写「DONE ${m[1]} / 共 ${m[2]}」，docs/10 实算「DONE ${DOC_DONE} / 共 ${DOC_TOTAL}」`)
+    }
   }
 }
 

@@ -587,6 +587,15 @@ SpawnTeammateRequest = {
 | F39 | **设置服务的注册面在 0.2.0-rc.2 已经没有了**：`@deepseek-ai/dsh-settings` 导出 `SettingsForms`（`describe/update/replace/mutate`）而**没有** `SettingsProvider`、**没有** `register(ns, schema)` ⟹ 上游那套"插件注册自己的偏好命名空间"的写法在这个运行时上**恒为 no-op**（需要改成"偏好声明为 loader Config 的 `.volatile()` 字段"或删掉） | §F39（本机实测） | ⚠️ **2026-10-05 补正（真机实测）**：`register(ns, schema)` 这个 **API 形状**确实没了，但**不等于设置面不能用** —— 真机上点插件信息卡的 `打开插件设置` 会打开宿主的**插件设置页**（整页，不是弹窗），里面把本插件 schema 的**六个字段**都渲染成可改的下拉（入口位置 / 洞察入口 / 趋势图·默认粒度 / 趋势图·默认展示方式 / 工具定义·默认排序 / 文件活动·默认排序），并显示 `包含的组件：上下文批改 · 运行中`。⟹ 读这条时别得出"设置面废了"的结论（`docs/10` M3-23 已按此改判）。
 | F40 | **插件的 CSS 会被注进同一个 document，且是不分层（unlayered）的全局规则** ⟹ 两个插件若共用类名前缀，**同特异性下后注入者顶掉先注入者**（不报错）。上游整套 chrome 用 `lc-*`（实装 0.60.0 的 `lib/client.js` 里 572 处、我们复制基线里 468 个不同类名）⟹ 必须换前缀 | §F40（本机实测） |
 | F43 | **官方有一个现成的「事件 → 语义文本」提取器，但插件不能 import 它**：`@deepseek-ai/dsh-session-query` 导出 `extractSessionEventText(event)`；然而（a）它**不在 profile 层的依赖树里**（F42：那里只有 5 个包）⟹ 真机 import 解析不到；（b）加进 `peerDependencies` 会被 tsdown 当外部依赖、真机仍解析不到；（c）加进 `dependencies` 会把整包**内联**进宿主 bundle（复制一份）。⟹ 我们自己写 `src/redline/inspect.ts`，并用 `tests/edit/fulltext.spec.ts` 把它钉在与宿主一致的事件形状上 | §F43（本机实测，2026-10-04） |
+| F50 | **V11 端到端真机跑通（2026-10-06，`child.start` 第一次真的开出子会话）**：在已加载且轮次闭合的会话
+`session-d27155c3`（可弃）上调 `child.start` → 返回 `{childId:"66da37b9-…", messageId:"aeb5e73b-…"}`，
+`~/.dsh/sessions/<项目>/` 目录数 **28 → 29**，新增目录名就是那个 `childId`（⚠️ 注意：**childId 没有 `session-` 前缀**，
+我第一版拿 `session-<childId>` 去读，得到"不可读"，纯属自己传错 id）。**两条结论**：
+**① fork 出来的子会话带着父会话的完整历史** —— 子会话日志实测 **5699 条事件**（父会话 5686 条 + 我们这条探针带来的 13 条），
+里面 `assistant/message` 1015 条、`tool/call` 1012 条、`subagent/descriptor` 1 条 ⟹ **`docs/01` F45 那句"种子空 ⟹ 子会话不带历史"被真机推翻**
+（fork provider 是**把父会话日志当种子**的）。**② 草稿仍然过不去**（种子来自日志，本地草稿不在日志里）⟹ 
+"把改后正文逐字写进首句"**依旧是必需项**，只是理由从"子会话没有历史"改成"子会话有历史、但没有你的本地改动"。
+**③ 子会话在本进程里 `known:false`**（它是持久会话，但此刻没有活的 Agent）—— 与 F48 的语义一致。 | §F50（实测 2026-10-06） |
 | F49 | **2026-10-05 第二轮真机只读探针 + 静态查证（新 pid 85196）**：**① `ctx` 的服务不可枚举** ——
 `Object.keys(ctx)` 只给出 `["fiber"]` ⟹ 找服务只能靠**按名字试探**或**读安装树的 `.d.ts`**（这条顺便解释了 F48 里
 "知道有服务但不知道键名"的困境）。**② 压缩服务要的是"agent 上下文"，不是会话 id** —— `@deepseek-ai/dsh-compaction` 的
