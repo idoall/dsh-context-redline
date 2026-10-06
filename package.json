@@ -47,7 +47,7 @@
     "namespace-contract": "node scripts/namespace-contract.mjs",
     "test": "vitest run --project edit --project channel --project client-logic --project client-ui",
     "test:upstream": "vitest run --project host --project client",
-    "verify": "pnpm run typecheck && pnpm run lint && pnpm run namespace-contract && pnpm run build && pnpm run test"
+    "verify": "pnpm run typecheck && pnpm run lint && node scripts/check-docs.mjs && pnpm run namespace-contract && node scripts/css-closure.mjs && pnpm run build && pnpm run test"
   },
   "dsh": {
     "manifestVersion": 1,

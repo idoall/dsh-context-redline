@@ -55,6 +55,7 @@ jobs:
 
       - run: pnpm run typecheck
       - run: pnpm run lint
+      - run: node scripts/check-docs.mjs      # 文档一致性（版本/目录/命名/计数/表格/A17）
       - run: node scripts/namespace-contract.mjs
       - run: node scripts/css-closure.mjs   # CSS 闭包：我们的样式出不去、别人的删了也影响不到我们
       - run: pnpm run build
