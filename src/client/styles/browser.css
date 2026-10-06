@@ -75,7 +75,10 @@
 .redline-act-seq { flex: none; color: var(--dsw-alias-label-dimmed); font-size: 11px; font-variant-numeric: tabular-nums; }
 /* 「已改（本地）」：只出现一次，就在 #seq 旁边（docs/11 D20） */
 .redline-chip-local { flex: none; font-size: 11px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 4px; padding: 0 6px; }
-.redline-chip-soft { flex: none; font-size: 11px; color: var(--dsw-alias-label-secondary); border: 1px dashed var(--dsw-alias-border-l1); border-radius: 4px; padding: 0 6px; cursor: help; }
+/* 信息型标记（`高级编辑` / `助手消息改不了` / `已被 #K 接替`）：**只用虚线框与 `title` 说明，
+   不给「?」光标**。用户 2026-10-06：「高级编辑处也有问号，鼠标移上去有问号，但点不了」——
+   `cursor: help` 画出的问号箭头会被读成"这里能点"，而它本来只是个标记（demo 里也没有这个光标）。 */
+.redline-chip-soft { flex: none; font-size: 11px; color: var(--dsw-alias-label-secondary); border: 1px dashed var(--dsw-alias-border-l1); border-radius: 4px; padding: 0 6px; }
 .redline-btn { font: inherit; font-size: 11px; line-height: 1; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 5px; padding: 3px 9px; cursor: pointer; }
 .redline-btn:hover:not(:disabled) { border-color: var(--dsw-alias-label-secondary); }
 .redline-btn:disabled { opacity: 0.5; cursor: default; }
@@ -91,8 +94,9 @@
 .redline-editor-blocked { font-size: 11px; color: var(--dsw-alias-label-secondary); }
 .redline-editor-err { font-size: 11px; color: var(--ds-color-red, #e5484d); }
 .redline-editor-actions { display: flex; align-items: center; gap: 8px; }
-/* 字段的「去向」标记（docs/03 R3.3.2）：只写本地 vs 会进会话，一眼可分 */
-.redline-dest { font-size: 10px; color: var(--dsw-alias-label-dimmed); border-bottom: 1px dotted var(--dsw-alias-border-l1); cursor: help; }
+/* 字段的「去向」标记（docs/03 R3.3.2）：只写本地 vs 会进会话，一眼可分。
+   同样是**信息型**：虚线 + `title`，不给「?」光标（理由同 `.redline-chip-soft`）。 */
+.redline-dest { font-size: 10px; color: var(--dsw-alias-label-dimmed); border-bottom: 1px dotted var(--dsw-alias-border-l1); }
 /* 动作区**不留浮标**（用户 2026-10-06：编辑时「保存」上那个「?」要去掉）。
    原来的 `.redline-qwrap` / `.redline-qfloat` 是给已删除的**批注**动作做说明角标的；
    现在说明挂在 `保存` 按钮自己的 `title` 上（见 `redlineEdit.tsx`），CSS 一并删干净。 */

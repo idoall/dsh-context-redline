@@ -264,6 +264,32 @@ for (const file of cssFiles) {
   }
 }
 
+// ── ②‴ 「?」光标（`cursor: help`）一律不许用（用户 2026-10-06）────────────────────
+// 用户原话：「**高级编辑处也有问号，鼠标移上去有问号，但点不了**，在工具结果那里。」
+// 他说的「问号」不是某个字符，而是 `cursor: help` 画出来的**问号箭头光标** ——
+// 那个光标读起来像"这里能点/有说明"，可我们所有挂它的元素**都不可点**（只有 `title`）。
+// 准绳在 demo 与上游：demo 只在**可点**的 `.qfloat` / `.exnum` 上用 help，
+// 上游参考插件的样式里**一处都没有**。⟹ 口径：**我们客户端样式里 0 个 `cursor: help`**。
+// 真做了"可点的帮助角标"就往白名单里加一个，别默默放开。
+const HELP_CURSOR_ALLOW = new Set()   // 空 = 一处都不许
+let helpCursorSeen = 0
+for (const file of cssFiles) {
+  const css = stripCss(readFileSync(join(STYLES, file), 'utf8'))
+  for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const head = m[1].trim()
+    if (head.startsWith('@') || !/cursor:\s*help/.test(m[2])) continue
+    for (const sel of splitTopLevel(head)) {
+      const s = sel.trim()
+      if (s === '') continue
+      helpCursorSeen += 1
+      const allowed = classesIn(s).some((c) => HELP_CURSOR_ALLOW.has(c))
+      if (allowed) continue
+      problems.push(`[②‴问号光标] ${file}: \`${s.slice(0, 60)}\` 用了 \`cursor: help\` —— 问号光标会被读成"这里能点"，而这个元素点不了`)
+    }
+  }
+}
+notes.push(`「?」光标（cursor: help）：${helpCursorSeen} 处（应为 0）`)
+
 // ── ③ 自足：组件 `className` 里用到的 redline- 类必须在样式里有定义 ─────────────
 // ⚠️ 第一版直接 grep 整个 TSX，把**模块路径**（`redline-channel`）、**动画名**
 // （`animate-redline-bar-in`）都当成了类名 → 34 条误报。所以这里只从 className 上下文取：

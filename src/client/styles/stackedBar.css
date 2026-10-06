@@ -29,7 +29,7 @@
 /*
  Free track mirrors the occupied frame as a 2px DASHED box — border, not the old inset shadow, so the dash pattern renders (box-shadow can't dash); the base box-sizing keeps the width from shifting. Reserve band: rightmost (1−ratio) of the window, striped 'headroom' above the track/segments, owning the pointer so its own hover explanation shows.
  */
-.redline-reserve { position: absolute; top: 0; bottom: 0; z-index: 1; pointer-events: auto; cursor: help; background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--dsw-alias-state-warn-primary) 24%, transparent) 0 5px, transparent 5px 10px); }
+.redline-reserve { position: absolute; top: 0; bottom: 0; z-index: 1; pointer-events: auto; background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--dsw-alias-state-warn-primary) 24%, transparent) 0 5px, transparent 5px 10px); }
 .redline-stacked-free-on { border: 2px dashed var(--dsw-alias-label-secondary); border-radius: 3px; }
 .redline-stacked-dim .redline-stacked-seg { opacity: 0.35; }
 .redline-stacked-dim .redline-stacked-seg-on { opacity: 1; }

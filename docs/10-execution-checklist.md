@@ -66,7 +66,7 @@
 
 ---
 
-## 2. M0.5 · 交互 demo（**101 / 104 DONE**，剩定稿）
+## 2. M0.5 · 交互 demo（**103 / 105 DONE**，剩定稿）
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
@@ -171,7 +171,8 @@
 | M6-16 | **【CR-P2】`icon.svg` 与上游逐字相同**（两插件同图标，用户分不清） | DONE | → 原创重绘（红线批注压在上下文行上的构图；10 条 path / 6 色，与上游 sha256 不同）；**没动任何断言**：`tests/client/icon.spec.ts` 的 lockstep 与 10-path/6-色 检查原样通过，`tsdown` 重建后把 `?raw` 内联进 `lib/client.js`；来源与授权记在 `UPSTREAM.md` §图标 |
 | M6-17 | **【清理】费用/价格模块已无人引用**（M4-07 删掉卡片那两格后）：`src/client/cost.ts`、`src/client/modelPrices.ts`、`src/client/agentTree.ts` 的 `subagentCostFoldOf`、`src/client/overview.ts`（其消费方总览面板早已删除） | TODO | → 物理删除或明确保留为"未来能力"（需你定）；**注意**：`overview.ts` 等已在 Code Review 里被点名为"从入口不可达"的模块，删除前先确认没有别的引用 |
 | M3-41 | **编辑器的「保存」上那个飘的「?」要去掉**（用户 2026-10-06 红框截图：「当编辑内容时，保存的右上角、左上角还是有问号没去掉」） | DONE | → 根因：`.redline-qfloat` 挂在 `.redline-qwrap` 上的 `top:-8px left:-8px` 角标，是 `M05-40` 时代给**批注**动作做说明的；批注已整批删除，插件里它只剩悬停提示，却正好压住「高级：思考文本」那一行（demo 实测几何：角标 x=782 / 保存 x=790 / 角标 y=623 比保存 y=632 高 9px）。处置：**插件里删掉角标与 `.redline-qwrap`/`.redline-qfloat` 两条 CSS（含粗指针那段 `::after` 撑命中区）**，说明改挂 `保存` 按钮自己的 `title`（不占版面、悬停照样看得到）。TDD：先加红护栏（`tests/client-ui`：动作区 `.redline-qfloat`/`.redline-qwrap` 计数为 0 + `title` = `redline.save.tip`）→ **红 1 条** → 改实现 → 绿；**反向验证**：把角标写回 → 又红 → 还原 → 绿。⚠️ **demo 有意保留**（它的 `?` 是**讲解模式**的说明锚点，且 `demo/DESIGN-BRIEF.md` 把它列为交给外部设计时**必须保留**的视觉语言）—— 这条差异已写进 `docs/03` R2.2；`docs/03` 的 R2.2 与验收表里那条"`?` 浮标 44×44"读数也一并标注失效 |
-| M6-18 | **【清理】死 CSS：`.redline-stat-q`**（统计卡格子**右上角**的小问号样式，`src/client/styles/stats.css` 两条规则）—— 组件侧 0 引用（`grep -rn "stat-q" src/**/*.tsx` = 0），是统计卡还是 7 格那个时代留下的 | TODO | → 与 M3-41 同族（都在处理"问号角标"），但**不在本轮改动范围内**（一次只改一个区域）⟹ 只登记；删之前确认没有别的引用，删完跑 `css-closure` |
+| M6-18 | **【清理】死 CSS：`.redline-stat-q`**（统计卡格子**右上角**的小问号样式，`src/client/styles/stats.css` 两条规则）—— 组件侧 0 引用（`grep -rn "stat-q" src/**/*.tsx` = 0），是统计卡还是 7 格那个时代留下的 | DONE | → **2026-10-06 同轮删除**（原来只登记"不在本轮范围"，随后新增的 `css-closure` **②‴** 门禁要求「我们客户端样式里 `cursor: help` 为 0 处」，而这条死规则正好带 `cursor: help` ⟹ 门禁逼着一起收）。删掉 `.redline-stats .redline-stat-q` 的定位规则与 `.redline-stat-q` 的圆标规则，并把两处说"格子角上有 `?`"的注释改成"已删除"；`css-closure` 类数 **366 → 365**。⚠️ **同族的费用气泡**（`.redline-stat-tipped` / `.redline-stat-tip*`）**仍未删**（也已 0 引用）—— 那属于 M6-17 的清理范围，本轮不动 |
+| M3-42 | **信息型标记不许给「?」光标**（用户 2026-10-06：「**高级编辑处也有问号，鼠标移上去有问号，但点不了**，在工具结果那里」） | DONE | → 他说的"问号"是 `cursor: help` 画出来的**问号箭头光标**：全仓实测我们客户端样式共 **4 处**（`.redline-chip-soft` ← 工具结果行上那个「高级编辑」标记、`.redline-dest` 去向标记、`.redline-reserve` 堆叠条留白带、`.redline-stat-q` 死规则），**四处都不可点、都只有 `title`**；而 demo 只在**可点**的 `.qfloat`/`.exnum` 上用 help、上游参考插件**一处都没有** ⟹ 口径：**我们客户端样式里 0 个 `cursor: help`**（说明继续靠 `title`，鼠标回到普通箭头）。**先红后绿**：`css-closure` 新增 **②‴** → 立刻红 4 条（逐条点名文件与选择器）→ 删 3 处 `cursor: help` + 删掉那条死规则 → 绿（`「?」光标：0 处`）；**反向验证**：临时加一条 `.redline-chip-soft-probe { cursor: help; }` → 又红 1 条 → 移除 → 绿。护栏测试：无（纯 CSS，由 `css-closure` 机械守） |
 | M05-15 | 🙋 **交互定稿**：你逐条按 R 编号确认 → 结论回写 `docs/03` | WAIT🙋 | `docs/03-ui-spec.md`（只改对应 R 各条） |
 | M05-55 | **demo 跟随「起点口径」改写**（评审 P0 的界面侧）：`orch.spawn` 讲解词改成"**起点由平台定、记录是凭证**"；冻结记录行按 `isBranchable`（切点 == 当前最后一个 `turn/end`）决定给不给 `从这里开子会话`，**更早的记录只给 `平台暂不能从更早的切点分叉` 标记 + 替代路径**；确认框 ① 拆成「本条记录（凭证）」与「平台实际种子」两条；首屏预置记录冻在最新切点；`demo/README.md` 与 `DESIGN-BRIEF.md` 同步（设计 brief 第 6 条补"平台服务整体缺席 / 能力开关为 false → 入口**必须隐藏**"这一例外） | DONE | → 护栏按新口径重写（只有 1 个 spawn 按钮 + 原因标记在 + 不再出现"种子 = 这一条" + 确认框两个切点都在 + 更早的记录被拒建会话）→ **静态绿 + 208/208 绿**；重打包 `demo/redline-panel.standalone.html`（指纹 `82b9a0e`）。**浏览器实测**（`http://127.0.0.1:5180/redline-panel.standalone.html`，1440px，读数逐字见 `demo/screenshots/measure-log.md` §6）：首屏 1 个 spawn 按钮 → 在第 1 轮末再冻一条后**按钮仍是 1 个**，更早那条显示 `平台暂不能从更早的切点分叉`（title = 平台只取最后一个 turn/end）+ `更早的记录 … 这条作凭证`；确认框逐字含 `① 本条记录（凭证）snap-…120412 · 第 28 轮末 · 41 条` 与 `① 平台实际种子 父会话当前最后一个轮次末（28·3 及其之前）`；子会话行 = `来源记录 snap-20260930-120412`（截图 `demo/screenshots/seed-scope-rows.png`、`demo/screenshots/seed-scope-confirm.png`） `demo/demo.js`、`demo/check-runtime.mjs`、`demo/README.md`、`demo/DESIGN-BRIEF.md`、`demo/screenshots/measure-log.md`、`demo/redline-panel.standalone.html` |
 
@@ -310,7 +311,7 @@
 | M4-03 | 目标会话判据落地（"当前标签页选中的会话" vs agent 在跑的会话，必须可指认） **（2026-10-06 随 M4-07 更正）**：统计卡的 `轮数 / 步数` 两格已随"3 格、跟 demo"删除 ⟹ 会话指认改由 **统计卡标题里的 `（当前视图：第 t 轮 · 第 s 步[ · 当前]）`** + 趋势卡标题 + 浏览器 meta 三处承担（`AGENTS.md` §2.5 已同步）| DONE | → **"可指认"由既有读数满足**：统计卡的 `轮数 / 步数` 两格就是该会话的形状（与目标会话日志里的 turn/step 条数对得上），加上趋势卡标题的 `按轮次（共 N 轮）`（本轮新加）与浏览器 meta 的 `第 t 轮 · 第 s 步`。⚠️ **两处如实记录**：① **demo 与插件都没有**"本会话共 N 事件 / 最后 seq"这种会话号数字条 —— `AGENTS.md` §2.5 的判据①写了它，属于**陈旧说法**，已在本次一并改成真实判据；② demo 的统计卡是 **3 格**（模型可见条目 / 用户消息 / 注入内容）+ 一句 `本步可见 N 条 · ≈X tokens`，插件是 **7 格**（轮数/步数/人类输入/工具调用/缓存命中/费用/子 Agent 费用）—— `docs/03` 只写了"左列：上下文统计/趋势/事件"，**没有钉住卡内格子**，所以这条差异另立 **M4-07**（要照 demo 换成 3 格就是改交互，留给人工门禁）|
 | M4-04 | 产物重打后硬刷新即生效（不重启 `dsh web`）—— 留证据 | DONE | → ✅ **硬刷新即生效已实证（2026-10-04）**：改完 `src/client/i18n.ts` 的入口标签 → `tsdown` 重打 `lib/client.js`（grep 到「上下文批改」）→ **新开一次页面加载**（headless，**未重启** `dsh web`）就看到了新页签名，而进程仍是重启后的那个 pid ⟹ **客户端半边由宿主按需从磁盘读**（`docs/01` F16）在真机上成立 |
 | M4-05 | **趋势卡的规模读数**（`docs/03` R1.5 的硬要求 + demo 的 `granLabel`）：标题旁写明 `按轮次（共 N 轮）` / `按步骤（共 N 次请求）` —— 用户要能一眼看出"有多少轮" | DONE | → `src/client/components/contextView.tsx` 新增 `.redline-card-scale`（**不是** `.redline-card-sub`：那是"聚焦"那一行，混用会让"没聚焦⇒没有副标题"的契约失真 —— 这一点是改完被上游规格抓到才分开的）；i18n `trend.gran.turn` / `trend.gran.step`；轮数取最后一条请求的 turn（与 demo 同源）。护栏：上游 `client` lane 的 `the adaptive switch rides the trend title…`（已把断言改成"读数跟着粒度走"）。⚠️ 同上：断言目前在非门禁 lane |
-| M4-06 | **默认粒度口径**（demo/R1.5 = **按轮次**，插件 = **按步骤**）：把默认值改成 `turn` 会让 ~18 处上游断言（`settings.spec` 的默认值矩阵、`index.spec`）跟着改 | DONE | → **本轮实测**：改 `src/host/settings.ts` 的 schema 默认 + `src/client/settings.ts` 的预置默认 → 18 条红；已**回退**并记成一条有界任务。要不要跟 demo 一致，留给人工门禁定夺（`docs/11` D37）  → 按用户口径「**按 demo 去执行**」把默认档位定成 demo 的**按轮次**：`src/host/settings.ts` 与 `src/host/config.ts` 的 schema 默认 `step`→`turn`，`src/client/settings.ts` 初值同步；连带更新上游 lane 里锁旧默认的断言（`settings.spec` / `index.spec` / `host/config.spec`），而 `contextView.spec` 那批**按按步骤取数**的渲染用例改为**显式钉住 step**（`stepPinnedSettings()`），不让它们跟产品默认值一起变红 —— **改的是默认值，不是那些用例测的行为**。⚠️ **真机验证要一次重启**：这个默认值由**宿主**供给（客户端初值只是兜底），而宿主半边是开机加载的（`docs/01` F46）⟹ 现在真机上仍显示「按步骤」，重启后才会是「按轮次」。 |
+| M4-06 | **默认粒度口径**（demo/R1.5 = **按轮次**，插件 = **按步骤**）：把默认值改成 `turn` 会让 ~18 处上游断言（`settings.spec` 的默认值矩阵、`index.spec`）跟着改 | DONE | → **本轮实测**：改 `src/host/settings.ts` 的 schema 默认 + `src/client/settings.ts` 的预置默认 → 18 条红；已**回退**并记成一条有界任务。要不要跟 demo 一致，留给人工门禁定夺（`docs/11` D37）  → 按用户口径「**按 demo 去执行**」把默认档位定成 demo 的**按轮次**：`src/host/settings.ts` 与 `src/host/config.ts` 的 schema 默认 `step`→`turn`，`src/client/settings.ts` 初值同步；连带更新上游 lane 里锁旧默认的断言（`settings.spec` / `index.spec` / `host/config.spec`），而 `contextView.spec` 那批**按按步骤取数**的渲染用例改为**显式钉住 step**（`stepPinnedSettings()`），不让它们跟产品默认值一起变红 —— **改的是默认值，不是那些测试的行为**。⚠️ **真机验证要一次重启**：这个默认值由**宿主**供给（客户端初值只是兜底），而宿主半边是开机加载的（`docs/01` F46）⟹ 重启前真机上仍显示「按步骤」。 ✅ **2026-10-06 21:20 用户重启后复核**：宿主侧 schema 实测 `src/host/config.ts:97` = `z.union(['step','turn']).default('turn')`（`settings.ts` 已在 M3-23 删除，schema 落在这里）；真机读数取自用户同批截图 —— 趋势卡标题为 **`按轮次（共 52 轮）`**（R1.5 的规模读数就是照当前粒度念的）⟹ **宿主与客户端两半都是「按轮次」，与 demo 一致**。 |
 | M4-07 |**统计卡的格子口径** —— ✅ 用户 2026-10-06 裁定：**取 3 格（跟 demo）**，会话指认由趋势卡标题与浏览器 meta 承担（`M4-03`）| DONE | → **照 demo 实现**：三格 = 模型可见条目（另 N 条被遮蔽）/ 用户消息 / 注入内容，标题里带 `（当前视图：第 t 轮 · 第 s 步[ · 当前]）` 与 `本步可见 N 条 · ≈X tokens`；口径抽成**纯函数** `stepStatsOf()`（`src/client/assemble.ts`）+ 4 条单测（含"同 seq 只算一次"那条 #1600 教训），数据源就是 `assemble()` 已算好的**该步列表**（与浏览器卡片列出的行同一个来源 ⟹ 两处数字不会互相打架）；**未就绪不许编数字**：slim head 里没有条目数 ⟹ detail 未到时三格显示 `—`（新测试钉住这条）；删掉卡片里 轮次/步数/工具调用/缓存命中/费用/子 Agent 费用 六格与随之无用的费用席位（`makeSubagentCost`）；**spec 同步**：卡片用例重写为 3 格契约（含 zh 文案、被遮蔽括号、未就绪 `—`），`contextView.spec` 两条旧断言改成"无费用格"与"未就绪→数据到" |
 
 ---
@@ -423,7 +424,7 @@
 |---|---|---|---|---|---|
 | X 横切 | 8 | **2** | 4 | 1 | 1 |
 | M0   文档集 | 22 | **22** | 0 | 0 | 0 |
-| M0.5   交互 demo | 104 | **101** | 0 | 2 | 1 |
+| M0.5   交互 demo | 105 | **103** | 0 | 1 | 1 |
 | M1   骨架与身份 | 14 | **13** | 0 | 0 | 1 |
 | M2   编辑面 | 34 | **32** | 0 | 2 | 0 |
 | M3   右侧界面 | 36 | **33** | 1 | 2 | 0 |
@@ -432,7 +433,7 @@
 | M5   快照 → 子会话 → 压缩 → 对接官方团队 | 28 | **5** | 2 | 20 | 1 |
 | M6   入口与发布准备 | 12 | **7** | 1 | 4 | 0 |
 | M7+   本轮明确不做 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **288** | **228** | **11** | **42** | **7** |
+| **合计** | **289** | **230** | **11** | **41** | **7** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 
