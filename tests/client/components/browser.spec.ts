@@ -125,7 +125,7 @@ describe('ContextBrowser live surface', () => {
     })
     const m = await mount(h(Browser, props({ data })))
     assert.ok(text(query(m.container, '.redline-card-title-text')).includes('Context Browser'))
-    assert.equal(query(m.container, '#baseGrp').getAttribute('title'), DICT_EN['browser.base.tip'])
+    assert.equal(query(m.container, '[data-redline-base-group]').getAttribute('title'), DICT_EN['browser.base.tip'])
     // The STEP select holds only the SHOWN turn's steps, plus the live entry on the
     // last turn (`docs/03` R1.13); the turn select precedes it.
     const sel = stepPickOf(m)
@@ -246,7 +246,7 @@ describe('ContextBrowser live surface', () => {
     assert.equal(text(query(m.container, '.redline-br-delta')), '+2')
     assert.equal(text(query(m.container, '.redline-br-tdelta')), '+59')
     // 比前步 measures the live surface against the most recent request instead.
-    await click(queryAll(m.container, '#baseGrp button')[0]!)
+    await click(queryAll(m.container, '[data-redline-base-group] button')[0]!)
     assert.equal(text(query(m.container, '.redline-br-delta')), '+1')
     assert.equal(text(query(m.container, '.redline-br-tdelta')), '+49')
     await m.unmount()
@@ -1742,7 +1742,7 @@ describe('ContextBrowser — the split generation detail states', () => {
       redline: stubRedline(), data: tl({}), headers: null, detailState: 'loading' }))
     assert.ok(text(m.container).includes(DICT_EN['detail.loading']))
     // The picker still offers the live surface (the sections read zero until the detail lands).
-    assert.equal(queryAll(m.container, '#stepPick option').length, 1)
+    assert.equal(queryAll(m.container, '[data-redline-step-pick] option').length, 1)
     await m.unmount()
   })
 

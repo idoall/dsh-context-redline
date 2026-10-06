@@ -300,6 +300,20 @@ check('4 插槽', '客户端斜杠命令不占用上游的 /context', () => {
 })
 
 // ── Face 5: locale namespace ───────────────────────────────────────────────
+check('5′ DOM id', '客户端不写死无前缀的 DOM id（面板会双挂载 ⟹ 同文档重复 id）', () => {
+  // 面板在 `placement:'all'` 下同时挂在 tab 与右侧栏：写死的 id 会重复。
+  // 现在一律用 `useId()` 生成、并配 `data-redline-*` 锚给测试/QA 选。
+  const offenders = []
+  for (const rel of walk('src/client', /\.tsx$/)) {
+    const code = codeOf(rel)
+    for (const m of code.matchAll(/\bid=["']([^"'{}$]+)["']/g)) {
+      if (!m[1].startsWith('redline-')) offenders.push(`${rel}: id="${m[1]}"`)
+    }
+  }
+  assert(offenders.length === 0, `发现写死且无前缀的 DOM id：${offenders.join(' · ')}`)
+  return '零个写死 id'
+})
+
 check('5 文案', 'locale 命名空间 = 包名，且注册/绑定都用它', () => {
   const text = codeOf('src/client/index.ts')
   assert(text.includes(`const NS = '${PKG_NAME}'`), 'NS 不是包名')

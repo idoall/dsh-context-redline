@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type ReactElement, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type ReactElement, type ReactNode } from 'react'
 import { UNKNOWN_TOOL_SOURCE, type Category, type ContextHeaders, type ContextTimeline, type HeaderTool, type RequestRecord, type SurfaceNode } from '../../shared/types'
 import { assemble } from '../assemble'
 import type { Assembled } from '../assemble'
@@ -619,6 +619,9 @@ export function makeContextBrowser(
   return function ContextBrowser(props: ContextBrowserProps): ReactElement {
     const { data, headers } = props
     // 'live' = the current surface (the NEXT request's context); number = a retained step's seq.
+    // 面板在 `placement:'all'` 下会**同时挂在 tab 与右侧栏**（两个实例）⟹ 写死的 id
+    // 会在同一个文档里重复（Code Review P2）。`useId()` 给出每个实例唯一的后缀。
+    const uid = useId()
     const [sel, setSel] = useState<'live' | number>('live')
     /**
      * The δ baseline (`docs/03` R1.13, copied verbatim from the reference plugin's
@@ -1259,7 +1262,7 @@ export function makeContextBrowser(
             </button>
           </span>
           {/* 对比基线：两个按钮逐字照参考插件 0.60.0 的 `lc-gran` + `browser.base.tip`（`docs/03` R1.13） */}
-          <span className="redline-gran" id="baseGrp" role="group" title={t('browser.base.tip')}>
+          <span className="redline-gran" id={`redline-base-${uid}`} data-redline-base-group role="group" title={t('browser.base.tip')}>
             <button
               type="button"
               className={'redline-gran-btn' + (base === 'step' ? ' redline-gran-on' : '')}
@@ -1278,7 +1281,8 @@ export function makeContextBrowser(
               这是本插件**有意偏离上游**的那一处。 */}
           <select
             className="redline-br-pick"
-            id="turnPick"
+            id={`redline-turn-${uid}`}
+            data-redline-turn-pick
             value={String(selTurn)}
             onChange={(e) => {
               const turn = Number(e.target.value)
@@ -1299,7 +1303,8 @@ export function makeContextBrowser(
           </select>
           <select
             className="redline-br-pick"
-            id="stepPick"
+            id={`redline-step-${uid}`}
+            data-redline-step-pick
             value={seq === null ? 'live' : String(seq)}
             onChange={(e) => { pick(e.target.value) }}
           >

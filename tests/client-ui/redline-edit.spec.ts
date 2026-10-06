@@ -104,8 +104,11 @@ describe('⓪b M3-03 · the two-level (turn → step) picker and the baseline sw
     nodes: [node({ seq: 5, cat: 'user', text: 'a', tokens: 100 }), node({ seq: 15, cat: 'user', text: 'b', tokens: 100 }), node({ seq: 25, cat: 'user', text: 'c', tokens: 100 })],
   })
 
+  // 控件按**数据属性锚**选（`id` 是每实例唯一的 `useId()` 结果，不该被测试依赖）。
+  const anchor = (id: string): string =>
+    id === 'turnPick' ? '[data-redline-turn-pick]' : id === 'stepPick' ? '[data-redline-step-pick]' : `#${id}`
   const options = (m: Mounted, id: string): string[] =>
-    queryAll(m.container, `#${id} option`).map(o => o.textContent ?? '')
+    queryAll(m.container, `${anchor(id)} option`).map(o => o.textContent ?? '')
   /** The user category row's two δ markers (null when absent). */
   const userDeltas = (m: Mounted): { count: string | null, tokens: string | null } => {
     const row = queryAll(m.container, '.redline-br-cat-row')[2] as HTMLElement
@@ -115,7 +118,7 @@ describe('⓪b M3-03 · the two-level (turn → step) picker and the baseline sw
   }
   const pickStep = async (m: Mounted, id: string, value: string): Promise<void> => {
     await act(async () => {
-      const sel = query<HTMLSelectElement>(m.container, `#${id}`)
+      const sel = query<HTMLSelectElement>(m.container, anchor(id))
       sel.value = value
       sel.dispatchEvent(new Event('change', { bubbles: true }))
     })
@@ -139,13 +142,13 @@ describe('⓪b M3-03 · the two-level (turn → step) picker and the baseline sw
     await pickStep(m, 'turnPick', '1')
     assert.equal(options(m, 'stepPick').length, 2)
     assert.ok(!options(m, 'stepPick').includes(DICT_EN['browser.live']), 'no live entry on an earlier turn')
-    assert.equal(query<HTMLSelectElement>(m.container, '#stepPick').value, '20', "the turn picker lands on that turn's LAST step")
+    assert.equal(query<HTMLSelectElement>(m.container, '[data-redline-step-pick]').value, '20', "the turn picker lands on that turn's LAST step")
     await m.unmount()
   })
 
   test('the baseline group is two buttons with the verbatim title, defaulting to 比前轮', async () => {
     const m = await mountBrowser(multi, controller())
-    const group = query(m.container, '#baseGrp')
+    const group = query(m.container, '[data-redline-base-group]')
     assert.equal(group.getAttribute('title'), DICT_EN['browser.base.tip'])
     const btns = queryAll(group, 'button')
     assert.deepEqual(btns.map(b => b.textContent), [DICT_EN['browser.base.step'], DICT_EN['browser.base.turn']])
@@ -160,16 +163,16 @@ describe('⓪b M3-03 · the two-level (turn → step) picker and the baseline sw
     // demo's own code renders no marker there (see the note in docs/10 M3-03).
     await pickStep(m, 'turnPick', '1')
     assert.deepEqual(userDeltas(m), { count: null, tokens: null }, '比前轮 on the first turn: no baseline, no marker')
-    assert.equal(query<HTMLSelectElement>(m.container, '#turnPick').value, '1')
+    assert.equal(query<HTMLSelectElement>(m.container, '[data-redline-turn-pick]').value, '1')
     // 比前步 reads the preceding record (seq 10), which already held one user node.
-    await act(async () => { (queryAll(m.container, '#baseGrp button')[0] as HTMLElement).click() })
+    await act(async () => { (queryAll(m.container, '[data-redline-base-group] button')[0] as HTMLElement).click() })
     assert.deepEqual(userDeltas(m), { count: '+1', tokens: '+100' }, 'vs. the previous step: one more user node, +100 tokens')
     // …and on the LAST turn both baselines have a reference (its previous turn's
     // last step IS the preceding record there), so both agree.
     await pickStep(m, 'turnPick', '2')
     assert.deepEqual(userDeltas(m), { count: '+1', tokens: '+100' })
-    await act(async () => { (queryAll(m.container, '#baseGrp button')[1] as HTMLElement).click() })
-    assert.equal(queryAll(m.container, '#baseGrp button')[1]!.getAttribute('aria-pressed'), 'true')
+    await act(async () => { (queryAll(m.container, '[data-redline-base-group] button')[1] as HTMLElement).click() })
+    assert.equal(queryAll(m.container, '[data-redline-base-group] button')[1]!.getAttribute('aria-pressed'), 'true')
     assert.deepEqual(userDeltas(m), { count: '+1', tokens: '+100' })
     await m.unmount()
   })

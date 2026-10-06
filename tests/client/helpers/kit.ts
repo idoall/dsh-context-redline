@@ -168,8 +168,8 @@ export async function pickStep(m: Mounted, value: string): Promise<void> {
       sel.dispatchEvent(new Event('change', { bubbles: true }))
     })
   }
-  const step = query<HTMLSelectElement>(m.container, '#stepPick')
-  const turn = query<HTMLSelectElement>(m.container, '#turnPick')
+  const step = query<HTMLSelectElement>(m.container, '[data-redline-step-pick]')
+  const turn = query<HTMLSelectElement>(m.container, '[data-redline-turn-pick]')
   if (value === 'live') {
     // A no-op change would still fire the component's handler (and its outward
     // report), so only touch the select when it actually moves.
@@ -179,17 +179,17 @@ export async function pickStep(m: Mounted, value: string): Promise<void> {
   // Each turn option carries its last step's seq, so the owning turn is found in
   // one move instead of by trial-selecting turns (which fired extra change events
   // and made callers observe reports for turns they never asked for).
-  const owner = queryAll<HTMLOptionElement>(m.container, '#turnPick option')
+  const owner = queryAll<HTMLOptionElement>(m.container, '[data-redline-turn-pick] option')
     .find(o => Number(o.dataset.lastSeq ?? 'NaN') >= Number(value))
   if (owner !== undefined && turn.value !== owner.value) await setValue(turn, owner.value)
-  const fresh = query<HTMLSelectElement>(m.container, '#stepPick')
+  const fresh = query<HTMLSelectElement>(m.container, '[data-redline-step-pick]')
   if (!queryAll<HTMLOptionElement>(fresh, 'option').some(o => o.value === value)) {
     throw new Error(`no turn owns step ${value}`)
   }
   await setValue(fresh, value)
 }
 
-/** The step dropdown (`#stepPick`) — the one that names a step. */
+/** The step dropdown (`[data-redline-step-pick]`) — the one that names a step. */
 export function stepPickOf(m: Mounted): HTMLSelectElement {
-  return query<HTMLSelectElement>(m.container, '#stepPick')
+  return query<HTMLSelectElement>(m.container, '[data-redline-step-pick]')
 }
