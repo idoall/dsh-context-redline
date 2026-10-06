@@ -458,51 +458,51 @@ const updateDraft: RedlineOpHandler = async ({ ctx, call }) => {
 
   // 读—改—写整段串行化（同一会话的并发保存不再互相覆盖）。
   return await withSessionLock(sessionId, async () => {
-  const current = await readTable(ctx, sessionId)
-  if (!current.ok) return current
-  const event = await resolveEvent(ctx, sessionId, seq)
-  if (!event.ok) return event
-  // ── 宿主侧的能力校验（Code Review P1-3）──────────────────────────────────────
-  // 客户端的能力判定只有一道门：旧客户端 / 另一个标签页 / 直接 POST 都能绕过它，
-  // 而 `child.start` 会把草稿当"你改好的上下文"逐字写进子会话第一句话。
-  // 这里用**两半共用**的 `ability()` 再判一次，判据是底层事件类型（`AGENTS.md` §2.3.1）。
-  const type = typeOf(event.value as never)
-  const rowClass = gateClassOf(type)
-  if (rowClass === null) return fail(REDLINE_ERROR.unsupportedType)
-  const onSurface = await onCurrentSurface(ctx, sessionId, seq)
-  const shadowed = onSurface === false
-  const verdictAbility = ability({
-    seq,
-    type,
-    cat: rowClass,
-    shadowed,
-    isReplacement: !shadowed,
-    compacted: false,
-  })
-  if (!verdictAbility.canRewrite) {
-    if (verdictAbility.blockReason === 'assistant-immutable') return fail(REDLINE_ERROR.assistantImmutable)
-    if (verdictAbility.blockReason === 'shadowed') return fail(REDLINE_ERROR.shadowed)
-    return fail(REDLINE_ERROR.unsupportedType)
-  }
-  const row: SurfaceRowText = {
-    seq,
-    text: fullTextOf(event.value as never),
-    reasoning: fullReasoningOf(event.value as never),
-    isError: isErrorOf(event.value as never),
-  }
-  const verdict = checkChange(row, current.value, next)
-  if (!verdict.ok) return fail(verdict.code)
+    const current = await readTable(ctx, sessionId)
+    if (!current.ok) return current
+    const event = await resolveEvent(ctx, sessionId, seq)
+    if (!event.ok) return event
+    // ── 宿主侧的能力校验（Code Review P1-3）──────────────────────────────────────
+    // 客户端的能力判定只有一道门：旧客户端 / 另一个标签页 / 直接 POST 都能绕过它，
+    // 而 `child.start` 会把草稿当"你改好的上下文"逐字写进子会话第一句话。
+    // 这里用**两半共用**的 `ability()` 再判一次，判据是底层事件类型（`AGENTS.md` §2.3.1）。
+    const type = typeOf(event.value as never)
+    const rowClass = gateClassOf(type)
+    if (rowClass === null) return fail(REDLINE_ERROR.unsupportedType)
+    const onSurface = await onCurrentSurface(ctx, sessionId, seq)
+    const shadowed = onSurface === false
+    const verdictAbility = ability({
+      seq,
+      type,
+      cat: rowClass,
+      shadowed,
+      isReplacement: !shadowed,
+      compacted: false,
+    })
+    if (!verdictAbility.canRewrite) {
+      if (verdictAbility.blockReason === 'assistant-immutable') return fail(REDLINE_ERROR.assistantImmutable)
+      if (verdictAbility.blockReason === 'shadowed') return fail(REDLINE_ERROR.shadowed)
+      return fail(REDLINE_ERROR.unsupportedType)
+    }
+    const row: SurfaceRowText = {
+      seq,
+      text: fullTextOf(event.value as never),
+      reasoning: fullReasoningOf(event.value as never),
+      isError: isErrorOf(event.value as never),
+    }
+    const verdict = checkChange(row, current.value, next)
+    if (!verdict.ok) return fail(verdict.code)
 
-  const localEdit: LocalEdit = {
-    seq,
-    text: next.text,
-    reasoning: next.reasoning,
-    isError: next.isError,
-    updatedAt: new Date().toISOString(),
-    ...(typeof bag.cat === 'string' ? { cat: bag.cat } : {}),
-    ...(typeof bag.name === 'string' ? { name: bag.name } : {}),
-  }
-  return await writeTable(ctx, sessionId, putEdit(current.value, localEdit))
+    const localEdit: LocalEdit = {
+      seq,
+      text: next.text,
+      reasoning: next.reasoning,
+      isError: next.isError,
+      updatedAt: new Date().toISOString(),
+      ...(typeof bag.cat === 'string' ? { cat: bag.cat } : {}),
+      ...(typeof bag.name === 'string' ? { name: bag.name } : {}),
+    }
+    return await writeTable(ctx, sessionId, putEdit(current.value, localEdit))
   })
 }
 

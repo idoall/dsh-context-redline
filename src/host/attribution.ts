@@ -100,6 +100,34 @@ export function packageNameFrom(file: string): string | undefined {
 
 const FRAME_POSITION = /:\d+:\d+$/
 
+/**
+ * **我们自己的**补丁标记（Code Review P1-6）。
+ *
+ * ⚠️ 不能再用上游那个字符串属性 `attributedOriginal`：两个插件都会包同一个
+ * `tools.register`，而字符串键是**双方可见**的 —— 对方会把我们装的 wrapper
+ * 当成"它自己上一次复活留下的"，把我们剥掉并接管，我们的实时归因于是静默失效。
+ * Symbol 只有我们自己能看见，剥壳只会剥到自己那一层。
+ *
+ * 用 `Symbol.for(...)`（全局注册表）而不是 `Symbol(...)`：前者**跨模块重载稳定**，
+ * 插件重载后才能认出"上一层也是我装的"而只剥自己那层；模块级 Symbol 每次重载都是新的，
+ * 会让 wrapper 越叠越多。
+ */
+const REDLINE_REGISTER_ORIGINAL: unique symbol = Symbol.for('dsh-context-redline/tools.register.original') as never
+
+/** Symbol cordis registers (`Symbol.for`) on its traced proxies: reading it yields
+ * the wrapped target — the stable underlying service instance. */
+const CORDIS_ORIGINAL = Symbol.for('cordis.original')
+
+/**
+ * Peel cordis's per-read traced proxy of a tracked service down to the instance it
+ * wraps, so identity-keyed bookkeeping sees ONE stable object (`ctx.tools` hands out
+ * a fresh proxy per read). Plain service objects pass through unchanged.
+ */
+function rawInstanceOf(tools: unknown): unknown {
+  const raw = (tools as { [key: symbol]: unknown } | undefined | null)?.[CORDIS_ORIGINAL]
+  return raw ?? tools
+}
+
 /** Package name of this module's own package (self-fallbacks are filtered). */
 const selfPackage = packageNameFrom(selfUrl)
 
@@ -167,7 +195,10 @@ export function createToolAttribution(ctx: Context): ToolAttribution {
   const live = new Map<string, string>()
   const wrapped = new WeakSet()
   const self = ctx.fiber.name
-  let lastReader: Context | undefined
+  // The last reader's fiber NAME — a scalar, never the reader context itself: this
+  // hook outlives every caller, and a retained context pins its whole agent
+  // (scope tag → agent → session log) past disposal (Code Review P1-6，上游已修).
+  let lastReader: string | undefined
   // Restore closures for every instance this incarnation patched, run by the
   // unload effect below.
   const patched: (() => void)[] = []
@@ -180,12 +211,12 @@ export function createToolAttribution(ctx: Context): ToolAttribution {
     // A reload of this plugin re-installs the hook on a still-wrapped
     // instance: peel the previous incarnation's wrapper back to the original
     // (marked below) so wrappers never stack across reloads.
-    const original = (register as { attributedOriginal?: unknown }).attributedOriginal ?? register
+    const original = (register as { [REDLINE_REGISTER_ORIGINAL]?: unknown })[REDLINE_REGISTER_ORIGINAL] ?? register
     if (typeof original !== 'function') return
     const instance = tools as { register: (this: unknown, definition?: { name?: unknown }) => unknown }
     const wrappedRegister = function (this: unknown, definition?: { name?: unknown }) {
       const toolName = definition?.name
-      let owner = lastReader?.fiber.name
+      let owner = lastReader
       if (!owner || owner === 'root' || owner === self) {
         owner = callerPackageFrom(new Error().stack)
       }
@@ -204,7 +235,7 @@ export function createToolAttribution(ctx: Context): ToolAttribution {
       }
       return dispose
     }
-    ;(wrappedRegister as { attributedOriginal?: unknown }).attributedOriginal = original
+    ;(wrappedRegister as { [REDLINE_REGISTER_ORIGINAL]?: unknown })[REDLINE_REGISTER_ORIGINAL] = original
     instance.register = wrappedRegister
     patched.push(() => {
       if (instance.register === wrappedRegister) instance.register = original as typeof instance.register
@@ -214,8 +245,10 @@ export function createToolAttribution(ctx: Context): ToolAttribution {
   ctx.on('internal/get', (reader, name, _error, next) => {
     if (name !== 'tools') return next() as unknown
     const tools = next() as unknown
-    lastReader = reader
-    wrapInstance(tools)
+    lastReader = reader.fiber.name
+    // Patch the STABLE instance, not the per-read proxy — but return the caller's own
+    // proxy (its this-binding carries that reading context's scoped semantics).
+    wrapInstance(rawInstanceOf(tools))
     return tools
   })
 
@@ -234,7 +267,7 @@ export function createToolAttribution(ctx: Context): ToolAttribution {
   // bundles that applied first — e.g. local links like dsh-file-claim), so
   // their provider is unknowable; the boot snapshot lets ownerOf tag them
   // with UNKNOWN_TOOL_SOURCE instead of silently showing nothing.
-  const toolsService = ctx.get('tools', false) as ToolServiceLike | undefined
+  const toolsService = rawInstanceOf(ctx.get('tools', false)) as ToolServiceLike | undefined
   wrapInstance(toolsService)
   const boot = new Set<string>()
   try {

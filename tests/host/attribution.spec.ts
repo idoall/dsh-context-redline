@@ -126,12 +126,41 @@ describe('createToolAttribution', () => {
     }
   })
 
-  test('a foreign wrapper carrying a garbage attribution marker is left untouched', async () => {
+  // ── 补丁标记的归属（Code Review P1-6）─────────────────────────────────────────
+  // 两个插件会包同一个 `tools.register`。上游用**字符串属性** `attributedOriginal`
+  // 标记"我剥到哪一层"；字符串键双方可见，所以它会把我们装的 wrapper 误当成
+  // "它自己上一次复活留下的"而剥掉、接管 ⟹ 我们的实时归因静默失效。
+  // 现在：字符串标记被当作**别人的** wrapper —— 我们穿过它，不剥它。
+
+  test('a wrapper carrying the upstream string marker is chained through, not peeled', async () => {
     const app = new Context()
     const attribution = createToolAttribution(app)
-    // A wrapper that copied the peel-marker name with a non-function value:
-    // there is no original to recover, so the instance is not re-wrapped.
-    const foreign = Object.assign(() => 'not-a-disposer', { attributedOriginal: 42 })
+    const seen: string[] = []
+    // 一个"上游风格的" wrapper：带字符串标记，并记录自己被调用过。
+    const upstreamWrapper = Object.assign(function (this: unknown, definition?: { name?: unknown }) {
+      seen.push(String(definition?.name))
+      return () => {}
+    }, { attributedOriginal: () => {} })
+    const fake = { register: upstreamWrapper }
+    app.provide('tools', fake)
+    await app.plugin({
+      name: 'probe',
+      apply(sub) {
+        const tools = (sub as any).tools
+        tools.register({ name: 'chained' })
+      },
+    })
+    assert.notEqual((app.get('tools', false) as typeof fake).register, upstreamWrapper, '我们装了 wrapper')
+    assert.deepEqual(seen, ['chained'], '调用穿过了它 —— 没有把它剥掉')
+    assert.equal(attribution.ownerOf('chained'), 'probe')
+  })
+
+  test('OUR marker is a GLOBAL symbol value — a garbage value on it is not recoverable', async () => {
+    const app = new Context()
+    const attribution = createToolAttribution(app)
+    // 我们自己的标记：必须用 Symbol.for（跨模块重载稳定），且值不是函数时无从恢复 ⟹ 不重包。
+    const ourMarker = Symbol.for('dsh-context-redline/tools.register.original')
+    const foreign = Object.assign(() => 'not-a-disposer', { [ourMarker]: 42 })
     const fake = { register: foreign }
     app.provide('tools', fake)
     await app.plugin({
@@ -140,8 +169,7 @@ describe('createToolAttribution', () => {
         void (sub as any).tools
       },
     })
-    assert.equal((app.get('tools', false) as typeof fake).register, foreign, 'the instance was not re-wrapped')
-    assert.equal(attribution.ownerOf('whatever'), undefined)
+    assert.equal((app.get('tools', false) as typeof fake).register, foreign, '没有可恢复的原始函数 ⟹ 不重包')
   })
 
   test('ignores registrations without a string tool name or a disposer', async () => {
