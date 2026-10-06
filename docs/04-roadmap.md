@@ -118,7 +118,7 @@
 > | `fork` | **true** | 合成树里 `subagent`（服务）+ `subagent-spawn-in-process` / `subagent-fork-in-process`（两个 provider）**都在**；fork provider 有 `prepareContinuable`（方法存在即能力）且五项能力全 true（`docs/01` F45） | "开子会话"入口不出现 + 写明原因（`docs/03` R2.3 的通行规则） |
 > | `team` | **true** | 合成树里 `agent-team` / `tool-agent-team` / `ui-agent-team` 三行**都在**且未被 disabled | 团队相关对接点全隐（`docs/03` R5.1.2.1 已定），只留裸 `startContinuable` |
 > | `agents` | **probe 决定** | `ctx.agents.get(sessionId)` 对"用户正在看的那个会话"是否可得是 **V3**，只有真机能答 | 拿不到就不给 fork/派活，改为引导用原生 `subagent_*` 工具（`docs/02` §7） |
-> | `compaction` | **probe 决定** | 静态树是**混合证据**：顶层 `compaction-basic` 行被 web-app 补丁 `disabled: true`，但它又出现在 `@deepseek-ai/dsh-web-app` 的**嵌套 `cordis:group`** 里（`dump-config` 第 805-814 / 987-996 行）⟹ **有效组成要到运行实例里确认**（这就是 **V2**） | 压缩降级为"人在子会话里执行 `/compact`"（`docs/01` §6 V2 已写明） |
+> | `compaction` | **false（2026-10-06 probe 落定，见 `docs/01` F54）** | 原写「静态树是**混合证据**」 静态树是**混合证据**：顶层 `compaction-basic` 行被 web-app 补丁 `disabled: true`，但它又出现在 `@deepseek-ai/dsh-web-app` 的**嵌套 `cordis:group`** 里（`dump-config` 第 805-814 / 987-996 行）⟹ **有效组成要到运行实例里确认**（这就是 **V2**） | 压缩降级为"人在子会话里执行 `/compact`"（`docs/01` §6 V2 已写明） |
 >
 > **两条纪律**：① 开关**只影响入口是否出现**，不许"禁用了还能点、点了才报错"（`docs/03` R2.3）；
 > ② 任何开关为 false 时，对应的 op 必须回**明确的不可用错误码 + 零平台调用**（`docs/05` §2 末段），

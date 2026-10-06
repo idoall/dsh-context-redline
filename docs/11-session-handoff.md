@@ -115,7 +115,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 253 / 共 291**（DOING 7 · TODO 27 · WAIT🙋 4） |
+| 进度 | `docs/10`：**DONE 257 / 共 291**（DOING 7 · TODO 23 · WAIT🙋 4） |
 | 当前卡点 | **只剩四件需要用户的事（第 40 轮收尾时的实测状态）**：① **再重启一次 `dsh web`** —— 只为让只读探针 op `probe.services` 生效（`docs/01` **F46**：宿主半边开机加载，`tsc`/`tsdown` 都过了、进程仍答 `unknown-op`，当前 pid 50235 仍是 22:10 那次）；重启后一条 curl 即可拿到 M45-01/03/04 的读数。② ~~「洞察」面板去留~~ —— **这条已作废（2026-10-06 用户指正 + 仓库核实）**：**我们自己的洞察面早在 2026-10-05 就删干净了**（`src/client/index.ts` 注释、`overview.css` 96 类零引用、`tests/client/*.spec.ts` 只剩"已删"的说明）；**上游插件 `dsh-context` 自带的洞察面板不属本仓库、不要动它**。唯一残留是 i18n 里 4 行**死字符串**（见 `docs/10` M3-34 的注记）。③ **三个小决定**：M4-06 默认粒度（设置页现为"步骤"）/ M4-07 统计卡 3 格 vs 7 格 / 手动出口要不要先做。④ **授权包④**（push 52 个提交）。⚠️ 会**写会话**的那几条探针（替换→再替换→回滚、跨压缩恢复、可续接子会话）动手前要用**可弃会话**并逐条确认。仓库侧：`node scripts/release-check.mjs` → 全部通过（共 11 步） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -1029,3 +1029,27 @@ demo 的索引行挂"**来源**"徽章（本项目发起 / 来自 Agent Teams）
 `tsc` exit 0 · `oxlint` **0/0**（中途真抓到 9 条：member-delimiter 分号、箭头参数括号、以及把 `plan`/`start` 声明成**方法**触发的 `unbound-method`
 —— 改成函数属性即符合本仓库既有写法）· `namespace-contract` 28/0 · `css-closure` **14 份样式 / 285 类**全自足 · `i18n-orphans` 238 键全有引用 ·
 全量 vitest **1452 条全绿**（+12 条新护栏）· `release-check` 13 步只 1 步红（探针，预期）。
+
+## D51 · F54 查清：压缩服务在**隔离作用域**里 —— M5 的压缩执行半边按预案作废（2026-10-06）
+
+M4.5 收口时留下的那条新事实（`ctx.get('compaction')` 是 undefined）这一轮查到底了，结论比"键名待定"重：
+
+1. **类型上它就叫 `compaction`**：`@deepseek-ai/dsh-compaction/lib/types/index.d.ts:68` 声明
+   `interface Context { compaction: CompactionEngine }` —— 所以不是"名字写错了"。
+2. **组合树是两处注册**：顶层 `compaction-basic` **`disabled: true`**（被 web-app 补丁关掉）；
+   真正生效的那份在 `@deepseek-ai/dsh-web-app` 的一个**隔离组**里 ——
+   `- id: compaction / name: cordis:group / group: true / isolate: { compaction: true, toolResultPruner: true }`。
+3. **真机**：`probe.services` 枚举的 11 个 key 里，`subagents`/`agents`/`agentTeams`/`sessionQuery`/`sessions`/`settings`/`tools`/`commands`
+   **都在册，只有 `compaction` 缺席**。
+
+⟹ **这是设计如此**：压缩服务只对**该 agent 组内部的 fiber** 可见，第三方插件（我们）从自己的 fiber 调不到。
+`docs/06` §3.3 当初就写着"压缩要 agent 作用域的 ctx"，只是没人把它与 `ctx.get` 的读数对起来。
+
+**按 `docs/04` 预先写好的降级路径收口**（原文：`④ compaction 缺失` → `docs/03` R5.3 只保留"引导 `/compact`"、**不显示执行按钮**）：
+
+- `docs/10` **M5-14 / M5-15 / M5-16 / M5-17 全部转【作废】**（不是"没做"，是**真机不可达**：
+  体检/确认/执行三个动作都以"我们能触发压缩"为前提；"执行后显示实际范围"随之失去主语）。
+- **保留**：如实显示日志里**已经发生**的压缩 —— 事件卡按 `compaction/summary` 列出（真机读数就是「压缩 21」+ 每条的轮/步与条数），
+  这一半早已实现；界面**不出现任何压缩按钮**，改为一句"要压缩请在子会话里用 `/compact`"。
+- `docs/04` 的能力开关表里 `compaction` 由"probe 决定"落定为 **false**（`docs/01` F54 为证）。
+- ⚠️ 若将来想显示**精确的被替代区间**（start..end），那是事件卡的小改进，登记为后续 —— 不是 M5 的前置。

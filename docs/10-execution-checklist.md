@@ -340,7 +340,7 @@
 | M45-05 | 🙋 包 B（一次授权）：在**专用可弃会话**里真跑 替换 → 再替换 → 回滚（V7） | DONE | 专用会话日志 **✅ 2026-10-06 收口：这条的破坏性实验 2026-09-30 就在 detached 会话上做过了**（`docs/01` **F7.1** 九条 PASS/FAIL 全表：替换原始节点 ✓ · 再拿被遮蔽的原文当目标**被平台拒** ✓ · 替换替换体（= 回滚/连改）✓ · user 连改 4 次 ✓ · tool/result 与多节点区间 ✓ · assistant 两种写法都 FAIL ✓）。当时用的是 `Session.create()` 的 **detached** 会话 —— 正是"可弃会话"这个模式，只是没跟 M45-05 挂上钩。**另**：产品已不提供回滚入口（`docs/11` D10/D19），这条只剩"平台能力已证"。|
 | M45-06 | 【作废】~~包 B：跨压缩 checkpoint 的版本能否恢复（V9）~~ | DONE |  → **2026-10-06 作废**：这条只为**回滚 UI** 服务（"压缩之后还能不能回到旧版本"），而回滚整套已从产品撤出（`docs/11` D10/D19：界面不提供版本历史/回滚），本插件也从不写会话（今天把**全机 70 个会话日志**解压扫 `sourceEventSeqs`：命中 **0**）。F7.1 那条边界注记（"压缩/工具配对/fork 继承要真机复验"）里只剩 **fork 继承**还有意义，它已由 F50 + 今天 M45-10 的实测覆盖。 |
 | M45-07 | **【并入 M5-07】**~~包 B：`spawnTeammate(context:'fork')` 建出的成员是否进 roster、种子是否正确~~ | DONE |  → **2026-10-06 改判：不再作为 M4.5 的前置门禁，并入 `M5-07`（官方对接）落地时同批真机验**。理由：① 这条要验的"调用面"与官方 `spawn_teammate` 工具走的是**同一个服务**，而平台侧**已经证过能用** —— 本会话的团队里就有 4 个子智能体、官方 `team_task_*`/`spawn_teammate` 一族工具在册（`docs/01` **F47**）；② `agentTeam` 投影可读（`members`/`tasks`，M45-04），roster 有读数来源；③ 真跑一次 `spawnTeammate(context:'fork')` 属于 **M5-07 的实现步骤**（它本来就要写这段代码），把它当 M4.5 的前置只会造成"先有鸡还是先有蛋"。⚠️ **它还没被验过**，M5-07 的验收里**必须**含这条读数（成员是否进 roster + 种子内容）。 |
-| M45-08 | V1–V6 逐条给结论（读路径与判定是否与真机一致） | DONE |  → **2026-10-06 收口（真机读数见 `docs/11` D45/D49）**：**V1** `sessionQuery` 在册（39 个成员）✅（真机 `probe.services`）；**V2** `subagentsProviders = ["fork","spawn"]` ✅，`compaction-basic`/`command-compact` 在合成树里 ✅ —— ⚠️ **但 `ctx.get('compaction')` 是 undefined**（探针枚举的 11 个 key 里只有它缺席）⟹ **新事实 F54**：压缩服务**不在这个名字下**，M5-14/15/16 落地前要先定键名；**V3** `agents.get(活会话)` = true、旧会话 = false ✅（与 F48 语义一致）；**V4** 同 key 撞车**机械上不可能**（`namespace-contract` 面 3 + 今天的 `subagentCatalog`/`agentTeam` 实读）；**V5** 作废（产品不再追加自定义消息 kind —— apply/annotate 已删）；**V6** 作废（界面不展示"原 #N"，不再需要冷会话 readSurface 的原文）。 |
+| M45-08 | V1–V6 逐条给结论（读路径与判定是否与真机一致） | DONE |  → **2026-10-06 收口（真机读数见 `docs/11` D45/D49）**：**V1** `sessionQuery` 在册（39 个成员）✅（真机 `probe.services`）；**V2** `subagentsProviders = ["fork","spawn"]` ✅，`compaction-basic`/`command-compact` 在合成树里 ✅ —— ⚠️ **但 `ctx.get('compaction')` 是 undefined**（探针枚举的 11 个 key 里只有它缺席）⟹ **新事实 F54**：压缩服务**不在这个名字下**，M5-14/15/16 落地前要先定键名；**V3** `agents.get(活会话)` = true、旧会话 = false ✅（与 F48 语义一致）；**V4** 同 key 撞车**机械上不可能**（`namespace-contract` 面 3 + 今天的 `subagentCatalog`/`agentTeam` 实读）；**V5** 作废（产品不再追加自定义消息 kind —— apply/annotate 已删）；**V6** 作废（界面不展示"原 #N"，不再需要冷会话 readSurface 的原文）。 | **新事实 F54**：`ctx.get('compaction')` **是 undefined**（11 个 key 里只有它缺席）—— 随后查明是**隔离作用域**：该服务在类型上就叫 `compaction`，但**顶层 provider 被 `disabled: true`**、真正生效的那份在 `dsh-web-app` 的 `isolate: { compaction: true }` 组里 ⟹ **第三方插件从自己的 fiber 调不到**（`docs/01` F54 三证）；于是 M5-14/15/16/17 按 docs/04 预先写好的降级路径**作废**，只保留"引导你在子会话里执行 `/compact`"+ 如实显示已发生的压缩。
 | M45-09 | 【作废】~~V10 降级契约实测（不可读时行为符合 `docs/03` R5.1.2.1）~~ | DONE |  → **2026-10-06 作废（真机不可达）**：本机只有一个宿主版本，造不出"投影不可读"的现场；该降级分支**已实现**（`contextView.tsx` 按 `detailState` 显示说明条），并由 `tests/client/timelineSource.spec.ts` 与 `tests/client/components/browser.spec.ts` 覆盖各 `detailState`。真要真机验只有装旧宿主半边一条路 —— 不值当，登记结论而不留空。 |
 | M45-10 | V11：可续接子会话端到端（含**父不在进程** / **父正忙** 两个分支） | DONE | 专用会话日志 **✅ 2026-10-06 真机端到端跑通（不需要任何新探针，全用已有 op）**：在闲置会话 `session-dbcfd4db`（只读规格评审）上 —— ① `turnState` = `{known:true, open:false}`；② 本地写 1 条改动（`draft.update` seq 7879，落盘 `redline-drafts-<会话>.json`）；③ `child.plan` → 五项确认框内容齐全、`carriedSeqs:[7879]`、拼好的 `prompt` 里那条改动**逐字**在；④ `child.start` → `childId 92414bcf-396a-4272-9ca1-4486700c6805`（新会话目录已生成，`parentSession` 指向父会话）；⑤ **子会话日志实测**：解压后 `grep` 到第一句话原文 —— `【M4.5 探针】…以下是我在「上下文批改」里改好的上下文…【#7879】\n【M4.5 探针甲】本地改动…`，**逐字一致**（这就是硬约束"唯一写入点=开启子会话、逐字带进第一句话"的真机证据）；⑥ 事件数 `7910`（父 7895）⟹ **fork 带走了完整历史**；⑦ **两个拒绝分支实测**：父**轮次未闭合** → `redline/turn-open`（"the session has an open turn"）；父**不在本进程**（旧会话）→ `redline/not-live`。⚠️ 未单独跑的是"可续接 resume"本身 —— 按 F26/F45（fork provider 有 `prepareContinuable`）与 F50 的既测结论成立，真要再验一次得走 M5-06 的 `child.list`（那是 M5 的活）。|
 | M45-11 | V12：官方团队启用时服务层仍可用（并记录会话里实际存在的 subagent 工具） | DONE |  → **静态半边（2026-10-04）**：`dump-config` exit 0，合成树里 `subagent` 服务与两个 provider 都在，**四个 subagent 工具全部 `disabled: true`** ⟹ 官方**禁的是工具、不禁服务**（V12 的核心疑问有答案）。**真机半边（2026-10-05 读工具表 + 2026-10-06 `probe.services`）**：本会话没有 `subagent`/`subagent_*` 工具，有 **Agent Teams 一族**（`spawn_teammate`/`send_message`/`list_agents`/`wait_agent`/`interrupt_agent`/`team_task_*`）⟹ 官方团队真启用着，我们要的"派活/回收"接**团队那一族**（`docs/01` **F47**）；服务层读数：`subagents` 27 成员、`getProvider('fork')`/`('spawn')` 都拿得到、`startContinuable` 在（F48）。⏳ 那行"探针 op 还需一次重启"的注记**已过期** —— 探针今天跑通了。 |
@@ -355,7 +355,7 @@
 
 ---
 
-## 8. M5 · 快照 → 子会话 → 压缩 → 对接官方团队（**5 / 28 DONE**）
+## 8. M5 · 快照 → 子会话 → 压缩 → 对接官方团队（**9 / 28 DONE**）
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
@@ -372,10 +372,10 @@
 | M5-11 | 打断：团队成员走 `agentTeams.interrupt`；裸子会话走 `interruptByParent` | TODO | `src/redline/orchestrate.ts` |
 | M5-12 | 来源判定 `tryMembership` → 徽章（本项目发起 / 来自 Agent Teams），不按 label 猜 | TODO | `src/redline/team-bridge.ts` |
 | M5-13 | 容量：显示 `活跃 N/8` + 触顶给人话（不含糊、不说"稍后重试"） | TODO | `src/client/**`、`src/redline/orchestrate.ts` |
-| M5-14 | 压缩体检：在跑 / 未闭合 / 已在压 / 不在本进程 / 服务缺失 → `canCompact` + 理由 | TODO | `src/redline/orchestrate.ts` |
-| M5-15 | 压缩确认：列出将被替代的区间与条目数 + 不可逆提示 | TODO | `src/client/**` |
-| M5-16 | 压缩执行：`compactNow` + 失败码人话（busy/cancelled/changed/summary/commit/persistence） | TODO | `src/redline/orchestrate.ts` |
-| M5-17 | 压缩后如实显示**实际**范围（不是预估） | TODO | `src/client/**` |
+| M5-14 | 【作废】~~压缩体检：在跑 / 未闭合 / 已在压 / 不在本进程 / 服务缺失 → `canCompact` + 理由~~ | DONE |  **2026-10-06 作废（真机不可达，不是没做）**：`ctx.compaction` **被注册在 agent 隔离作用域里**（顶层那份 `disabled: true`，真正生效的在 `dsh-web-app` 的 `isolate: { compaction: true }` 组里）⟹ **第三方插件从自己的 fiber 调不到**（`docs/01` **F54** 三证）。这恰好命中 `docs/04` 预先写好的降级路径：**界面不提供压缩执行入口**，改为"引导你在子会话里执行 `/compact`"。⚠️ **我们仍然如实显示日志里已经发生的压缩**（事件卡的「压缩」那一类，读 `compaction/summary`）—— 那一半早已实现。 |
+| M5-15 | 【作废】~~压缩确认：列出将被替代的区间与条目数 + 不可逆提示~~ | DONE |  **2026-10-06 作废（真机不可达，不是没做）**：`ctx.compaction` **被注册在 agent 隔离作用域里**（顶层那份 `disabled: true`，真正生效的在 `dsh-web-app` 的 `isolate: { compaction: true }` 组里）⟹ **第三方插件从自己的 fiber 调不到**（`docs/01` **F54** 三证）。这恰好命中 `docs/04` 预先写好的降级路径：**界面不提供压缩执行入口**，改为"引导你在子会话里执行 `/compact`"。⚠️ **我们仍然如实显示日志里已经发生的压缩**（事件卡的「压缩」那一类，读 `compaction/summary`）—— 那一半早已实现。 |
+| M5-16 | 【作废】~~压缩执行：`compactNow` + 失败码人话~~ | DONE |  **2026-10-06 作废（真机不可达，不是没做）**：`ctx.compaction` **被注册在 agent 隔离作用域里**（顶层那份 `disabled: true`，真正生效的在 `dsh-web-app` 的 `isolate: { compaction: true }` 组里）⟹ **第三方插件从自己的 fiber 调不到**（`docs/01` **F54** 三证）。这恰好命中 `docs/04` 预先写好的降级路径：**界面不提供压缩执行入口**，改为"引导你在子会话里执行 `/compact`"。⚠️ **我们仍然如实显示日志里已经发生的压缩**（事件卡的「压缩」那一类，读 `compaction/summary`）—— 那一半早已实现。 |
+| M5-17 | 【作废】~~压缩后如实显示实际范围（不是预估）~~ | DONE |  **2026-10-06 作废**：触发压缩不在我们手里（见 M5-14），"执行后显示实际范围"随之失去主语；而"**如实显示已经发生的压缩**"那一半**已经实现**：事件卡的「压缩」类按 `compaction/summary` 事件列出（含条数与发生在第几轮第几步），真机上面板读数就是「压缩 21」。⚠️ 若将来要显示**精确区间**（被替掉的 start..end），那是事件卡的一个小改进，登记为后续而不是 M5 的前置。 |
 | M5-18 | 结果回流：读父会话 `subagent-settled` + `pending_results` 已查看标记 | TODO | `src/redline/orchestrate.ts` |
 | M5-19 | 三态判定：已收到结算通知 / 有可关联的后续 `turn/start` / 未确认 | TODO | `src/redline/pending.ts` |
 | M5-20 | `plan.next` 次序机器化：waitTurn > applyDrafts > pinInvariants > startChild > compactChild > reviewChild | DONE | `src/redline/plan.ts`  → `src/redline/plan.ts`（纯函数，`tests/edit/plan.spec.ts` 10 条）✅ **规格更正**：原次序里的 `pinInvariants` **不实现** —— 固定块/不变量那一层已整套删除（`docs/11` D14、`docs/03`「已删除的卡」），照原文实现等于给界面塞一个永远为假的步骤。另外补了一个规格里隐含、但原先没建模的输入：**已提交进会话的改动条数**（§6 第 4 条的前提是「改完」，没有它就无法区分「没改过」和「改完已提交」）。 |
@@ -432,10 +432,10 @@
 | M3   右侧界面 | 36 | **35** | 1 | 0 | 0 |
 | M4   轮次联动 | 7 | **7** | 0 | 0 | 0 |
 | M4.5   平台能力验证 | 19 | **19** | 0 | 0 | 0 |
-| M5   快照 → 子会话 → 压缩 → 对接官方团队 | 28 | **5** | 2 | 20 | 1 |
+| M5   快照 → 子会话 → 压缩 → 对接官方团队 | 28 | **9** | 2 | 16 | 1 |
 | M6   入口与发布准备 | 12 | **11** | 0 | 1 | 0 |
 | M7+   本轮明确不做 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **291** | **253** | **7** | **27** | **4** |
+| **合计** | **291** | **257** | **7** | **23** | **4** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 
