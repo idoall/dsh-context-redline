@@ -45,7 +45,8 @@ export interface Config {
   defaultToolSort?: DefaultToolSort
   /** File Activity row default order. */
   defaultFileSort?: DefaultFileSort
-  /** Whether the Context Insights panel's sidebar entry is offered. */
+  // （2026-10-06 删除一条**悬空文档注释**：面板侧栏入口那一项随"上下文洞察/总览"整套一起被删，
+  //   注释却留在了花括号前 —— Code Review 报到的一处上游裁剪残留。）
 }
 
 /** The fold's retention/slice bounds, as the schema resolves them. */

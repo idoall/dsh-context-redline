@@ -154,56 +154,65 @@ tests/
 
 ### 5.2 RPC op 清单
 
-> `op` 名与请求/响应形状**只能**在 `src/shared/redline-route.ts` 里定义（两半共用；这是防"前缀/形状不成对 404"的唯一手段）。
+> `op` 名与请求/响应形状**只能**在 `src/shared/redline-route.ts` 里定义（两半共用；这是防"前缀/形状不成对 404"的唯一手段）；
+> **本节的表由 `src/host/redline-channel.ts` 的 `OPS` 表逐条核对**（2026-10-06 复核：8 条，见下）。
+>
+> ⚠️ **本节在 2026-10-06 做过一次"以实现为准"的重写**（Code Review 的一条 P2：旧表是 **2026-10-02 转向之前**的合同，
+> 与实现只有 3 个名字重合，而它是两半共用的唯一契约 ⟹ 必须对齐）。旧表的 op 没有消失，而是被分到下面三段里：
+> **A 已实现**（可调、有测试）· **B 计划中**（M5/M6 的落点，尚未实现）· **C 已作废**（转向的代价，附作废依据）。
 
-**只读（不写会话，不需要确认框）—— 14 条**
+#### A. 已实现（`OPS` 表里的 8 条，逐条可调）
+
+**只读（不写会话、不需要确认框）**
 
 | op | 请求 | 响应 | 说明 |
 |---|---|---|---|
-| `node.read` | `{sessionId, seq}` | `{type, cat, text, reasoning?, toolResultText?, isError?, provider?, model?, turn?, step?, shadowed?, replacedBy?}` | **全文**（编辑器唯一预填来源） |
-| `draft.list` | `{sessionId}` | `Record<seq, draft>` | 草稿表 |
-| `edits.list` | `{sessionId}` | `{replacedSeq, newSeq, type, turn?, step?, time}[]` | 已生效的替换关系（渲染「原 #N → 新 #M」） |
-| `turnState` | `{sessionId}` | `{known, open}` | 轮次是否闭合（`known:false` = 判不了） |
-| `plan.next` | `{sessionId}` | `NextStep` | 「下一步该做什么 + 是否需要确认框（点确认即授权）+ 理由」 |
-| `child.list` | `{sessionId}` | `ChildRow[]` | **读平台投影**：父会话的 `subagentCatalog` / `agentTeam` + 各子会话的 `subagentTiming` / 用量。**不自建 children 表**、不推断状态（`docs/01` F13.1/F24/F34）；用 `tryMembership` 标来源 |
-| `team.members` | `{sessionId}` | `TeamMemberView[]` \| `null` | 转发官方 `ctx.agentTeams.listMembers(lead)`；**服务不存在 → 返回 `null`**（不是空数组，界面据此隐藏对接点） |
-| `team.tasks` | `{sessionId}` | `TeamTaskView[]` \| `null` | 读官方 `agentTeam` 投影 / `listTasks(lead)`——**同一份数据**，不复制、不缓存（`docs/01` F34） |
-| `compact.state` | `{childId}` | `{canCompact, reason}` | 压缩前置条件体检（不写会话） |
+| `node.read` | `{sessionId, seq}` | `{type, cat, text, reasoning?, isError?, seq}` | 这一条的**完整正文**（`docs/01` F35：永远不是 80 字预览）。拒绝码：`shadowed`（已被接替）/ `not-found`（日志里也没有）/ `unsupported-type` |
+| `turnState` | `{sessionId}` | `{known, open}` | 轮次是否闭合（`known:false` = 本进程判不了 ⟹ 界面只读） |
+| `draft.list` | `{sessionId}` | `Record<seq, draft>` | 我们自己的草稿表 |
+| `child.plan` | `{sessionId, humanTask}` | 确认框五项（切点 / 首条任务 / 继承与不继承 / 副作用 / 取消语义） | 开子会话前给用户看的清单；**不写任何东西** |
+| `probe.services` | `{}` | 结构探针 | ⛔ **临时诊断 op（M4.5 期间用）**：`check-release-ready` 会在它还在时报红 ⟹ 发布前必须整段删除（`docs/11` 已记） |
 
-> **条数（与 `docs/10` M0-09 / M6-01 的「读 12 + 写 13 + `team.*`」对齐）**：
-> 只读 **14**（= 自有读 **12** + 官方团队读 `team.members`/`team.tasks` **2**）；
-> 写入 **13**（表一，含 `child.interrupt`）；官方团队写入 **4**（表二）。合计 **31**。
-> 官方团队服务不存在（团队未启用）时，`team.*` 一律返回 `null`（不是空数组），界面据此**隐藏**对接点。
->
-> ⛔ **固定块 / 钉住 / 漂移检查整套已删除**（`docs/11` D14）：本条随之作废；开子会话时带进去的只有**本地改动**（S5.1）。原文留档如下：① **开子会话时**由 `child.fork` 把当时在效的固定块**逐字拼进子会话的第一句话**（于是只有那个新会话的模型读到）；② 在本会话里手动点 `重注入`（`invariant.inject`，追加一条消息）。
-> —— 用户点一次确认就完成这两件事；**不许**拆成"只存本地、模型看不到"再让用户手动注入（那是用户明确否掉的形态）。
-
-**写入（表一：本插件数据 / 会话日志 / 子会话通道）—— 13 条**
-
-> 每一条都要求界面先出**确认框**（短警示 + 本次清单 + 理由）；**用户点「确认」即为该次授权**——
-> 这不是"逐动作找人点头"（D5）。逐动作必须列的清单见 [`docs/06`](06-orchestration.md) §4 的 A1–A11。
+**写入（只写我们自己的数据目录）**
 
 | op | 请求 | 响应 | 写哪里 | 可逆？ |
 |---|---|---|---|---|
-| `draft.update` | `{sessionId, seq, patch}` | `Record<seq, draft>` | 我们的数据目录 | ✅ 可删 |
-| `draft.reset` | `{sessionId}` | `{}` | 我们的数据目录 | ✅ |
-| `apply` | `{sessionId, seq, draft?}` | `{replacedSeq, newSeq, type, turn?, step?, flushed}` | **会话日志**（追加 replace） | ❌ append-only；**但可再改/可回滚**——目标换成"当前可见的那个替换体"即可（`docs/01` F7） |
-| `child.fork` | `{sessionId, recordId?, label, prompt}` —— `recordId` 只用于**来源凭证/备注**（写 `snapshot_links`），**不是种子参数**：平台 fork **没有**任何切点参数（`docs/01` F38） | `{childId}` | **创建新会话**（优先 `ctx.agentTeams.spawnTeammate`；兜底 `ctx.subagents.startContinuable({provider:'fork', label, request:{parent, prompt}, signal})`）。**实际种子 = 平台自算的"当前最后一个 `turn/end` 及其之前"** | 会话可归档，但父会话种子是**一次性**的 |
-| `child.compact` | `{childId}` | `{compacted, items?, reason?}` | **子会话历史被摘要取代** | ❌ **不可逆** |
-| `child.prompt` | `{requestId（**由我们铸造**：`SubagentPromptRequestId`）, parentSessionId, childSessionId, mode:'continuable', delivery:'queue'\|'steer', content: PromptContentPart[]}` | `{messageId}`（`ctx.subagents.prompt(request, signal)` 的回执） | 子会话 inbox（人写的一条话 = 它的**下一个轮次**） | ❌ |
-| `child.interrupt` | `{childId, parentSessionId}` | `{accepted:true}` | 子会话（`ctx.subagents.interruptByParent(childSessionId, parentSessionId, 'continuable')`；**团队成员**走表二 `team.interrupt`） | ❌ 已提交的工作不回滚 |
+| `draft.update` | `{sessionId, seq, edit:{text, reasoning?, isError?}}` | 新的草稿表 | 插件数据目录（`redline-drafts-*.json`） | ✅ 可 `draft.drop` |
+| `draft.drop` | `{sessionId, seq}` | 新的草稿表 | 同上 | ✅ |
 
-**写入（表二：官方 Agent Teams 转发）—— 4 条**
-
-> 团队不可用时这 4 个 op 返回 `null`，界面**不出现**对接点（docs/01 F31/F33、docs/06 §3.2）。
-> `lead` = `ctx.agents.get(sessionId)` 拿到的 live Lead Agent。
+**写入（会话侧 —— 全插件唯一的会话写入点）**
 
 | op | 请求 | 响应 | 写哪里 | 可逆？ |
 |---|---|---|---|---|
-| `team.createTask` | `{subject, description, blockedBy?, writeScopes?}` | `TeamTaskView` \| `null` | 官方 Lead 会话日志（`ctx.agentTeams.createTask(lead, request)`） | ❌ 但可用 `updateTask` 改 |
-| `team.updateTask` | `{taskId, expectedRevision, action, subject?, description?, blockedBy?, writeScopes?, owner?}` | `TeamTaskView` \| `null` | 同上（**revision 乐观校验**：`expectedRevision` 过期即被拒，**不覆盖**） | ❌ |
-| `team.sendMessage` | `{target（名册名）, content: ContentBlock[]}` | `{messageId, status:'accepted'\|'queued'}` \| `null` | 官方成员邮箱（`ctx.agentTeams.sendMessage(lead, request)`） | ❌；`queued` **不重发**（如实显示） |
-| `team.interrupt` | `{target（名册名）}` | `{previousStatus:'running'\|'inactive'}` \| `null` | 官方成员（`ctx.agentTeams.interrupt(lead, targetName)`） | ❌ 已提交的工作不回滚 |
+| `child.start` | `{sessionId, humanTask}` | `{childId, label, carriedSeqs}` | **新开一个子会话**，把「人写的首条任务 + 逐字带入的改后正文」作为它的第一句话 | 子会话可归档；父会话**一个字都没写** |
+
+> **硬约束的落点**（`AGENTS.md` §1 / `docs/11` D15）：`draft.*` 只写本地；**`child.start` 是唯一的会话写入点**。
+> 因此旧表里的 `apply`（往会话日志追加 replace 事件）**不再存在** —— 见下方 C 段。
+> 三条 JSON 路由（`/detail` `/balance` `/backfill`，见 §5.1）不是 op，它们是投影与历史回填的取数端点。
+
+#### B. 计划中（M5 / M6 的落点，**尚未实现**）
+
+> 这些名字来自 `docs/10` 的 M5/M6 任务行；**落地前不许在界面或文档里当成已可用**。
+> 实现时必须先在这里与 `redline-route.ts` 同步（两半共用同一份词表）。
+
+| op | 用途（对应任务行） |
+|---|---|
+| `child.list` | 读平台投影列父会话的子会话（M5-06 的一半；`docs/01` F34：不自建 children 表） |
+| `team.members` / `team.tasks` | 转发官方 Agent Teams 的只读面；服务不存在 → 返回 `null`（**不是空数组**），界面隐藏对接点（M5-07、M5-03） |
+| `child.prompt` / `child.interrupt` | 会话互通与打断（M5-11；`child.prompt` 需要我们自己铸造 requestId） |
+| `compact.state` / 压缩确认与执行 | 体检 → 列区间与条目数 → `compactNow`（M5-14/15/16；失败码逐条映射人话） |
+
+#### C. 已作废（2026-10-02 转向的代价，**不要再实现**）
+
+| 旧 op | 为什么作废 | 依据 |
+|---|---|---|
+| `apply` | 往会话日志追加 replace 事件 = 违反「所有保存都是临时保存」的硬约束 | `docs/11` D15（唯一写入点 = 开子会话） |
+| `draft.reset` | 被 `draft.drop`（按条丢弃）取代：一条一行，不需要整表重置 | `docs/11` D16 |
+| `edits.list` | 它渲染「原 #N → 新 #M」—— 那是**版本历史**的入口，已从界面移除 | `docs/11` D19 |
+| `child.fork` | 改为 `child.plan` + `child.start` 两段（先给人看清单、再执行） | `docs/11` D5/D10 |
+| `child.compact`（旧名） | 压缩尚未实现，落点见 B 段；旧名不再使用 | `docs/10` M5-14…17 |
+| `freeze` / `invariants.*` / `pinInvariants` | 固定块 / 钉住 / 漂移检查**整套删除** | `docs/11` D14、D10 |
+| `plan.next`（旧契约） | 机器判定仍在（`src/redline/plan.ts` + 单测），但**不再是 RPC op**：界面自带这条顺序，不需要往返一次 | `docs/10` M5-02 说明 |
 
 ### 5.3 主机斜杠命令
 

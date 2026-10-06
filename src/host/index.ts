@@ -30,7 +30,6 @@ import { watchDetailChannel } from './detail'
 import { createFallbackActivityDefinition, createFallbackHeadersDefinition, createFallbackTimelineDefinition } from './fallback'
 import { createContextHeadersDefinition } from './headers'
 import { watchRedlineChannel } from './redline-channel'
-import { installSettings } from './settings'
 import { watchStepIdentity } from './stepIdentity'
 import { createContextTimelineDefinition } from './timeline'
 import { detectHarnessVersion } from './version'
@@ -95,7 +94,13 @@ export function apply(ctx: Context, config: Config): void {
   // demand — the dashboard (the rows' only reader) summons the pass through
   // the plugin's fetch route the first time it opens.
   watchActivityBackfill(ctx)
-  installSettings(ctx)
+  // ⚠️ **这里原来还有 `installSettings(ctx)`（`src/host/settings.ts`），2026-10-06 按 `docs/10` M3-23 删除**：
+  // 那条路要求 `ctx.settings.register(ns, schema)`，而本运行时（DSH 0.2.0-rc.2）**没有这个面**
+  // （`docs/01` F39 实测：服务只有 `describe/update/replace/mutate`）⟹ 它一定在
+  // `typeof service.register !== 'function'` 处返回，是个**永不生效的注册**。
+  // 偏好面的**唯一活路**是本插件 loader Config 里的 `.volatile()` 字段（`src/host/config.ts`）：
+  // 客户端的设置卡挂在 Plugins 页的 `plugins.bundle.config` 席位，数据直接来自那份 Config schema。
+  // 若将来某个运行时的 `settings.register` 回来了，从 git 历史取回 `src/host/settings.ts` 与这一行即可。
 }
 
 // ---- public type surface (stable for downstream consumers) -------------------

@@ -625,9 +625,12 @@ SpawnTeammateRequest = {
 | 是否有 `register(ns, schema)` | **没有**（`grep -c "register(ns" → 0`） |
 | 表单从哪来 | **loader entry 自己的 Config schema**（`schema.d.ts` 的 `volatileForm(schema)` / `projectForm` / `isVolatilePath`）——即"偏好"必须长在插件的 `config:` 块上 |
 
-**后果**：`src/host/settings.ts` 的 `installSettings()` 在这个运行时上**一定**在 `typeof service.register !== 'function'` 处返回（不抛错、也不注册）。
-上游源码的注释已经写明这是 V4+ 的已知形态，所以这是**上游已知的 inert 降级**，不是我们引入的缺陷；
-但**它意味着本插件当前不发布任何偏好命名空间**。处理口径见 `docs/10` **M3-23**（要么把偏好改写成 loader Config 的 `.volatile()` 字段，要么随 M3 的界面减法一起删掉）——**不许**当成"已经生效"。
+**后果（2026-10-06 已收口）**：宿主侧那条注册路（`src/host/settings.ts` 的 `installSettings()`）在这个运行时上**一定**在
+`typeof service.register !== 'function'` 处返回（不抛错、也不注册）—— 上游源码注释写明这是 V4+ 的已知形态，
+是**上游已知的 inert 降级**，不是我们引入的缺陷。既然它永不生效，已按 `docs/10` **M3-23** **整段删除**（不留死路）。
+**唯一的偏好活路**：本插件 loader Config 的 `.volatile()` 字段（`src/host/config.ts`）——
+客户端的设置卡挂在 Plugins 页的 `plugins.bundle.config` 席位，表单由**loader entry 自己的 Config schema** 生成（就是上表说的形态）。
+若将来某个运行时的 `settings.register` 回来了，从 git 历史取回那份文件即可。
 
 ### F40 · 插件 CSS 的类名撞车是**静默**的（与 F1/F2 同类，但更隐蔽）
 
