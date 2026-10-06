@@ -115,7 +115,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 257 / 共 291**（DOING 7 · TODO 23 · WAIT🙋 4） |
+| 进度 | `docs/10`：**DONE 258 / 共 291**（DOING 6 · TODO 23 · WAIT🙋 4） |
 | 当前卡点 | **只剩四件需要用户的事（第 40 轮收尾时的实测状态）**：① **再重启一次 `dsh web`** —— 只为让只读探针 op `probe.services` 生效（`docs/01` **F46**：宿主半边开机加载，`tsc`/`tsdown` 都过了、进程仍答 `unknown-op`，当前 pid 50235 仍是 22:10 那次）；重启后一条 curl 即可拿到 M45-01/03/04 的读数。② ~~「洞察」面板去留~~ —— **这条已作废（2026-10-06 用户指正 + 仓库核实）**：**我们自己的洞察面早在 2026-10-05 就删干净了**（`src/client/index.ts` 注释、`overview.css` 96 类零引用、`tests/client/*.spec.ts` 只剩"已删"的说明）；**上游插件 `dsh-context` 自带的洞察面板不属本仓库、不要动它**。唯一残留是 i18n 里 4 行**死字符串**（见 `docs/10` M3-34 的注记）。③ **三个小决定**：M4-06 默认粒度（设置页现为"步骤"）/ M4-07 统计卡 3 格 vs 7 格 / 手动出口要不要先做。④ **授权包④**（push 52 个提交）。⚠️ 会**写会话**的那几条探针（替换→再替换→回滚、跨压缩恢复、可续接子会话）动手前要用**可弃会话**并逐条确认。仓库侧：`node scripts/release-check.mjs` → 全部通过（共 11 步） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -1053,3 +1053,26 @@ M4.5 收口时留下的那条新事实（`ctx.get('compaction')` 是 undefined�
   这一半早已实现；界面**不出现任何压缩按钮**，改为一句"要压缩请在子会话里用 `/compact`"。
 - `docs/04` 的能力开关表里 `compaction` 由"probe 决定"落定为 **false**（`docs/01` F54 为证）。
 - ⚠️ 若将来想显示**精确的被替代区间**（start..end），那是事件卡的小改进，登记为后续 —— 不是 M5 的前置。
+
+## D52 · 子会话索引"打开它"这一半的结论：**入口归官方**（2026-10-06，M5-06 收口）
+
+`docs/03` R5.1.1 早就写着"当前 demo 只展示状态说明、不实现跳转"，但没给**为什么插件也不该做**的硬理由。
+这一轮去官方参考实现里查了，答案很清楚（`docs/01` **F55**）：
+
+- `@deepseek-ai/dsh-client-ui-subagent/lib/client.js` 对 `ctx.sessions` 只用到 **`list` / `retain` / `refreshProjections`**；
+- "点一个后代就打开它"是**它自己实现的 UI 行为** —— bundle 里是 `openChild` / `openChildAside`（把子会话的对话**渲染**进当前视图或右侧 Sidebar），
+  **不是**调一个公共的 switch-session API；
+- 安装树的类型里也 grep 不到 `openSession` / `selectSession` / `setActiveSession` / `activeSessionId`。
+
+⟹ **第三方客户端插件没有"打开某个会话"的服务**。硬要自己做，就得复制一个会话视图（`docs/03` R5.1.1 明确不做：会和官方打架、还要维护会话树一致性）。
+所以我们的索引保持**只读 + 说明**，并把**去哪儿打开**写明（改成：`空闲：用父会话页头右侧的「N 个子智能体」目录打开它 —— 面板会切到它的上下文…`）。
+
+**M5-06 因此收口**（两半都验了）：
+
+| 半边 | 证据 |
+|---|---|
+| 取消/未确认 = 零副作用 | `tests/channel/child.spec.ts`：`child.plan` 不调 `startContinuable`、不写会话、不写草稿；`tests/client-ui/child-card.spec.ts`：点「取消」时 `start` **零调用** |
+| 我们的索引自身不写任何东西 | 数据 = `subagentCatalog` 投影 + 每个子会话一次只读 `turnState`；卡片里唯一的写点是 `child.start`（且只在确认后、且父轮次闭合时才可用） |
+
+⚠️ 这也顺手回答了"为什么用户会觉得在官方团队模式下看不到子会话的上下文"（`docs/03` R5.1.3 的原问题）：
+**看得到，但入口在官方页头那个目录里**（今天真机截图里就是右上角那个「5 个子智能体」）；我们的卡只负责说清状态与指路。

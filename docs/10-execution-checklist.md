@@ -355,7 +355,7 @@
 
 ---
 
-## 8. M5 · 快照 → 子会话 → 压缩 → 对接官方团队（**9 / 28 DONE**）
+## 8. M5 · 快照 → 子会话 → 压缩 → 对接官方团队（**10 / 28 DONE**）
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
@@ -364,7 +364,7 @@
 | M5-03 | 可选注入 `agentTeams`：团队未启用时插件仍能加载、对接点全隐 | TODO | 插件入口 |
 | M5-04 | 首条任务必须人写（空则拒绝创建） | DONE | `src/redline/orchestrate.ts`  → `buildFirstTask` 空/纯空白即拒绝（`redline/empty-task`，并给出人话理由）；纯逻辑 + `child.start` 的拒绝顺序都在单测里（`tests/edit/orchestrate.spec.ts` 4 条 + `tests/channel/child.spec.ts`） |
 | M5-05 | 确认框五项内容生成 | DONE | `src/redline/orchestrate.ts`、`src/client/**`  → `forkConfirmItems()` 产出**恰好五项**（从哪儿开始 / 会带上的改动 / 第一句话由人写 / 会带什么不带什么 / 取消=什么都不发生），并有一条测试**禁止出现内部词**（provider·种子·切点·继承范围·fork）；`child.plan` 把它只读地报给界面 |
-| M5-06 | 取消零副作用：`child.list` 无新项 + 事件数不变 | DOING | `tests/channel/**`  → ✅ 已钉住一半：`tests/channel/child.spec.ts` 断言 `child.plan`（= 人还没点确认那一步）**不调 startContinuable、不写会话、不写草稿**；⏳ `child.list` 那一半待 M5 卡片 |
+| M5-06 | 取消零副作用：`child.list` 无新项 + 事件数不变 | DONE | → **2026-10-06 两半都收口**：① 已有半边 —— `tests/channel/child.spec.ts` 断言 `child.plan`（人还没点确认那一步）**不调 `startContinuable`、不写会话、不写草稿**；② 卡的半边 —— 取消 = 不建会话不写日志（`tests/client-ui/child-card.spec.ts` 断言取消时 `start` **零调用**），而且我们的索引**根本不发写请求**（数据来自 `subagentCatalog` 投影 + 每个子会话一次只读 `turnState`）。⚠️ **"打开它"不做**（不是欠账，是**查证后的决定**）：第三方客户端插件没有"打开某个会话"的服务，导航入口归官方（父会话页头的「N 个子智能体」）⟹ 见 `docs/01` **F55**、`docs/03` R5.1.1；界面因此改成**指名入口**的一句话（"用父会话页头右侧的「N 个子智能体」目录打开它"）。|
 | M5-07 | 官方对接（读）：`agentTeam` 投影 / `listTasks` → 面板显示官方那份数据 | TODO | `src/redline/team-bridge.ts` |
 | M5-08 | 官方对接（写）：`createTask({subject,description,blockedBy,writeScopes})` | TODO | `src/redline/team-bridge.ts` |
 | M5-09 | 官方对接（写）：`updateTask`（`expectedRevision` 过期被拒，不覆盖） | TODO | `src/redline/team-bridge.ts` |
@@ -432,10 +432,10 @@
 | M3   右侧界面 | 36 | **35** | 1 | 0 | 0 |
 | M4   轮次联动 | 7 | **7** | 0 | 0 | 0 |
 | M4.5   平台能力验证 | 19 | **19** | 0 | 0 | 0 |
-| M5   快照 → 子会话 → 压缩 → 对接官方团队 | 28 | **9** | 2 | 16 | 1 |
+| M5   快照 → 子会话 → 压缩 → 对接官方团队 | 28 | **10** | 1 | 16 | 1 |
 | M6   入口与发布准备 | 12 | **11** | 0 | 1 | 0 |
 | M7+   本轮明确不做 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **291** | **257** | **7** | **23** | **4** |
+| **合计** | **291** | **258** | **6** | **23** | **4** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 
