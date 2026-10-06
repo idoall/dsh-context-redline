@@ -25,53 +25,11 @@
  * (`countsOfRecords`). The card itself never touches the collections.
  */
 
-import { useEffect, useMemo, useState, type ReactElement, type ReactNode } from 'react'
-import type { ContextEventRecord, ContextTimeline, RequestRecord, SessionCostUsage, TimelineCounts, TokenUsage } from '../../shared/types'
-import { estimateSessionCost, formatCost, formatPriceRate, mergeCostUsage, priceFaceOf, toCurrency } from '../cost'
-import type { CostCurrency, ModelBook, PriceFace } from '../cost'
-import { sessionsFaceOf, subagentCostFoldOf } from '../agentTree'
-import type { AgentHeads } from '../agentHeads'
-import { useSessionsSnapshot } from '../agentHeads'
-import { cacheHitPercent } from '../format'
-import { useModelPrices } from '../modelPrices'
-import { asRecord, numOf, type ClientCtx } from '../services'
-import { isDeepSeekProvider } from '../../shared/providers'
+import type { ReactElement } from 'react'
+import type { ContextEventRecord, RequestRecord, TimelineCounts } from '../../shared/types'
+import { type StepStats } from '../assemble'
 import type { ViewKit } from '../viewkit'
 
-/** One billed model's tooltip block: the usage key and the registry face its price resolved to. */
-interface PriceRow { key: string; face: PriceFace }
-
-/** The four billed buckets of a price block, in display order, with their label keys. */
-const BANDS: readonly (readonly [keyof PriceFace['rate'], string])[] = [
-  ['hit', 'stats.costHit'],
-  ['miss', 'stats.costMiss'],
-  ['write', 'stats.costWrite'],
-  ['out', 'stats.costOut'],
-]
-
-/**
- * The billed models' price blocks — the usage keys priced against the book,
- * in fold order, each carrying the registry face (models.dev provider id ·
- * model id) its rates resolved from. Hostile branches skip; unpriced models
- * drop (their buckets simply do not contribute).
- */
-function priceRowsOf(usage: SessionCostUsage | undefined, book: ModelBook | null): PriceRow[] {
-  if (usage === undefined || book === null) return []
-  const rows: PriceRow[] = []
-  for (const provider of Object.keys(usage)) {
-    const models = asRecord(usage[provider])
-    /* v8 ignore next 1 -- the fold's inputs are mergeCostUsage's own output
-       (hostile branches dropped at the merge), so a non-record branch never
-       reaches here; the guard stays for the helper's own contract. */
-    if (models === null) continue
-    for (const model of Object.keys(models)) {
-      const face = priceFaceOf(book, provider, model)
-      if (face === null) continue
-      rows.push({ key: provider + '/' + model, face })
-    }
-  }
-  return rows
-}
 
 /**
  * The inline generation's counter derivation — the exact tally the card ran
@@ -94,184 +52,68 @@ export function countsOfRecords(requests: readonly RequestRecord[], events: read
 }
 
 /**
- * The stats board's subagent-cost seat: the merged billed-token usage of the
- * current session's whole subagent subtree, folded from the session-list
- * snapshot's warm rows (`subagentCostFoldOf`) with fetched slim heads
- * standing in for cold relatives. Null = nothing reported yet (no
- * subagents, no usage, or no sessions face on this harness).
+ * 上下文统计卡 —— **3 格，跟 demo**（`docs/10` M4-07：用户 2026-10-06 裁定）。
+ *
+ * 卡片上只有 demo 确认过的那三格 + 标题里的当前视图与 `本步可见 N 条 · ≈X tokens`：
+ *   ① 模型可见条目（另 N 条被遮蔽）② 用户消息 ③ 注入内容。
+ * 三个数字的口径由 `stepStatsOf()`（`src/client/assemble.ts`，纯函数 + 单测）从
+ * **`assemble()` 已经算好的那一步列表**里直接数出来 —— 卡片不做任何二次判断。
+ *
+ * ⚠️ 与基线（上游 `dsh-context`）的**有意差异**：不再有 `轮次 / 步数 / 工具调用 / 缓存命中 / 费用 / 子 Agent 费用`
+ * 六格读数。会话指认改由趋势卡标题 `按轮次（共 N 轮）` + 浏览器 meta `第 t 轮 · 第 s 步` 承担（`docs/10` M4-03）；
+ * 费用与缓存属于"上下文洞察"那套能力，不是本产品（批改台）的目标。
+ * 费用/价格模块（`cost.ts` / `modelPrices.ts` / 本文件的 `makeSubagentCost`）**保留未删**，只是本卡不再引用。
  */
-export function makeSubagentCost(
-  ctx: ClientCtx,
-  heads: AgentHeads,
-): (sessionId: string | undefined) => SessionCostUsage | null {
-  return function useSubagentCost(sessionId: string | undefined): SessionCostUsage | null {
-    // Resolved lazily at mount: a deployment without the outward sessions
-    // service simply prices no subagent cost.
-    const face = useMemo(() => sessionsFaceOf(ctx), [])
-    const snapshot = useSessionsSnapshot(face)
-    const [landed, setLanded] = useState<ReadonlyMap<string, ContextTimeline>>(new Map())
-    const fold = useMemo(
-      () => subagentCostFoldOf(snapshot, sessionId, landed),
-      [snapshot, sessionId, landed],
-    )
-    // Fetch every cold descendant's slim head through the shared page-scope
-    // cache; a landed head re-folds the subtree with its usage. Same value →
-    // same state: the identity bail-out keeps a settled replay on every
-    // snapshot tick from looping.
-    useEffect(() => {
-      for (const id of fold.cold) {
-        void heads.headOf(id).then((head) => {
-          if (head !== null) setLanded(prev => prev.get(id) === head ? prev : new Map(prev).set(id, head))
-        }).catch(() => {})
-      }
-    }, [fold, heads])
-    return fold.usage
-  }
-}
-
 export function makeStatsContext(
   kit: ViewKit,
-  useSubagentCost: (sessionId: string | undefined) => SessionCostUsage | null,
 ): (props: {
-  /** The session-shape tally (host-precomputed on the split generation). */
-  counts: TimelineCounts
-  /** The whole-session human-input tally (the user's messages + question answers; absent on older hosts). */
-  humanInputs?: number
-  /** Tool calls with a result live in the current context (absent on older hosts). */
-  toolCalls?: number
-  /** The official tokenUsage projection — the cache-hit cell's source (null until a provider reports). */
-  usage: TokenUsage | null
-  cost?: SessionCostUsage
-  locale: string
-  /** The current session id, anchoring the subagent-cost fold (absent = nothing to fold). */
-  sessionId?: string
+  /** 该步的读数（`stepStatsOf` 的结果）。 */
+  stats: StepStats
+  /** 当前视图的轮次与步（live 时是最后一步）。 */
+  turn?: number
+  step?: number
+  /** 正在看"当前（下一次请求）"而不是某条历史记录。 */
+  live: boolean
+  /**
+   * 该步的列表数据到了没有（`timelineSource` 的 `detailState === 'ready'`）。
+   * 没到就显示 `—`：三个数字都来自**该步的节点列表**，那是 detail 通道的产物，
+   * 而 slim head 里只有 token 合计、没有条目数 —— 假装成 0 会等于在骗人。
+   */
+  ready: boolean
 }) => ReactElement {
   const { t, fmt } = kit
   return function StatsContext(props: {
-    counts: TimelineCounts
-    humanInputs?: number
-    toolCalls?: number
-    usage: TokenUsage | null
-    cost?: SessionCostUsage
-    locale: string
-    sessionId?: string
+    stats: StepStats
+    turn?: number
+    step?: number
+    live: boolean
+    ready: boolean
   }): ReactElement {
-    const currency: CostCurrency = props.locale === 'zh' ? 'cny' : 'usd'
-    const { book, failed } = useModelPrices()
-    // Both cost cells price the same host-folded cumulative totals, at one
-    // scope each: the family total (the current agent's own usage plus every
-    // subagent session's) in the cost cell, the subagents' share alone in
-    // the subagent-cost cell.
-    const subUsage = useSubagentCost(props.sessionId)
-    const usage = mergeCostUsage(props.cost, subUsage) ?? undefined
-    const cost = estimateSessionCost(usage, book, currency)
-    const subCost = estimateSessionCost(subUsage, book, currency)
-    const fmtRate = (usd: number): string => formatPriceRate(toCurrency(usd, currency), currency)
-    const rows = priceRowsOf(usage, book)
-    const subRows = priceRowsOf(subUsage ?? undefined, book)
-    // DeepSeek's peak/off-peak scheme is explained only when the tip's own
-    // scope actually billed a DeepSeek provider — other sessions see nothing
-    // of it.
-    const deepseek = usage !== undefined && Object.keys(usage).some(p => isDeepSeekProvider(p))
-    const subDeepseek = subUsage !== null && Object.keys(subUsage).some(p => isDeepSeekProvider(p))
-    // Usage folded but nothing priced (the book has not loaded, or carries
-    // none of this scope's models): say so instead of a bare dash.
-    const unpriced = rows.length === 0 && usage !== undefined && Object.keys(usage).length > 0
-      && (failed || book !== null)
-    const subUnpriced = subRows.length === 0 && subUsage !== null && (failed || book !== null)
-    // One scope's price table: the billed buckets' rates at the book's list
-    // per model — a zero list price carries no information, so its band drops
-    // (free/token-plan listings keep only their listing line) — each block
-    // closed by the listing line naming the registry face (provider id ·
-    // model id) the rates resolved from.
-    const pricesBlock = (blocks: PriceRow[]): ReactNode =>
-      blocks.length > 0 ? (
-        <span key="prices" className="redline-stat-tip-prices">
-          <span className="redline-stat-tip-head">{t('stats.costPriceHead')}</span>
-          {blocks.map(r => (
-            <span key={r.key} className="redline-stat-tip-row">
-              {BANDS.filter(([bucket]) => r.face.rate[bucket] > 0).map(([bucket, label]) => (
-                <span key={bucket} className="redline-stat-tip-band">
-                  <i>{t(label)}</i>
-                  {' '}
-                  <b>{fmtRate(r.face.rate[bucket])}</b>
-                </span>
-              ))}
-              <span className="redline-stat-tip-by">{t('stats.costPriceBy', { p: r.face.pid, m: r.face.mid })}</span>
-            </span>
-          ))}
-        </span>
-      ) : null
-    // The shared footnotes: the CNY conversion note in the CNY display, and
-    // DeepSeek's peak-window scheme when the scope billed a DeepSeek provider.
-    const notes = (deep: boolean): ReactElement[] =>
-      [
-        currency === 'cny' ? <span key="cny">{t('stats.costTipCny')}</span> : null,
-        deep ? <span key="peak">{t('stats.costTipDeepseek')}</span> : null,
-      ].filter((el): el is ReactElement => el !== null)
-    const costTip: ReactNode = [
-      t('stats.costTip'),
-      pricesBlock(rows),
-      ...notes(deepseek),
-      unpriced ? <span key="unavailable">{t('stats.costUnavailable')}</span> : null,
-    ]
-    // The subagents' own share: scope explanation, its own price table, then
-    // the outage note when the subagents' models priced against nothing.
-    const subTip: ReactNode = [
-      t('stats.subCostTip'),
-      pricesBlock(subRows),
-      ...notes(subDeepseek),
-      subUnpriced ? <span key="unavailable">{t('stats.costUnavailable')}</span> : null,
-    ]
-    // The harness chat stats line's own formula, shown two decimals deep:
-    // prompt-side cache reads over the whole billed input (output excluded),
-    // dashed until reported.
-    const hit = props.usage === null ? null
-      : cacheHitPercent(
-        numOf(props.usage.cacheReadTokens),
-        numOf(props.usage.uncachedInputTokens) + numOf(props.usage.cacheReadTokens) + numOf(props.usage.cacheWriteTokens),
-      )
-    const cell = (label: string, value: string | number, tip?: ReactNode, href?: string): ReactElement => {
-      // The framed cell body, as a div — or as an anchor opening the models.dev
-      // provider listing in a new tab when the caller hands a destination (the
-      // tooltip still frames and reveals off this same element).
-      const body = (
-        <>
-          <span className="redline-stat-label">
-            {label}
-            {tip !== undefined && <i className="redline-stat-q group-hover/tip:text-(--dsw-alias-label-primary) group-hover/tip:border-(--dsw-alias-label-primary)" aria-hidden="true">?</i>}
-          </span>
-          <b className="redline-stat-value">{typeof value === 'number' ? fmt(value) : value}</b>
-          {tip !== undefined && <span className="redline-tip redline-stat-tip group-hover/tip:opacity-100" role="tooltip">{tip}</span>}
-        </>
-      )
-      const className = 'redline-stat' + (tip === undefined ? '' : ' redline-stat-tipped group/tip')
-      return href === undefined
-        ? <div className={className}>{body}</div>
-        : <a className={className} href={href} target="_blank" rel="noreferrer noopener">{body}</a>
-    }
-    // The cost cell links to the listing when ONE models.dev provider priced
-    // the whole scope — the natural "check these rates" destination. A
-    // multi-provider scope names each face in the tooltip instead and stays
-    // unlinked.
-    const costPids = new Set(rows.map(r => r.face.pid).filter(p => p !== ''))
-    const costHref = costPids.size === 1 ? 'https://models.dev/providers/' + [...costPids][0] + '/' : undefined
+    const cell = (label: string, value: string | number): ReactElement => (
+      <div className="redline-stat">
+        <span className="redline-stat-value">{value}</span>
+        <span className="redline-stat-label">{label}</span>
+      </div>
+    )
+    const { stats, ready } = props
+    // 被遮蔽的条数只在真的有时才写出来（与 demo 的条件一致）。
+    const shadowNote = ready && stats.shadowed > 0 ? t('stats.shadowedNote', { n: fmt(stats.shadowed) }) : ''
+    const value = (n: number): string => (ready ? fmt(n) : '—')
     return (
       <div className="redline-card redline-col-stats flex-[3] min-w-[min(360px,100%)]">
         <div className="redline-card-title">
           <span className="redline-card-title-text">{t('stats.title')}</span>
+          <span className="redline-stat-hint">
+            {t('stats.viewHint', { t: props.turn ?? 0, s: props.step ?? 0 }) + (props.live ? t('stats.viewLive') : '')}
+          </span>
+          {ready
+            ? <span className="redline-bmeta">{t('stats.bmeta', { n: fmt(stats.listed), k: fmt(stats.tokens) })}</span>
+            : null}
         </div>
-        {/* The count grid: auto-fit keeps every cell ≥108px (the floor where the longest
-            English label still fits), so cells fill the card — 6 across at the card's
-            three-quarter head-row share, 2 on a phone-width one. */}
         <div className="redline-stats grid grid-cols-[repeat(auto-fit,minmax(108px,1fr))] gap-1.5">
-          {cell(t('stats.turns'), props.counts.turns)}
-          {cell(t('stats.steps'), props.counts.steps)}
-          {cell(t('stats.humanInputs'), props.humanInputs ?? 0, t('stats.humanInputsTip'))}
-          {cell(t('stats.toolCalls'), props.toolCalls ?? 0)}
-          {cell(t('stats.cacheHit'), hit === null ? '—' : `${hit}%`, t('stats.cacheHitTip'))}
-          {cell(t('stats.cost'), cost === null ? '—' : formatCost(cost, currency), costTip, costHref)}
-          {cell(t('stats.subCost'), subCost === null ? '—' : formatCost(subCost, currency), subTip)}
+          {cell(t('stats.visibleItems') + shadowNote, value(stats.visible))}
+          {cell(t('stats.userMsgs'), value(stats.user))}
+          {cell(t('stats.injectItems'), value(stats.inject))}
         </div>
       </div>
     )

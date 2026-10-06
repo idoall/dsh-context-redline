@@ -9,20 +9,20 @@ import { createElement as h, useCallback, useEffect, useLayoutEffect, useMemo, u
 import type { ContextEventRecord, RequestRecord, SurfaceNode } from '../../shared/types'
 import { briefNodes, briefOf } from '../brief'
 import type { ContextViewProps } from '../services'
-import { conversationNodesOf, headersOf, imageLoaderOf, projectionOf, tokenUsageOf, unsupportedOf } from '../services'
+import { conversationNodesOf, headersOf, imageLoaderOf, projectionOf, unsupportedOf } from '../services'
 import type { ClientCtx, ConversationNodeLike } from '../services'
 import { makeContentFetcher, makeHeaderFetcher, useHistoryFace } from '../historyPage'
 import { useTimelineSource } from '../timelineSource'
 import { makeDetailNote } from './detailNote'
 import type { ContextSettings } from '../settings'
 import type { ViewKit } from '../viewkit'
-import { makeAgentHeads } from '../agentHeads'
 import { makeContextBrowser } from './browser'
 import { useRedlineDrafts } from '../redlineDrafts'
 import { makeEventList } from './events'
 import { makeUpgradeGate } from './upgradeGate'
 import { makeRequestDetail } from './requestDetail'
-import { countsOfRecords, makeStatsContext, makeSubagentCost } from './statsContext'
+import { countsOfRecords, makeStatsContext } from './statsContext'
+import { assemble, stepStatsOf } from '../assemble'
 import { makeStackedBar } from './stackedBar'
 import { aggregateByTurn, attachMarkers, jumpTargetOf, makeTrendChart, turnStepsOf } from './trendChart'
 
@@ -49,10 +49,7 @@ export function makeContextView(
   const RequestDetail = makeRequestDetail(kit, StackedBar)
   const EventList = makeEventList(kit)
   // One page-scope cold-head cache serves both subagent-data readers: the
-  // Agent network card's composition rings and the stats board's
-  // subagent-cost cell fetch each relative once.
-  const heads = makeAgentHeads(ctx)
-  const StatsContext = makeStatsContext(kit, makeSubagentCost(ctx, heads))
+  const StatsContext = makeStatsContext(kit)
   const UpgradeGate = makeUpgradeGate(kit)
   const DetailNote = makeDetailNote(kit)
   const ContextBrowser = makeContextBrowser(kit, StackedBar, settings)
@@ -73,9 +70,6 @@ export function makeContextView(
     const data = source.data
     // Official token-meter `contextPressure` projection — the same key the chat's context ring reads; token-meter owns estimation, the Host
     // no longer mirrors it. Absent → derived fallback.
-    // Official token-meter `tokenUsage` projection — the same data the chat stats line below the input box reads for its '缓存命中' figure, so
-    // the stats board's cache-hit cell reuses it verbatim; absent → the cell drops to a dash instead of estimating.
-    const usage = projectionOf(props, 'tokenUsage', tokenUsageOf)
     // Official token-meter `contextBreakdown` projection — the exact rows the chat ring's click-open panel shows, so the overview legend
     // reads identically by construction; absent → the fold's own same-estimator sums inside headlineOf.
     // ⚠️ 临时只读探针（V10，2026-10-05）：宿主到底有没有注册 `subagentCatalog` / `subagentTiming` 两个投影。
@@ -343,11 +337,6 @@ export function makeContextView(
     const trendHoverCat = hoverCat !== null && hoverCat !== 'free' ? hoverCat : null
 
     // The cost cell prices in the active locale (zh → CNY, else USD), read at render time — the locale subscription above already
-    // re-renders on a switch; older hosts without getLocale fall back to USD.
-    const localeSvc = ctx.get('locale')
-    const activeLocale = localeSvc !== undefined && typeof localeSvc.getLocale === 'function'
-      ? localeSvc.getLocale().active
-      : 'en'
     // The host's baseline gate (host/fallback.ts): the cards below render
     // the fallback's zeroed data while the modal names both versions and
     // urges the upgrade. Absent record = a supported harness, no gate.
@@ -470,6 +459,9 @@ export function makeContextView(
       />
     )
 
+    // 统计卡那 3 格的数据：`assemble()` 给出"这一步的列表"（含在那一步还活着、如今已被接替的原文），
+    // 三个数字由纯函数 `stepStatsOf()` 从同一张列表里数出来 —— 与浏览器卡片列出的行**同一个来源**。
+    const stepStats = stepStatsOf(assemble(data, headers, activeReq !== null ? activeReq.seq : null))
     return (
       <div className="redline-root" ref={rootRef}>
         {probeOut === null ? null : <div id="redline-probe-out" data-probe={probeOut} style={{ display: 'none' }} />}
@@ -481,8 +473,8 @@ export function makeContextView(
             pair in a narrow pane at the cards' min-width floors. */}
         {inSidebar ? null : (
           <div className="redline-cols redline-head">
-            <StatsContext counts={counts} humanInputs={data.humanInputs} toolCalls={data.toolCalls} usage={usage}
-              cost={data.cost} locale={activeLocale} sessionId={typeof sessionId === 'string' ? sessionId : undefined} />
+            <StatsContext stats={stepStats} turn={activeReq?.turn} step={activeReq?.step}
+              live={activeReq === null} ready={source.detailState === 'ready' || source.detailState === 'legacy'} />
           </div>
         )}
         <div className="redline-cols redline-head">

@@ -18,7 +18,7 @@ import { resetModelPrices, setModelPricesLoader } from '../../../src/client/mode
 import type { UseChatLike } from '../../../src/client/services'
 import type { ContextTimeline } from '../../../src/shared/types'
 import { DICT_EN } from '../../../src/client/i18n'
-import { TestClientCtx, TestLocale, asClientCtx } from '../helpers/harness'
+import { TestClientCtx, asClientCtx } from '../helpers/harness'
 import { click, flush, hover, makeKit, mount, query, queryAll, silenceWindowErrors, stepPickOf, text, unhover, until } from '../helpers/kit'
 
 // pluginInfo's npm-registry probe stays inert (and '0.0.0-dev' short-circuits
@@ -663,34 +663,25 @@ describe('ContextView — locale and settings', () => {
     resetModelPrices()
   })
 
-  test('cost prices in USD by default (no locale service), CNY under zh', async () => {
-    const m1 = await mount(h(makeView(new TestClientCtx()), {
-      sessionId: 'sv-usd',
+  // ⚠️ 原用例断言"费用格按语言换算成 $/¥"—— 那两格随 M4-07（3 格、跟 demo）一起删了。
+  // 这条改成它现在能证明的事：卡片只有 demo 的三格、不再有任何费用/货币输出。
+  // （本文件的 harness 用固定英文 kit，语言切换的实测留给真机。）
+  test('the card carries the demo\'s three cells and no cost/currency cell', async () => {
+    const m = await mount(h(makeView(new TestClientCtx()), {
+      sessionId: 'sv-cells',
       useProjection: projectionsFor(costed),
     }))
     await flush()
-    assert.ok(text(m1.container).includes('$'))
-    assert.ok(!text(m1.container).includes('¥'))
-    await m1.unmount()
-
-    const ctxZh = new TestClientCtx({ services: { locale: new TestLocale('zh') } })
-    const m2 = await mount(h(makeView(ctxZh), {
-      sessionId: 'sv-cny',
-      useProjection: projectionsFor(costed),
-    }))
-    await flush()
-    assert.ok(text(m2.container).includes('¥'))
-    await m2.unmount()
-
-    // A locale service without getLocale falls back to USD.
-    const ctxBare = new TestClientCtx({ services: { locale: {} } })
-    const m3 = await mount(h(makeView(ctxBare), {
-      sessionId: 'sv-bare',
-      useProjection: projectionsFor(costed),
-    }))
-    await flush()
-    assert.ok(text(m3.container).includes('$'))
-    await m3.unmount()
+    const labels = queryAll(m.container, '.redline-stat-label').map(el => text(el))
+    assert.deepEqual(labels, [
+      DICT_EN['stats.visibleItems'],
+      DICT_EN['stats.userMsgs'],
+      DICT_EN['stats.injectItems'],
+    ])
+    const body = text(m.container)
+    assert.ok(!body.includes('$') && !body.includes('¥'), '费用格已随 3 格口径删除')
+    assert.ok(!body.includes(DICT_EN['stats.cost']) && !body.includes(DICT_EN['stats.cacheHit']), '缓存/费用读数不在这张卡')
+    await m.unmount()
   })
 
   test('mount-time granularity/trend/file-sort defaults come from the bound settings scope', async () => {
@@ -893,20 +884,29 @@ describe('ContextView — the split generation (slim head + detail channel)', ()
     return new TestClientCtx()
   }
 
-  test('the head paints the counters immediately; the detail collections land through the channel', async () => {
+  test('the card shows — until the step list lands, then the demo\'s three numbers', async () => {
     const ctx = slimCtx(async () => ({ ok: true, value: slimDetail() }))
     const View = makeView(ctx)
     const m = await mount(h(View, { sessionId: 'sv-slim', useProjection: projectionsFor(slimHead()) }))
 
-    // First paint: the counters are real (no detail needed), the detail cards name the pending read.
+    // First paint: 三个数字都来自**该步的节点列表**（detail 通道的产物），slim head 里只有 token 合计、
+    // 没有条目数 ⟹ 卡片显示 `—` 而不是假装 0；detail 卡片同时写明这次读还在路上。
     const values = queryAll(m.container, '.redline-stat-value').map(el => text(el))
-    assert.deepEqual(values.slice(0, 2), ['1', '3'], 'turns/steps from the head counters')
+    assert.deepEqual(values, ['—', '—', '—'], '未就绪不许编数字')
     assert.ok(text(m.container).includes(DICT_EN['detail.loading']))
     assert.equal(queryAll(m.container, '.redline-bar').length, 0, 'the chart waits for the detail')
     assert.equal(queryAll(m.container, '[data-redline-step-pick] option').length, 1, 'the picker holds only the live row')
 
     // The detail lands: every card renders its real content, the notes clear.
     await until(() => queryAll(m.container, '.redline-bar').length === 3, 'the detail never landed')
+    // 数据到了：三格都是真数字，且卡片自身必须自洽 —— 可见条目 = 本步列表 − 被遮蔽。
+    const landed = queryAll(m.container, '.redline-stat-value').map(el => text(el))
+    assert.ok(landed.every(v => v !== '—'), 'detail 到了就该有数：' + JSON.stringify(landed))
+    const bmeta = /(\d[\d.,k]*)\s+items visible in this step/.exec(text(m.container))
+    assert.ok(bmeta !== null, '读数行写出来了：' + text(m.container))
+    const shadow = /\((\d[\d.,k]*) more superseded\)/.exec(text(m.container))
+    const num = (t: string): number => Number(t.replace(/[.,](?=\d{3}\b)/g, '').replace(/k$/, '000'))
+    assert.equal(num(landed[0]!), num(bmeta![1]!) - (shadow === null ? 0 : num(shadow[1]!)), '可见 = 列表 − 被遮蔽')
     assert.ok(!text(m.container).includes(DICT_EN['detail.loading']))
     assert.ok(text(m.container).includes('heads-up'), 'the events list serves the detail')
     assert.equal(queryAll(m.container, '[data-redline-step-pick] option').length, 4, 'live + three steps')

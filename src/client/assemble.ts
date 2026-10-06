@@ -108,3 +108,56 @@ export function assemble(data: ContextTimeline, headers: ContextHeaders | null, 
   const header = headerAt(headers, seq)
   return { live, header, system: systemAt(data, header, seq), nodes, missingLive, approximate }
 }
+
+/** 「当前这一步」的读数：统计卡那 3 格 + `本步可见 N 条 · ≈X tokens`（`docs/10` M4-07）。 */
+export interface StepStats {
+  /** 该步列表里的条目总数（demo 的 `本步可见 N 条`）。 */
+  readonly listed: number
+  /** 模型可见条目 = 列表里**没有** `gone` 的那些。 */
+  readonly visible: number
+  /** 列表里**已失效**的原文条数（demo 那句「另 N 条被遮蔽」）。 */
+  readonly shadowed: number
+  /** 可见条目里的用户消息条数。 */
+  readonly user: number
+  /** 可见条目里的注入内容条数。 */
+  readonly inject: number
+  /** 整张列表的估算 token 合计（`≈` 前缀由界面加）。 */
+  readonly tokens: number
+}
+
+/**
+ * The three cells the demo defines (user ruling 2026-10-06, `docs/10` M4-07).
+ *
+ * 口径**完全取自 `assemble()` 已经算好的那张列表**，不再自己定边界：
+ * `assemble()` 对"某一步"返回的 `nodes` 里既有仍然有效的条目，也有**在那一步还活着、
+ * 如今已被接替**的原文（判据 `n.gone !== undefined`，因为原文在那一步尚未被替换）。
+ * 所以：
+ *   · `visible`  = 列表里没有 `gone` 的；
+ *   · `shadowed` = 列表里有 `gone` 的（界面把它渲染成"已被接替"那一行）；
+ *   · 两个分类计数只数**可见**的（demo 同样从 `vis` 里筛）；
+ *   · `tokens`  = 整张列表的合计（对得上 `本步可见 N 条 · ≈X tokens` 里那个 N）。
+ * 按 seq 去重：早期那次把同一条替换体渲染两遍、面板列 5 项却报 7 项（2026-10-02 用户截图抓到的 #1600 重复计数）。
+ */
+export function stepStatsOf(assembly: { readonly nodes: readonly SurfaceNode[] }): StepStats {
+  const seen = new Set<number>()
+  let listed = 0
+  let visible = 0
+  let shadowed = 0
+  let user = 0
+  let inject = 0
+  let tokens = 0
+  for (const n of assembly.nodes) {
+    if (seen.has(n.seq)) continue
+    seen.add(n.seq)
+    listed += 1
+    tokens += typeof n.tokens === 'number' ? n.tokens : 0
+    if (n.gone === undefined) {
+      visible += 1
+      if (n.cat === 'user') user += 1
+      else if (n.cat === 'inject') inject += 1
+    } else {
+      shadowed += 1
+    }
+  }
+  return { listed, visible, shadowed, user, inject, tokens }
+}

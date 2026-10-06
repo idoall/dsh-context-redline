@@ -110,3 +110,12 @@ a.redline-stat:hover { border-color: var(--dsw-alias-label-secondary); }
 /* The stats grid's cell count is intrinsic (`repeat(auto-fit, minmax(108px,1fr))` on the element, see
    statsContext.tsx); the donut row's 320px gap fold and 240px stack still ride
    `@max-[…]/redline-card` utilities — statsTokens.tsx / statsTiming.tsx / sliceList.tsx / donut.tsx. */
+
+/*
+ * 卡片标题里的两段读数（`docs/10` M4-07，跟 demo）：
+ *   · `.redline-stat-hint` —— 当前视图（第 t 轮 · 第 s 步 / 当前），次要文字；
+ *   · `.redline-bmeta`     —— 本步可见 N 条 · ≈X tokens，等宽数字，靠右。
+ * 两者都只在统计卡的标题行里出现，样式一律带 `redline-` 前缀（闭包门禁要求自足）。
+ */
+.redline-stat-hint { margin-left: 6px; font-size: 11px; font-weight: 400; opacity: 0.72; }
+.redline-bmeta { margin-left: auto; font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; opacity: 0.72; }

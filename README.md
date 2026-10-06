@@ -93,7 +93,7 @@ Five cards, in two columns ([`demo/`](https://github.com/idoall/dsh-context-redl
 | [`demo/`](https://github.com/idoall/dsh-context-redline/blob/main/demo/README.md) | **Clickable interaction prototype** (M0.5 gate): fake data, real interactions, and a "what does this button do" explain mode |
 | [`docs/12-user-guide.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/12-user-guide.md) | **User guide**: what this is / five-minute tour / which of the seven kinds can be edited / when editing is blocked / glossary / FAQ |
 | [`docs/11-session-handoff.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/11-session-handoff.md) | **Session handoff**: a copy-paste block plus the fields to refresh at each wrap-up |
-| [`docs/10-execution-checklist.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, **285 items**; steps needing you are marked `WAIT🙋` |
+| [`docs/10-execution-checklist.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, **286 items**; steps needing you are marked `WAIT🙋` |
 | [`AGENTS.md`](https://github.com/idoall/dsh-context-redline/blob/main/AGENTS.md) | Working agreement: hard constraints, platform pitfalls, testing discipline |
 | [`UPSTREAM.md`](https://github.com/idoall/dsh-context-redline/blob/main/UPSTREAM.md) / [`NOTICE`](https://github.com/idoall/dsh-context-redline/blob/main/NOTICE) | Upstream provenance, license compliance, list of our modifications |
 
