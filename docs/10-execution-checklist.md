@@ -390,13 +390,13 @@
 
 ---
 
-## 9. M6 · 入口与发布准备（**7 / 12 DONE**）
+## 9. M6 · 入口与发布准备（**10 / 12 DONE**）
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
-| M6-01 |RPC op 全量可用：**以 `docs/02` §5.2 的 A 段为准**（2026-10-06 复核：已实现 **8** 条 —— 只读 `node.read` / `turnState` / `draft.list` / `child.plan`（+ 临时 `probe.services`）· 写本地 `draft.update` / `draft.drop` · 会话唯一写入点 `child.start`）；B 段（`child.list` / `team.*` / 压缩）随 M5 落地。⚠️ 旧行写的"只读 14 · 写入 13 · 官方团队写入 4"是转向前的合同，已作废| TODO | `src/host/redline-channel.ts` |
-| M6-02 | `/redline` 命令：只读报告 + 一句话建议（`plan.next` 的 reason 必显） | TODO | `src/host/redline-command.ts` |
-| M6-03 | 内部服务导出（`ctx.redline`）：`inspect/apply/annotate/invariants.*/freeze/plan` | TODO | `src/host/redline-service.ts` |
+| M6-01 | RPC op 全量可用：**以 `docs/02` §5.2 的 A 段为准**（2026-10-06 复核：已实现 **8** 条 —— 只读 `node.read` / `turnState` / `draft.list` / `child.plan`（+ 临时 `probe.services`）· 写本地 `draft.update` / `draft.drop` · 会话唯一写入点 `child.start`）；B 段（`child.list` / `team.*` / 压缩）随 M5 落地。⚠️ 旧行写的"只读 14 · 写入 13 · 官方团队写入 4"是转向前的合同，已作废 | DONE | → **A 段 8 条全部实现且每条都有测试**：`node.read`（`tests/channel/redline-ops.spec.ts` + `tests/edit/namespace.spec.ts` + `tests/client-logic/redline-channel.spec.ts`）· `turnState` / `draft.list` / `draft.drop` / `probe.services`（`redline-ops.spec.ts`）· `draft.update` / `child.plan` / `child.start`（`tests/channel/child.spec.ts`）· 客户端半个通道（`client-logic/redline-channel.spec.ts`）。**B 段不算这条的欠账** —— 它按定义随 M5 落地（`child.list` = M5-06 另一半、`team.*` = M5-07…12、压缩 = M5-14/16）。`src/host/redline-channel.ts` |
+| M6-02 |【作废】~~`/redline` 命令：只读报告 + 一句话建议（`plan.next` 的 reason 必显）~~ | DONE | → **2026-10-06 收口：并入 `M7-02`（只读工具入口），用户已定"本轮不做"**。依据：产品形态是**面板**（`docs/03` + demo），命令入口与"编辑必须在界面上看着那一行做"这条理由方向相反；`docs/02` §5.3 已从"斜杠命令规格"改成"**当前不提供任何斜杠命令**"并保留那张旧表说明来龙去脉（含"为什么命令里不给编辑"）。`plan.next` 的 `reason` 仍由 `src/redline/plan.ts` 的纯函数产出（10 条单测），等真做命令/工具入口时直接用 |
+| M6-03 |【作废】~~内部服务导出（`ctx.redline`）：`inspect`/`apply`/`annotate`/`invariants.*`/`freeze`/`plan`~~ | DONE | → **2026-10-06 收口：不导出 cordis Service**。依据：① **没有消费者**（本仓库只有这一个插件；官方团队走它自己的服务与工具，见 `docs/01` F47/F53）；② 旧规格里的成员**大半已作废**（`apply`/`annotate`/`invariants.*`/`freeze` 随回滚+批注+固定块整套删除，`docs/11` D10/D19）。`inspect`（`src/redline/inspect.ts`）与 `plan`（`src/redline/plan.ts`，M5 的契约、10 条单测）**保留为仓库内模块，不对外暴露**；`docs/02` §5.4 已按此改写。将来真要复用就单独立项，且不许复活 §5.2 C 段那批名字 |
 | M6-04 | README 双语（成对）+ 截图 + 安装/使用/限制 | DONE | → 双语**成对**复核：两份各有 **9 节**且顺序一致（它要解决什么 / 它长什么样 / 四条规则 / 明确不做 / 文档索引 / 怎么读 / 安装与使用 / 许可 / 关于早期那次尝试）；**加了截图**并在两处都写明它来自 `demo/`（**当前界面准绳**），以及"**插件截图还欠**：要重启后在真面板上截（M3-22）"—— 不许把 demo 截图说成插件截图；**安装 / 使用 / 限制**三节补齐（`限制` 三条：保存只到本地、三类改不了、无版本历史/回滚）；文档索引补上 `docs/12` |
 | M6-05 | CHANGELOG / release notes（简洁双语版式：锚点 + 兼容性一行 + 分类 bullet + 升级命令） | DONE | → `CHANGELOG.md` 已写（版式照本行要求：**锚点版本 → 兼容性一行 → 分类条目 → 升级命令**）：首版 `0.1.0`（未发布）列出骨架与身份 / 编辑面 / 浏览与读数 / 帮助与工具四组**用户可见**变化，单列"**尚未包含（本轮明确不做）**"（直接改写当前会话、版本历史/回滚、批注与钉住）以免误读，兼容性写明"需要 DSH 0.2.0-rc.2 且与参考插件可并存" |
 | M6-06 | 打包与安装说明（本地目录 → npm 的路径） | DONE | → 两份 README 的安装节都给出**两条路径**：① **本地目录** `dsh plugin --profile web add /绝对路径/dsh-context-redline`（测试期，需授权；装完**由用户重启**）；② **npm 之后** `dsh plugin --profile web add dsh-context-redline`。并写清"**还没有可安装的发布版**"、`pnpm install` 是唯一安装步骤（不建符号链接）、客户端改动只需硬刷新（F16）。自验命令同步到现状：4 个门禁 lane + `oxlint` + `progress.mjs` + demo 两条自检 |
@@ -433,9 +433,9 @@
 | M4   轮次联动 | 7 | **7** | 0 | 0 | 0 |
 | M4.5   平台能力验证 | 19 | **7** | 3 | 6 | 3 |
 | M5   快照 → 子会话 → 压缩 → 对接官方团队 | 28 | **5** | 2 | 20 | 1 |
-| M6   入口与发布准备 | 12 | **7** | 1 | 4 | 0 |
+| M6   入口与发布准备 | 12 | **10** | 1 | 1 | 0 |
 | M7+   本轮明确不做 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **291** | **233** | **12** | **39** | **7** |
+| **合计** | **291** | **236** | **12** | **36** | **7** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 
