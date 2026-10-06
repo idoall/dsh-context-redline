@@ -52,7 +52,7 @@ import './styles/stackedBar.css'
 import './styles/trendChart.css'
 import './styles/requestDetail.css'
 import './styles/events.css'
-import './styles/fileCard.css'
+// fileCard.css 已随孤岛 B（已删的上游五卡）删除（docs/10 M6-17）
 import './styles/modal.css'
 import './styles/browser.css'
 import './styles/detailSections.css'

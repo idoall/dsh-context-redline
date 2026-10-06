@@ -790,3 +790,38 @@ demo 段现在写着 105 行）。总数与各状态计数不受影响（`check-
 ⚠️ **一条纪律要点**：这个收口影响的主要是**非门禁的上游 lane**（`tests/client/**`）⟹ 每批都必须跑**全量** vitest，
 只看我们那 4 条门禁 lane 会漏。另外 `redline-timing-tps` 这条 CSS **在 B 岛的 `statsTiming.tsx` 删掉之前必须留着**
 （否则 `css-closure` 会报"裸样式"—— 我第一版顺手删了它，就是被这条规则拦下来的）。
+
+## D43 · 死代码收口第二批：孤岛 B（已删的上游五卡）已删 + 一次真事故（2026-10-06）
+
+**这一批的教训比删掉的代码值钱**，所以先写它：
+
+> `fileCard.css` 里**同时**装着**还活着**的浏览器卡样式 ——
+> `.redline-fa-ctl, .redline-br-toolctl { … }` 与 `.redline-fa-search, .redline-br-tool-search { … }`
+> 是"两张卡**共用一个选择器列表**"的写法。我按"这个文件属于已删的文件活动卡"整份删掉，
+> `css-closure` 的 **③ 自足**立刻报两条：
+> `组件 className 用了 .redline-br-toolctl，但没有任何样式定义它（裸样式）`。
+> **处置**：把这两条挪进 `browser.css`（它们本来就是浏览器卡的样式）。
+> **结论**：**删样式文件必须按选择器逐个核对归属，不能按文件名/注释判断**。
+> 这条门禁（"组件用的类必须有定义"）值了一次真事故 —— 它当初是为了防"写了 className 忘了写样式"，
+> 结果在**删除**方向上也救了场。
+
+**B 岛本批改动**：
+1. `git rm` **21** 个文件：10 源（`components/{statsTokens,statsTiming,donut,sliceList,fileCard,pluginInfo}.tsx`、
+   `fileActivity.ts`、`latestVersion.ts`、`meta.ts`、`balance.ts`）+ `styles/fileCard.css` + 10 条对应 spec
+   （`balance.ts` 只删**客户端**那一半；宿主 `src/host/balance.ts` 与共享的 `REDLINE_BALANCE_ROUTE` **照旧保留**——它归平台余额路由）；
+2. 删 **35** 个只被 B 岛引用的 i18n 键（`tokens.*` 4 · `timing.*` 12 · `files.*` 13 · `plugin.*` 6；中英各一份 = 70 行）；
+   两个**前缀**（`files.kind.` / `files.sort.`）与三个本来就不存在的键名被脚本自动跳过（4 条命中、其余 0 条）；
+3. 剪掉随之无引用的 **24** 个 CSS 类：`.redline-donut-*` 6 · `.redline-sl-*` 8 · `.redline-pi-*` 9 ·
+   `.redline-timing-tps` · `.redline-stat-head`（`stats.css` 整段重写：只留还活着的 `.redline-stat*` 三格与
+   `.redline-stat-hint` / `.redline-bmeta` / `.redline-overview-*`），+ `base.css` 里 `.redline-fa-list` 那半个选择器；
+4. `src/client/index.ts` 去掉 `fileCard.css` 的 import（留一行说明）。
+
+**读数**：`tsc` exit 0 · `oxlint` 0/0 · `namespace-contract` 28/0 · `css-closure` **13** 份样式 / **266** 类 / 白名单 3
+（`/tmp/deadcss.mjs` 复扫：无引用的类 **0**）· 全量 vitest **91 文件 / 1440 条全绿** ·
+`tsdown` 后 `lib/client.js` **403,111 → 388,702 字节**；产物里 `makeStatsTokens`/`makeFileCard`/`makePluginInfo`/
+`makeDonut`/`subscribeModelPrices` 计数 **0** · `release-check` 12 步里只 1 步红（探针未删，预期）。
+
+**⏳ 第三批（未做，且必须慢）**：孤儿 i18n 键。全量扫描现在报 **127** 个"看起来没人引用"，但**大部分是假阳性**：
+`cat.*` / `kind.*` / `ev.mode.*` / `redline.err.*` / `files.glyph.*` 是**动态拼**的；
+`stats.cost` / `stats.cacheHit` 被 `tests/client/components/contextView.spec.ts` 的"这两格不在卡里"断言用着。
+所以第三批要**逐条人工核对**（先按前缀白名单过滤，再逐个人查），一次一个家族地删，删完跑全量 vitest。

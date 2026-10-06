@@ -54,6 +54,13 @@
 .redline-br-err-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--dsw-alias-state-error-primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-error-primary) 10%, transparent); }
 /* Shrinkable under width pressure (min-width: 0) so a long tool/call tag ellipsizes instead of forcing the row past the card edge. */
 .redline-br-tag { min-width: 0; font-size: 11px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1); border-radius: 4px; padding: 0 6px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 工具面板的过滤行与搜索框（`browser.tsx` 的「工具定义」分类）。
+   ⚠️ 这两条原来跟文件活动卡共用一个选择器列表（`.redline-fa-ctl, .redline-br-toolctl` /
+   `.redline-fa-search, .redline-br-tool-search`），而**定义在 `fileCard.css` 里**；那两张卡删除时
+   把整个文件一起删掉，`css-closure` 的 ③ 立刻报"组件用了 `.redline-br-toolctl` 但没有样式" ——
+   说明**共用选择器列表的样式文件不能按"文件名"判断归属**，得按选择器逐个看。已挪到这里。 */
+.redline-br-toolctl { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; }
+.redline-br-tool-search { flex: 1; min-width: 80px; font: inherit; font-size: 12px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 3px 8px; outline: none; }
 /* Registering-plugin chip on tool-schema rows: package/server names scan on a
    brand-tinted pill (the badge tint idiom), in the same face and size as the
    tool name they tag (the row inherits the UI font at 12px) so the attribution

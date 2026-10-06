@@ -1,9 +1,11 @@
 /*
  * The head band's stat cards — the context row's three-cell grid and the
  * cards' shared anatomy (section heading, count, sub-line).
- * ⛔ 本文件里两族费用时代的样式已**删除**（`docs/10` M6-17/18，2026-10-06）：
- *    `.redline-stat-q`（右上角小问号）与 `.redline-stat-tip*` / `.redline-stat-tipped`
- *    （费用气泡）—— 它们随 M4-07 换成 demo 的 3 格后双双 0 引用。
+ * ⛔ 三批费用/上游卡时代的样式都在 2026-10-06 清掉了（`docs/10` M6-17/18）：
+ *    `.redline-stat-q`（右上角小问号）、`.redline-stat-tip*` / `.redline-stat-tipped`（费用气泡）、
+ *    以及**已删的上游五卡**那一族 —— `.redline-donut*`（环形图）、`.redline-sl*`（图例行）、
+ *    `.redline-pi-*`（插件信息行）、`.redline-timing-tps`（耗时吞吐片）、`.redline-stat-head`。
+ *    判据是「从插件入口出发可不可达」＋「有没有 TSX 引用」，两边都为空才删（见 `docs/11` D42/D43）。
  */
 .redline-stat { background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 6px 6px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 /* The 5-cell stats grid shares a half-width head-row card with a sibling, so its cells are moderate: tighter padding keeps the longest labels on one line. */
@@ -11,84 +13,15 @@
 .redline-stat-label { color: var(--dsw-alias-label-secondary); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .redline-stat-value { color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
 .redline-stat-sub { color: var(--dsw-alias-label-secondary); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* 耗时卡的吞吐量小片（`statsTiming.tsx`）—— ⚠️ 那个卡本身属于孤岛 B（从入口不可达，
-   待 `docs/10` M6-17 第二批删除）；在它删掉之前这条**必须留着**，否则 `css-closure` 会报"裸样式"。 */
-.redline-timing-tps { flex: none; margin-left: auto; padding: 1px 8px; border-radius: 999px; background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); font-size: 12px; line-height: 18px; font-variant-numeric: tabular-nums; cursor: default; }
 .redline-card-sub { font-weight: 400; color: var(--dsw-alias-label-secondary); font-size: 12px; margin-left: auto; }
 /* 规模读数（docs/03 R1.5）：与副标题同一套字色字号，但**不是**副标题（左贴标题，不吃掉右侧空间） */
 .redline-card-scale { font-weight: 400; color: var(--dsw-alias-label-secondary); font-size: 12px; margin-left: 8px; }
+/* `currentComposition.tsx` 的组成总览（还在渲染的那张卡）：大数字 + 百分比。 */
 .redline-overview-num { display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px; }
 .redline-overview-num > b { font-size: 20px; }
 .redline-overview-num span { color: var(--dsw-alias-label-secondary); }
 .redline-overview-pct { margin-left: auto; font-size: 11px; }
 .redline-overview-pct b { font-size: 20px; color: var(--dsw-alias-label-primary); margin-right: 4px; }
-/*
- ---- Stats cards' shared anatomy: a small section heading, the donut+list
- row, and the token card's cost line (the '.redline-tip' bubble pattern). ----
- */
-.redline-stat-head { font-size: 11px; font-weight: 600; color: var(--dsw-alias-label-secondary); margin: 12px 0 8px; }
-/* The ring hugs the left edge; the legend fills the rest of the card with its quantity and share columns
-   right-aligned. The donut cards stretch the donut+legend row over their full height (`flex: 1` below), so
-   the head row's extra space sits around the chart instead of pooling under it; the row's own flex layout
-   and its 320px/240px folds ride utilities on the elements (statsTokens.tsx / statsTiming.tsx /
-   sliceList.tsx / donut.tsx). */
-.redline-col-donut { display: flex; flex-direction: column; }
-.redline-col-donut .redline-donut-row { flex: 1; }
-.redline-donut { position: relative; flex: none; }
-.redline-donut svg { display: block; }
-.redline-donut-track { stroke: color-mix(in srgb, var(--redline-color-neutral-500) 18%, transparent); }
-/* The legend row ↔ segment hover link: hovering either side dims the ring's
-   other slices to 0.35 (the stacked bars' idiom) while the active one stays
-   solid; the center figures stay at rest. */
-.redline-donut-seg { transition: opacity var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out); }
-/* The entrance sweep rides the `animate-redline-donut-in` utility (theme token: 0.45s sweep, staggered by the
-   element's --redline-i slot, `motion-reduce:animate-none` for the reduced-motion guard). */
-.redline-donut-dim .redline-donut-seg { opacity: 0.35; }
-.redline-donut-dim .redline-donut-seg-on { opacity: 1; }
-.redline-donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; pointer-events: none; text-align: center; padding: 0 7px; box-sizing: border-box; }
-.redline-donut-center b { line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.redline-donut-center span { color: var(--dsw-alias-label-secondary); white-space: nowrap; }
-/*
- The slice rows — the donut's legend with numbers, no bars, two tiers per
- row: the primary line pairs the color dot + name with the bold share
- closing a fixed right column, and the secondary line drops the absolute
- quantity (plus a qualifier like the call count) under the name in muted
- small print. The name takes the whole primary line and only ellipsizes as
- a last resort; a zero-figure row dims — the ring already carries the share.
- The rows flow into as many ≥160px columns as the card offers (the
- composition legend's own auto-fill idiom): one in a narrow pane, two on a
- classic 1280px viewport where the row halves are ~456px, more on ultrawide
- — so the classic size reads in the same paired order as the composition
- card below.
- */
-.redline-sl { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 4px 20px; min-width: 0; overflow: hidden; }
-/* The pill tint spreads 6px past the text column (negative margins) so the
-   hovered row reads as one lit surface without shifting the columns. */
-.redline-sl-row { display: flex; flex-direction: column; gap: 1px; font-size: 12px; min-width: 0; border-radius: 6px; padding: 1px 6px; margin: 0 -6px; transition: background-color var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out); }
-.redline-sl-row-on { background: var(--dsw-alias-interactive-bg-hover); }
-.redline-sl-row-dim { opacity: 0.55; }
-.redline-sl-main { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.redline-sl-dot { flex: none; width: 8px; height: 8px; border-radius: 2px; }
-.redline-sl-label { flex: 1 1 auto; min-width: 0; line-height: 1.25; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.redline-sl-pct { flex: none; min-width: 34px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
-.redline-sl-sub { margin-left: 14px; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1.3; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.redline-pi-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
-/* The settings-entry row is a button wearing the link-row chrome — reset the button chrome the shared row style doesn't cover. */
-.redline-pi-row-btn { appearance: none; border: 0; background: none; font: inherit; color: inherit; text-align: left; padding: 0; cursor: pointer; width: 100%; }
-.redline-pi-row { display: flex; flex-direction: row; justify-content: space-between; align-items: baseline; gap: 12px; min-width: 0; text-decoration: none; color: inherit; }
-.redline-pi-hint { text-decoration: none; }
-.redline-pi-update { color: var(--dsw-alias-state-warn-primary); font-size: 11px; margin-left: 6px; white-space: nowrap; }
-.redline-pi-label { flex: none; color: var(--dsw-alias-label-secondary); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* The leading site mark rides inline so the row's baseline alignment keeps the label text on the value's baseline. */
-.redline-pi-labelicon { display: inline-block; vertical-align: -2px; margin-right: 4px; }
-/*
- min-width: 0 lets the value shrink inside the flex row and truncate with
- an ellipsis; without it a narrow card pushes the value over the label.
- */
-.redline-pi-value { min-width: 0; color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
-/* The stats grid's cell count is intrinsic (`repeat(auto-fit, minmax(108px,1fr))` on the element, see
-   statsContext.tsx); the donut row's 320px gap fold and 240px stack still ride
-   `@max-[…]/redline-card` utilities — statsTokens.tsx / statsTiming.tsx / sliceList.tsx / donut.tsx. */
 
 /*
  * 卡片标题里的两段读数（`docs/10` M4-07，跟 demo）：

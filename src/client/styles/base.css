@@ -117,7 +117,8 @@
  a new tip never re-declares this chrome.
  */
 .redline-tip { position: absolute; z-index: 6; width: max-content; background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l1); border-radius: 6px; padding: 6px 10px; font-size: 12px; color: var(--dsw-alias-label-primary); box-shadow: var(--dsw-shadow-lv3, 0 2px 8px rgba(0, 0, 0, 0.18)); pointer-events: none; opacity: 0; transition: opacity var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out); }
-.redline-events, .redline-fa-list { display: flex; flex-direction: column; gap: 2px; height: 320px; overflow-y: auto; }
+/* `.redline-fa-list`（文件活动卡）已随孤岛 B 删除 —— 选择器只留 `.redline-events`（`docs/10` M6-17）。 */
+.redline-events { display: flex; flex-direction: column; gap: 2px; height: 320px; overflow-y: auto; }
 /*
  The row owns the 14px vertical rhythm (redline-cols gap); cards drop their own bottom margin (incl. the last in a column) so every section boundary measures exactly one 14px whichever way the flex wraps.
  */
