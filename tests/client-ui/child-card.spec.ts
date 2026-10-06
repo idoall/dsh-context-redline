@@ -228,3 +228,43 @@ describe('第 5 张卡：结果回流徽章（读父会话的结算通知）', (
     await m.unmount()
   })
 })
+
+describe('第 5 张卡：把通知标为已查看（写的是我们自己的表）', () => {
+  const pendingOf = (state: 'unseen' | 'seen' | 'continued') => ([
+    { notice: { seq: 42, childId: '66da37b9-4bdb-4b9a-98a4-93c0c1747787', summary: 'x', at: 0 }, state },
+  ])
+
+  test('未确认的行给「标为已查看」，按下时带 seq 与 seen=true', async () => {
+    const calls: [number, boolean][] = []
+    const m = await open({ pending: pendingOf('unseen'), onMarkSeen: (seq, seen) => { calls.push([seq, seen]) } })
+    const button = query<HTMLButtonElement>(m.container, '[data-redline-seen]')
+    assert.equal(button.getAttribute('data-redline-seen'), '42', '带的是通知的 seq')
+    assert.equal(text(button), DICT_EN['child.seen.mark'])
+    await act(async () => { button.click() })
+    assert.deepEqual(calls, [[42, true]], '点一下就是把这一条标成已查看')
+    await m.unmount()
+  })
+
+  test('已查看的行给「取消标记」，按下时带 seen=false', async () => {
+    const calls: [number, boolean][] = []
+    const m = await open({ pending: pendingOf('seen'), onMarkSeen: (seq, seen) => { calls.push([seq, seen]) } })
+    const button = query<HTMLButtonElement>(m.container, '[data-redline-seen]')
+    assert.equal(text(button), DICT_EN['child.seen.unmark'])
+    await act(async () => { button.click() })
+    assert.deepEqual(calls, [[42, false]])
+    await m.unmount()
+  })
+
+  test('已接着做的通知不给标记按钮（父会话自己处理过了，标它没意义）', async () => {
+    const m = await open({ pending: pendingOf('continued'), onMarkSeen: () => {} })
+    assert.equal(queryAll(m.container, '[data-redline-seen]').length, 0)
+    await m.unmount()
+  })
+
+  test('标记读写失败时把原因显示出来（不是静默）', async () => {
+    const m = await open({ marksError: 'redline/seen-corrupt' })
+    const alert = query(m.container, '[role="alert"]')
+    assert.ok(text(alert).includes(DICT_EN['redline.err.seen-corrupt']), '人话原样显示')
+    await m.unmount()
+  })
+})

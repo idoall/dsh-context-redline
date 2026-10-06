@@ -17,7 +17,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ComponentType } from 'react'
 import { estimateSystemTokens } from '../shared/estimate'
-import type { ActivityDay, ContextActivity, ContextBreakdown, ContextHeaders, ContextPressure, ContextTimeline, CostModelUsage, HeaderEpochContent, SystemPromptNode, TimingTotals, TokenUsage, ToolTimingTotals } from '../shared/types'
+import type { ActivityDay, ContextActivity, ContextBreakdown, ContextHeaders, ContextPressure, ContextTimeline, CostModelUsage, HeaderEpochContent, SystemPromptNode, TimingTotals, TokenUsage, ToolTimingTotals , Snapshot } from '../shared/types'
 
 export interface LocaleService {
   register(ns: string, dicts: Record<string, Record<string, string>>): () => void
@@ -394,7 +394,7 @@ export function timelineOf(value: unknown): ContextTimeline | null {
   // The split-generation head fields survive sanitizing too.
   const counts = countsOf(data.counts)
   const last = lastOf(data.last)
-  const pending = pendingOf(data.pending)
+  const notices = noticesOf(data.notices)
   const safe: ContextTimeline = {
     ok: true,
     ...(unsupported !== null ? { unsupported } : {}),
@@ -422,7 +422,7 @@ export function timelineOf(value: unknown): ContextTimeline | null {
     archive: objectsOf(data.archive),
     ...(counts !== undefined ? { counts } : {}),
     ...(last !== undefined ? { last } : {}),
-    ...(pending !== undefined ? { pending } : {}),
+    ...(notices !== undefined ? { notices } : {}),
     ...(typeof data.detailRev === 'number' && Number.isFinite(data.detailRev) ? { detailRev: data.detailRev } : {}),
     ...(cost !== undefined ? { cost } : {}),
     ...(timing !== null ? { timing } : {}),
@@ -441,27 +441,19 @@ export function timelineOf(value: unknown): ContextTimeline | null {
  * of the three, drops out. An empty result stays absent, so the card's badge
  * logic never has to distinguish "no notices" from "all of them were junk".
  */
-function pendingOf(value: unknown): ContextTimeline['pending'] {
+function noticesOf(value: unknown): Snapshot['notices'] {
   const list = objectsOf<Record<string, unknown>>(value)
-  const out: NonNullable<ContextTimeline['pending']> = []
-  for (const entry of list) {
-    const notice = entry.notice
-    if (notice === null || typeof notice !== 'object') continue
-    const rec = notice as Record<string, unknown>
+  const out: NonNullable<Snapshot['notices']> = []
+  for (const rec of list) {
     const seq = rec.seq
     const childId = rec.childId
-    const state = entry.state
     if (typeof seq !== 'number' || !Number.isFinite(seq)) continue
     if (typeof childId !== 'string' || childId === '') continue
-    if (state !== 'continued' && state !== 'seen' && state !== 'unseen') continue
     out.push({
-      notice: {
-        seq,
-        childId,
-        summary: typeof rec.summary === 'string' ? rec.summary : '',
-        at: typeof rec.at === 'number' && Number.isFinite(rec.at) ? rec.at : 0,
-      },
-      state,
+      seq,
+      childId,
+      summary: typeof rec.summary === 'string' ? rec.summary : '',
+      at: typeof rec.at === 'number' && Number.isFinite(rec.at) ? rec.at : 0,
     })
   }
   return out.length > 0 ? out : undefined

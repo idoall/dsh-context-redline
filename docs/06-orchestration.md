@@ -310,8 +310,8 @@ ctx.subagents.prompt({
 | 项 | 定义 |
 |---|---|
 | **待处理项的键** | `(父会话 id, 父会话日志里那条 `subagent-settled` 通知的 seq)` —— 用日志位置当键，重启后能重算 |
-| **"已处理"记在哪** | **我们自己的 sqlite**（`pending_results(parent_session_id, settled_seq, seen_at, note)`）；**不写会话**、不改子会话状态 |
-| **重启后怎么恢复** | 从**父会话日志**重扫 `subagent-settled` 通知，与本地 `pending_results` 求差 → 未记录的重新标为"待处理" |
+| **"已处理"记在哪** | **我们自己的存储**：实现为一个 JSON 文件 `$DSH_HOME/dsh-context-redline/redline-seen-<会话>.json`（`{schemaVersion, sessionId, seen:[seq…]}`，原子写；原写"我们自己的 sqlite / `pending_results(parent_session_id, settled_seq, seen_at, note)`"是**意图**，落点就是这份文件——我们没有 sqlite，也不该为此引一个）；**不写会话**、不改子会话状态 |
+| **重启后怎么恢复** | 从**父会话日志**重扫 `subagent-settled` 通知（fold 的 `state.settled`），与本地那份 `seen` 求差 → 未标记的重新算作"未确认"。**重启天然就对**：通知在日志里、标记在文件里，两边都不依赖进程内存 |
 
 **边界**：`orchestration` 这一层**只回答"该做什么"，不做什么**——不写会话、不建会话、不压缩。
 执行永远由上层在用户点头之后发起。

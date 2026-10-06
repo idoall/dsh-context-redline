@@ -31,9 +31,9 @@
  * is wired, callers pass an empty list and every notice reads `unseen`.
  */
 
-import type { PendingRow, SettleNotice } from '../shared/types'
+import type { PendingRow, SettleNotice } from './types'
 
-export type { PendingRow, PendingState, SettleNotice } from '../shared/types'
+export type { PendingRow, PendingState, SettleNotice } from './types'
 
 /**
  * A recorded request in the parent's log - the "somebody carried on" evidence.
@@ -79,11 +79,14 @@ export function pendingRowsOf(
   seenSeqs: readonly number[],
   turnStarts: readonly TurnStart[],
 ): PendingRow[] {
-  const starts = turnStarts
+  // Total on host data, all three inputs: a response of the wrong shape must
+  // degrade to "no evidence", never throw inside a render (the client feeds this
+  // straight from a channel read).
+  const starts = (Array.isArray(turnStarts) ? turnStarts : [])
     .map(seqOfTurn)
     .filter((seq): seq is number => seq !== null)
-  const seen = new Set(seenSeqs.filter(seq => typeof seq === 'number' && Number.isFinite(seq)))
-  return notices
+  const seen = new Set((Array.isArray(seenSeqs) ? seenSeqs : []).filter(seq => typeof seq === 'number' && Number.isFinite(seq)))
+  return (Array.isArray(notices) ? notices : [])
     .filter(isNotice)
     .slice()
     .sort((a, b) => a.seq - b.seq)

@@ -115,7 +115,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 259 / 共 291**（DOING 7 · TODO 21 · WAIT🙋 4） |
+| 进度 | `docs/10`：**DONE 260 / 共 291**（DOING 6 · TODO 21 · WAIT🙋 4） |
 | 当前卡点 | **只剩四件需要用户的事（第 40 轮收尾时的实测状态）**：① **再重启一次 `dsh web`** —— 只为让只读探针 op `probe.services` 生效（`docs/01` **F46**：宿主半边开机加载，`tsc`/`tsdown` 都过了、进程仍答 `unknown-op`，当前 pid 50235 仍是 22:10 那次）；重启后一条 curl 即可拿到 M45-01/03/04 的读数。② ~~「洞察」面板去留~~ —— **这条已作废（2026-10-06 用户指正 + 仓库核实）**：**我们自己的洞察面早在 2026-10-05 就删干净了**（`src/client/index.ts` 注释、`overview.css` 96 类零引用、`tests/client/*.spec.ts` 只剩"已删"的说明）；**上游插件 `dsh-context` 自带的洞察面板不属本仓库、不要动它**。唯一残留是 i18n 里 4 行**死字符串**（见 `docs/10` M3-34 的注记）。③ **三个小决定**：M4-06 默认粒度（设置页现为"步骤"）/ M4-07 统计卡 3 格 vs 7 格 / 手动出口要不要先做。④ **授权包④**（push 52 个提交）。⚠️ 会**写会话**的那几条探针（替换→再替换→回滚、跨压缩恢复、可续接子会话）动手前要用**可弃会话**并逐条确认。仓库侧：`node scripts/release-check.mjs` → 全部通过（共 11 步） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -1118,3 +1118,30 @@ M4.5 收口时留下的那条新事实（`ctx.get('compaction')` 是 undefined�
 
 `pending_results` 的**"已查看"标记**要落我们自己的本地表 + 两个 op ⟹ **宿主半边**。
 它和 **M5-07 的 `team.*` op** 一起排进**下一次重启批次**（一次重启干两三件，不反复麻烦用户）。
+
+## D54 · 「已查看」标记落地，以及这一轮踩到的三个坑（2026-10-06）
+
+M5-18 的另一半（我们自己的"已查看"标记）做完了：`src/shared/redline-seen.ts`（纯序列化/解析）+
+宿主原子写 + 两个 op `pending.list` / `pending.seen` + 界面上「标为已查看 / 取消标记」。
+落点 `$DSH_HOME/dsh-context-redline/redline-seen-<会话>.json`（`docs/06` §3.3 已按真实落点更正：原文写"我们自己的 sqlite"，
+意图没错、落点就是这份 JSON —— 我们没有 sqlite，也不该为此引一个）。
+
+**架构上做了一次修正**：判定一开始放在 `src/redline/pending.ts`，但"已查看"标记必须由**客户端**参与判定，
+而打包纯度门禁 **face 9 禁止 `src/client/**` import `src/redline/**`** ⟹ 移到 **`src/shared/redline-pending.ts`**
+（与 `redline-drafts.ts` 同一个理由：两边都要用的纯规则住 `src/shared/**`）。
+**职责切法**：fold 只报**事实**（`notices` + `lastRequestSeq`），三态**判定归客户端一处**（宿主给事实、本地给标记、head 给证据）。
+
+### 三个坑（都是测试/门禁抓出来的，不是事后总结）
+
+1. **`pending` 写在 `buildTimelineHead` ⟹ 只有瘦线可见**（宿主测试当场红）⟹ 移到两条线共用的 `headFieldsOf`。
+   同一个坑第二次出现：`last`（计费锚点）也只在瘦线里 ⟹ 判定要的证据**另立一个共用标量** `lastRequestSeq`。
+2. **纯函数没守全三个输入**：`pending.list` 的回答被测试的 fetch 桩喂成详情负载（非数组）⟹ `seenSeqs.filter` 抛错
+   **把整个面板渲染炸掉**（两条上游 lane 用例红）。修法两处：纯函数对非数组一律当"没有证据"（total），
+   hook 采纳前**先验形状**。教训：**从通道读来的东西，进渲染前必须先 re-prove 形状**。
+3. **`continued` 的行不该给「标为已查看」**：点了也不会改变显示（`continued` 优先级更高）⟹ 那就是个假按钮。
+   我自己写的 client-ui 用例先红，才把这条契约钉下来。
+
+### 状态
+
+`docs/10` **M5-18 / M5-19 → DONE**（M5 段 12/28 + 1 DOING）。全量 **1482 条**测试全绿 · release-check 12 ✅ + 1 步故意红（探针）。
+⏳ **下一次重启批次**（现在只剩一件）：M5-07 的 `team.*` op + `spawnTeammate` 真机读数。

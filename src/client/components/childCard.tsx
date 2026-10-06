@@ -41,6 +41,10 @@ export interface ChildCardProps {
    * notices (or an older host half), which simply means no badge.
    */
   readonly pending?: readonly PendingRow[]
+  /** Mark (or unmark) one notice as seen — our own store only. */
+  readonly onMarkSeen?: (seq: number, seen: boolean) => void
+  /** A failed marks read/write, shown as `redline.err.<code>`. */
+  readonly marksError?: string | null
   /** `child.plan` — read-only, builds the five items for this exact task text. */
   readonly plan: (humanTask: string) => Promise<RedlineResult<ChildPlan>>
   /** `child.start` — the ONLY session write the panel can perform. */
@@ -126,6 +130,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
     // does the judging (`src/redline/pending.ts`); the card only counts.
     const unseen = (props.pending ?? []).filter(item => item.state === 'unseen').length
     const errKey = errorCode === null ? null : `redline.err.${errorCode.replace('redline/', '')}`
+    const marksKey = props.marksError == null ? null : `redline.err.${props.marksError.replace('redline/', '')}`
 
     return h('div', { className: 'redline-card' },
       h('div', { className: 'redline-card-title' },
@@ -151,6 +156,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
           h('span', { className: 'redline-cap' }, t('child.spawn.note')),
         ),
         blockedKey !== null ? h('div', { className: 'redline-cap' }, t(blockedKey)) : null,
+        marksKey === null ? null : h('div', { className: 'redline-editor-err', role: 'alert' }, t(marksKey)),
       ),
 
       h('section', { className: 'redline-orch-block', 'data-redline-block': 'children' },
@@ -176,6 +182,18 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
                     'data-redline-settled': settled.state,
                     title: t('child.settled.tip') + '\n' + settled.notice.summary,
                   }, h('i', { className: 'redline-settled-dot' }), t('child.settled'), ' · ', t('child.settled.' + settled.state)),
+                // No mark button on `continued`: the parent already carried on, and the
+                // state stays `continued` either way — a control that cannot change what
+                // the row shows is exactly the fake button this project refuses to ship.
+                settled === undefined || settled.state === 'continued' || props.onMarkSeen === undefined
+                  ? null
+                  : h('button', {
+                    type: 'button',
+                    className: 'redline-settled-act',
+                    'data-redline-seen': settled.notice.seq,
+                    title: t('child.settled.tip'),
+                    onClick: () => { props.onMarkSeen?.(settled.notice.seq, settled.state !== 'seen') },
+                  }, t(settled.state === 'seen' ? 'child.seen.unmark' : 'child.seen.mark')),
                 row.label === '' ? null : h('span', { className: 'redline-cap' }, row.label),
                 clock === null ? null : h('span', { className: 'redline-cap' }, clock),
               ),

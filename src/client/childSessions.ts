@@ -21,7 +21,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { planChild, readTurnState, startChild, type ChildPlan, type ChildStarted, type RedlineResult } from './redlineChannel'
+import { listSeen, markSeen, planChild, readTurnState, startChild, type ChildPlan, type ChildStarted, type RedlineResult } from './redlineChannel'
+import { pendingRowsOf, type PendingRow } from '../shared/redline-pending'
+import type { SettleNotice } from '../shared/types'
 
 /** One row of the index. */
 export interface ChildRow {
@@ -77,12 +79,25 @@ export function childRowsOf(raw: unknown): ChildRow[] {
 }
 
 export interface ChildController {
+  /**
+   * The settle notices' three-state judgement (`docs/06` §3.3): the host reports
+   * the notices, WE merge them with our own "seen" marks. The judgement itself
+   * lives in `src/shared/redline-pending.ts` — one place, both halves.
+   */
+  readonly pending: readonly PendingRow[]
   /** The index rows; `live`/`open` fill in as the per-child probes answer. */
   readonly rows: readonly ChildRow[]
   /** Open the confirm box: the five items the host builds for this exact task. */
   readonly plan: (humanTask: string) => Promise<RedlineResult<ChildPlan>>
   /** The only call in this whole panel that writes a session (`docs/11` D15). */
   readonly start: (humanTask: string) => Promise<RedlineResult<ChildStarted>>
+  /**
+   * Mark (or unmark) one notice as seen — a write to OUR own store only (never a
+   * session, never the child's state). Resolves true when the host accepted it.
+   */
+  readonly markSeen: (seq: number, seen: boolean) => Promise<boolean>
+  /** A failed marks read/write, for the card to show (`redline.err.<code>`). */
+  readonly marksError: string | null
 }
 
 /**
@@ -103,9 +118,16 @@ async function probeChild(sessionId: string): Promise<{ live: boolean; open: boo
  * @param sessionId - the session the panel is showing (the would-be parent).
  * @param catalog - the raw `subagentCatalog` projection value.
  */
-export function useChildSessions(sessionId: string | undefined, catalog: unknown): ChildController {
+export function useChildSessions(
+  sessionId: string | undefined,
+  catalog: unknown,
+  notices: readonly SettleNotice[] | undefined,
+  lastRequestSeq: number | undefined,
+): ChildController {
   const base = useMemo(() => childRowsOf(catalog), [catalog])
   const [states, setStates] = useState<Record<string, { live: boolean; open: boolean }>>({})
+  const [seenSeqs, setSeenSeqs] = useState<number[]>([])
+  const [marksError, setMarksError] = useState<string | null>(null)
   const generation = useRef(0)
 
   useEffect(() => {
@@ -123,6 +145,35 @@ export function useChildSessions(sessionId: string | undefined, catalog: unknown
       setStates(next)
     })()
   }, [base])
+
+  // The marks are our own state, so they load once per session — independent of
+  // the catalog (a session with no children yet can still have marks).
+  const markGeneration = useRef(0)
+  useEffect(() => {
+    markGeneration.current += 1
+    const mine = markGeneration.current
+    setSeenSeqs([])
+    setMarksError(null)
+    if (sessionId === undefined || sessionId === '') return
+    void (async () => {
+      const answer = await listSeen(sessionId)
+      if (markGeneration.current !== mine) return
+      if (!answer.ok) { setMarksError(answer.code); return }
+      // Re-prove the shape before adopting it: a stale/garbled answer must not
+      // become the marks (and must never reach the judgement as a non-array).
+      if (!Array.isArray(answer.value)) { setMarksError('redline/seen-corrupt'); return }
+      setSeenSeqs(answer.value)
+    })()
+  }, [sessionId])
+
+  const mark = useCallback(async (seq: number, seen: boolean): Promise<boolean> => {
+    if (sessionId === undefined || sessionId === '') return false
+    setMarksError(null)
+    const answer = await markSeen(sessionId, seq, seen)
+    if (!answer.ok) { setMarksError(answer.code); return false }
+    setSeenSeqs(answer.value)
+    return true
+  }, [sessionId])
 
   const rows = useMemo(
     () => base.map(row => ({ ...row, ...(states[row.id] ?? { live: null, open: null }) })),
@@ -143,5 +194,16 @@ export function useChildSessions(sessionId: string | undefined, catalog: unknown
     return await startChild(sessionId, humanTask)
   }, [sessionId])
 
-  return useMemo(() => ({ rows, plan, start }), [rows, plan, start])
+  // The judgement runs here, not in the fold: one of its three inputs (our
+  // "seen" marks) lives in our own store and must never ride a projection. The
+  // other two are the host's notices and the newest request seq on the head.
+  const pending = useMemo(
+    () => pendingRowsOf(notices ?? [], seenSeqs, typeof lastRequestSeq === 'number' ? [{ seq: lastRequestSeq, at: 0 }] : []),
+    [notices, seenSeqs, lastRequestSeq],
+  )
+
+  return useMemo(
+    () => ({ rows, pending, markSeen: mark, marksError, plan, start }),
+    [rows, pending, mark, marksError, plan, start],
+  )
 }

@@ -44,6 +44,10 @@ export const REDLINE_ERROR = {
   notFound: 'redline/not-found',
   /** The draft file on disk is not readable as our format (E13: loud, never silently empty). */
   draftCorrupt: 'redline/draft-corrupt',
+  /** The local seen-marks file for result flow-back is unreadable (or another session's). */
+  seenCorrupt: 'redline/seen-corrupt',
+  /** The local seen-marks file carries a schemaVersion this build does not know. */
+  seenSchema: 'redline/seen-schema',
   /** The draft file's `schemaVersion` is not one this build understands. */
   draftSchema: 'redline/draft-schema',
   /** A range argument was half-given or reversed. */
@@ -80,6 +84,8 @@ export const REDLINE_ERROR_MESSAGE: Readonly<Record<RedlineErrorCode, string>> =
   [REDLINE_ERROR.shadowed]: 'that seq is no longer a surface node',
   [REDLINE_ERROR.notFound]: 'that seq is not in this session log',
   [REDLINE_ERROR.draftCorrupt]: 'the local draft file is not readable',
+  [REDLINE_ERROR.seenCorrupt]: 'the local flow-back marks are not readable',
+  [REDLINE_ERROR.seenSchema]: 'the local flow-back marks come from another version',
   [REDLINE_ERROR.draftSchema]: 'the local draft file has an unsupported schema version',
   [REDLINE_ERROR.badRange]: 'bad void range',
   [REDLINE_ERROR.historyUnavailable]: 'the full text of that version is not readable',

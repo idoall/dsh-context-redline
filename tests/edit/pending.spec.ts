@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
-import { pendingRowsOf, type SettleNotice, type TurnStart } from '../../src/redline/pending'
+import { pendingRowsOf, type SettleNotice, type TurnStart } from '../../src/shared/redline-pending'
 
 const notice = (seq: number, childId = 'child-a', summary = 'finished'): SettleNotice => ({ seq, childId, summary, at: seq * 100 })
 const turn = (seq: number): TurnStart => ({ seq, at: seq * 100 })
@@ -52,6 +52,11 @@ describe('结果回流三态（pendingRowsOf）', () => {
     const rows = pendingRowsOf([notice(10), notice(40)], [40], [])
     assert.equal(rows.length, 2, '结算两次就是两条通知，不合并')
     assert.deepEqual(rows.map(r => r.state), ['unseen', 'seen'])
+  })
+
+  test('三个输入全都不是数组时也不许炸（宿主给错形状 ⟹ 当"没有证据"）', () => {
+    const rows = pendingRowsOf(undefined as unknown as SettleNotice[], undefined as unknown as number[], undefined as unknown as TurnStart[])
+    assert.deepEqual(rows, [])
   })
 
   test('坏数据不许炸：seq 不是数字 / 结构不对的通知与轮次一律丢掉', () => {

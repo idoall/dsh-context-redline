@@ -51,6 +51,7 @@ import {
   type LocalEdit,
   type SurfaceRowText,
 } from '../shared/redline-drafts'
+import { dropSeen, parseSeen, putSeen, seenFileName, serializeSeen } from '../shared/redline-seen'
 import { fullReasoningOf, fullTextOf, isErrorOf, seqOf, typeOf } from '../redline/inspect'
 import { ability, type RowClass } from '../shared/redline-ability'
 import { turnStateOf, type TurnBoundaryEvent, type TurnState } from '../shared/redline-turn'
@@ -209,6 +210,44 @@ async function writeTable(ctx: Context, sessionId: string, table: DraftTable): P
     return fail(REDLINE_ERROR.internal, error instanceof Error ? error.message : String(error))
   }
   return redlineOk(table)
+}
+
+/**
+ * Read a session's flow-back "seen" marks. A missing file is an empty set; a
+ * corrupt one refuses loudly (`docs/06` §3.3: the marks are OURS, deleting the
+ * file is always safe and the message says so).
+ */
+async function readSeen(ctx: Context, sessionId: string): Promise<RedlineEnvelope<number[]>> {
+  const dir = dataDirOf(ctx)
+  if (dir === null) return fail(REDLINE_ERROR.internal, 'the harness home is not available')
+  let raw: string | null = null
+  try {
+    raw = await readFile(join(dir, seenFileName(sessionId)), 'utf8')
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'ENOENT') {
+      return fail(REDLINE_ERROR.internal, error instanceof Error ? error.message : String(error))
+    }
+  }
+  const parsed = parseSeen(raw, sessionId)
+  if (!parsed.ok) return fail(parsed.code, parsed.message)
+  return redlineOk(parsed.seen)
+}
+
+/** Write a session's seen marks atomically (`.tmp` + rename) — the same rule as the drafts. */
+async function writeSeen(ctx: Context, sessionId: string, seen: readonly number[]): Promise<RedlineEnvelope<number[]>> {
+  const dir = dataDirOf(ctx)
+  if (dir === null) return fail(REDLINE_ERROR.internal, 'the harness home is not available')
+  const target = join(dir, seenFileName(sessionId))
+  const temp = `${target}.tmp-${process.pid}-${Date.now().toString(36)}-${(writeTicket += 1).toString(36)}`
+  try {
+    await mkdir(dir, { recursive: true })
+    await writeFile(temp, serializeSeen(sessionId, seen), 'utf8')
+    await rename(temp, target)
+  } catch (error) {
+    await rm(temp, { force: true }).catch(() => undefined)
+    return fail(REDLINE_ERROR.internal, error instanceof Error ? error.message : String(error))
+  }
+  return redlineOk([...seen])
 }
 
 /**
@@ -589,6 +628,41 @@ const startChild: RedlineOpHandler = async ({ ctx, call }) => {
 }
 
 /**
+ * Result flow-back: WHICH notices the human has already looked at. Read-only.
+ * The marks live in our own file (never in a session); the client merges them
+ * with the host's notices to get the state it shows (`docs/06` §3.3).
+ */
+const listSeen: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  return await readSeen(ctx, sessionId)
+}
+
+/**
+ * Mark (or unmark) one settle notice as seen — the ONLY write this op performs,
+ * and it writes our own file only: no session write, no child-state change, no
+ * message. `seq` must be the notice's log seq; the host does not re-check that it
+ * IS a notice (the client only offers the action on a notice row, and a stale
+ * mark for a seq that is not a notice is harmless: the judgement ignores seqs it
+ * has no notice for).
+ */
+const markSeen: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  const seq = seqArgOf(call.seq)
+  if (sessionId === null || seq === null) return fail(REDLINE_ERROR.badRequest)
+  if (typeof call.seen !== 'boolean') return fail(REDLINE_ERROR.badRequest)
+  return await withSessionLock(sessionId, async () => {
+    const current = await readSeen(ctx, sessionId)
+    if (!current.ok) return current
+    const next = call.seen ? putSeen(current.value, seq) : dropSeen(current.value, seq)
+    if (next.length === current.value.length && next.every((one, index) => one === current.value[index])) {
+      return current
+    }
+    return await writeSeen(ctx, sessionId, next)
+  })
+}
+
+/**
  * The op table. M2's entries; M3/M5 add theirs here and nowhere else.
  */
 const OPS = new Map<string, RedlineOpHandler>([
@@ -598,6 +672,8 @@ const OPS = new Map<string, RedlineOpHandler>([
   ['draft.list', listDrafts],
   ['draft.update', updateDraft],
   ['draft.drop', dropDraft],
+  ['pending.list', listSeen],
+  ['pending.seen', markSeen],
   ['child.plan', planChild],
   ['child.start', startChild],
 ])

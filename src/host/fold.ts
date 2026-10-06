@@ -37,7 +37,6 @@ import { deriveEventMessage } from '@deepseek-ai/dsh-session'
 import { decodeTallyOfStream, firstTokenTimeOfStream, replaceRangeOf } from './logShapes'
 import type { DecodeKind } from './logShapes'
 import { opBearingTool, opsOfCall, parseCallArgs, rawArgsNeeded } from '../shared/fileOps'
-import { pendingRowsOf } from '../redline/pending'
 
 /**
  * The runtime event envelope this fold consumes. The core
@@ -1434,17 +1433,21 @@ function headFieldsOf(state: TimelineState): Snapshot {
   if (state.systems !== undefined && state.systems.length > 0) {
     result.systems = state.systems.map(n => ({ ...n }))
   }
-  // Result flow-back (`docs/06` §3.3 / `docs/10` M5-18/M5-19). Lives in the
-  // SHARED head scalars on purpose: the slim and inline view paths both build on
-  // this function, and a notice must show up in either. The evidence for "the
-  // parent carried on" is the newest request seq - a request can only exist
-  // inside a turn that started before it, so a request after the notice proves
-  // the parent ran again. The local "seen" marks live in OUR store and are not
-  // wired yet, so every notice reads `continued` or `unseen` for now.
+  // Result flow-back (`docs/06` §3.3 / `docs/10` M5-18/M5-19). The fold reports
+  // the FACTS (which notices exist, verbatim); the JUDGEMENT lives in
+  // `src/shared/redline-pending.ts` and runs in the client, because one of its
+  // three inputs - our "seen" marks - lives in our own store and must never ride
+  // the projection (a projection is a fold over the session's log, and the marks
+  // are not in the log). The client has the other two inputs already: these
+  // notices, and the newest request seq on the head (`last`).
   const notices = state.settled ?? []
   if (notices.length > 0) {
+    result.notices = notices.map(n => ({ ...n }))
+    // The flow-back evidence ("has the parent carried on since?") as a plain
+    // scalar on the SHARED head: the slim head's `last` is a billing anchor and
+    // is absent from the inline view, so the client cannot rely on it.
     const newestRequest = state.requests.at(-1)
-    result.pending = pendingRowsOf(notices, [], newestRequest === undefined ? [] : [{ seq: newestRequest.seq, at: newestRequest.time }])
+    if (newestRequest !== undefined) result.lastRequestSeq = newestRequest.seq
   }
   return result
 }

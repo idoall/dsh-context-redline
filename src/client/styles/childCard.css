@@ -43,3 +43,7 @@
 .redline-settled-unseen { border-color: var(--dsw-alias-state-warn-primary, #f59e0b); color: var(--dsw-alias-state-warn-primary, #f59e0b); }
 .redline-settled-continued { border-color: var(--dsw-alias-state-success-primary, #22c55e); color: var(--dsw-alias-state-success-primary, #22c55e); }
 .redline-settled-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* 「标为已查看」：写的是我们自己的表，所以按钮做得轻（次要动作），但状态是实的。 */
+.redline-settled-act { font-size: 11px; padding: 0 6px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 999px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
+.redline-settled-act:hover { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-border-l2); }

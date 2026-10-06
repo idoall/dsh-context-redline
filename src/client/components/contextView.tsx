@@ -447,7 +447,12 @@ export function makeContextView(
       </div>
     )
     const redline = useRedlineDrafts(typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined)
-    const children = useChildSessions(typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined, childCatalog)
+    const children = useChildSessions(
+      typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined,
+      childCatalog,
+      data.notices,
+      data.lastRequestSeq,
+    )
     const browserCard = (
       <ContextBrowser
         redline={redline}
@@ -538,7 +543,9 @@ export function makeContextView(
               live={redline.turn.known}
               turnOpen={redline.turn.open}
               carriedCount={Object.keys(redline.table).length}
-              pending={data.pending}
+              pending={children.pending}
+              onMarkSeen={(seq, seen) => { void children.markSeen(seq, seen) }}
+              marksError={children.marksError}
               plan={children.plan}
               start={children.start}
             />

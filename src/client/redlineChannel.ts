@@ -140,6 +140,22 @@ export interface ChildPlan {
 }
 
 /** 开子会话之前问事实（只读，绝不写任何东西）。 */
+/**
+ * The settle notices the human has marked seen (`docs/06` §3.3). Read-only: the
+ * marks live in our own store, never in a session.
+ */
+export async function listSeen(sessionId: string): Promise<RedlineResult<number[]>> {
+  return await call<number[]>({ op: 'pending.list', sessionId })
+}
+
+/**
+ * Mark (or unmark) one notice as seen. The ONLY write behind this half of the
+ * feature, and it writes our own file: no session write, no child-state change.
+ */
+export async function markSeen(sessionId: string, seq: number, seen: boolean): Promise<RedlineResult<number[]>> {
+  return await call<number[]>({ op: 'pending.seen', sessionId, seq, seen })
+}
+
 export async function planChild(sessionId: string, humanTask: string): Promise<RedlineResult<ChildPlan>> {
   return await call<ChildPlan>({ op: 'child.plan', sessionId, humanTask })
 }

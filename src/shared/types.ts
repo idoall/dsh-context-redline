@@ -174,6 +174,25 @@ export type SettingsField = keyof PluginSettings
 export interface Snapshot {
   ok: boolean
   /**
+   * Settle notices found in the log (oldest first, copies). ADDITIVE-OPTIONAL:
+   * absent when the log holds none (and on rows folded before the field
+   * existed) - the child-session card then shows no badge. Bounded at the
+   * fold's own notice cap, so it never grows with the log.
+   *
+   * The three-state JUDGEMENT deliberately does NOT ride the projection: its
+   * "seen" input lives in our own store (`docs/06` §3.3), and a projection has
+   * to stay a fold over the session's log. The client merges these notices with
+   * that store via `src/shared/redline-pending.ts`.
+   */
+  notices?: SettleNotice[]
+  /**
+   * Seq of the newest folded request, present ONLY alongside `notices`. It is
+   * the third input of the flow-back judgement (a request after a notice proves
+   * the parent ran again), served as a shared-head scalar because the slim
+   * head's `last` billing anchor is absent from the inline view.
+   */
+  lastRequestSeq?: number
+  /**
    * The host's baseline-gate record, present ONLY when the running harness
    * is below the plugin's supported baseline: the host then folds nothing
    * and every figure in this snapshot is zero/empty. The client keeps
@@ -245,13 +264,6 @@ export interface Snapshot {
    */
   requests: RequestRecord[]
   events: ContextEventRecord[]
-  /**
-   * Settle notices with their three-state judgement (oldest first). ADDITIVE-
-   * OPTIONAL: absent when the log holds no notice (and on rows folded before
-   * the field existed) - the child-session card then shows no badge. Bounded
-   * at the fold's own notice cap, so it never grows with the log.
-   */
-  pending?: PendingRow[]
   /**
    * Cumulative session-cost raw material (per-provider, per-model billed
    * token totals — see SessionCostUsage). Absent until a request with a
