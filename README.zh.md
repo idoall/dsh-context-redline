@@ -24,9 +24,8 @@
 ![界面（交互 demo，当前界面准绳）](https://raw.githubusercontent.com/idoall/dsh-context-redline/main/demo/screenshots/01-dark.png)
 
 > ⚠️ 这张图来自仓库里的**交互 demo**（`demo/`，深色主题）—— 它是**当前界面的准绳**：
-> 插件的界面按它实现。**插件的截图还没法给**：那要在 `dsh web` 重启后，在真面板上截
-> （`docs/10` M3-22 的人工门禁）。把 demo 截图说成"插件截图"是这一版**唯一**容易被误读的地方，
-> 所以这里明写。
+> 插件的界面按它实现。**把 demo 截图当成"插件截图"是唯一容易误读的地方**，所以这里明写；
+> 插件自己的真机截图从**下面第二张**开始（2026-10-04 与 2026-10-06 两次真机采集，都在 `dsh web` 里）。
 
 五张卡，两列（以 [`demo/`](https://github.com/idoall/dsh-context-redline/blob/main/demo/README.md) 为准）：
 
@@ -49,6 +48,26 @@
 > `高级编辑`、`比前步 / 比前轮`（默认**比前轮**按下）、两级选择器 `第 25 轮（共 10 步）`，以及分类行上的
 > δ（`注入内容 +3` / `助手消息 +11` / `工具结果 +9`）。**界面准绳仍是交互 demo**（`demo/`）：
 > 上一张说明"应该长什么样"，这一张说明"现在长这样"。
+
+**2026-10-06 的真机采集（同一台机器、同一个面板）**
+
+![行下内联编辑器（真机）：动作区只有「保存 / 取消（Esc）」，保存上没有「?」角标](https://raw.githubusercontent.com/idoall/dsh-context-redline/main/docs/screenshots/02-editor-live-noquestion.png)
+
+> 点某一行的 `编辑` 之后：编辑器在**那一行下面**展开，`保存 / 取消（Esc）` 旁边**没有任何「?」角标**
+> （说明挂在按钮自己的 `title` 上，鼠标停上去就有），字段标签带 `只写本地 · 开子会话时才带进去`。
+
+![打开顶部「高级编辑」开关后，工具结果行上出现「编辑」（真机）](https://raw.githubusercontent.com/idoall/dsh-context-redline/main/docs/screenshots/03-advanced-switch-live.png)
+
+> 工具结果的「编辑」默认收在顶部 `高级编辑` 开关后：关着时行上显示「高级编辑」小标记，打开后
+> **「编辑」按钮出现**（实测 6 个）、标记消失。**不可点的标记不给「?」光标** —— 用户 2026-10-06 的两次指正
+> （[`docs/11`](https://github.com/idoall/dsh-context-redline/blob/main/docs/11-session-handoff.md) D40/D41）。
+
+同一次采集量到的两个读数（原始读数在 [`docs/11`](https://github.com/idoall/dsh-context-redline/blob/main/docs/11-session-handoff.md) D44/D48）：
+
+- 面板 = **4 张卡**（上下文统计 / 上下文趋势 / 上下文事件 / 上下文浏览器）；统计卡就是 demo 的 **3 格**
+  （模型可见条目 / 用户消息 / 注入内容），趋势卡标题写着当前粒度（如 `按轮次（共 59 轮）`）。**第 5 张【子会话】随 M5 落地**。
+- **两个插件同开一个会话互不污染**：上游「上下文」页签 = **211 个不同的 `lc-` 类名 / 0 个 `redline-`**；
+  我们的「上下文批改」页签 = **112 个 `redline-` 类名 / 0 个 `lc-`** ⟹ **两边类名交集为 0**。
 
 ## 四条必须让人一眼明白的规则
 
@@ -108,11 +127,12 @@
 pnpm install                                   # 唯一的安装步骤 —— 不建符号链接（docs/01 F42）
 ./node_modules/.bin/tsc --noEmit               # 类型检查（含 tests/**）
 ./node_modules/.bin/tsdown                     # 构建 lib/（客户端半边 + 宿主半边）
-node scripts/namespace-contract.mjs            # 11 个面 / 25 项：我们的命名空间 vs 上游的
+node scripts/namespace-contract.mjs            # 11 个面 / 28 项：我们的命名空间 vs 上游的
 ./node_modules/.bin/oxlint                     # 风格与类型感知规则（必须 0 error）
 ./node_modules/.bin/vitest run --project edit --project channel --project client-logic --project client-ui
 node scripts/progress.mjs                      # 只读：看到哪些已完成、哪些没完成（--all 全列）
 node demo/check-static.mjs && node demo/check-runtime.mjs   # 交互 demo 的两条自检
+node scripts/release-check.mjs                  # 一条命令跑完整套门禁并逐项打印判定行（13 步）
 ```
 
 **装进一个 profile（测试期，需授权）**：
@@ -124,6 +144,12 @@ dsh plugin --profile web add /绝对路径/dsh-context-redline   # 本地目录
 
 装完**必须由你重启 `dsh web`**（本机这一步承载着你正在用的会话）。
 **客户端改动只需硬刷新**，不必重启（[`docs/01`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md) F16）。
+
+卸掉（装得上也要卸得掉）：`dsh plugin --profile web remove dsh-context-redline`，然后同样由你重启。
+
+装好之后的两处落点：**设置**在该插件的「插件设置」页里（入口位置 / 趋势图默认粒度与展示方式 /
+工具定义排序 / 文件活动排序等，都是 Config 的 `volatile` 字段，改完即生效、不用重启）；
+**本地的临时改动**写在 `$DSH_HOME/dsh-context-redline/redline-drafts-<会话>.json`（会话日志里没有它们）。
 
 **这条链的限制**（都是产品定义，不是待办）：
 - **保存只写插件本地**，当前会话的模型看不到；只有**开启子会话**时才逐字带进新会话的第一句话。

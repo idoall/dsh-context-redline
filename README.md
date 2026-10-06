@@ -26,10 +26,9 @@ defines the interface is [`demo/`](https://github.com/idoall/dsh-context-redline
 ![The interface (interactive demo, the current standard)](https://raw.githubusercontent.com/idoall/dsh-context-redline/main/demo/screenshots/01-dark.png)
 
 > ⚠️ This image is from the repository's **interactive demo** (`demo/`, dark theme) — the
-> **current interface standard** the plugin is built to match. **Plugin screenshots cannot be
-> given yet**: they need a real panel capture after `dsh web` is restarted (the human gate
-> `docs/10` M3-22). Presenting a demo capture as a plugin capture is the one easy misreading
-> here, so it is called out.
+> **current interface standard** the plugin is built to match. Reading a demo capture as a
+> *plugin* capture is the one easy misreading here, so it is called out; the plugin's own
+> live captures start with the **second image below** (taken in `dsh web` on 2026-10-04 and 2026-10-06).
 
 Five cards, in two columns ([`demo/`](https://github.com/idoall/dsh-context-redline/blob/main/demo/README.md) is the authority):
 
@@ -54,6 +53,30 @@ Five cards, in two columns ([`demo/`](https://github.com/idoall/dsh-context-redl
 > (**比前轮** pressed by default), the two-level picker `第 25 轮（共 10 步）`, and the per-category
 > deltas (`注入内容 +3` / `助手消息 +11` / `工具结果 +9`). The interactive demo remains the
 > **interface standard**: the shot above shows what it should look like, this one what it looks like now.
+
+**Live captures, 2026-10-06 (same machine, same panel)**
+
+![The inline editor (live): the action row is just Save / Cancel (Esc), and Save carries no "?" badge](https://raw.githubusercontent.com/idoall/dsh-context-redline/main/docs/screenshots/02-editor-live-noquestion.png)
+
+> After clicking `Edit` on a row: the editor expands **under that row**, `Save / Cancel (Esc)` has
+> **no "?" badge** beside it (the explanation rides the button's own `title`, so a hover still shows it),
+> and the field label carries the `只写本地 · 开子会话时才带进去` destination marker.
+
+![After turning the top `高级编辑` switch on, tool-result rows grow an `Edit` button (live)](https://raw.githubusercontent.com/idoall/dsh-context-redline/main/docs/screenshots/03-advanced-switch-live.png)
+
+> A tool result's `Edit` is tucked behind the top `高级编辑` switch: while it is off the row shows the
+> `高级编辑` marker, and turning it on **makes the `Edit` button appear** (6 of them in this capture) while
+> the marker disappears. **A marker that cannot be clicked must not use the "?" cursor** — two corrections
+> from the user on 2026-10-06 ([`docs/11`](https://github.com/idoall/dsh-context-redline/blob/main/docs/11-session-handoff.md) D40/D41).
+
+Two readings from the same pass (raw numbers in [`docs/11`](https://github.com/idoall/dsh-context-redline/blob/main/docs/11-session-handoff.md) D44/D48):
+
+- The panel is **4 cards** (context stats / context trend / context events / context browser); the stats card is
+  the demo's **3 cells** (visible items / user messages / injected items) and the trend title states the current
+  granularity (e.g. `按轮次（共 59 轮）`). The 5th card, **child sessions, lands with M5**.
+- **The two plugins do not pollute each other in one session**: in upstream's 「上下文」 tab there are
+  **211 distinct `lc-` class names and 0 `redline-`**; in our 「上下文批改」 tab, **112 `redline-` and 0 `lc-`**
+  ⟹ **the class-name intersection is 0**.
 
 ## Four rules to grasp at a glance
 
@@ -118,11 +141,12 @@ authorization**, and **restarting `dsh web` is always done by you**.
 pnpm install                                   # the only install step — no symlink (docs/01 F42)
 ./node_modules/.bin/tsc --noEmit               # type check (includes tests/**)
 ./node_modules/.bin/tsdown                     # build lib/ (client half + host half)
-node scripts/namespace-contract.mjs            # 11 faces / 25 items: our namespaces vs upstream's
+node scripts/namespace-contract.mjs            # 11 faces / 28 items: our namespaces vs upstream's
 ./node_modules/.bin/oxlint                     # style + type-aware rules (must be 0 errors)
 ./node_modules/.bin/vitest run --project edit --project channel --project client-logic --project client-ui
 node scripts/progress.mjs                      # read-only: what is done, what is not (--all for everything)
 node demo/check-static.mjs && node demo/check-runtime.mjs   # the demo's two self-checks
+node scripts/release-check.mjs                  # one command runs every gate and prints each verdict line (13 steps)
 ```
 
 **Into a profile (testing only, needs authorization)**:
@@ -135,6 +159,14 @@ dsh plugin --profile web add /absolute/path/dsh-context-redline   # local direct
 You then have to **restart `dsh web` yourself** (on this machine that step carries the session
 you are using). **Client-side changes only need a hard refresh**, not a restart
 ([`docs/01`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md) F16).
+
+Removing it again (it must come off as cleanly as it goes on):
+`dsh plugin --profile web remove dsh-context-redline`, then the same restart by you.
+
+Two places it lands once installed: **settings** live on the plugin's own "plugin settings" page
+(placement / default trend granularity and mode / tool-schema order / file-activity order — all Config
+`volatile` fields, effective immediately, no restart); the **local temporary edits** live in
+`$DSH_HOME/dsh-context-redline/redline-drafts-<session>.json` (they are not in the session log).
 
 **Limits of this chain** (product definitions, not TODOs):
 - **Saving writes to the plugin's own local store only** — the current session's model cannot see
