@@ -126,3 +126,39 @@ export async function saveDraft(sessionId: string, seq: number, edit: DraftEdit)
 export async function dropDraft(sessionId: string, seq: number): Promise<RedlineResult<DraftTable>> {
   return await call<DraftTable>({ op: 'draft.drop', sessionId, seq })
 }
+
+/** 确认框五项 + 组装好的首条任务（开子会话**之前**能问的全部事实；只读）。 */
+export interface ChildPlan {
+  /** 恰好五项：从哪儿开始 / 会带上的改动 / 第一句话由人写 / 会带什么不带什么 / 取消。 */
+  items: readonly { label: string; text: string }[]
+  /** 会逐字带过去的本地改动（按 seq）。 */
+  carriedSeqs: readonly number[]
+  /** 组装好的首条任务；被拒绝时为 `null`。 */
+  prompt: string | null
+  /** 被拒绝时给一句人话（例如"第一句话必须你自己写"）。 */
+  refusal: { code: string; message: string } | null
+}
+
+/** 开子会话之前问事实（只读，绝不写任何东西）。 */
+export async function planChild(sessionId: string, humanTask: string): Promise<RedlineResult<ChildPlan>> {
+  return await call<ChildPlan>({ op: 'child.plan', sessionId, humanTask })
+}
+
+/** 开子会话成功后的回执。 */
+export interface ChildStarted {
+  label: string
+  prompt: string
+  carriedSeqs: readonly number[]
+  /** 平台给的子会话回执（`childId` / `messageId`）。 */
+  started: unknown
+}
+
+/**
+ * **开子会话** —— 全插件唯一的写入点。
+ *
+ * 只在人**明确点了确认**之后调用；`humanTask` 是人写的第一句话（空着会被宿主拒绝）。
+ * 拒绝一律以稳定的 code + 一句人话回来（transport 从不抛），界面照它显示就行。
+ */
+export async function startChild(sessionId: string, humanTask: string): Promise<RedlineResult<ChildStarted>> {
+  return await call<ChildStarted>({ op: 'child.start', sessionId, humanTask })
+}

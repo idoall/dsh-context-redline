@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import { afterEach, describe, test } from 'vitest'
 import { REDLINE_ERROR } from '../../src/shared/redline-errors'
 import { REDLINE_CHANNEL_ROUTE } from '../../src/shared/redline-route'
-import { dropDraft, listDrafts, readRow, saveDraft } from '../../src/client/redlineChannel'
+import { dropDraft, listDrafts, planChild, readRow, saveDraft, startChild } from '../../src/client/redlineChannel'
 
 interface Call { url: string, init: RequestInit | undefined }
 
@@ -123,5 +123,50 @@ describe('refusals are values, never exceptions (the editor shows the reason)', 
     if (result.ok) return
     assert.equal(result.code, REDLINE_ERROR.transport)
     assert.match(result.message, /offline/)
+  })
+})
+
+describe('open a child session (the ONLY write point)', () => {
+  test('planChild posts child.plan to OUR route and returns the five items verbatim', async () => {
+    calls.length = 0
+    stubFetch(() => envelope({
+      items: [{ label: '从哪儿开始', text: '…' }, { label: '取消', text: '什么都不发生' }],
+      carriedSeqs: [3358],
+      prompt: '继续\n\n改好的正文',
+      refusal: null,
+    }))
+    const result = await planChild('sv-1', '继续')
+    assert.equal(result.ok, true)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].url, REDLINE_CHANNEL_ROUTE)
+    assert.equal(bodyOf(calls[0]).op, 'child.plan')
+    assert.equal(bodyOf(calls[0]).sessionId, 'sv-1')
+    assert.equal(bodyOf(calls[0]).humanTask, '继续')
+    if (result.ok) {
+      assert.equal(result.value.items.length, 2)
+      assert.deepEqual(result.value.carriedSeqs, [3358])
+      assert.equal(result.value.refusal, null)
+    }
+  })
+
+  test('startChild posts child.start; a refusal comes back as a stable code + sentence (never thrown)', async () => {
+    calls.length = 0
+    stubFetch(() => failure(REDLINE_ERROR.emptyTask, '子会话的第一句话必须由你自己写'))
+    const refused = await startChild('sv-1', '   ')
+    assert.equal(refused.ok, false)
+    if (!refused.ok) {
+      assert.equal(refused.code, REDLINE_ERROR.emptyTask)
+      assert.ok(refused.message.includes('自己写'), refused.message)
+    }
+    assert.equal(bodyOf(calls[0]).op, 'child.start')
+  })
+
+  test('a successful startChild hands back the platform receipt untouched', async () => {
+    calls.length = 0
+    const receipt = { childId: '66da37b9', messageId: 'aeb5e73b' }
+    stubFetch(() => envelope({ label: '上下文批改 · x', prompt: '继续', carriedSeqs: [], started: receipt }))
+    const started = await startChild('sv-1', '继续')
+    assert.equal(started.ok, true)
+    if (started.ok) assert.deepEqual(started.value.started, receipt)
   })
 })
