@@ -83,9 +83,23 @@ describe('block joining is a documented rule, not an accident', () => {
   })
 })
 
-describe('one extraction per underlying event type', () => {
-  test('user/message reads data.content', () => {
+describe('one extraction per underlying event type (REAL durable shapes)', () => {
+  // ⚠️ 夹具必须用**真实** durable 形状（`AGENTS.md` §3 规则 3 / `docs/05` 规则③）：
+  // 安装树 `@deepseek-ai/dsh-session` 的 `SessionEventMap` 里，只有 `user/message` 把
+  // 消息**直接**放在 `data`（`data.content`）；`system/message`、`developer/message`、
+  // `assistant/message`、`tool/result` 都带一层 `data.message`。
+  // 2026-10-06 的 Code Review 抓到本文件曾用 `data:{content}` 手搓 system/message，
+  // 于是 `inspect.ts` 的取值 bug 被这条断言**保护**成绿的。
+  test('user/message reads data.content (the one type without data.message)', () => {
     assert.equal(fullTextOf({ type: 'user/message', data: { content: TEXT('u') } }), 'u')
+  })
+
+  test('system/message reads data.message.content', () => {
+    assert.equal(fullTextOf({ type: 'system/message', data: { message: { content: TEXT('s') } } }), 's')
+  })
+
+  test('developer/message reads data.message.content', () => {
+    assert.equal(fullTextOf({ type: 'developer/message', data: { message: { content: TEXT('d') } } }), 'd')
   })
 
   test('assistant/message reads data.message.content', () => {
@@ -96,8 +110,16 @@ describe('one extraction per underlying event type', () => {
     assert.equal(fullTextOf({ type: 'tool/result', data: { message: { content: TEXT('t') } } }), 't')
   })
 
-  test('system/message reads data.content', () => {
-    assert.equal(fullTextOf({ type: 'system/message', data: { content: TEXT('s') } }), 's')
+  test('every durable surface type has a fixture in the REAL shape', () => {
+    // 表驱动：新增一种 durable 类型时，这张表必须先补一行（形状抄安装树的 SessionEventMap）。
+    const CASES: readonly { type: string, event: unknown, expected: string }[] = [
+      { type: 'user/message', event: { type: 'user/message', data: { content: TEXT('m-user') } }, expected: 'm-user' },
+      { type: 'system/message', event: { type: 'system/message', data: { message: { content: TEXT('m-system') } } }, expected: 'm-system' },
+      { type: 'developer/message', event: { type: 'developer/message', data: { message: { content: TEXT('m-dev') } } }, expected: 'm-dev' },
+      { type: 'assistant/message', event: { type: 'assistant/message', data: { message: { content: TEXT('m-assistant') } } }, expected: 'm-assistant' },
+      { type: 'tool/result', event: { type: 'tool/result', data: { message: { content: TEXT('m-tool') } } }, expected: 'm-tool' },
+    ]
+    for (const c of CASES) assert.equal(fullTextOf(c.event as never), c.expected, c.type)
   })
 
   test('reasoning blocks are separate from the visible text', () => {

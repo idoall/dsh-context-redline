@@ -32,13 +32,23 @@ export interface ReadableEvent {
   readonly data?: unknown
 }
 
-/** Content-block carriers per durable event type (mirrors the host fold). */
+/** Content-block carriers per durable event type (mirrors the host fold / `SessionEventMap`). */
 function messageOf(data: Record<string, unknown>): Record<string, unknown> | null {
   const message = data.message
   return message !== null && typeof message === 'object' ? message as Record<string, unknown> : null
 }
 
-/** The block array holding the visible/reasoning text of THIS event type. */
+/**
+ * The block array holding the visible/reasoning text of THIS event type.
+ *
+ * ⚠️ The shapes are NOT uniform (安装树 `@deepseek-ai/dsh-session` 的 `SessionEventMap`，实测):
+ *   · `user/message`   → 消息**直接**在 `data` 上（`data.content`）；
+ *   · `system/message` / `developer/message` / `assistant/message` / `tool/result`
+ *                      → 都带一层 `data.message`（`data.message.content`）。
+ * 2026-10-06 的 Code Review 抓到这里的 `system/message` 曾与 `user/message` 归成一支、
+ * 读 `data.content` ⟹ 系统提示词全文恒为空串，而当时的测试夹具也是手搓的错形状，
+ * 把这个 bug 保护成了绿。别再合并这两支。
+ */
 function blocksOf(event: ReadableEvent | null | undefined): readonly unknown[] {
   if (event === null || event === undefined || typeof event !== 'object') return []
   const data = event.data
@@ -46,8 +56,9 @@ function blocksOf(event: ReadableEvent | null | undefined): readonly unknown[] {
   const bag = data as Record<string, unknown>
   switch (event.type) {
     case 'user/message':
-    case 'system/message':
       return Array.isArray(bag.content) ? bag.content as unknown[] : []
+    case 'system/message':
+    case 'developer/message':
     case 'assistant/message':
     case 'tool/result': {
       const message = messageOf(bag)
