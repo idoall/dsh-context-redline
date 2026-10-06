@@ -314,6 +314,20 @@ check('5′ DOM id', '客户端不写死无前缀的 DOM id（面板会双挂载
   return '零个写死 id'
 })
 
+check('5′ data attribute', '客户端诊断/QA data-* 全部带 redline 前缀（不与参考插件混选）', () => {
+  // Code Review P2：`data-agent` / `data-cat` / `data-catdim` / `data-seq` / `data-kind`
+  // 是无错误的静默碰撞面。宿主当前不读它们，但全局脚本与 QA 选择器会同时命中两插件。
+  // 只禁这五个已测到的旧裸键；宿主自己的 data-* 不在这里误伤。
+  const legacy = /\bdata-(?:agent|catdim|cat|seq|kind)\b/
+  const offenders = []
+  for (const rel of walk('src/client', /\.(?:ts|tsx|css)$/)) {
+    const code = codeOf(rel)
+    if (legacy.test(code)) offenders.push(rel)
+  }
+  assert(offenders.length === 0, `仍有无前缀 data-*：${offenders.join(' · ')}`)
+  return '五组旧裸属性均为零'
+})
+
 check('5 文案', 'locale 命名空间 = 包名，且注册/绑定都用它', () => {
   const text = codeOf('src/client/index.ts')
   assert(text.includes(`const NS = '${PKG_NAME}'`), 'NS 不是包名')

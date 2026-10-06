@@ -159,11 +159,11 @@ describe('AgentGraph — the family tree', () => {
 
     // The current node wears the brand self-ring and shows the freshest stats.
     const self = query(m.container, 'g.redline-agent-self')
-    assert.equal(self.getAttribute('data-agent'), 'root')
+    assert.equal(self.getAttribute('data-redline-agent'), 'root')
     assert.equal(self.getAttribute('role'), 'img')
     assert.ok(text(self).includes('50%'))
     assert.ok(self.querySelector('.redline-agent-self-badge') !== null)
-    assert.ok(query(m.container, 'g[data-agent="worker"]').querySelector('.redline-agent-self-badge') === null)
+    assert.ok(query(m.container, 'g[data-redline-agent="worker"]').querySelector('.redline-agent-self-badge') === null)
 
     // Links join both children: the running one layers a flowing pulse over the solid lineage stroke.
     const links = queryAll(m.container, 'path.redline-agents-link')
@@ -172,7 +172,7 @@ describe('AgentGraph — the family tree', () => {
     assert.equal(queryAll(m.container, 'path.redline-agents-flow').length, 1)
 
     // The worker node: descriptor label, running halo class, fused ring (composition + free remainder).
-    const worker = query(m.container, 'g[data-agent="worker"]')
+    const worker = query(m.container, 'g[data-redline-agent="worker"]')
     assert.ok(text(worker).includes('worker-bee'))
     assert.ok(text(worker).includes('83%'))
     assert.ok(worker.classList.contains('redline-agent-running'))
@@ -181,7 +181,7 @@ describe('AgentGraph — the family tree', () => {
     assert.ok(worker.querySelector('circle.redline-agent-free') !== null)
 
     // The one-shot child: no timeline → id label, pressure-only fused ring (arc + free), done halo class.
-    const done = query(m.container, 'g[data-agent="done"]')
+    const done = query(m.container, 'g[data-redline-agent="done"]')
     assert.ok(text(done).includes('95%'))
     assert.ok(done.classList.contains('redline-agent-done'))
     const doneSegs = done.querySelectorAll('circle.redline-agent-seg')
@@ -214,7 +214,7 @@ describe('AgentGraph — the family tree', () => {
     const View = makeView(face)
     const m = await mount(h(View, { sessionId: 'root', self: selfStats() }))
 
-    const worker = query(m.container, 'g[data-agent="worker"]')
+    const worker = query(m.container, 'g[data-redline-agent="worker"]')
     await hover(worker)
     const inspector = query(m.container, '.redline-agents-inspector')
     assert.ok(text(inspector).includes('worker-bee'))
@@ -232,24 +232,24 @@ describe('AgentGraph — the family tree', () => {
     assert.deepEqual(face.opened, ['worker'])
 
     // The one-shot child's inspector shows its mode badge and sample-derived occupancy.
-    await hover(query(m.container, 'g[data-agent="done"]'))
+    await hover(query(m.container, 'g[data-redline-agent="done"]'))
     const doneInspector = query(m.container, '.redline-agents-inspector')
     assert.ok(text(doneInspector).includes('one-shot'))
     assert.ok(text(doneInspector).includes('950 / 1.0k · 95%'))
-    await unhover(query(m.container, 'g[data-agent="done"]'))
+    await unhover(query(m.container, 'g[data-redline-agent="done"]'))
     await act(async () => {
-      query(m.container, 'g[data-agent="done"]').dispatchEvent(
+      query(m.container, 'g[data-redline-agent="done"]').dispatchEvent(
         new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
       )
     })
     assert.deepEqual(face.opened, ['worker', 'done'])
     await act(async () => {
-      query(m.container, 'g[data-agent="worker"]').dispatchEvent(
+      query(m.container, 'g[data-redline-agent="worker"]').dispatchEvent(
         new KeyboardEvent('keydown', { key: 'x', bubbles: true, cancelable: true }),
       )
     })
     assert.deepEqual(face.opened, ['worker', 'done'])
-    await clickEl(query(m.container, 'g[data-agent="root"]'))
+    await clickEl(query(m.container, 'g[data-redline-agent="root"]'))
     assert.deepEqual(face.opened, ['worker', 'done'])
 
     await m.unmount()
@@ -342,11 +342,11 @@ describe('AgentGraph — the family tree', () => {
     }))
     const m = await mount(h(View, { sessionId: 'root', self: { head: null, billed: null, requests: 0 } }))
 
-    const bare = query(m.container, 'g[data-agent="bare"]')
+    const bare = query(m.container, 'g[data-redline-agent="bare"]')
     assert.ok(text(bare).includes('—'))
     assert.equal(bare.querySelectorAll('circle.redline-agent-seg').length, 0)
 
-    const zero = query(m.container, 'g[data-agent="zero"]')
+    const zero = query(m.container, 'g[data-redline-agent="zero"]')
     assert.ok(text(zero).includes('0%'))
     // Zero occupancy on a known window: just the free outline.
     const zeroSegs = zero.querySelectorAll('circle.redline-agent-seg')
@@ -354,7 +354,7 @@ describe('AgentGraph — the family tree', () => {
     assert.ok(zero.querySelector('circle.redline-agent-free') !== null)
 
     // Long labels wrap in full — no ellipsis truncation.
-    assert.ok(text(query(m.container, 'g[data-agent="longname"]')).includes('a-very-long-descriptor-label'))
+    assert.ok(text(query(m.container, 'g[data-redline-agent="longname"]')).includes('a-very-long-descriptor-label'))
 
     // The inspector for a stat-less node shows just the identity.
     await hover(bare)
@@ -363,11 +363,11 @@ describe('AgentGraph — the family tree', () => {
     assert.equal(query(inspector, '.redline-agents-inspector-stats').textContent, '')
 
     // Windowless pressure: a bare token figure, no ' / window' and no percentage.
-    await hover(query(m.container, 'g[data-agent="windowless"]'))
+    await hover(query(m.container, 'g[data-redline-agent="windowless"]'))
     assert.equal(query(m.container, '.redline-agents-inspector-stats').textContent, '640')
 
     // All-zero usage: no billed bit at all.
-    await hover(query(m.container, 'g[data-agent="flatusage"]'))
+    await hover(query(m.container, 'g[data-redline-agent="flatusage"]'))
     assert.ok(!text(query(m.container, '.redline-agents-inspector')).includes('billed'))
 
     // Self with no stats: no percentage, no chips tokens.
@@ -384,7 +384,7 @@ describe('AgentGraph — the family tree', () => {
     assert.ok(rendered.includes('3 个 Agent'))
     assert.ok(rendered.includes('当前'))
     // Hovering the continuable child surfaces its mode badge in the inspector.
-    await hover(query(m.container, 'g[data-agent="worker"]'))
+    await hover(query(m.container, 'g[data-redline-agent="worker"]'))
     assert.ok(text(query(m.container, '.redline-agents-inspector')).includes('多轮'))
     await m.unmount()
   })
@@ -468,7 +468,7 @@ describe('AgentGraph — cold-relative composition fetch', () => {
     // The cold relative fetched at mount; until the read lands it wears the
     // pressure-only fused ring (arc + free outline).
     assert.deepEqual(rpc.calls, ['/api/dsh-context-redline/detail:done'])
-    assert.equal(query(m.container, 'g[data-agent="done"]').querySelectorAll('circle.redline-agent-seg').length, 2)
+    assert.equal(query(m.container, 'g[data-redline-agent="done"]').querySelectorAll('circle.redline-agent-seg').length, 2)
 
     // A snapshot tick while the read is in flight re-attaches the SAME
     // pending read; its duplicate landing settles on the identity bail-out
@@ -483,7 +483,7 @@ describe('AgentGraph — cold-relative composition fetch', () => {
     })
     await flush()
     // The head re-folds the ring: six composition arcs + the free remainder.
-    const composed = query(m.container, 'g[data-agent="done"]')
+    const composed = query(m.container, 'g[data-redline-agent="done"]')
     assert.equal(composed.querySelectorAll('circle.redline-agent-seg').length, 7)
     assert.ok(text(composed).includes('95%'), 'the pressure-anchored occupancy never changes')
 
@@ -500,7 +500,7 @@ describe('AgentGraph — cold-relative composition fetch', () => {
     const remounted = await mount(h(View, { sessionId: 'root', self: selfStats() }))
     await flush()
     assert.deepEqual(rpc.calls, ['/api/dsh-context-redline/detail:done'], 'the cache never re-fetches')
-    const replayed = query(remounted.container, 'g[data-agent="done"]')
+    const replayed = query(remounted.container, 'g[data-redline-agent="done"]')
     assert.equal(replayed.querySelectorAll('circle.redline-agent-seg').length, 7, 'the cached head replays into the fresh instance')
     await remounted.unmount()
   })
@@ -511,7 +511,7 @@ describe('AgentGraph — cold-relative composition fetch', () => {
     const m = await mount(h(View, { sessionId: 'root', self: selfStats() }))
     await flush()
     assert.deepEqual(rpc.calls, ['/api/dsh-context-redline/detail:done'])
-    assert.equal(query(m.container, 'g[data-agent="done"]').querySelectorAll('circle.redline-agent-seg').length, 2)
+    assert.equal(query(m.container, 'g[data-redline-agent="done"]').querySelectorAll('circle.redline-agent-seg').length, 2)
     // A later snapshot tick (fresh forest, still pressure-only) re-fetches nothing.
     await act(async () => {
       face.setState(family())
@@ -528,8 +528,8 @@ describe('AgentGraph — cold-relative composition fetch', () => {
       const m = await mount(h(View, { sessionId: 'root', self: selfStats() }))
       await flush()
       assert.deepEqual(rpc.calls, ['/api/dsh-context-redline/detail:done'])
-      assert.equal(query(m.container, 'g[data-agent="done"]').querySelectorAll('circle.redline-agent-seg').length, 2)
-      assert.ok(text(query(m.container, 'g[data-agent="done"]')).includes('95%'))
+      assert.equal(query(m.container, 'g[data-redline-agent="done"]').querySelectorAll('circle.redline-agent-seg').length, 2)
+      assert.ok(text(query(m.container, 'g[data-redline-agent="done"]')).includes('95%'))
       await m.unmount()
     }
   })
@@ -548,7 +548,7 @@ describe('AgentGraph — cold-relative composition fetch', () => {
     const m = await mount(h(View, { sessionId: 'root', self: selfStats() }))
     await flush()
     assert.deepEqual(rpc.calls, [], 'an empty id never opens the detail route')
-    assert.equal(query(m.container, 'g[data-agent=""]').querySelectorAll('circle.redline-agent-seg').length, 2)
+    assert.equal(query(m.container, 'g[data-redline-agent=""]').querySelectorAll('circle.redline-agent-seg').length, 2)
     await m.unmount()
   })
 
@@ -565,14 +565,14 @@ describe('AgentGraph — cold-relative composition fetch', () => {
     const ctx = new TestClientCtx({ services: { sessions: face } })
     const View = makeAgentGraph(asClientCtx(ctx), kit)
     const m = await mount(h(View, { sessionId: 'root', self: selfStats() }))
-    assert.equal(query(m.container, 'g[data-agent="cold"]').querySelectorAll('circle.redline-agent-seg').length, 0)
+    assert.equal(query(m.container, 'g[data-redline-agent="cold"]').querySelectorAll('circle.redline-agent-seg').length, 0)
     assert.deepEqual(rpc.calls, ['/api/dsh-context-redline/detail:cold'])
 
     await act(async () => {
       rpc.release({ ok: true, status: 200, json: async () => ({ ok: true, value: detailValue(composedHead()) }) })
     })
     await flush()
-    const composed = query(m.container, 'g[data-agent="cold"]')
+    const composed = query(m.container, 'g[data-redline-agent="cold"]')
     assert.equal(composed.querySelectorAll('circle.redline-agent-seg').length, 7, 'six arcs + the free remainder (no pressure arc)')
     assert.ok(text(composed).includes('60%'), 'the fold total prices against the head window')
     await m.unmount()

@@ -227,7 +227,7 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
           + (props.selected ? ' redline-bar-selected' : '')
           + (props.hovered ? ' redline-bar-hovered' : '')
           + (props.inTurn ? ' redline-bar-in-turn' : '')}
-        data-seq={req.seq}
+        data-redline-seq={req.seq}
         style={{ width: `${BAR_W}px` }}
         onClick={() => { props.onSelect(props.selected ? null : req.seq) }}
         onMouseEnter={() => { props.onHover(req.seq) }}
@@ -249,14 +249,14 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
               {CATS.map((c) => {
                 const d = req[c.key] || 0
                 if (d <= 0) return null
-                return <div key={c.key} data-cat={c.key} className="redline-cat-seg" style={{ height: `${Math.max(1, Math.round(d * (props.deltaScale as number)))}px`, background: c.color }} />
+                return <div key={c.key} data-redline-cat={c.key} className="redline-cat-seg" style={{ height: `${Math.max(1, Math.round(d * (props.deltaScale as number)))}px`, background: c.color }} />
               })}
             </div>
             <div className="redline-bar-down animate-redline-bar-in motion-reduce:animate-none" style={{ top: `${props.upPx}px`, ...enterStyle }}>
               {CATS.map((c) => {
                 const d = req[c.key] || 0
                 if (d >= 0) return null
-                return <div key={c.key} data-cat={c.key} className="redline-cat-seg" style={{ height: `${Math.max(1, Math.round(-d * (props.deltaScale as number)))}px`, background: c.color }} />
+                return <div key={c.key} data-redline-cat={c.key} className="redline-cat-seg" style={{ height: `${Math.max(1, Math.round(-d * (props.deltaScale as number)))}px`, background: c.color }} />
               })}
             </div>
           </>
@@ -266,7 +266,7 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
               const v = req[c.key] || 0
               if (!v) return null
               // px (not %) heights: the stack is content-driven, so percentage heights would collapse against an indefinite base.
-              return <div key={c.key} data-cat={c.key} className="redline-cat-seg" style={{ height: `${Math.max(1, Math.round(v / props.maxTotal * CHART_H))}px`, background: c.color }} />
+              return <div key={c.key} data-redline-cat={c.key} className="redline-cat-seg" style={{ height: `${Math.max(1, Math.round(v / props.maxTotal * CHART_H))}px`, background: c.color }} />
             })}
           </div>
         )}
@@ -644,7 +644,7 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
               className="redline-chart"
               // The shared category hover rides a plain attribute: the CSS lights that key's segment in EVERY bar
               // and recedes the rest, so the memoized bars never re-render on a cross-card hover change.
-              data-catdim={props.hoverCat ?? undefined}
+              data-redline-catdim={props.hoverCat ?? undefined}
               onMouseLeave={() => { props.onHover(null) }}
             >
               <div className="redline-grid redline-grid-top" />

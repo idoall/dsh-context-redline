@@ -159,7 +159,7 @@ export type { ReactElement, ReactNode }
  * by trying each one — which also means a spec cannot accidentally "pass" by
  * relying on a step being visible from wherever the picker happened to be.
  *
- * @param value - a step's seq (`data-seq`) or `'live'`.
+ * @param value - a step's seq (`data-redline-seq`) or `'live'`.
  */
 export async function pickStep(m: Mounted, value: string): Promise<void> {
   const setValue = async (sel: HTMLSelectElement, next: string): Promise<void> => {

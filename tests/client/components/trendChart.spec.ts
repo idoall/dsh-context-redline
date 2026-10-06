@@ -165,7 +165,7 @@ describe('TrendChart step granularity, total mode', () => {
 
     const bs = bars(m.container)
     assert.equal(bs.length, 3)
-    assert.deepEqual(bs.map(b => b.getAttribute('data-seq')), ['1', '2', '3'])
+    assert.deepEqual(bs.map(b => b.getAttribute('data-redline-seq')), ['1', '2', '3'])
 
     // Seven priced categories, in CATS order, with the shipped colors; max bar segments scale against maxTotal=660.
     const segs1 = queryAll(bs[0], '.redline-bar-stack > div')
@@ -449,23 +449,23 @@ describe('TrendChart category hover-link', () => {
     // No hover: the container carries no dim attribute at all.
     await m.update(h(TrendChart, propsOf([r1, r2, r3])))
     const chart = query(m.container, '.redline-chart')
-    assert.equal(chart.hasAttribute('data-catdim'), false)
+    assert.equal(chart.hasAttribute('data-redline-catdim'), false)
 
     // Every total-mode segment is tagged with its category; a zero-value category renders no segment to light.
-    const segs = queryAll(chart, '.redline-bar[data-seq="1"] .redline-bar-stack > .redline-cat-seg')
-    assert.deepEqual(segs.map(s => s.getAttribute('data-cat')), CATS.map(c => c.key))
+    const segs = queryAll(chart, '.redline-bar[data-redline-seq="1"] .redline-bar-stack > .redline-cat-seg')
+    assert.deepEqual(segs.map(s => s.getAttribute('data-redline-cat')), CATS.map(c => c.key))
 
     // The hovered key rides the container attribute — the dim/highlight pairing itself is CSS.
     await m.update(h(TrendChart, propsOf([r1, r2, r3], { hoverCat: 'tools' })))
-    assert.equal(query(m.container, '.redline-chart').getAttribute('data-catdim'), 'tools')
+    assert.equal(query(m.container, '.redline-chart').getAttribute('data-redline-catdim'), 'tools')
 
     // Delta mode: diverging stacks' segments are tagged the same way — an all-shrinking pair hangs all seven below the line.
     const big = req(4, { turn: 3, step: 0, system: 200, tools: 100, user: 60, inject: 40, skill: 30, assistant: 80, tool: 120 })
     await m.update(h(TrendChart, propsOf([big, r1], { mode: 'delta', hoverCat: 'user' })))
     const deltaChart = query(m.container, '.redline-chart')
-    assert.equal(deltaChart.getAttribute('data-catdim'), 'user')
+    assert.equal(deltaChart.getAttribute('data-redline-catdim'), 'user')
     assert.deepEqual(
-      queryAll(deltaChart, '.redline-bar-down > .redline-cat-seg').map(s => s.getAttribute('data-cat')),
+      queryAll(deltaChart, '.redline-bar-down > .redline-cat-seg').map(s => s.getAttribute('data-redline-cat')),
       CATS.map(c => c.key),
     )
     await m.unmount()
@@ -483,7 +483,7 @@ describe('TrendChart category focus (the browser open category)', () => {
     const bs = bars(m.container)
     const segs1 = queryAll(bs[0], '.redline-bar-stack > div')
     assert.equal(segs1.length, 1)
-    assert.equal(segs1[0].getAttribute('data-cat'), 'tool')
+    assert.equal(segs1[0].getAttribute('data-redline-cat'), 'tool')
     assertColor(segs1[0].style.background, CATS[6].color)
     assert.equal(segs1[0].style.height, `${Math.round(60 / 120 * CHART_H)}px`)
     assert.equal(queryAll(bs[1], '.redline-bar-stack > div')[0].style.height, `${CHART_H}px`)
@@ -524,7 +524,7 @@ describe('TrendChart category focus (the browser open category)', () => {
     assert.equal(queryAll(bs[0], '.redline-bar-up > div').length, 0)
     const up = queryAll(bs[1], '.redline-bar-up > div')
     assert.equal(up.length, 1)
-    assert.equal(up[0].getAttribute('data-cat'), 'system')
+    assert.equal(up[0].getAttribute('data-redline-cat'), 'system')
     assert.equal(up[0].style.height, `${Math.round(30 * CHART_H / 70)}px`)
     const down = queryAll(bs[2], '.redline-bar-down > div')
     assert.equal(down.length, 1)
@@ -1173,12 +1173,12 @@ describe('TrendChart entrance rise', () => {
     const reqs = [req(1, { turn: 1, step: 0 }), req(2, { turn: 1, step: 1 }), req(3, { turn: 2, step: 0 })]
     const m = await mount(h(GranularityHarness, { requests: reqs }))
     // Turn mode: one aggregate per turn, each keyed by its LAST step's seq.
-    assert.deepEqual(bars(m.container).map(b => b.getAttribute('data-seq')), ['2', '3'])
-    const reusedSeq = query(m.container, '.redline-bar[data-seq="2"]')
+    assert.deepEqual(bars(m.container).map(b => b.getAttribute('data-redline-seq')), ['2', '3'])
+    const reusedSeq = query(m.container, '.redline-bar[data-redline-seq="2"]')
     await click(query(m.container, 'button'))
     // Step mode renders every step; even the seq the aggregate reused must be a FRESH node.
-    assert.deepEqual(bars(m.container).map(b => b.getAttribute('data-seq')), ['1', '2', '3'])
-    assert.notEqual(query(m.container, '.redline-bar[data-seq="2"]'), reusedSeq)
+    assert.deepEqual(bars(m.container).map(b => b.getAttribute('data-redline-seq')), ['1', '2', '3'])
+    assert.notEqual(query(m.container, '.redline-bar[data-redline-seq="2"]'), reusedSeq)
     await m.unmount()
   })
 })

@@ -85,20 +85,20 @@
 .redline-bar-down > div:last-child { border-radius: 0 0 2px 2px; }
 /*
  Category hover-link (overview/browser → trend card): the chart container carries the hovered
- category key (`data-catdim`), so CSS alone lights that key's segment in EVERY bar and recedes
+ category key (`data-redline-catdim`), so CSS alone lights that key's segment in EVERY bar and recedes
  the rest — the memoized bars never re-render on a cross-card hover. Same idiom as the stacked
  bars' dim+brightness pairing. The re-light list below must track the Category vocabulary —
  a bucket missing here dims EVERY bar with nothing lit (the #66 skill regression).
  */
 .redline-cat-seg { transition: filter var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out), opacity var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out); }
-.redline-chart[data-catdim] .redline-cat-seg { opacity: 0.35; }
-.redline-chart[data-catdim='system'] .redline-cat-seg[data-cat='system'],
-.redline-chart[data-catdim='tools'] .redline-cat-seg[data-cat='tools'],
-.redline-chart[data-catdim='user'] .redline-cat-seg[data-cat='user'],
-.redline-chart[data-catdim='inject'] .redline-cat-seg[data-cat='inject'],
-.redline-chart[data-catdim='skill'] .redline-cat-seg[data-cat='skill'],
-.redline-chart[data-catdim='assistant'] .redline-cat-seg[data-cat='assistant'],
-.redline-chart[data-catdim='tool'] .redline-cat-seg[data-cat='tool'] { opacity: 1; filter: brightness(1.18); }
+.redline-chart[data-redline-catdim] .redline-cat-seg { opacity: 0.35; }
+.redline-chart[data-redline-catdim='system'] .redline-cat-seg[data-redline-cat='system'],
+.redline-chart[data-redline-catdim='tools'] .redline-cat-seg[data-redline-cat='tools'],
+.redline-chart[data-redline-catdim='user'] .redline-cat-seg[data-redline-cat='user'],
+.redline-chart[data-redline-catdim='inject'] .redline-cat-seg[data-redline-cat='inject'],
+.redline-chart[data-redline-catdim='skill'] .redline-cat-seg[data-redline-cat='skill'],
+.redline-chart[data-redline-catdim='assistant'] .redline-cat-seg[data-redline-cat='assistant'],
+.redline-chart[data-redline-catdim='tool'] .redline-cat-seg[data-redline-cat='tool'] { opacity: 1; filter: brightness(1.18); }
 .redline-bar-marker { position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 11px; color: var(--dsw-alias-state-warn-primary); }
 /*
  Step flags (step granularity only): every 5th bar plants a flag at its RIGHT edge — a 1px pole rising from

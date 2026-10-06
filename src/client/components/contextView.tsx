@@ -511,7 +511,7 @@ export function makeContextView(
                   return (
                     <button
                       key={k}
-                      data-kind={k}
+                      data-redline-kind={k}
                       className={'redline-gran-btn' + (pickedKinds.includes(k) ? ' redline-gran-on redline-kind-' + k : '')}
                       onClick={() => { toggleKind(k) }}
                     >

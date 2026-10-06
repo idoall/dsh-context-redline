@@ -1309,7 +1309,7 @@ export function makeContextBrowser(
             onChange={(e) => { pick(e.target.value) }}
           >
             {requestsOfTurn.map(r => (
-              <option key={r.seq} value={String(r.seq)} data-seq={String(r.seq)}>
+              <option key={r.seq} value={String(r.seq)} data-redline-seq={String(r.seq)}>
                 {t('browser.stepPick', { s: r.step ?? 0, n: stepsOf(r.turn) }) + ' · ' + fmtTime(r.time)}
               </option>
             ))}

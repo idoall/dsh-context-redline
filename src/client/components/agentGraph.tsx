@@ -281,7 +281,7 @@ function AgentNodeView(props: NodeViewProps): ReactElement {
     <g
       className={cls}
       transform={`translate(${x}, ${y})`}
-      data-agent={node.id}
+      data-redline-agent={node.id}
       role={node.isCurrent ? 'img' : 'button'}
       tabIndex={node.isCurrent ? undefined : 0}
       onClick={() => { props.onOpen(node.id) }}

@@ -287,7 +287,7 @@ describe('ContextView — interactions', () => {
   test('bar hover previews in the browser; hover loss on a granularity switch falls back', async () => {
     const m = await mountRich('sv-hover')
     const chart = query(m.container, '.redline-chart')
-    const bar2 = query(m.container, '.redline-bar[data-seq="2"]')
+    const bar2 = query(m.container, '.redline-bar[data-redline-seq="2"]')
     await hover(bar2)
     assert.ok(bar2.className.includes('redline-bar-hovered'))
     // The hovered bar's turn lights the strip even without strip hover.
@@ -307,8 +307,8 @@ describe('ContextView — interactions', () => {
   test('a request without a turn highlights nothing on hover', async () => {
     const m = await mountRich('sv-noturn')
     const chart = query(m.container, '.redline-chart')
-    await hover(query(m.container, '.redline-bar[data-seq="6"]'))
-    assert.ok(query(m.container, '.redline-bar[data-seq="6"]').className.includes('redline-bar-hovered'))
+    await hover(query(m.container, '.redline-bar[data-redline-seq="6"]'))
+    assert.ok(query(m.container, '.redline-bar[data-redline-seq="6"]').className.includes('redline-bar-hovered'))
     assert.ok(!query(m.container, '.redline-chart-scroll').className.includes('redline-chart-dim'))
     await unhover(chart)
     await m.unmount()
@@ -336,7 +336,7 @@ describe('ContextView — interactions', () => {
     const pick = stepPickOf(m)
     assert.equal(pick.value, 'live')
 
-    const bar4 = query(m.container, '.redline-bar[data-seq="4"]')
+    const bar4 = query(m.container, '.redline-bar[data-redline-seq="4"]')
     await click(bar4)
     assert.ok(bar4.className.includes('redline-bar-selected'))
     assert.equal(pick.value, '4')
@@ -354,7 +354,7 @@ describe('ContextView — interactions', () => {
     const pick = stepPickOf(m)
 
     // Pin the second bar: brief = opener + inputs (node 3) + response (node 4).
-    await click(query(m.container, '.redline-bar[data-seq="4"]'))
+    await click(query(m.container, '.redline-bar[data-redline-seq="4"]'))
     const briefRows = queryAll(m.container, '.redline-brief-row')
     assert.equal(briefRows.length, 3)
 
@@ -373,7 +373,7 @@ describe('ContextView — interactions', () => {
     assert.ok(text(query(m.container, '.redline-br-elem-on')).includes('reply two'))
 
     // The last bar's response lands on the LIVE surface.
-    await click(query(m.container, '.redline-bar[data-seq="6"]'))
+    await click(query(m.container, '.redline-bar[data-redline-seq="6"]'))
     const lastReply = queryAll(m.container, '.redline-brief-row').find(r => text(r).includes('reply three'))
     assert.ok(lastReply !== undefined)
     await click(lastReply)
@@ -387,7 +387,7 @@ describe('ContextView — interactions', () => {
     // Category rows render in CATS order; hover "tools" (second row).
     const toolsRow = queryAll(m.container, '.redline-br-cat-row')[1]
     await hover(toolsRow)
-    assert.equal(query(m.container, '.redline-chart').getAttribute('data-catdim'), 'tools')
+    assert.equal(query(m.container, '.redline-chart').getAttribute('data-redline-catdim'), 'tools')
     // The detail's composition bar mirrors the same key with its tip off (covered in requestDetail.spec).
     const detailBar = query(m.container, '.redline-detail .redline-stacked')
     assert.ok(detailBar.className.includes('redline-stacked-dim'))
@@ -395,7 +395,7 @@ describe('ContextView — interactions', () => {
     assert.ok(queryAll(m.container, '.redline-detail-row-on').length === 1, 'the matching detail row lights too')
 
     await unhover(toolsRow)
-    assert.equal(query(m.container, '.redline-chart').hasAttribute('data-catdim'), false)
+    assert.equal(query(m.container, '.redline-chart').hasAttribute('data-redline-catdim'), false)
     assert.ok(!query(m.container, '.redline-detail .redline-stacked').className.includes('redline-stacked-dim'))
     await m.unmount()
   })
@@ -404,7 +404,7 @@ describe('ContextView — interactions', () => {
     const m = await mountRich('sv-focus')
     assert.equal(text(query(m.container, '.redline-axis-top')), '420', 'unfocused: the axis tops at the largest whole-bar total')
     // Five segments on the bar: richTimeline carries no injects, so inject renders none.
-    assert.equal(queryAll(m.container, '.redline-bar[data-seq="4"] .redline-bar-stack > .redline-cat-seg').length, 5)
+    assert.equal(queryAll(m.container, '.redline-bar[data-redline-seq="4"] .redline-bar-stack > .redline-cat-seg').length, 5)
 
     // Expanding the browser's assistant category (row 5 — row 4 is the empty
     // skill bucket) focuses every bar on it — one segment per bar, the axis
@@ -413,14 +413,14 @@ describe('ContextView — interactions', () => {
     assert.equal(text(query(m.container, '.redline-axis-top')), '80')
     const segs = queryAll(m.container, '.redline-bar .redline-bar-stack > .redline-cat-seg')
     assert.equal(segs.length, 3)
-    for (const s of segs) assert.equal(s.getAttribute('data-cat'), 'assistant')
+    for (const s of segs) assert.equal(s.getAttribute('data-redline-cat'), 'assistant')
     assert.ok(text(m.container).includes(DICT_EN['trend.focus'].replace('{cat}', DICT_EN['cat.assistant'])),
       'the card subtitle names the focused category')
 
     // Collapsing the category restores the whole composition and drops the subtitle.
     await click(queryAll(m.container, '.redline-br-cat-row')[5])
     assert.equal(text(query(m.container, '.redline-axis-top')), '420')
-    assert.equal(queryAll(m.container, '.redline-bar[data-seq="4"] .redline-bar-stack > .redline-cat-seg').length, 5)
+    assert.equal(queryAll(m.container, '.redline-bar[data-redline-seq="4"] .redline-bar-stack > .redline-cat-seg').length, 5)
     const trendCard = queryAll(m.container, '.redline-card').find(c => text(c).includes(DICT_EN['trend.title']))
     assert.ok(trendCard !== undefined && trendCard.querySelector('.redline-card-sub') === null, 'unfocused: no subtitle')
     await m.unmount()
@@ -462,8 +462,8 @@ describe('ContextView — interactions', () => {
     // Default active bar is the newest: detail is the signed change vs its predecessor.
     assert.ok(queryAll(m.container, '.redline-detail-tag').some(el => text(el) === DICT_EN['gran.delta']))
     // Hovering the FIRST bar pairs it with null (change from zero).
-    await hover(query(m.container, '.redline-bar[data-seq="2"]'))
-    assert.ok(query(m.container, '.redline-bar[data-seq="2"]').className.includes('redline-bar-hovered'))
+    await hover(query(m.container, '.redline-bar[data-redline-seq="2"]'))
+    assert.ok(query(m.container, '.redline-bar[data-redline-seq="2"]').className.includes('redline-bar-hovered'))
     assert.ok(queryAll(m.container, '.redline-detail-tag').some(el => text(el) === DICT_EN['gran.delta']))
     await unhover(chart)
     await click(buttonByText(m.container, DICT_EN['gran.total']))
@@ -474,7 +474,7 @@ describe('ContextView — interactions', () => {
   test('event-kind filter narrows, unions, drops, and resets', async () => {
     const m = await mountRich('sv-kinds')
     const countEvents = () => queryAll(m.container, '.redline-event').length
-    const kindBtn = (k: string) => query(m.container, `.redline-kinds [data-kind="${k}"]`) as HTMLElement
+    const kindBtn = (k: string) => query(m.container, `.redline-kinds [data-redline-kind="${k}"]`) as HTMLElement
     assert.equal(countEvents(), 2)
     // The buttons carry their per-kind tallies (richTimeline: 1 inject, 1 compaction, 0 prunes).
     assert.deepEqual(
@@ -780,7 +780,7 @@ describe('ContextView — chat→Context jump', () => {
     const m = await mountRich('sv-jump')
     assert.ok(buttonByText(m.container, DICT_EN['gran.turn']).className.includes('redline-gran-on'), 'granularity flips to turn')
     assert.equal(queryAll(m.container, '.redline-bar').length, 2, 'the chart renders turn aggregates')
-    assert.ok(query(m.container, '.redline-bar[data-seq="4"]').className.includes('redline-bar-selected'), 'the reply\'s turn bar is pinned')
+    assert.ok(query(m.container, '.redline-bar[data-redline-seq="4"]').className.includes('redline-bar-selected'), 'the reply\'s turn bar is pinned')
     assert.equal(stepPickOf(m).value, '4')
     assert.equal(takeContextFocus('sv-jump'), null, 'the relay is one-shot')
     await m.unmount()
@@ -809,17 +809,17 @@ describe('ContextView — chat→Context jump', () => {
     // The trailing turn-less step: its group key derives to 0, the ?? 0 arm.
     requestContextFocus('sv-jump0', 6)
     const m = await mountRich('sv-jump0')
-    assert.ok(query(m.container, '.redline-bar[data-seq="6"]').className.includes('redline-bar-selected'))
+    assert.ok(query(m.container, '.redline-bar[data-redline-seq="6"]').className.includes('redline-bar-selected'))
     assert.equal(takeContextFocus('sv-jump0'), null)
     await m.unmount()
   })
 
   test('a record landing after mount re-pins the mounted view (the sidebar repeat jump)', async () => {
     const m = await mountRich('sv-rejump')
-    assert.ok(!query(m.container, '.redline-bar[data-seq="4"]').className.includes('redline-bar-selected'), 'nothing pinned at mount')
+    assert.ok(!query(m.container, '.redline-bar[data-redline-seq="4"]').className.includes('redline-bar-selected'), 'nothing pinned at mount')
     // The sidebar landing keeps this view mounted; a later jump must re-pin it.
     await act(async () => { requestContextFocus('sv-rejump', 4) })
-    assert.ok(query(m.container, '.redline-bar[data-seq="4"]').className.includes('redline-bar-selected'), 'the later record re-pins')
+    assert.ok(query(m.container, '.redline-bar[data-redline-seq="4"]').className.includes('redline-bar-selected'), 'the later record re-pins')
     assert.equal(stepPickOf(m).value, '4')
     assert.equal(takeContextFocus('sv-rejump'), null, 'the record was consumed')
     await m.unmount()
@@ -852,7 +852,7 @@ describe('ContextView — chat→Context jump', () => {
     scroller2.style.overflowY = 'auto'
     const m2 = await mountInScroller(h(View, props), scroller2)
     assert.equal(scroller2.scrollTop, 42, '恢复值生效；不再叠加已删卡的揭示位移')
-    assert.ok(query(m2.container, '.redline-bar[data-seq="4"]').className.includes('redline-bar-selected'))
+    assert.ok(query(m2.container, '.redline-bar[data-redline-seq="4"]').className.includes('redline-bar-selected'))
     await m2.unmount()
     gBCR.mockRestore()
   })
@@ -943,7 +943,7 @@ describe('ContextView — the split generation (slim head + detail channel)', ()
     const m = await mount(h(View, { sessionId: 'sv-slim-jump', useProjection: projectionsFor(slimHead()) }))
     assert.equal(queryAll(m.container, '.redline-bar-selected').length, 0, 'nothing pins before the detail')
     await until(
-      () => queryAll(m.container, '.redline-bar[data-seq="4"]')[0]?.className.includes('redline-bar-selected') === true,
+      () => queryAll(m.container, '.redline-bar[data-redline-seq="4"]')[0]?.className.includes('redline-bar-selected') === true,
       'the jump never resolved',
     )
     assert.equal(takeContextFocus('sv-slim-jump'), null)
