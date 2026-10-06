@@ -27,6 +27,7 @@ import { makeStackedBar } from './stackedBar'
 import { aggregateByTurn, attachMarkers, jumpTargetOf, makeTrendChart, turnStepsOf } from './trendChart'
 
 import { subscribeContextFocus, takeContextFocus } from '../viewFocus'
+import { useSurfaceVisibility } from '../surfaceVisibility'
 import { revealInScrollParent } from '../revealScroll'
 import { makeErrorBoundary } from './errorBoundary'
 
@@ -160,6 +161,9 @@ export function makeContextView(
     const scrollerRef = useRef<HTMLElement | null>(null)
     // The session whose position was already applied this mount — re-applying on re-renders would yank the reader's scroll.
     const restoredRef = useRef<string | null>(null)
+
+    // 只在面板真的可见时，让那两条改**宿主**元素的 CSS 生效（见 surfaceVisibility.ts）。
+    useSurfaceVisibility(rootRef)
 
     // Restore the saved position (or the top on first visit) in a layout effect, so the chat's bottom-anchored position never flashes in
     // first.

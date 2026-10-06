@@ -246,6 +246,24 @@ if (!existsSync(OUR_BUNDLE)) {
   }
 }
 
+// ── ②″ 改宿主的规则必须挂"我们的面板可见"标记（Code Review P1-2）──────────────────
+// 我们有两条规则会去改宿主元素（输入区 / 宽度拖柄）。它们必须同时具备：
+//   ① 我们自己的类（`.redline-*`）；② `data-redline-active`（真的可见）。
+// 只有类而没有标记时，宿主一旦"常驻只隐藏"，就会在别的 tab 上藏掉宿主输入框。
+const HOST_ATTRS = ['data-composer-seat', 'data-width-handle', 'data-conversation-scroll']
+for (const file of cssFiles) {
+  const css = stripCss(readFileSync(join(STYLES, file), 'utf8'))
+  for (const sel of selectorsOf(css)) {
+    if (!HOST_ATTRS.some((a) => sel.includes(a))) continue
+    if (!/\.redline-/.test(sel)) {
+      problems.push(`[②″宿主] ${file}: 改宿主元素的规则没有我们的类限定 → \`${sel.slice(0, 70)}\``)
+    }
+    if (!/data-redline-active/.test(sel)) {
+      problems.push(`[②″宿主] ${file}: 改宿主元素的规则没有 \`data-redline-active\` 标记（宿主"常驻只隐藏"时会误伤别的 tab）→ \`${sel.slice(0, 70)}\``)
+    }
+  }
+}
+
 // ── ③ 自足：组件 `className` 里用到的 redline- 类必须在样式里有定义 ─────────────
 // ⚠️ 第一版直接 grep 整个 TSX，把**模块路径**（`redline-channel`）、**动画名**
 // （`animate-redline-bar-in`）都当成了类名 → 34 条误报。所以这里只从 className 上下文取：

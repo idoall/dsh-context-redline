@@ -375,7 +375,7 @@ const probeServices: RedlineOpHandler = async ({ ctx, call }) => {
         const seqs = (first as { sourceEventSeqs?: number[] }).sourceEventSeqs ?? []
         const target = seqs.at(0)
         if (target === undefined) { shadow.readback = 'carrier-has-no-seq' } else {
-          const back = await query.readEvent({ sessionId, seq: target }) as { text?: unknown, target?: unknown } | null | undefined
+          const back = await query.readEvent({ sessionId, seq: target }) as { text?: unknown; target?: unknown } | null | undefined
           const text = typeof back?.text === 'string' ? back.text : null
           // ⚠️ 只报**三态**（ok / empty / no-text-field），**不回传原文片段**：
           // 这是"服务在不在、字段叫什么"的结构探针，不该把会话正文带出去

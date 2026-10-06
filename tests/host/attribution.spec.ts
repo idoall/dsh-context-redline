@@ -157,7 +157,7 @@ describe('createToolAttribution', () => {
 
   test('OUR marker is a GLOBAL symbol value — a garbage value on it is not recoverable', async () => {
     const app = new Context()
-    const attribution = createToolAttribution(app)
+    createToolAttribution(app)   // 装上 hook；这条测试只关心"不重包"，不读归因结果
     // 我们自己的标记：必须用 Symbol.for（跨模块重载稳定），且值不是函数时无从恢复 ⟹ 不重包。
     const ourMarker = Symbol.for('dsh-context-redline/tools.register.original')
     const foreign = Object.assign(() => 'not-a-disposer', { [ourMarker]: 42 })

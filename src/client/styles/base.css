@@ -154,7 +154,10 @@
 .redline-error-msg { font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 12px; color: var(--dsw-alias-state-error-primary); background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l1); border-radius: 6px; padding: 4px 8px; max-width: 100%; overflow-wrap: anywhere; }
 .redline-error-retry { border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; padding: 4px 14px; border-radius: 6px; cursor: pointer; transition: border-color var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out); }
 .redline-foot { color: var(--dsw-alias-label-secondary); font-size: 12px; margin-top: 4px; }
-[data-conversation-scroll]:has(.redline-root) > [data-composer-seat]:not(:has([data-approval-key], [data-question-key], [data-plan-review-key])) { display: none; }
+/* ⚠️ 这两条改的是**宿主**元素，因此必须挂"我们的面板真的可见"这个标记
+   （`data-redline-active`，由 contextView 的 IntersectionObserver 维护，Code Review P1-2）——
+   只写 `.redline-root` 的话，宿主一旦"常驻只隐藏"，就会在别的 tab 上藏掉它的输入框。 */
+[data-conversation-scroll]:has(.redline-root[data-redline-active="1"]) > [data-composer-seat]:not(:has([data-approval-key], [data-question-key], [data-plan-review-key])) { display: none; }
 /*
  The shell's transcript-width drag handles are FOLLOWING SIBLINGS of the shared scroller (children of
  the skeleton body, dsh ConversationRoot), not its descendants — a descendant combinator here silently
@@ -166,4 +169,4 @@
  harness's own opt-out, `data-conversation-composer-overlay`, would also re-home scrolling into the
  pane, so the strips are neutralized here instead.
  */
-[data-conversation-scroll]:has(.redline-root, .redline-modal-backdrop) ~ [data-width-handle] { display: none; }
+[data-conversation-scroll]:has(.redline-root[data-redline-active="1"], .redline-modal-backdrop) ~ [data-width-handle] { display: none; }
