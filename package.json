@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "description": "上下文批改 (Context Redline) — a DeepSeek Harness plugin to read the context a model will see, edit one item at a time, keep every edit local to the plugin, and carry the edits verbatim into the first message of a new child session. Independent fork of dsh-context (Apache-2.0 portions; provenance in UPSTREAM.md).",
   "icon": "icon.svg",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/idoall/dsh-context-redline.git"
+  },
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
@@ -29,6 +33,7 @@
     "cordis.patch.yml",
     "README.md",
     "README.zh.md",
+    "CHANGELOG.md",
     "LICENSE",
     "LICENSE-Apache-2.0",
     "NOTICE",
@@ -36,6 +41,7 @@
   ],
   "scripts": {
     "build": "tsdown",
+    "prepack": "pnpm run build",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "namespace-contract": "node scripts/namespace-contract.mjs",

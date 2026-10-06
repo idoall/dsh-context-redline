@@ -40,6 +40,7 @@ export const REQUIRED_GATES = [
   { gate: 'demo-static', why: '交互 demo 的静态契约（id/class/讲解词）' },
   { gate: 'demo-runtime', why: '交互 demo 的最小 DOM 桩真渲染' },
   { gate: 'progress', why: '进度汇报器与 docs/10 §11 一致（两个实现互为对照）' },
+  { gate: 'release-ready', why: '发布就绪：临时探针已清零 + npm 发布前提齐备（探针还在时**就该红**）' },
 ]
 
 /**
@@ -65,6 +66,7 @@ export function planSteps(opts = {}) {
     { label: 'demo 静态契约', gate: 'demo-static', command: 'node demo/check-static.mjs', expect: '__EXIT0__' },
     { label: 'demo 真渲染', gate: 'demo-runtime', command: 'node demo/check-runtime.mjs', expect: '失败 0 项' },
     { label: '进度汇报 vs §11', gate: 'progress', command: 'node scripts/progress.mjs', expect: '__PROGRESS__' },
+    { label: '发布就绪（探针清零 + npm 前提）', gate: 'release-ready', command: 'node scripts/check-release-ready.mjs', expect: '✅ 发布就绪检查通过' },
   ]
   if (opts.withDsh === true) {
     steps.push({
