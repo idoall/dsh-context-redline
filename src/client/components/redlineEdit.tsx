@@ -170,16 +170,17 @@ export function makeRedlineEditor(kit: ViewKit): (props: {
           )}
         {blockedKey !== null ? <div className="redline-editor-blocked">{t(blockedKey)}</div> : null}
         {errKey !== null ? <div className="redline-editor-err" role="alert">{t(errKey)}</div> : null}
+        {/* 动作区**没有浮标**（用户 2026-10-06 红框截图：那个「?」压在「高级：思考文本」上）。
+            它当初是给**批注**动作做说明的角标（`docs/10` M05-40），批注已整批删除；
+            剩下的说明改挂按钮自身的 `title` —— 不占版面，鼠标停上去照样看得到。 */}
         <div className="redline-editor-actions">
-          <span className="redline-qwrap">
-            <button
-              type="button"
-              className="redline-btn"
-              disabled={props.busy || blockedKey !== null}
-              onClick={submit}
-            >{t('redline.save')}</button>
-            <span className="redline-qfloat" title={t('redline.save.tip')} aria-label={t('redline.save.tip')}>?</span>
-          </span>
+          <button
+            type="button"
+            className="redline-btn"
+            title={t('redline.save.tip')}
+            disabled={props.busy || blockedKey !== null}
+            onClick={submit}
+          >{t('redline.save')}</button>
           <button type="button" className="redline-btn redline-btn-quiet" onClick={props.onCancel}>{t('redline.cancel')}</button>
         </div>
       </div>

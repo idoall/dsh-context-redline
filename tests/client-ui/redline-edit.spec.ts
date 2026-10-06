@@ -316,6 +316,24 @@ describe('④ the editor is inline, prefilled with the FULL text, and saves loca
     await m.unmount()
   })
 
+  // 用户 2026-10-06（红框截图）：「当编辑内容时，保存的右上角、左上角还是有问号没去掉。」
+  // 那个「?」是 `M05-40` 时代留下的 `.qwrap + .qfloat` 角标：它当初要解释的是**批注**动作，
+  // 而批注功能已整批删除，剩下的只是把 `redline.save.tip` 挂成悬停提示 —— 却正好压在
+  // 「高级：思考文本」那一行上。口径改成：**动作区不许出现任何浮标**，提示挂按钮自身的
+  // `title`（不占版面、鼠标停上去照样有）。
+  test('保存 上不许再有漂浮的「?」角标（提示挂按钮自身的 title）', async () => {
+    const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'x' })]), controller())
+    await openCategory(m, 2)
+    await act(async () => { (queryAll(actionsIn(m, 11)!, 'button')[0] as HTMLElement).click() })
+    const row = query(m.container, '.redline-editor-actions')
+    assert.equal(queryAll(row, '.redline-qfloat').length, 0, 'the editor action row carries no floating ? badge')
+    assert.equal(queryAll(row, '.redline-qwrap').length, 0, 'and no badge wrapper either')
+    const save = queryAll(row, 'button')[0] as HTMLElement
+    assert.equal(save.getAttribute('title'), DICT_EN['redline.save.tip'], 'the explanation moved onto the button itself')
+    assert.equal(save.textContent, DICT_EN['redline.save'], 'the button label is the label, not a ?')
+    await m.unmount()
+  })
+
   test('取消 closes the editor without touching the store', async () => {
     let calls = 0
     const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'x' })]),
