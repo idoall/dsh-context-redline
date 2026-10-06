@@ -115,7 +115,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 251 / 共 291**（DOING 7 · TODO 29 · WAIT🙋 4） |
+| 进度 | `docs/10`：**DONE 253 / 共 291**（DOING 7 · TODO 27 · WAIT🙋 4） |
 | 当前卡点 | **只剩四件需要用户的事（第 40 轮收尾时的实测状态）**：① **再重启一次 `dsh web`** —— 只为让只读探针 op `probe.services` 生效（`docs/01` **F46**：宿主半边开机加载，`tsc`/`tsdown` 都过了、进程仍答 `unknown-op`，当前 pid 50235 仍是 22:10 那次）；重启后一条 curl 即可拿到 M45-01/03/04 的读数。② ~~「洞察」面板去留~~ —— **这条已作废（2026-10-06 用户指正 + 仓库核实）**：**我们自己的洞察面早在 2026-10-05 就删干净了**（`src/client/index.ts` 注释、`overview.css` 96 类零引用、`tests/client/*.spec.ts` 只剩"已删"的说明）；**上游插件 `dsh-context` 自带的洞察面板不属本仓库、不要动它**。唯一残留是 i18n 里 4 行**死字符串**（见 `docs/10` M3-34 的注记）。③ **三个小决定**：M4-06 默认粒度（设置页现为"步骤"）/ M4-07 统计卡 3 格 vs 7 格 / 手动出口要不要先做。④ **授权包④**（push 52 个提交）。⚠️ 会**写会话**的那几条探针（替换→再替换→回滚、跨压缩恢复、可续接子会话）动手前要用**可弃会话**并逐条确认。仓库侧：`node scripts/release-check.mjs` → 全部通过（共 11 步） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -990,3 +990,42 @@ demo 段现在写着 105 行）。总数与各状态计数不受影响（`check-
 
 **硬门禁（M4.5 全绿）已满足 ⟹ M5 可以开工**（M5 现在 5/28 + 2 DOING）。M5 第一件事建议按 `docs/06` §3.3：
 先做**第 5 张【子会话】卡 + 开启确认框**（`child.plan`/`child.start` 今天已证可用），再 `child.list`（M5-06 另一半）、结果回流、压缩（先定 F54 的键名）。
+
+
+## D50 · M5 开工第一件：第 5 张【子会话】卡 + 确认框（2026-10-06，真机验证过）
+
+`M4.5` 全绿解锁 M5 之后的第一件（`docs/06` §3.3）：把 demo 的第 5 张卡接进插件，**面板 5/5**。
+
+### 做了什么
+
+| 文件 | 内容 |
+|---|---|
+| `src/client/childSessions.ts`（新） | `childRowsOf()` **纯函数**：把宿主的 `subagentCatalog` 投影解析成索引行（坏条目 total 降级、最新在前）；`useChildSessions()`：对每个子会话调一次**只读** `turnState` 拿状态、暴露 `plan`/`start` |
+| `src/client/components/childCard.tsx`（新） | 卡片两块（**开子会话** + **子会话索引**）+ 确认框：五项直接用宿主的 `child.plan`、第一句话由人写、空任务时显示宿主的拒绝并把 `确认` 禁用 |
+| `src/client/styles/childCard.css`（新） | `.redline-orch-*` / `.redline-snapid` / `.redline-mstat-*` / `.redline-confirm-*`（排布照 demo 的 `.orchblock`/`.orch-row`，状态一律圆点+文字，无 emoji） |
+| `src/client/components/contextView.tsx` | 左列第 5 张卡 + 接线；门禁与 `保存` 共用同一份 `turnState`（父不 live / 轮次未闭合 → 按钮禁用并写明原因） |
+| `tests/client-logic/child-rows.spec.ts`（新） | 纯函数护栏：正常形状 + 坏数据 total（4 条断言组） |
+| `tests/client-ui/child-card.spec.ts`（新） | 真 React：两块结构 / 每行状态句 / 空索引 / 两种禁用门禁 / 打开→调 plan 一次 / 五项渲染 / 空任务禁用 + 拒绝句 / 确认只调一次 start / 取消零调用（10 条） |
+| `tests/client-ui/panel-cards.spec.ts` | 门禁**从"前 4 张"翻到"5 张全在"**（那行注释自己写着"之后它必须出现"） |
+
+### 真机读数（自签 cookie 打开运行中的面板，`session-dbcfd4db`）
+
+- **5 张卡**：上下文统计 / 上下文趋势 / 上下文浏览器 / 上下文事件 / **子会话** ✓（demo 对齐）
+- 卡片两块 `spawn` + `children`；索引列出 **5 个真实子会话**（含今天新开的 `92414bcf…`）
+- 老会话行 = 「多轮 · 已结束 · 这个子会话当前不在本进程里，只能查看。」（状态是**同一个 `turnState` op 读的**，不是猜的）
+- 父可写 ⟹ `开启子会话` 可用；点开确认框：**五项齐全**、第三项「（还没写 —— 空着不能开）」、`确认` **disabled**、
+  拒绝句「**子会话的第一句话必须由你自己写 —— 这是它在做的事，不能替你决定。**」、0 条 console 报错
+- 顺手看见回程通道在工作：`上下文事件` 里出现 **`通知 · subagent-settled · Background subagent 92414bcf-… finished`**（第 60 轮 · 第 3 步 22:27:09）——
+  就是今天那个子会话结算时运行时写进父会话的那条（`docs/01` F27）
+- 截图：`docs/screenshots/05-child-confirm-live.png`（确认框）· `06-child-card-live.png`（卡片全景）
+
+### 有意与 demo 不同的一处（已写进 `docs/10` M3-17）
+
+demo 的索引行挂"**来源**"徽章（本项目发起 / 来自 Agent Teams），而 `subagentCatalog` 里**没有来源字段**、有 `mode`（一次性/多轮）
+⟹ 这里挂 **mode 徽章**；"来源"要等 M5-12 的判定口径定了再补（`tryMembership` 按 sessionId 判 Lead **不成立**，`docs/01` F53）。
+
+### 门禁
+
+`tsc` exit 0 · `oxlint` **0/0**（中途真抓到 9 条：member-delimiter 分号、箭头参数括号、以及把 `plan`/`start` 声明成**方法**触发的 `unbound-method`
+—— 改成函数属性即符合本仓库既有写法）· `namespace-contract` 28/0 · `css-closure` **14 份样式 / 285 类**全自足 · `i18n-orphans` 238 键全有引用 ·
+全量 vitest **1452 条全绿**（+12 条新护栏）· `release-check` 13 步只 1 步红（探针，预期）。

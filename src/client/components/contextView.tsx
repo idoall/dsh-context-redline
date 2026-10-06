@@ -18,6 +18,8 @@ import type { ContextSettings } from '../settings'
 import type { ViewKit } from '../viewkit'
 import { makeContextBrowser } from './browser'
 import { useRedlineDrafts } from '../redlineDrafts'
+import { useChildSessions } from '../childSessions'
+import { makeChildCard } from './childCard'
 import { makeEventList } from './events'
 import { makeUpgradeGate } from './upgradeGate'
 import { makeRequestDetail } from './requestDetail'
@@ -82,6 +84,8 @@ export function makeContextView(
       if (typeof raw === 'object') return 'object:' + Object.keys(raw).slice(0, 6).join(',')
       return typeof raw
     }
+    // 子会话卡的数据源（`docs/03` R5.1）：父会话自己的 `subagentCatalog` 投影（不重画会话树）。
+    const childCatalog = projectionOf(props, 'subagentCatalog', raw => (Array.isArray(raw) ? raw : null))
     const probeCatalog = projectionOf(props, 'subagentCatalog', raw => probeShape(raw))
     const probeTiming = projectionOf(props, 'subagentTiming', raw => probeShape(raw))
     // ⚠️ 2026-10-06 扩了一条：V13 要问「官方团队的状态面到底叫什么键、客户端读不读得到」。
@@ -443,6 +447,7 @@ export function makeContextView(
       </div>
     )
     const redline = useRedlineDrafts(typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined)
+    const children = useChildSessions(typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined, childCatalog)
     const browserCard = (
       <ContextBrowser
         redline={redline}
@@ -523,6 +528,22 @@ export function makeContextView(
           </div>
         </div>
 
+        {/* 第 5 张卡（`docs/10` M3-16/17，随 M5 落地）：子会话索引 + 开子会话。
+            它是**本面板唯一会写会话的入口**，所以按钮的门禁与 `保存` 完全一致（`live` / `turnOpen`）。 */}
+        <div className="redline-cols">
+          <div className="redline-col flex-1 min-w-[min(360px,100%)]">
+            <ChildCard
+              sessionId={sessionId}
+              rows={children.rows}
+              live={redline.turn.known}
+              turnOpen={redline.turn.open}
+              carriedCount={Object.keys(redline.table).length}
+              plan={children.plan}
+              start={children.start}
+            />
+          </div>
+        </div>
+
 
         <div className="redline-foot">{t('footer')}</div>
 
@@ -532,6 +553,8 @@ export function makeContextView(
       </div>
     )
   }
+
+  const ChildCard = makeChildCard(kit)
 
   return function ContextView(props: ContextViewProps): ReactElement {
     return h(ErrorBoundary, null, h(ContextViewBody, props))

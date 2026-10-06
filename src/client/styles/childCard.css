@@ -1,0 +1,37 @@
+/*
+ * The child-session card (`docs/03` R5.1/R5.1.1): the always-here 「开子会话」 entry plus the
+ * read-only index of children, and the small confirm box the entry opens.
+ *
+ * 排布照 demo 的 `.orchblock` / `.orch-row`：**小标题 + 行**，每行统一两行 ——
+ * 上行是身份（短 id / 徽章 / 状态 / 描述），下行缩进 22px 说"这一行你现在能做什么"。
+ * 状态一律**圆点 + 文字**，不用 emoji（`docs/03` V5）。
+ */
+.redline-orch-block { display: flex; flex-direction: column; gap: 6px; }
+.redline-orch-block + .redline-orch-block { margin-top: 10px; }
+/* 卡片内的小标题：与 `.redline-card-title` 区分开（它是卡片级，这一层是块级） */
+.redline-orch-head { display: flex; align-items: baseline; gap: 6px; font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-secondary); }
+.redline-orch-hint { font-size: 11px; font-weight: 400; color: var(--dsw-alias-label-dimmed); }
+.redline-orch-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.redline-cap { font-size: 11px; line-height: 1.45; color: var(--dsw-alias-label-secondary); }
+.redline-orch-row { display: flex; flex-direction: column; gap: 2px; padding: 4px 6px; border-radius: 6px; }
+.redline-orch-row:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.redline-orch-id { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.redline-orch-actions { display: flex; align-items: center; gap: 6px; margin-left: 22px; }
+/* 短 id：等宽数字，扫一眼就能比对上官方谱系里那条 */
+.redline-snapid { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l1); border-radius: 4px; padding: 0 5px; }
+.redline-badge-state { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.redline-mstat { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--dsw-alias-label-dimmed); }
+.redline-mstat-run { background: var(--dsw-alias-state-success-primary, #22c55e); }
+.redline-mstat-idle { background: var(--dsw-alias-brand-primary, #4d6bfe); }
+.redline-mstat-gone { background: var(--dsw-alias-label-dimmed); }
+.redline-mstat-unknown { background: var(--dsw-alias-state-warn-primary, #f59e0b); }
+
+/* 确认框（沿用 `.redline-modal-*` 的遮罩/卡 chrome）：五项 + 「第一句话你来写」 + 两个按钮 */
+.redline-confirm-list { margin: 0 0 10px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; }
+.redline-confirm-list li { display: flex; flex-direction: column; gap: 1px; }
+.redline-confirm-list b { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.redline-confirm-list span { font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.redline-confirm-field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.redline-confirm-field textarea { font: inherit; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base, transparent); border: 1px solid var(--dsw-alias-border-l1); border-radius: 5px; padding: 6px 8px; resize: vertical; }
+.redline-modal-foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.redline-ok { font-size: 11px; color: var(--dsw-alias-state-success-primary, #22c55e); }
