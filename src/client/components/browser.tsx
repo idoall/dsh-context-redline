@@ -810,8 +810,10 @@ export function makeContextBrowser(
         base = it.cat === 'system' ? catLabel('system') : it.key.slice('tool:'.length)
       } else {
         const n = it.node
+        // 工具名认不出来时**不要渲染「?」**（用户 2026-10-06 对界面上任何 `?` 都反感）——
+        // 退回分类名「工具结果」，它至少是句人话。（真机实测：未配对的工具结果会走到这里。）
         base = n.skill !== undefined ? t('node.skillTag', { name: n.skill })
-          : n.cat === 'tool' ? (n.tool ?? '?')
+          : n.cat === 'tool' ? (n.tool ?? catLabel(n.cat))
             : n.cat === 'inject' ? t('form.' + (n.form || 'context'))
               : catLabel(n.cat)
       }
@@ -1150,7 +1152,9 @@ export function makeContextBrowser(
         let preview = nodeText(n)
         const id = nodeNameOf(n)
         if (n.cat === 'tool') {
-          tag = n.tool ?? '?'
+          // ⚠️ 工具名认不出来时**不挂标签**（原来是 `'?'`）：那行本来就写着「工具结果」当预览，
+          // 再挂一个 `?` 只是噪音（用户 2026-10-06 对界面上任何 `?` 都反感）。`null` = 这一格不渲染。
+          tag = n.tool ?? null
           preview = callSummaryOf(conv) ?? t('node.toolResult')
         } else if (n.cat === 'skill') {
           // Skill content (issue #66): a load/invocation names itself, and a

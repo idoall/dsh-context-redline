@@ -1486,7 +1486,10 @@ describe('ContextBrowser tool results', () => {
     assert.equal(dots.length, 9, 'one red dot per failing result')
     // Newest-first order: rows[0] is seq 97 (joined clean result), then 96, 95, ...
     assert.ok(text(rows[0]).includes('bash'))
-    assert.ok(text(rows[1]).includes('?'), 'missing tool name tags as ?')
+    // 用户 2026-10-06 对界面上任何「?」都反感（两次专门提：保存上的角标、高级编辑处的问号光标）⟹
+    // 工具名认不出来时**不再挂 `?` 标签**，那一格直接不渲染；预览那句「Tool Result」就是人话。
+    assert.ok(!text(rows[1]).includes('?'), 'missing tool name must NOT tag as ?')
+    assert.ok(!/\b(bash|write)\b/.test(text(rows[1])), 'and it must not borrow a neighbouring name')
     assert.ok(text(rows[1]).includes('Tool Result'), 'no join → placeholder preview')
     assert.ok(text(rows[2]).includes('Tool Result'))
     assert.ok(text(rows[3]).includes('write'))
@@ -1919,7 +1922,8 @@ describe('ContextBrowser DNA mode and the open-category bar pin', () => {
     await hover(bands(m)[0])
     assert.equal(text(tip), 'Skill · code ≈10 (17%) of used context')
     await hover(bands(m)[1])
-    assert.equal(text(tip), '? ≈20 (33%) of used context')
+    // 同上：DNA 模式那一段的标签也退回分类名，不写 `?`
+    assert.equal(text(tip), 'Tool Results ≈20 (33%) of used context')
     await hover(bands(m)[2])
     assert.equal(text(tip), 'Context Injection ≈30 (50%) of used context')
     await m.unmount()
