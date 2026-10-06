@@ -115,7 +115,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 230 / 共 289**（DOING 12 · TODO 40 · WAIT🙋 7） |
+| 进度 | `docs/10`：**DONE 231 / 共 290**（DOING 12 · TODO 40 · WAIT🙋 7） |
 | 当前卡点 | **只剩四件需要用户的事（第 40 轮收尾时的实测状态）**：① **再重启一次 `dsh web`** —— 只为让只读探针 op `probe.services` 生效（`docs/01` **F46**：宿主半边开机加载，`tsc`/`tsdown` 都过了、进程仍答 `unknown-op`，当前 pid 50235 仍是 22:10 那次）；重启后一条 curl 即可拿到 M45-01/03/04 的读数。② ~~「洞察」面板去留~~ —— **这条已作废（2026-10-06 用户指正 + 仓库核实）**：**我们自己的洞察面早在 2026-10-05 就删干净了**（`src/client/index.ts` 注释、`overview.css` 96 类零引用、`tests/client/*.spec.ts` 只剩"已删"的说明）；**上游插件 `dsh-context` 自带的洞察面板不属本仓库、不要动它**。唯一残留是 i18n 里 4 行**死字符串**（见 `docs/10` M3-34 的注记）。③ **三个小决定**：M4-06 默认粒度（设置页现为"步骤"）/ M4-07 统计卡 3 格 vs 7 格 / 手动出口要不要先做。④ **授权包④**（push 52 个提交）。⚠️ 会**写会话**的那几条探针（替换→再替换→回滚、跨压缩恢复、可续接子会话）动手前要用**可弃会话**并逐条确认。仓库侧：`node scripts/release-check.mjs` → 全部通过（共 11 步） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -825,3 +825,49 @@ demo 段现在写着 105 行）。总数与各状态计数不受影响（`check-
 `cat.*` / `kind.*` / `ev.mode.*` / `redline.err.*` / `files.glyph.*` 是**动态拼**的；
 `stats.cost` / `stats.cacheHit` 被 `tests/client/components/contextView.spec.ts` 的"这两格不在卡里"断言用着。
 所以第三批要**逐条人工核对**（先按前缀白名单过滤，再逐个人查），一次一个家族地删，删完跑全量 vitest。
+
+## D44 · **「看不到真面板」是错的**：用本机凭据自签 cookie，助手能自己打开 3080（2026-10-06）
+
+用户原话：「你不是有浏览器工具吗？而且我也完全对你授权了，我不附带 token 的 URL，你操作不了吗？」
+
+**他说得对，我错了两次**：`docs/01` F52 原来写「真面板只有两条路：用户截图 / 用户给 URL」，
+而且**我自己的项目记忆里早就记着解法**（`memory` 条目：DSH 3080 自动化访问 —— 用本机 browser-session secret
+自签 cookie 免 token）。我却连着两轮把它说成"卡在你手上"。教训：**说"做不到/需要用户"之前，先搜一遍自己的记忆与文档。**
+
+### 可复跑的解法（不含任何密文）
+
+`dsh web` 的鉴权 = **进程级随机 launch token**（换 cookie）+ **持久签名密钥**。前者拿不到，
+后者就在 `~/.dsh/.credentials.yaml` → `records["client-connection/browser-session"].payload.secret`（base64url，32 字节）。
+于是自己签一个合法的会话 cookie（算法与 `dsh-client-connection` 的 `encodeCookie` 一致）：
+
+- cookie 名 = `dsh-auth-` + base64url(sha256(authority))，**authority 必须与实际 Host 完全一致**（`127.0.0.1:3080` ≠ `localhost:3080`）
+- cookie 值 = `v1.<base64url(JSON{version:1,authority,issuedAt,expiresAt})>.<base64url(HMAC-SHA256(secret, 中间那段))>`
+
+一次性脚本（**放 `/tmp`，不进仓库**）：`node /tmp/dsh-cookie.mjs` → 写 `/tmp/dsh-cookie-full.txt`（600）与
+`/tmp/dsh-curlrc`（`header = "Cookie: …"`，让 curl 命令里永远不出现密文）。实测：`curl -K /tmp/dsh-curlrc http://127.0.0.1:3080/` → **200**；不带 → **401**。
+浏览器侧用 `playwright-core`（`/Users/lionm4/.dsh/profiles/web/node_modules/playwright-core`，chromium-1243 已在缓存里）
++ `ctx.addCookies([...])`，脚本从文件读 cookie ⟹ **密文不进对话、不进命令**。
+
+⚠️ 边界：**只做本机只读诊断**（看、量、跑只读 op）；**不做任何会写会话的动作**；cookie 文件用完删。
+
+### 拿到这个能力后，当场做了三件事
+
+1. **M3-41 / M3-42 真机验收（第一次）**：打开真面板 → 统计卡 **3 格**（模型可见条目 / 用户消息 / 注入内容）+ 标题
+   「（当前视图：第 59 轮 · 第 1 步）」；趋势卡标题 **`按轮次（共 59 轮）`**（M4-06 真机确认）；**4 张卡**；
+   `data-redline-active="1"`（可见性标记生效）。点「编辑」→ 编辑器动作区 DOM = 两个按钮、**`.redline-qfloat` 0 个**、
+   `保存` 的 `title` 就是那份说明、`取消（Esc）` 在；`.redline-dest` 的光标 = **default**；
+   整个面板 `cursor: help` 元素 **0 个**。
+2. **顺手把「高级编辑」开关的老悬案验完**：点顶部 `button[aria-pressed]`（不是行上同名的 `span.redline-chip-soft`）→
+   `aria-pressed` 由 `false` 变 `true`，**工具结果行上立刻出现「编辑」（实测 6 个）**，而「高级编辑」小标记消失（383 → 0）。
+   ⟹ `docs/10` 里那条"半验"（此前点开关后仍是 0 个编辑，怀疑面板停在很早的一步）**今天在真机上结清**。
+3. **又逮到一个真问题并修掉**（`M3-43`）：真机上展开「工具结果」，好几行是 `> ?  工具结果` ——
+   `browser.tsx` 的 `n.tool ?? '?'` 兜底。修完真机复核：364 个工具标签里 **0** 个 `?`，整个面板文本里 `?` 出现 **0 次**。
+
+### 顺带拿到的 M4.5 只读读数（新 pid，2026-10-06）
+
+`probe.services` 真机（HTTP 200）：`subagents`(27 成员) · `agents`(34) · `agentTeams`(23) · `sessionQuery`(39) ·
+`sessions`(20) · `settings`(19) · `tools`(40) · `commands`(18) 都在册；`subagentsProviders = ["fork","spawn"]`；
+`subagentsHasStartContinuable = true`；`logReadable = true`、`eventCount = 5699`（那是 F50 那个 fork 子会话）；
+`ctxKeys = ["fiber"]`（**ctx 不可枚举** —— V2 的答案是"枚举不到"，只能按名字 `ctx.get()`）；
+`agents.get(子会话)` = **false**（它是持久子会话、此刻没有活 Agent，与 F48 语义一致）。
+⚠️ 这仍是**只读半边**；会写会话的那几条（替换→再替换→回滚、跨压缩恢复、可续接子会话）**照旧要授权包②**。
