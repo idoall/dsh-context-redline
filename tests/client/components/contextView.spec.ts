@@ -8,13 +8,12 @@
 import { act, createElement as h, type ReactElement } from 'react'
 import assert from 'node:assert/strict'
 import { createRoot } from 'react-dom/client'
-import { afterEach, beforeEach, describe, test, vi } from 'vitest'
+import { afterEach, describe, test, vi } from 'vitest'
 import { makeContextView } from '../../../src/client/components/contextView'
 import { watchHistoryFaces } from '../../../src/client/historyPage'
 import { requestContextFocus, takeContextFocus } from '../../../src/client/viewFocus'
 import { createContextSettings } from '../../../src/client/settings'
 import type { SettingsScopeLike } from '../../../src/client/settings'
-import { resetModelPrices, setModelPricesLoader } from '../../../src/client/modelPrices'
 import type { UseChatLike } from '../../../src/client/services'
 import type { ContextTimeline } from '../../../src/shared/types'
 import { DICT_EN } from '../../../src/client/i18n'
@@ -648,19 +647,10 @@ describe('ContextView — scroll ledger', () => {
 describe('ContextView — locale and settings', () => {
   // A real-shaped models.dev slice: the cost cell prices against the injected
   // book (1M uncached input at the $0.15 miss rate → $0.15 / ¥1).
+  // ⚠️ 原来这里给费用格注入过一本 models.dev 价目表 —— 费用/价格模块已随孤岛 A 删除
+  // （`docs/10` M6-17：从入口不可达），这张卡也早就是 demo 的 3 格了，所以不再需要。
   const costed = timeline({
     cost: { 'deepseek-official': { 'deepseek-v4-flash': { peak: { uncached: 1000000, output: 500000, cacheRead: 0, cacheWrite: 0 } } } },
-  })
-
-  beforeEach(() => {
-    resetModelPrices()
-    setModelPricesLoader(() => Promise.resolve({
-      deepseek: { models: { 'deepseek-v4-flash': { cost: { input: 0.15, output: 0.6, cache_read: 0.003 } } } },
-    }))
-  })
-
-  afterEach(() => {
-    resetModelPrices()
   })
 
   // ⚠️ 原用例断言"费用格按语言换算成 $/¥"—— 那两格随 M4-07（3 格、跟 demo）一起删了。

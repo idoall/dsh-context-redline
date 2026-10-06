@@ -115,7 +115,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 230 / 共 289**（DOING 11 · TODO 41 · WAIT🙋 7） |
+| 进度 | `docs/10`：**DONE 230 / 共 289**（DOING 12 · TODO 40 · WAIT🙋 7） |
 | 当前卡点 | **只剩四件需要用户的事（第 40 轮收尾时的实测状态）**：① **再重启一次 `dsh web`** —— 只为让只读探针 op `probe.services` 生效（`docs/01` **F46**：宿主半边开机加载，`tsc`/`tsdown` 都过了、进程仍答 `unknown-op`，当前 pid 50235 仍是 22:10 那次）；重启后一条 curl 即可拿到 M45-01/03/04 的读数。② ~~「洞察」面板去留~~ —— **这条已作废（2026-10-06 用户指正 + 仓库核实）**：**我们自己的洞察面早在 2026-10-05 就删干净了**（`src/client/index.ts` 注释、`overview.css` 96 类零引用、`tests/client/*.spec.ts` 只剩"已删"的说明）；**上游插件 `dsh-context` 自带的洞察面板不属本仓库、不要动它**。唯一残留是 i18n 里 4 行**死字符串**（见 `docs/10` M3-34 的注记）。③ **三个小决定**：M4-06 默认粒度（设置页现为"步骤"）/ M4-07 统计卡 3 格 vs 7 格 / 手动出口要不要先做。④ **授权包④**（push 52 个提交）。⚠️ 会**写会话**的那几条探针（替换→再替换→回滚、跨压缩恢复、可续接子会话）动手前要用**可弃会话**并逐条确认。仓库侧：`node scripts/release-check.mjs` → 全部通过（共 11 步） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -755,3 +755,38 @@ launch token（`dsh-client-connection` 的 `PROCESS_LAUNCH_TOKENS` + 签名 cook
 `docs/10` §2「M0.5 · 交互 demo」那一块里**的，不是各自阶段的段落 ⟹ 阶段计数表会把它们算进 **M0.5**（所以
 demo 段现在写着 105 行）。总数与各状态计数不受影响（`check-docs` 与 `sync11.mjs` 都按"块"归段）。
 要彻底理顺得把整批 CR 行挪进一个新段落，并连带改所有段号 —— 那是一次独立的文档改动，本轮**没有做**。
+
+## D42 · 死代码收口第一批：孤岛 A（费用 / 子 agent / 总览）已删（2026-10-06）
+
+**为什么做**：用户连问两次"下一步该做什么"，且既有偏好写着"**除需要重启 DSH 外，上一步也不需要确认；立即执行下一步**"
+"**不希望被要求对低价值决策拍板，应自行按性价比收口**" ⟹ 需要他的两件（贴一次带 token 的 URL / 授权包②）没到，
+我就把**唯一完全自足的那件**做掉。
+
+**判据换了（这一点比删掉的文件重要）**：`docs/10` M6-17 原写"费用/价格模块已无人引用"——**实测是错的**：
+`cost.ts` 在 `src/`+`tests/` 里有 **10** 个引用者、`agentTree.ts` **5** 个、`modelPrices.ts` **4** 个。
+真正的判据只能是**"从插件入口出发可不可达"**（`src/client/index.ts` + `src/host/index.ts` 做 import 图 BFS）：
+`src/**` 99 个 ts/tsx → 可达 **81**、不可达 **17**，构成三座孤岛：
+
+| 孤岛 | 文件 | 处置 |
+|---|---|---|
+| **A** 费用 / 子 agent / 总览 | 6 源 + 5 spec + `styles/agentGraph.css` | ✅ **本批删掉** |
+| **B** 已删的上游五卡 | `statsTokens`/`statsTiming`/`donut`/`sliceList`/`fileCard`/`pluginInfo` + `fileActivity`/`latestVersion`/`meta`/`balance` | 第二批 |
+| **C** `src/redline/plan.ts` | 1 | ⛔ **不许删**：M5 的契约，从入口不可达是**有意的**（UI 还没落地），10 条单测钉着 |
+
+**A 岛这一批具体改了什么**：
+1. `git rm` 12 个文件（6 源 + `agentGraph.css` + 5 条 spec）；
+2. 两个测试文件跟着改：`tests/client/setup.ts`（去掉 modelPrices 的引导与那段注释）、
+   `tests/client/components/contextView.spec.ts`（去掉同一个 import 与 `beforeEach`/`afterEach`；
+   那个 `beforeEach` 原本只为"给已删除的费用格注入一本价目表"而存在）；
+3. 删 **17** 个只被 A 岛引用的 i18n 键（`agents.*` 13 + `ov.time.*` 4；中英各一份，共 34 行）；
+4. 顺手清掉三处**同源残留**：`tailwind.css` 的两个 `--animate-redline-agent-*` 令牌与关键帧、
+   `base.css` 的 `.redline-heat-ctl` 三条规则（洞察面删除时漏下的）、`css-closure` 白名单里的 `redline-agent-track`。
+
+**读数**：`tsc` exit 0 · `oxlint` **0/0**（中途真抓到一条：删掉 `beforeEach` 用法后导入没清 → 红 1 条 → 修）·
+`namespace-contract` 28/0 · `css-closure` 样式 **15→14** 份、类 **365→326**、白名单 **4→3** ·
+全量 vitest **101 文件 / 1605 条全绿**（原 106 / 1767 —— 少的正是删掉的 5 条 spec 的 162 条）·
+`tsdown` 重建后产物里 `subagentCostFoldOf`/`estimateSessionCost`/`makeAgentGraph`/`pricesBookOf` 计数**都是 0**。
+
+⚠️ **一条纪律要点**：这个收口影响的主要是**非门禁的上游 lane**（`tests/client/**`）⟹ 每批都必须跑**全量** vitest，
+只看我们那 4 条门禁 lane 会漏。另外 `redline-timing-tps` 这条 CSS **在 B 岛的 `statsTiming.tsx` 删掉之前必须留着**
+（否则 `css-closure` 会报"裸样式"—— 我第一版顺手删了它，就是被这条规则拦下来的）。

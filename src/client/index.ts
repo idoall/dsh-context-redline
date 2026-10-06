@@ -57,7 +57,7 @@ import './styles/modal.css'
 import './styles/browser.css'
 import './styles/detailSections.css'
 import './styles/attachments.css'
-import './styles/agentGraph.css'
+// agentGraph.css 已随孤岛 A（Agent 网络卡 + 费用/子 agent 模块）删除（docs/10 M6-17）
 // overview.css 已随洞察面删除（用户 2026-10-05 选二）：96 个类全无引用
 
 const NS = 'dsh-context-redline'

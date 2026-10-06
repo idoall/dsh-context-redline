@@ -95,10 +95,9 @@
 .redline-card-title-text { flex: none; white-space: nowrap; }
 .redline-gran, .redline-kinds { margin-left: auto; display: flex; gap: 2px; background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 1px; }
 /* A title carrying TWO toggle groups wraps them so the auto-margin push happens once — two bare .redline-gran siblings would split the free space and drift apart. */
-.redline-trend-ctl, .redline-heat-ctl { margin-left: auto; display: flex; gap: 6px; align-items: center; }
-.redline-trend-ctl .redline-gran, .redline-heat-ctl .redline-gran { margin-left: 0; }
-/* The heat title's hint text loses its own auto margin inside the wrapper. */
-.redline-heat-ctl .redline-card-sub { margin-left: 0; }
+.redline-trend-ctl { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.redline-trend-ctl .redline-gran { margin-left: 0; }
+/* 原来这里还有 `.redline-heat-ctl`（洞察面的热力图标题包装）三条规则 —— 随洞察面删除（docs/10 M3-35/M6-17）。 */
 /* The trend card's adaptive switch rides the title text's right — a single-button group whose auto margin is
    neutralized so it stays adjacent (the browser card's DNA toggle idiom). */
 .redline-trend-adaptive { margin-left: 0; flex: none; }

@@ -36,7 +36,6 @@ const notes = []
 const MARKER_CLASSES = new Map([
   ['redline-col-stats', '列身份标记：外观与列宽由同行的 Tailwind 工具类（flex-[3] 等）承担'],
   ['redline-cols-main', '主列容器标记（`.redline-cols` 已有规则）；有测试按它选元素'],
-  ['redline-agent-track', 'SVG 轨道标记：fill/stroke 由同行的 Tailwind 工具类承担'],
   ['redline-down', '与基础色相同（基础色=成功色，只有 `.redline-up` 需要改成告警色）；保留语义标记'],
 ])
 

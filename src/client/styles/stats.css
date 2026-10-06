@@ -1,43 +1,19 @@
 /*
- * The head band's stat cards — the context/plugin row and the token/timing
- * donut row: the context card's count grid with the cost cell's styled tip,
- * the composition overview's big number, and the cards' shared anatomy
- * — section heading, donut, slice list, plugin-info rows.
+ * The head band's stat cards — the context row's three-cell grid and the
+ * cards' shared anatomy (section heading, count, sub-line).
+ * ⛔ 本文件里两族费用时代的样式已**删除**（`docs/10` M6-17/18，2026-10-06）：
+ *    `.redline-stat-q`（右上角小问号）与 `.redline-stat-tip*` / `.redline-stat-tipped`
+ *    （费用气泡）—— 它们随 M4-07 换成 demo 的 3 格后双双 0 引用。
  */
 .redline-stat { background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 6px 6px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-/* The clickable cost cell: the same framed cell as an anchor opening the
-   models.dev listing in a new tab — reset the link chrome so it reads as the
-   card it visually is, with the pointer as the only affordance. */
-a.redline-stat { color: inherit; text-decoration: none; cursor: pointer; }
-a.redline-stat:hover { border-color: var(--dsw-alias-label-secondary); }
-/* The 5-cell stats grid shares a half-width head-row card with a sibling, so its cells are moderate: tighter padding keeps the longest labels on one line.
-   ⛔ 这里的 `.redline-stat-q`（格子右上角那个小问号）已**删除**：用户 2026-10-06 明确不要「?」标记，
-   且它随 M4-07 换成 3 格后早已 0 引用（`docs/10` M6-18）。 */
+/* The 5-cell stats grid shares a half-width head-row card with a sibling, so its cells are moderate: tighter padding keeps the longest labels on one line. */
 .redline-stats .redline-stat { padding: 6px 3px; }
 .redline-stat-label { color: var(--dsw-alias-label-secondary); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .redline-stat-value { color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
 .redline-stat-sub { color: var(--dsw-alias-label-secondary); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/*
- Stats cell tooltip (cost cell): styled DOM bubble because native `title` can't hold the multi-row price breakdown; the cell is the tip's position frame.
- ⛔ 原来那个「?」角标（`.redline-stat-q`）已删除 —— 用户 2026-10-06 明确不要「?」标记（`docs/10` M6-18）。
- ⚠️ 这套费用气泡（`.redline-stat-tipped` / `.redline-stat-tip*`）自 M4-07 删掉费用格后也已 0 引用，
- 物理删除归 `docs/10` M6-17 一起处理。
- */
-.redline-stat-tipped { position: relative; }
-.redline-stat-tip { top: calc(100% + 6px); left: 0; max-width: 280px; line-height: 1.5; font-weight: 400; }
-.redline-stat-tip-prices { display: block; margin-top: 5px; border-top: 1px dashed var(--dsw-alias-border-l1); padding-top: 5px; }
-.redline-stat-tip-head { display: block; font-weight: 600; }
-/* The timing card's throughput chip (statsTiming.tsx): a quiet figure pinned
-   to the title row's right end — the same harness session-stats pairing, so
-   the two figures never disagree. `margin-left: auto` parks it at the row's
-   end; the title row's own wrap carries it below the title under pressure. */
+/* 耗时卡的吞吐量小片（`statsTiming.tsx`）—— ⚠️ 那个卡本身属于孤岛 B（从入口不可达，
+   待 `docs/10` M6-17 第二批删除）；在它删掉之前这条**必须留着**，否则 `css-closure` 会报"裸样式"。 */
 .redline-timing-tps { flex: none; margin-left: auto; padding: 1px 8px; border-radius: 999px; background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); font-size: 12px; line-height: 18px; font-variant-numeric: tabular-nums; cursor: default; }
-.redline-stat-tip-row { display: block; margin-top: 2px; }
-/* One billed model's block: the four bucket rates as label/price rows, the
-   listing line beneath naming the registry face the rates resolved from. */
-.redline-stat-tip-band { display: flex; justify-content: space-between; gap: 2rem; }
-.redline-stat-tip-band i { font-style: normal; }
-.redline-stat-tip-by { display: block; margin-top: 3px; color: var(--dsw-alias-label-secondary); }
 .redline-card-sub { font-weight: 400; color: var(--dsw-alias-label-secondary); font-size: 12px; margin-left: auto; }
 /* 规模读数（docs/03 R1.5）：与副标题同一套字色字号，但**不是**副标题（左贴标题，不吃掉右侧空间） */
 .redline-card-scale { font-weight: 400; color: var(--dsw-alias-label-secondary); font-size: 12px; margin-left: 8px; }

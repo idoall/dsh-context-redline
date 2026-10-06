@@ -69,13 +69,9 @@
   --animate-redline-donut-in: redline-donut-in 0.45s cubic-bezier(0.4, 0, 0.2, 1) calc(var(--redline-i, 0) * 50ms) backwards;
   --animate-redline-stacked-in: redline-stacked-in 0.4s cubic-bezier(0.4, 0, 0.2, 1) calc(var(--redline-i, 0) * 40ms) backwards;
   --animate-redline-bar-in: redline-bar-in 0.35s cubic-bezier(0.4, 0, 0.2, 1) calc(var(--redline-i, 0) * 15ms) backwards;
-  --animate-redline-agent-flow: redline-agent-flow 0.9s linear infinite;
-  --animate-redline-agent-glow: redline-agent-glow 1.8s ease-in-out infinite;
   @keyframes redline-donut-in { from { stroke-dasharray: 0 100; } }
   @keyframes redline-stacked-in { from { transform: scaleX(0); } }
   @keyframes redline-bar-in { from { transform: scaleY(0); } }
-  @keyframes redline-agent-flow { to { stroke-dashoffset: -9; } }
-  @keyframes redline-agent-glow { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 }
 
 
