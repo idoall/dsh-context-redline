@@ -75,23 +75,28 @@ export function emptyDrafts(): DraftTable {
 }
 
 /**
- * Make a session id safe to use as a file name. Everything outside
- * `[A-Za-z0-9_-]` is percent-encoded, which keeps distinct ids distinct (`a/b`
- * and `a-b` are different files) and makes path traversal impossible (`..` and
- * a leading `.` cannot survive, since `.` is encoded).
+ * A session id → a file-name-safe key.
+ *
+ * ⚠️ 只做百分号编码是不够的（Code Review P2）：
+ *   · macOS 默认**大小写不敏感** ⟹ `Session-A` 与 `session-a` 会落到同一个文件（串档）；
+ *   · 超长 id 会撞 255 字节的文件名上限 ⟹ `ENAMETOOLONG` ⟹ 保存直接失败。
+ * 所以先做一次稳定的短哈希（FNV-1a 32 位，纯函数、无 `node:*`：宿主半边与测试都能用），
+ * 再把可读前缀拼上 —— 既不会串档，也绝不会超长。可读前缀只为排障时认得出是哪个会话。
  */
-export function safeSessionId(sessionId: string): string {
-  let out = ''
-  for (const ch of sessionId) {
-    const codePoint = ch.codePointAt(0) ?? 0
-    out += /[A-Za-z0-9_-]/.test(ch) ? ch : `%${codePoint.toString(16).toUpperCase().padStart(2, '0')}`
+function stableKeyOf(sessionId: string): string {
+  let hash = 0x811c9dc5
+  for (let i = 0; i < sessionId.length; i += 1) {
+    hash ^= sessionId.charCodeAt(i)
+    // FNV 质数 16777619，用移位避免大整数精度问题。
+    hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0
   }
-  return out === '' ? '_' : out
+  return hash.toString(16).padStart(8, '0')
 }
 
-/** Our per-session draft file name (docs/02 §6). */
+/** The on-disk name of one session's draft file. */
 export function draftFileName(sessionId: string): string {
-  return `redline-drafts-${safeSessionId(sessionId)}.json`
+  const readable = sessionId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40)
+  return `redline-drafts-${readable}-${stableKeyOf(sessionId)}.json`
 }
 
 /** Our data directory's name, re-exported so the host has one source for it. */
@@ -184,7 +189,7 @@ export type ParseResult =
   | { readonly ok: false; readonly code: string; readonly message: string }
 
 /** A missing/empty file is an empty table; anything unreadable is a loud refusal. */
-export function parseDrafts(raw: string | null | undefined): ParseResult {
+export function parseDrafts(raw: string | null | undefined, expectedSessionId?: string): ParseResult {
   if (raw === null || raw === undefined || raw.trim() === '') return { ok: true, table: {} }
   let parsed: unknown
   try {
@@ -196,6 +201,15 @@ export function parseDrafts(raw: string | null | undefined): ParseResult {
     return { ok: false, code: REDLINE_ERROR.draftCorrupt, message: 'the draft file is not an object' }
   }
   const file = parsed as Partial<DraftFile>
+  // 串档防线（Code Review P2）：文件里记着它是哪个会话的草稿。文件名被改过、或
+  // 两个会话的 id 在文件系统上收敛到同一个名字时，这里必须**拒绝**而不是当成本会话的草稿。
+  if (expectedSessionId !== undefined && file.sessionId !== expectedSessionId) {
+    return {
+      ok: false,
+      code: REDLINE_ERROR.draftCorrupt,
+      message: `the draft file belongs to another session (${String(file.sessionId)})`,
+    }
+  }
   if (file.schemaVersion !== REDLINE_DRAFT_SCHEMA_VERSION) {
     return {
       ok: false,

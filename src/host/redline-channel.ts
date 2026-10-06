@@ -158,7 +158,7 @@ async function readTable(ctx: Context, sessionId: string): Promise<RedlineEnvelo
       return fail(REDLINE_ERROR.internal, error instanceof Error ? error.message : String(error))
     }
   }
-  const parsed = parseDrafts(raw)
+  const parsed = parseDrafts(raw, sessionId)
   if (!parsed.ok) return fail(parsed.code, parsed.message)
   return redlineOk(parsed.table)
 }

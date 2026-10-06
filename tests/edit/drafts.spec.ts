@@ -9,7 +9,9 @@
 //   · "no substantive change" (the demo's refusal) is measured against the version
 //     in effect, so editing back to the original IS a change;
 //   · a corrupt file is an explicit error, never a silently empty table (E13);
-//   · the file name is namespaced and derived from a sanitized session id.
+//   · the file name is namespaced and derived from a **stable hash** of the session id
+//     (case-insensitive file systems must not collide two ids; long ids must not hit
+//     the 255-byte file-name limit — Code Review P2).
 
 import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
@@ -25,7 +27,6 @@ import {
   emptyDrafts,
   parseDrafts,
   putEdit,
-  safeSessionId,
   serializeDrafts,
   type LocalEdit,
 } from '../../src/shared/redline-drafts'
@@ -51,22 +52,25 @@ const edit = (seq: number, text: string, extra: Partial<LocalEdit> = {}): LocalE
 describe('draft file identity', () => {
   test('the file lives in OUR data directory and is named per session', () => {
     assert.equal(REDLINE_DATA_DIR_NAME, 'dsh-context-redline')
-    assert.equal(draftFileName('session-abc'), 'redline-drafts-session-abc.json')
+    const name = draftFileName('session-abc')
+    assert.ok(name.startsWith('redline-drafts-session-abc-'), name)
+    assert.ok(name.endsWith('.json'), name)
+    // 同一 id 必须稳定（读与写要落到同一个文件）。
+    assert.equal(draftFileName('session-abc'), name)
   })
 
-  test('a session id cannot escape the data directory', () => {
+  test('a session id cannot escape the data directory, and distinct ids stay distinct', () => {
     for (const nasty of ['../../etc/passwd', 'a/b/c', 'a\\b', 'x\0y', '.hidden', '..']) {
-      const safe = safeSessionId(nasty)
-      assert.ok(!safe.includes('/'), nasty)
-      assert.ok(!safe.includes('\\'), nasty)
-      assert.ok(!safe.includes('\0'), nasty)
-      assert.ok(!safe.startsWith('.'), nasty)
-      assert.ok(!safe.includes('..'), nasty)
-      assert.ok(draftFileName(nasty).startsWith('redline-drafts-'), nasty)
-      assert.ok(draftFileName(nasty).endsWith('.json'), nasty)
+      const name = draftFileName(nasty)
+      assert.ok(!name.includes('/'), nasty)
+      assert.ok(!name.includes('\\'), nasty)
+      assert.ok(!name.includes('\0'), nasty)
+      assert.ok(name.startsWith('redline-drafts-'), nasty)
+      assert.ok(name.endsWith('.json'), nasty)
     }
-    // Two different ids must not collapse onto one file.
-    assert.notEqual(safeSessionId('a/b'), safeSessionId('a-b'))
+    // 不同 id 不许收敛到同一个文件 —— 包括**只差大小写**的两个（macOS 默认大小写不敏感）。
+    assert.notEqual(draftFileName('a/b'), draftFileName('a-b'))
+    assert.notEqual(draftFileName('Session-A'), draftFileName('session-a'))
   })
 })
 
