@@ -190,33 +190,33 @@ export function parseDrafts(raw: string | null | undefined): ParseResult {
   try {
     parsed = JSON.parse(raw)
   } catch {
-    return { ok: false, code: 'redline/draft-corrupt', message: 'the draft file is not valid JSON' }
+    return { ok: false, code: REDLINE_ERROR.draftCorrupt, message: 'the draft file is not valid JSON' }
   }
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { ok: false, code: 'redline/draft-corrupt', message: 'the draft file is not an object' }
+    return { ok: false, code: REDLINE_ERROR.draftCorrupt, message: 'the draft file is not an object' }
   }
   const file = parsed as Partial<DraftFile>
   if (file.schemaVersion !== REDLINE_DRAFT_SCHEMA_VERSION) {
     return {
       ok: false,
-      code: 'redline/draft-schema',
+      code: REDLINE_ERROR.draftSchema,
       message: `unsupported draft schemaVersion: ${String(file.schemaVersion)}`,
     }
   }
   if (!Array.isArray(file.edits)) {
-    return { ok: false, code: 'redline/draft-corrupt', message: 'the draft file has no edits array' }
+    return { ok: false, code: REDLINE_ERROR.draftCorrupt, message: 'the draft file has no edits array' }
   }
   const table: Record<string, LocalEdit> = {}
   for (const entry of file.edits) {
     if (entry === null || typeof entry !== 'object') {
-      return { ok: false, code: 'redline/draft-corrupt', message: 'a draft entry is not an object' }
+      return { ok: false, code: REDLINE_ERROR.draftCorrupt, message: 'a draft entry is not an object' }
     }
     const edit = entry as Partial<LocalEdit>
     if (typeof edit.seq !== 'number' || !Number.isInteger(edit.seq) || edit.seq < 0) {
-      return { ok: false, code: 'redline/draft-corrupt', message: 'a draft entry has no usable seq' }
+      return { ok: false, code: REDLINE_ERROR.draftCorrupt, message: 'a draft entry has no usable seq' }
     }
     if (typeof edit.text !== 'string' || typeof edit.reasoning !== 'string' || typeof edit.isError !== 'boolean') {
-      return { ok: false, code: 'redline/draft-corrupt', message: `draft #${edit.seq} has ill-typed fields` }
+      return { ok: false, code: REDLINE_ERROR.draftCorrupt, message: `draft #${edit.seq} has ill-typed fields` }
     }
     table[String(edit.seq)] = {
       seq: edit.seq,

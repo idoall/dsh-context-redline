@@ -27,7 +27,7 @@
  * withdraws it), and a registry that rejects leaves the plugin otherwise intact.
  */
 
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { REDLINE_ERROR, REDLINE_ERROR_MESSAGE, isRedlineErrorCode } from '../shared/redline-errors'
@@ -52,6 +52,7 @@ import {
   type SurfaceRowText,
 } from '../shared/redline-drafts'
 import { fullReasoningOf, fullTextOf, isErrorOf, seqOf, typeOf } from '../redline/inspect'
+import { ability, type RowClass } from '../shared/redline-ability'
 import { turnStateOf, type TurnBoundaryEvent, type TurnState } from '../shared/redline-turn'
 import { buildFirstTask, forkConfirmItems } from '../redline/orchestrate'
 
@@ -173,9 +174,50 @@ async function writeTable(ctx: Context, sessionId: string, table: DraftTable): P
     await writeFile(temp, serializeDrafts(sessionId, table), 'utf8')
     await rename(temp, target)
   } catch (error) {
+    // A failed write must not leave `.tmp-*` litter behind (Code Review P2):
+    // best-effort cleanup, never masking the original failure.
+    await rm(temp, { force: true }).catch(() => undefined)
     return fail(REDLINE_ERROR.internal, error instanceof Error ? error.message : String(error))
   }
   return redlineOk(table)
+}
+
+/**
+ * Whether that seq sits on the session's CURRENT surface (not merely in the log).
+ *
+ * `resolveEvent` reads the LOG, which keeps a replaced original — so log presence
+ * alone cannot tell "superseded" from "editable". `null` = this host cannot answer
+ * (no `readSurface` here); the caller then allows the save rather than inventing a
+ * refusal (the type-level rules below are the ones that must never be skipped).
+ */
+async function onCurrentSurface(ctx: Context, sessionId: string, seq: number): Promise<boolean | null> {
+  const query = ctx.get('sessionQuery') as SessionQueryFace | undefined
+  if (typeof query?.readSurface !== 'function') return null
+  try {
+    const surface = await query.readSurface(sessionId) as { events?: unknown } | null | undefined
+    const events = surface?.events
+    if (!Array.isArray(events)) return null
+    return (events as unknown[]).some(event => seqOf(event as never) === seq)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * The presentation bucket a durable type belongs to, **for the host gate only**
+ * (the editor's fields still come from `node.read`'s real type).
+ *
+ * `null` = a type this plugin has no local-edit semantics for → refused as
+ * `unsupportedType`. The shared `ability()` then applies the ONE rule both halves
+ * obey (`AGENTS.md` §2.3.1): judge by the underlying event type, never by category.
+ */
+function gateClassOf(type: string): RowClass | null {
+  if (type === 'user/message') return 'user'
+  if (type === 'tool/result') return 'tool'
+  if (type === 'assistant/message') return 'assistant'
+  // Host-protected families: inert in the UI, and refused here as well.
+  if (type === 'system/message' || type === 'developer/message' || type === 'request/header') return 'system'
+  return null
 }
 
 /** The durable event for a seq, read through `ctx.sessionQuery` (never a sync reader). */
@@ -204,7 +246,8 @@ async function resolveEvent(ctx: Context, sessionId: string, seq: number): Promi
     // stable not-live code is what the client turns into a sentence.
     return fail(REDLINE_ERROR.notLive, error instanceof Error ? error.message : String(error))
   }
-  return fail(REDLINE_ERROR.shadowed)
+  // 日志里也找不到这一条：这不是"被接替"，而是"没有这一条"（Code Review P1-1）。
+  return fail(REDLINE_ERROR.notFound)
 }
 
 /**
@@ -388,6 +431,28 @@ const updateDraft: RedlineOpHandler = async ({ ctx, call }) => {
   if (!current.ok) return current
   const event = await resolveEvent(ctx, sessionId, seq)
   if (!event.ok) return event
+  // ── 宿主侧的能力校验（Code Review P1-3）──────────────────────────────────────
+  // 客户端的能力判定只有一道门：旧客户端 / 另一个标签页 / 直接 POST 都能绕过它，
+  // 而 `child.start` 会把草稿当"你改好的上下文"逐字写进子会话第一句话。
+  // 这里用**两半共用**的 `ability()` 再判一次，判据是底层事件类型（`AGENTS.md` §2.3.1）。
+  const type = typeOf(event.value as never)
+  const rowClass = gateClassOf(type)
+  if (rowClass === null) return fail(REDLINE_ERROR.unsupportedType)
+  const onSurface = await onCurrentSurface(ctx, sessionId, seq)
+  const shadowed = onSurface === false
+  const verdictAbility = ability({
+    seq,
+    type,
+    cat: rowClass,
+    shadowed,
+    isReplacement: !shadowed,
+    compacted: false,
+  })
+  if (!verdictAbility.canRewrite) {
+    if (verdictAbility.blockReason === 'assistant-immutable') return fail(REDLINE_ERROR.assistantImmutable)
+    if (verdictAbility.blockReason === 'shadowed') return fail(REDLINE_ERROR.shadowed)
+    return fail(REDLINE_ERROR.unsupportedType)
+  }
   const row: SurfaceRowText = {
     seq,
     text: fullTextOf(event.value as never),
@@ -414,9 +479,17 @@ const dropDraft: RedlineOpHandler = async ({ ctx, call }) => {
   const sessionId = sessionIdOf(call)
   const seq = seqArgOf(call.seq)
   if (sessionId === null || seq === null) return fail(REDLINE_ERROR.badRequest)
+  // 与 `draft.update` 同一道门（Code Review P2）：不 live / 轮次未闭合都不许写，
+  // 否则任意 sessionId 都能在我们的数据目录里造出一个空草稿文件。
+  const state = await turnStateOfSession(ctx, sessionId)
+  if (!state.known) return fail(REDLINE_ERROR.notLive)
+  if (state.open) return fail(REDLINE_ERROR.turnOpen)
   const current = await readTable(ctx, sessionId)
   if (!current.ok) return current
-  return await writeTable(ctx, sessionId, dropEdit(current.value, seq))
+  const next = dropEdit(current.value, seq)
+  // 没有任何改动可丢：什么都不做，也不创建文件（幂等且零副作用）。
+  if (next === current.value) return redlineOk(current.value)
+  return await writeTable(ctx, sessionId, next)
 }
 
 /**

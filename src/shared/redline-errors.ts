@@ -35,6 +35,17 @@ export const REDLINE_ERROR = {
   assistantImmutable: 'redline/assistant-immutable',
   /** The target is no longer a surface node (it was replaced) (`docs/01` F7). */
   shadowed: 'redline/shadowed',
+  /**
+   * The target seq is not in this session's log at all (stale client, trimmed
+   * window, wrong session). ⚠️ Distinct from {@link shadowed}: the log keeps a
+   * replaced original, so "not found" and "superseded" are different facts and
+   * used to be reported as the same one (Code Review P1-1).
+   */
+  notFound: 'redline/not-found',
+  /** The draft file on disk is not readable as our format (E13: loud, never silently empty). */
+  draftCorrupt: 'redline/draft-corrupt',
+  /** The draft file's `schemaVersion` is not one this build understands. */
+  draftSchema: 'redline/draft-schema',
   /** A range argument was half-given or reversed. */
   badRange: 'redline/bad-range',
   /** The full text of that version cannot be read back on this platform. */
@@ -67,6 +78,9 @@ export const REDLINE_ERROR_MESSAGE: Readonly<Record<RedlineErrorCode, string>> =
   [REDLINE_ERROR.noSubagents]: 'this runtime exposes no subagents service',
   [REDLINE_ERROR.assistantImmutable]: 'assistant/message cannot be rewritten',
   [REDLINE_ERROR.shadowed]: 'that seq is no longer a surface node',
+  [REDLINE_ERROR.notFound]: 'that seq is not in this session log',
+  [REDLINE_ERROR.draftCorrupt]: 'the local draft file is not readable',
+  [REDLINE_ERROR.draftSchema]: 'the local draft file has an unsupported schema version',
   [REDLINE_ERROR.badRange]: 'bad void range',
   [REDLINE_ERROR.historyUnavailable]: 'the full text of that version is not readable',
   [REDLINE_ERROR.unsupportedType]: 'this event type has no rewrite path',

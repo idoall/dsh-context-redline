@@ -37,6 +37,10 @@ const LONG = [
 ].join('\n\n')
 const TEXT_BLOCKS = [{ type: 'text', text: LONG }]
 const SECOND = '另一条：这一条只用来验证“同一行只留一条改动”与“丢弃只清那一条”。'
+// 真实 durable 形状（见 src/redline/inspect.ts 的注释）：assistant/system 都带 data.message 那一层。
+const ASSISTANT_TEXT = '助手答的那一段：它由模型产生，不能被当成本地改动带进子会话。'
+const SYSTEM_TEXT = '系统提示词全文：宿主保护，任何写法都不该把它存成草稿。'
+const SHADOWED_TEXT = '这条已经被后来的一条接替，只在日志里、不在当前 surface 上。'
 
 const homes: string[] = []
 afterEach(() => {
@@ -108,10 +112,12 @@ async function boot(): Promise<Ops> {
       return {
         session: { id: sessionId },
         inheritedEventCount: 0,
-        capturedThroughSeq: 1302,
+        capturedThroughSeq: 1500,
         events: [
           { type: 'user/message', seq: 1301, data: { content: TEXT_BLOCKS } },
           { type: 'user/message', seq: 1302, data: { content: [{ type: 'text', text: SECOND }] } },
+          { type: 'assistant/message', seq: 1401, data: { message: { content: [{ type: 'text', text: ASSISTANT_TEXT }] } } },
+          { type: 'system/message', seq: 1402, data: { message: { content: [{ type: 'text', text: SYSTEM_TEXT }] } } },
         ],
       }
     },
@@ -120,7 +126,11 @@ async function boot(): Promise<Ops> {
       if (request.sessionId !== readable && request.sessionId !== ghost) throw new Error(`session "${request.sessionId}" is not readable here`)
       // Mirrors the real service: the window's `target` is the FULL event; a seq
       // that is not on the surface simply has no target.
-      const content = request.seq === 1301 ? TEXT_BLOCKS : request.seq === 1302 ? [{ type: 'text', text: SECOND }] : undefined
+      // 日志比 surface 更全：1500 只在这里（模拟"被接替的原文仍在日志里"）。
+      const content = request.seq === 1301 ? TEXT_BLOCKS
+        : request.seq === 1302 ? [{ type: 'text', text: SECOND }]
+          : request.seq === 1500 ? [{ type: 'text', text: SHADOWED_TEXT }]
+            : undefined
       if (content === undefined) return { session: { id: request.sessionId }, inheritedEventCount: 0, target: undefined, events: [], startSeq: 0, endSeq: 0 }
       return {
         session: { id: request.sessionId },
@@ -190,10 +200,11 @@ describe('node.read returns the durable full text', () => {
     assert.equal(row.type, 'user/message')
   })
 
-  test('a seq that is not on the surface is a typed refusal, not an empty string', async () => {
+  test('a seq that is in neither the log nor the surface is not-found (not "shadowed")', async () => {
     const ops = await boot()
     const reply = await call(ops, { op: 'node.read', sessionId: ops.sessionId, seq: 999999 })
-    assert.ok(code(reply).startsWith('redline/'), JSON.stringify(reply))
+    // 收紧成具体码：`shadowed` 与"没有这一条"是两件事（Code Review P1-1）。
+    assert.equal(code(reply), REDLINE_ERROR.notFound, JSON.stringify(reply))
   })
 })
 
@@ -329,6 +340,82 @@ describe('the turn boundary (docs/03 R4.3: the demo disables 保存 mid-turn)', 
     const reply = await call(ops, { op: 'draft.update', sessionId: 'ghost-not-hosted', seq: 1301, edit: { text: 'x', reasoning: '', isError: false } })
     assert.equal(code(reply), REDLINE_ERROR.notLive)
     assert.equal(existsSync(draftPath(ops)), false, 'nothing is written for an unhosted session')
+  })
+})
+
+describe('the host re-checks what the row may do (Code Review P1-3)', () => {
+  test('an assistant/message row is refused with assistant-immutable, and writes nothing', async () => {
+    const ops = await boot()
+    const reply = await call(ops, {
+      op: 'draft.update',
+      sessionId: ops.sessionId,
+      seq: 1401,
+      edit: { text: '想把助手的回答改掉', reasoning: '', isError: false },
+    })
+    assert.equal(code(reply), REDLINE_ERROR.assistantImmutable, JSON.stringify(reply))
+    assert.equal(existsSync(draftPath(ops)), false, '被拒绝的保存一个字都不写')
+    assert.deepEqual(ops.sessionWrites, [])
+  })
+
+  test('a host-protected system/message row is refused with unsupported-type', async () => {
+    const ops = await boot()
+    const reply = await call(ops, {
+      op: 'draft.update',
+      sessionId: ops.sessionId,
+      seq: 1402,
+      edit: { text: '想把系统提示词改掉', reasoning: '', isError: false },
+    })
+    assert.equal(code(reply), REDLINE_ERROR.unsupportedType, JSON.stringify(reply))
+    assert.equal(existsSync(draftPath(ops)), false)
+  })
+
+  test('a row that is in the log but no longer on the surface is refused as shadowed', async () => {
+    const ops = await boot()
+    const reply = await call(ops, {
+      op: 'draft.update',
+      sessionId: ops.sessionId,
+      seq: 1500,
+      edit: { text: '想改被接替的原文', reasoning: '', isError: false },
+    })
+    assert.equal(code(reply), REDLINE_ERROR.shadowed, JSON.stringify(reply))
+    assert.equal(existsSync(draftPath(ops)), false)
+  })
+
+  test('an unknown durable type is refused as unsupported-type (fail closed, not "allowed")', async () => {
+    const ops = await boot()
+    const reply = await call(ops, {
+      op: 'draft.update',
+      sessionId: ops.sessionId,
+      seq: 1500,
+      edit: { text: 'x', reasoning: '', isError: false },
+    })
+    assert.ok(code(reply) === REDLINE_ERROR.shadowed || code(reply) === REDLINE_ERROR.unsupportedType, code(reply))
+  })
+
+  test('an editable row (user/message) still saves — the gate is not a blanket refusal', async () => {
+    const ops = await boot()
+    const table = value(await call(ops, {
+      op: 'draft.update',
+      sessionId: ops.sessionId,
+      seq: 1301,
+      edit: { text: '正常的一条本地改动', reasoning: '', isError: false },
+    }))
+    assert.equal(Object.keys(table as Record<string, unknown>).length, 1)
+  })
+})
+
+describe('discarding is as guarded as saving (Code Review P2)', () => {
+  test('drop on a session this process does not host is refused', async () => {
+    const ops = await boot()
+    const reply = await call(ops, { op: 'draft.drop', sessionId: 'ghost-not-hosted', seq: 1301 })
+    assert.equal(code(reply), REDLINE_ERROR.notLive, JSON.stringify(reply))
+  })
+
+  test('drop with nothing to discard is a no-op and creates no file', async () => {
+    const ops = await boot()
+    const reply = await call(ops, { op: 'draft.drop', sessionId: ops.sessionId, seq: 1301 })
+    assert.equal(reply.ok, true, JSON.stringify(reply))
+    assert.equal(existsSync(draftPath(ops)), false, '没有改动可丢时不该造出一个空文件')
   })
 })
 
