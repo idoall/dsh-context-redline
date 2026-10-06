@@ -115,7 +115,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 231 / 共 290**（DOING 12 · TODO 40 · WAIT🙋 7） |
+| 进度 | `docs/10`：**DONE 232 / 共 290**（DOING 12 · TODO 39 · WAIT🙋 7） |
 | 当前卡点 | **只剩四件需要用户的事（第 40 轮收尾时的实测状态）**：① **再重启一次 `dsh web`** —— 只为让只读探针 op `probe.services` 生效（`docs/01` **F46**：宿主半边开机加载，`tsc`/`tsdown` 都过了、进程仍答 `unknown-op`，当前 pid 50235 仍是 22:10 那次）；重启后一条 curl 即可拿到 M45-01/03/04 的读数。② ~~「洞察」面板去留~~ —— **这条已作废（2026-10-06 用户指正 + 仓库核实）**：**我们自己的洞察面早在 2026-10-05 就删干净了**（`src/client/index.ts` 注释、`overview.css` 96 类零引用、`tests/client/*.spec.ts` 只剩"已删"的说明）；**上游插件 `dsh-context` 自带的洞察面板不属本仓库、不要动它**。唯一残留是 i18n 里 4 行**死字符串**（见 `docs/10` M3-34 的注记）。③ **三个小决定**：M4-06 默认粒度（设置页现为"步骤"）/ M4-07 统计卡 3 格 vs 7 格 / 手动出口要不要先做。④ **授权包④**（push 52 个提交）。⚠️ 会**写会话**的那几条探针（替换→再替换→回滚、跨压缩恢复、可续接子会话）动手前要用**可弃会话**并逐条确认。仓库侧：`node scripts/release-check.mjs` → 全部通过（共 11 步） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -871,3 +871,27 @@ demo 段现在写着 105 行）。总数与各状态计数不受影响（`check-
 `ctxKeys = ["fiber"]`（**ctx 不可枚举** —— V2 的答案是"枚举不到"，只能按名字 `ctx.get()`）；
 `agents.get(子会话)` = **false**（它是持久子会话、此刻没有活 Agent，与 F48 语义一致）。
 ⚠️ 这仍是**只读半边**；会写会话的那几条（替换→再替换→回滚、跨压缩恢复、可续接子会话）**照旧要授权包②**。
+
+
+## D45 · M4.5 只读半边：我用真机把能证的全证了（2026-10-06）
+
+拿到"能自己打开 3080"的能力（D44）之后，M4.5 里那些**只读**的条目就不用再等用户了。这一轮的读数：
+
+**① 宿主探针（`probe.services`，HTTP 200）对三个会话各跑一次**
+`session-d27155c3`（当前活的，**9860 事件 / `agents.get` = true**）、`session-dbcfd4db`（7895 / true）、
+`session-a05f659e`（5621 / false，旧会话没有活 Agent）：
+- `logReadable` 全 **true**、`ctxKeys = ["fiber"]`（ctx 不可枚举）、`subagentsProviders = ["fork","spawn"]`、
+  `subagentsHasStartContinuable = true`
+- **`shadow = {replaceish: 0, readback: "no-log"}` 三个会话全都一样** ⟹ **M45-02（V8：能否读回被遮蔽的原文）只能靠写会话验**：
+  本插件从不写会话，任何日志里都没有"带 `sourceEventSeqs` 的替换事件"，也就没有原文可读回。这条**今天更硬地确认**了，仍需授权包②。
+- `membership = {via:"tryMembership"}`（`value` 是 `undefined` 被 JSON 丢掉）⟹ 见下。
+
+**② 客户端探针扩了一条键（只改客户端 ⟹ 硬刷新即可，不需要你重启）**
+`subagentCatalog` / `subagentTiming` 之外加了 **`agentTeam`**（键名从安装树类型确认）：
+`?redline-probe=1` 读回 **`{"catalog":"array:4","timing":"object:settledMs","team":"object:members,tasks"}`**
+⟹ **官方团队的状态面确实有投影可读**（`members` + `tasks`），M5 的团队卡/任务板可以接它，不必自己 fold。
+
+**③ 由此收口的条目**：`M45-04` 转 **DONE**（`agentTeam` 可读 ✓ + `tryMembership` 按 sessionId 判 Lead **不成立**，
+已写进 `docs/01` **F53**）；`M45-12`（V13 五项）只剩 **`spawnTeammate`** 需要写会话；`M45-02` 维持 TODO 但换成了更硬的证据。
+
+**④ 同轮回归**：真面板 4 张卡 · `.redline-qfloat` **0** · `cursor: help` **0** —— 上一轮那三个 `?` 的修复在真机上仍然成立。

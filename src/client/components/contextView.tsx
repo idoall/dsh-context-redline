@@ -84,8 +84,13 @@ export function makeContextView(
     }
     const probeCatalog = projectionOf(props, 'subagentCatalog', raw => probeShape(raw))
     const probeTiming = projectionOf(props, 'subagentTiming', raw => probeShape(raw))
+    // ⚠️ 2026-10-06 扩了一条：V13 要问「官方团队的状态面到底叫什么键、客户端读不读得到」。
+    // 键名从安装树取：`@deepseek-ai/dsh-experimental-agent-team/lib/types/projection.d.ts`
+    // 的 `declare module … SessionProjectionStateMap { agentTeam: TeamProjectionState }` ⟹ 就是 `agentTeam`。
+    // 只报**形状**（类型 / 顶层键名），不落任何会话正文（M6-13 起探针就不许回传原文）。
+    const probeTeam = projectionOf(props, 'agentTeam', raw => probeShape(raw))
     const probeOut = typeof location !== 'undefined' && location.search.includes('redline-probe=1')
-      ? JSON.stringify({ catalog: probeCatalog, timing: probeTiming })
+      ? JSON.stringify({ catalog: probeCatalog, timing: probeTiming, team: probeTeam })
       : null
     // `redlineHeaders` companion projection (full system prompt + tool schemas) for the Context browser; absent key = older Host half →
     // those sections degrade to tokens-only with a note.

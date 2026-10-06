@@ -317,7 +317,7 @@
 
 ---
 
-## 7. M4.5 · 平台能力验证（**6 / 19 DONE**，3 条 DOING）—— M5 的硬前置
+## 7. M4.5 · 平台能力验证（**7 / 19 DONE**，3 条 DOING）—— M5 的硬前置
 
 > **本轮（2026-10-04）已完成三条的静态半边**：M45-19（F44）、M45-03（F45）、M45-11（工具被禁而服务在册）。
 > **真机半边（包 A/B）的探针清单**（等你给授权时一次跑完，每条都要留命令 + 输出片段）：
@@ -333,9 +333,9 @@
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
 | M45-01 | 包 A（只读）：`ctx.agents.get(sessionId)` 对当前会话是否可得（V3） | DONE | → ✅ **V3 真机答完（2026-10-05）**：`ctx.agents` 在册（`get`/`create`/`resume`/`list`/`roots`/`isOwnedBy`/`announce`…34 个成员）；**`agents.get(id)` 的真假 = "本进程有没有加载这个会话"**：已加载的 `session-a05f659e`（4110 事件、闲置 2 天）→ **true**；只在磁盘上的 4 个会话 → **false**。⟹ **"闲置"不影响拿得到，"不在本进程"才拿不到** —— 与 UI 里 `known:false`（只能查看）要表达的完全一致，也解释了为什么我在面板上拿 4 天前的老会话试不出那一态（面板显示的会话已被加载）。见 F48 |
-| M45-02 | 包 A：能否读到替换前的**原文**（V8 关键） | TODO | 探针脚本  ⚠️ **2026-10-05 判定：这条不能靠只读验** —— 探了两个会话（4 / 4599 事件），日志里**带 `sourceEventSeqs` 的事件数都是 0**（本插件从不写会话 ⟹ 没有"被遮蔽的原文"可读）⟹ 要用**专用可弃会话**先真替换一次，再读回原文（写会话组，见 `docs/01` F49 ④） |
+| M45-02 | 包 A：能否读到替换前的**原文**（V8 关键） | TODO | 探针脚本  ⚠️ **2026-10-05 判定：这条不能靠只读验** —— 探了两个会话（4 / 4599 事件），日志里**带 `sourceEventSeqs` 的事件数都是 0**（本插件从不写会话 ⟹ 没有"被遮蔽的原文"可读）⟹ 要用**专用可弃会话**先真替换一次，再读回原文（写会话组，见 `docs/01` F49 ④） **✅ 2026-10-06 复核（仍不能只读验，但原因更硬了）**：对**三个**会话（当前活的 9860 事件 / 另一个 7895 / 旧的 5621）跑宿主探针，`shadow = {replaceish: 0, readback: "no-log"}` —— **一个"带 sourceEventSeqs 的替换事件"都没有**（本插件从不写会话）⟹ 没有可读回的"被遮蔽原文"。这条**只能**在专用可弃会话里先真替换一次（包 B / 授权包②）。|
 | M45-03 | 包 A：`subagents.getProvider('fork')` 是否在册、`startContinuable` 是否可用（V12） | DONE | → ✅ **静态半边完成（2026-10-04）**：fork provider 有 `prepareContinuable`（**方法存在即能力**，F26）、`inheritsParentContext=true`、五项能力全 true（含 `agentOptions` —— M5 指定模型/推理档在 fork 路径上成立）；`spawn` provider 无 `prepareContinuable`、`inheritsParentContext=false`。见 `docs/01` **§F45**。**剩真机半边**：`subagents.getProvider('fork')` 在运行实例里确实在册（包 A） ✅ **真机半边完成（2026-10-05，`probe.services`）**：`subagents` 在册，**`getProvider('fork')` 与 `getProvider('spawn')` 都拿得到**，且 `startContinuable` / `start` / `prepareContinuable` / `registerProvider` / `list` / `interruptByParent` / `listChildren` / `listDescendants` / `drainContinuable*` / `requireContinuations` / `observeActivation` / `assertCapabilities` 都在（27 个成员），见 `docs/01` **F48** |
-| M45-04 | 包 A：`agentTeam` 投影可读性（V10）+ `tryMembership` 对 Lead 的判定（V13） | TODO | 探针脚本 |
+| M45-04 | 包 A：`agentTeam` 投影可读性（V10）+ `tryMembership` 对 Lead 的判定（V13） | DONE | 探针脚本 **✅ 2026-10-06 只读半边做完（不需要用户动作）**：① **`agentTeam` 投影可读** —— 键名从安装树类型取 （`@deepseek-ai/dsh-experimental-agent-team` 的 `declare module … SessionProjectionStateMap { agentTeam: TeamProjectionState }`），把临时客户端探针扩了一条读它，真面板上 `?redline-probe=1` 读到 **`object:members,tasks`**（顶层就是这两个集合）；同一次读数里 `subagentCatalog = array:4`（本会话 4 个子代理）、`subagentTiming = object:settledMs`。② **`tryMembership(sessionId)` 存在但对三个会话都返回 `undefined`**（宿主探针 `membership = {via:"tryMembership"}`、`value` 被 JSON 丢掉 ⟹ 就是 undefined）⟹ **"按 sessionId 判 Lead"这条口径不成立**，V13 的 Lead 判定要换口径（问 agent 侧 / 等真团队里验），已记进 `docs/01` F53。③ 回归读数（同一轮）：面板 4 张卡、`.redline-qfloat` 0 个、`cursor: help` 0 个。|
 | M45-05 | 🙋 包 B（一次授权）：在**专用可弃会话**里真跑 替换 → 再替换 → 回滚（V7） | WAIT🙋 | 专用会话日志 |
 | M45-06 | 包 B：跨压缩 checkpoint 的版本能否恢复（V9） | WAIT🙋 | 专用会话日志 |
 | M45-07 | 包 B：`spawnTeammate(context:'fork')` 建出的成员是否进 roster、种子是否正确 | WAIT🙋 | 专用会话 + 官方面板 |
@@ -343,7 +343,7 @@
 | M45-09 | V10 降级契约实测（不可读时行为符合 `docs/03` R5.1.2.1） | TODO | `docs/03-ui-spec.md` |
 | M45-10 | V11：可续接子会话端到端（含**父不在进程** / **父正忙** 两个分支） | TODO | 专用会话日志 |
 | M45-11 | V12：官方团队启用时服务层仍可用（并记录会话里实际存在的 subagent 工具） | DOING | → ✅ **静态半边完成（2026-10-04）**：`dsh --profile web --dump-config` **exit 0**，合成树里 `subagent`（服务）与 `subagent-spawn-in-process` / `subagent-fork-in-process`（两个 provider）**都在**，而**四个 subagent 工具全部 `disabled: true`**（`tool-subagent` / `tool-subagent-control` / `.../list-agents` / `tool-subagent-fork`）⟹ **官方禁的是工具，我们用的是服务**（V12 的核心疑问有了静态答案）。**剩真机半边**：记录会话工具表里实际存在的 subagent 工具（包 A） ✅ **真机半边完成（2026-10-05，读助手自己的工具表，无需任何服务调用）**：本会话**没有** `subagent` / `subagent_*` 工具（官方在团队启用时把它们 `disabled: true` 掉了 —— 与 V12 的静态读数一致），**有**的是 **Agent Teams 那一族**：`spawn_teammate` / `send_message` / `list_agents` / `wait_agent` / `interrupt_agent` / `team_task_*` ⟹ 官方团队是真启用着的，我们要的"派活/回收"接的是**团队那一族**（见 `docs/01` **F47**）。 ⏳ **另：只读探针 op 已就位但仍需一次重启** —— `probe.services`（报 `ctx.get(...)` 有哪些、fork/spawn 在不在册、`agents.get(会话)` 拿不拿得到）已加进 `src/host/redline-channel.ts`、`tsc`/`tsdown` 都过，但真机仍答 `unknown redline op` ⟹ **宿主半边是开机加载的**（见 `docs/01` **F46**）：改宿主必须重启 `dsh web`。重启后一条 curl 即可拿到 M45-01/03/04 的读数 |
-| M45-12 | V13：对接面五项（可选注入 / Lead 判定 / spawnTeammate / 任务板 / 投影） | TODO | `docs/01-platform-facts.md` §6 |
+| M45-12 | V13：对接面五项（可选注入 / Lead 判定 / spawnTeammate / 任务板 / 投影） | TODO | `docs/01-platform-facts.md` §6 **2026-10-06 只读半边**：① **可选注入**（预设里 `agentTeams` 服务可用）静态已证（V12）；② **Lead 判定**：`tryMembership(sessionId)` 返回 undefined（见 M45-04）⟹ 口径待改；③ **spawnTeammate**：要真建成员=写会话（包 B）；④ **任务板**：官方 `team_task_*` 工具在册（`docs/01` F47）；⑤ **投影**：`agentTeam` 可读（见 M45-04）。⟹ 只剩 ③ 需要授权包②。|
 | M45-13 | 失败决策表：V1–V13 每条失败 → 降级路径（禁止"以后再想"） | DONE | → **失败决策表写进 `docs/04` M4.5**：V1–V14 逐条给出"失败时我们怎么办"，且每条都落到**已写下来的行为**（不是"以后再想"）。几条有产品后果的：V1 断则**关掉编辑**（拿 80 字预览当正文就是 F35 那个缺陷）；V11 断则 M5 主线降级为**人工搬运**（把改好的首条任务显示出来让用户复制），**不留一个必然失败的按钮**；V7/V8 对 v1 **无影响**（v1 不做直接 apply、不做回滚界面） |
 | M45-14 | 能力开关（`{agents,fork,compaction,team}`）默认值定死并写进文档 | DONE | → **定死写进 `docs/04` M4.5**：`fork` = **true**（服务 + 两个 provider 都在；fork 有 `prepareContinuable`、五项能力全 true，F45）、`team` = **true**（三行都在且未 disabled）、`agents` = **probe 决定**（V3 只有真机能答）、`compaction` = **probe 决定**（静态树混合证据：顶层被 web-app 补丁 disabled，但它又出现在 web-app 的嵌套 group 里 ⟹ 有效组成属 V2）。并写明两条纪律（开关只影响入口是否出现；false 时必须回明确不可用码 + 零平台调用） |
 | M45-15 | 同步变更表：开关一变，`docs/00`/`docs/03`/`docs/05` 三处同改（逐项提交 diff） | DONE | → **同步变更表写进 `docs/04` M4.5**：四个开关各自对应 `docs/00`/`docs/03`/`docs/05` 的**具体段落**，并规定**三份文档必须在同一个 commit 里改**（提交信息写明"开关 X → false，同步三处"）。理由也写上了：`docs/09` 的追溯矩阵按 R 编号索引，只改一处会让"文档说能做、代码不给做"这种最贵的偏差复活 |
@@ -430,11 +430,11 @@
 | M2   编辑面 | 34 | **32** | 0 | 2 | 0 |
 | M3   右侧界面 | 36 | **33** | 1 | 2 | 0 |
 | M4   轮次联动 | 7 | **7** | 0 | 0 | 0 |
-| M4.5   平台能力验证 | 19 | **6** | 3 | 7 | 3 |
+| M4.5   平台能力验证 | 19 | **7** | 3 | 6 | 3 |
 | M5   快照 → 子会话 → 压缩 → 对接官方团队 | 28 | **5** | 2 | 20 | 1 |
 | M6   入口与发布准备 | 12 | **7** | 1 | 4 | 0 |
 | M7+   本轮明确不做 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **290** | **231** | **12** | **40** | **7** |
+| **合计** | **290** | **232** | **12** | **39** | **7** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 
