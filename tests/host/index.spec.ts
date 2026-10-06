@@ -123,6 +123,20 @@ describe('dsh-context-redline host plugin', () => {
       'the notified value is the validated wire view',
     )
     assert.ok(seen.some(e => e.key === 'redlineHeaders'), 'redlineHeaders changes notified')
+
+  })
+
+  test('state schema 声明了 M5-18 的两个事实键（notices / lastRequestSeq）', () => {
+    // 为什么要有这条：`timelineStateSchema` 是用 `as unknown as z.ZodType<TimelineState>` 转的型，
+    // **TypeScript 检查不到"接口里加了字段、schema 里没声明"**。0.2.1-alpha.1 起运行时会按声明的
+    // schema 校验投影 state，漏声明的键被判 `unrecognized_keys`（`[session-controller] control stream failed`）——
+    // 2026-10-06 真机撞到过一次。所以这里直接把"声明键"钉住。
+    const shape = (createContextTimelineDefinition({}, () => false).stateSchema as unknown as {
+      shape: Record<string, unknown>
+    }).shape
+    for (const key of ['notices', 'lastRequestSeq']) {
+      assert.ok(key in shape, `state schema 必须声明 \`${key}\`（fold 会产出它，漏了就等着被运行时判未知键）`)
+    }
   })
 
   test('tool schema rows carry best-effort plugin attribution through real appends', async () => {

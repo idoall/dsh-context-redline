@@ -197,6 +197,18 @@ const lastSchema = z.object({
  * The collections are therefore optional on the schema; the split marker is
  * `detailRev` (present ⟺ split).
  */
+/**
+ * 结算通知（M5-18）：`subagent-settled` 的只读摘录，形状对齐 `SettleNotice`（`src/shared/types.ts`）。
+ *
+ * ⚠️ **它必须出现在下面那份 state schema 里**：运行时会按声明的 schema 校验投影 state，
+ * 没声明的键会被判 `unrecognized_keys`（2026-10-06 在 0.2.1-alpha.1 上真机撞到）。
+ */
+const settleNoticeSchema = z.object({
+  seq: z.number().int().nonnegative(),
+  childId: z.string(),
+  summary: z.string(),
+  at: z.number(),
+}).strict()
 export const redlineTimelineSchema = z.object({
   ok: z.literal(true),
   unsupported: unsupportedSchema.optional(),
@@ -223,6 +235,10 @@ export const redlineTimelineSchema = z.object({
   archiveFloor: z.number().int().nonnegative().optional(),
   fileOps: z.array(fileOpSchema).optional(),
   fileOpsFloor: z.number().int().nonnegative().optional(),
+  // M5-18 结果回流的两个事实（客户端从这条 wire 视图上读，见 `src/client/services.ts`）——
+  // 这个 schema 是 `.strict()`：**漏声明就会被判 `unrecognized_keys`**（2026-10-06 真机撞到）。
+  notices: z.array(settleNoticeSchema).optional(),
+  lastRequestSeq: z.number().int().nonnegative().optional(),
 }).strict() as unknown as z.ZodType<ContextTimeline>
 
 /**
@@ -231,6 +247,7 @@ export const redlineTimelineSchema = z.object({
  * row seeds a fold — the same shape guarantee the projection cache's
  * plain-JSON precondition already enforces at write time.
  */
+
 const timelineStateSchema = z.object({
   surface: z.array(surfaceNodeSchema),
   sums: z.object({
@@ -267,6 +284,9 @@ const timelineStateSchema = z.object({
   fileOps: z.array(fileOpSchema),
   fileOpsFloor: z.number().int().nonnegative().optional(),
   pendingCodeOps: z.record(z.string(), z.array(fileOpSchema)).optional(),
+  // M5-18 结果回流用的两个事实（fold 产出，界面读）——**必须在这里声明**，否则新版运行时会判未知键。
+  notices: z.array(settleNoticeSchema).optional(),
+  lastRequestSeq: z.number().int().nonnegative().optional(),
 }) as unknown as z.ZodType<TimelineState>
 
 /**
