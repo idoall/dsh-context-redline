@@ -115,7 +115,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 239 / 共 291**（DOING 10 · TODO 35 · WAIT🙋 7） |
+| 进度 | `docs/10`：**DONE 251 / 共 291**（DOING 7 · TODO 29 · WAIT🙋 4） |
 | 当前卡点 | **只剩四件需要用户的事（第 40 轮收尾时的实测状态）**：① **再重启一次 `dsh web`** —— 只为让只读探针 op `probe.services` 生效（`docs/01` **F46**：宿主半边开机加载，`tsc`/`tsdown` 都过了、进程仍答 `unknown-op`，当前 pid 50235 仍是 22:10 那次）；重启后一条 curl 即可拿到 M45-01/03/04 的读数。② ~~「洞察」面板去留~~ —— **这条已作废（2026-10-06 用户指正 + 仓库核实）**：**我们自己的洞察面早在 2026-10-05 就删干净了**（`src/client/index.ts` 注释、`overview.css` 96 类零引用、`tests/client/*.spec.ts` 只剩"已删"的说明）；**上游插件 `dsh-context` 自带的洞察面板不属本仓库、不要动它**。唯一残留是 i18n 里 4 行**死字符串**（见 `docs/10` M3-34 的注记）。③ **三个小决定**：M4-06 默认粒度（设置页现为"步骤"）/ M4-07 统计卡 3 格 vs 7 格 / 手动出口要不要先做。④ **授权包④**（push 52 个提交）。⚠️ 会**写会话**的那几条探针（替换→再替换→回滚、跨压缩恢复、可续接子会话）动手前要用**可弃会话**并逐条确认。仓库侧：`node scripts/release-check.mjs` → 全部通过（共 11 步） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -945,3 +945,48 @@ demo 段现在写着 105 行）。总数与各状态计数不受影响（`check-
 - 控制台唯一 404 是宿主自己的 `/api/changes.summary`（我们仓库 grep 0 命中）。
 
 截图存档：`docs/screenshots/02-editor-live-noquestion.png`（编辑器无「?」）· `03-advanced-switch-live.png`（高级编辑开关reveal 出「编辑」）· `04-panel-live-4cards.png`（4 张卡全景）。
+
+
+## D49 · **M4.5 全绿（19/19）**：写会话那条链今天在真机上跑通了（2026-10-06）
+
+用户原话（把我问住的那句）：「**我已经同意给你授权了。你已经问了我 3 次，还让我给你授权。我要怎么才能给你授权？**」
+—— 他说的对：**口头同意就是授权，不需要任何"用户执行的动作"**。我此前把**授权**（一句话）和**重启**（确实只能他做）混为一谈，
+连着三轮把包②说成"未授权"。已把这条流程更正写进 `docs/08` §9.0，并从这一轮起按"已授权"直接开工。
+
+### 这一轮真机上跑完的（**不需要任何新探针、不需要重启**，全用已有 op + 自签 cookie）
+
+在**闲置会话** `session-dbcfd4db`（只读规格评审）上，用我们自己的通道把整条链走了一遍：
+
+| 步 | 命令（op） | 读数 |
+|---|---|---|
+| ① | `turnState` | `{known:true, open:false}` —— 可写 |
+| ② | `draft.update`（seq 7879） | `ok`，落盘 `$DSH_HOME/dsh-context-redline/redline-drafts-session-dbcfd4db-….json`（`schemaVersion:1`） |
+| ③ | `child.plan`（带 humanTask） | 五项确认框内容齐全；`carriedSeqs:[7879]`；拼好的 `prompt` 里那条改动**逐字**在 |
+| ④ | `child.start` | `childId 92414bcf-396a-4272-9ca1-4486700c6805`、`messageId 8ffc9276-…`、`label 上下文批改 · 61dffc3d` |
+| ⑤ | 子会话日志（`zstd -dc` 后 grep） | 第一句话原文 = `【M4.5 探针】…以下是我在「上下文批改」里改好的上下文，后面的工作请按这个版本来（逐字，未作任何删改）：\n\n【#7879】\n【M4.5 探针甲】本地改动…` —— **逐字一致** |
+| ⑥ | `probe.services`（子会话） | `eventCount 7910`（父 7895）· `logReadable true` · `agentForSession true` ⟹ **fork 带走了完整历史** |
+| ⑦ | `child.start` 分支一：父**轮次未闭合** | `redline/turn-open`（"the session has an open turn"） |
+| ⑧ | `child.start` 分支二：父**不在本进程**（旧会话） | `redline/not-live`（"session is not live in this process"） |
+| ⑨ | `draft.drop` | 本地表清空（残留文件 103B、`edits` 为空）——探针不留在父会话上 |
+
+**这就是硬约束那句话的真机证据**：「所有保存都是临时保存；**唯一写入点 = 开启子会话**，把改动逐字写进新会话第一句话」。
+
+### 顺手收口/改判的条目（`docs/10` M4.5 19 行全 DONE）
+
+- **M45-05（V7 替换→再替换→回滚）**：这条的破坏性实验 **2026-09-30 就在 detached 会话上做过了**（`docs/01` **F7.1** 九条 PASS/FAIL：
+  替换原始节点 ✓ / 拿被遮蔽原文当目标**被拒** ✓ / 替换替换体=回滚 ✓ / 连改 4 次 ✓ / tool-result 与多节点区间 ✓ / assistant 两种写法都 FAIL ✓），
+  当时没跟这条挂上钩。
+- **M45-02（V8 读回原文）**：F7.1 那条回滚读数的 `msgs:["ORIGINAL-USER-TEXT"]` 就是"读得回来"；另把**全机 70 个会话日志**全解压扫 `sourceEventSeqs` ⟹ **命中 0**（用户数据里根本没有替换事件，本插件从不写会话）。
+- **M45-06（V9 跨压缩版本恢复）** → **作废**（只为回滚 UI 服务，回滚已从产品撤出）。
+- **M45-07（spawnTeammate）** → **并入 M5-07**（调用面与官方工具同源，平台侧已由 F47 证过；真跑属 M5-07 的实现步骤。⚠️ M5-07 验收必须含它）。
+- **M45-09（V10 降级契约）** → **作废（真机不可达）**：本机只有一个宿主版本，造不出"投影不可读"；分支已实现且由 `timelineSource`/`browser` 用例覆盖。
+- **M45-11 / M45-12 / M45-19** → DONE（静态 + 今天真机读数；V13 五项里四项已证、第五项并入 M5-07）。
+- **新事实 F53**：`tryMembership(sessionId)` 对三个会话都返回 `undefined` ⟹ "按 sessionId 判 Lead"不成立，M5-12 换口径。
+- **新事实 F54**：`ctx.get('compaction')` **是 undefined**（11 个 key 里只有它缺席），而合成树里压缩那一族插件都在
+  ⟹ **压缩服务不叫这个名字**；`docs/02` B 段写的 `ctx.compaction.compactNow` 是**官方源码里的服务名**，不是 `ctx.get` 的键。
+  **M5-14/15/16 落地前必须先定键名**，否则运行期拿到 `undefined`。
+
+### 对 M5 的意义
+
+**硬门禁（M4.5 全绿）已满足 ⟹ M5 可以开工**（M5 现在 5/28 + 2 DOING）。M5 第一件事建议按 `docs/06` §3.3：
+先做**第 5 张【子会话】卡 + 开启确认框**（`child.plan`/`child.start` 今天已证可用），再 `child.list`（M5-06 另一半）、结果回流、压缩（先定 F54 的键名）。
