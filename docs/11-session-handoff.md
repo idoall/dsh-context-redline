@@ -115,7 +115,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 221 / 共 285**（DOING 11 · TODO 46 · WAIT🙋 7） |
+| 进度 | `docs/10`：**DONE 225 / 共 285**（DOING 11 · TODO 42 · WAIT🙋 7） |
 | 当前卡点 | **只剩四件需要用户的事（第 40 轮收尾时的实测状态）**：① **再重启一次 `dsh web`** —— 只为让只读探针 op `probe.services` 生效（`docs/01` **F46**：宿主半边开机加载，`tsc`/`tsdown` 都过了、进程仍答 `unknown-op`，当前 pid 50235 仍是 22:10 那次）；重启后一条 curl 即可拿到 M45-01/03/04 的读数。② ~~「洞察」面板去留~~ —— **这条已作废（2026-10-06 用户指正 + 仓库核实）**：**我们自己的洞察面早在 2026-10-05 就删干净了**（`src/client/index.ts` 注释、`overview.css` 96 类零引用、`tests/client/*.spec.ts` 只剩"已删"的说明）；**上游插件 `dsh-context` 自带的洞察面板不属本仓库、不要动它**。唯一残留是 i18n 里 4 行**死字符串**（见 `docs/10` M3-34 的注记）。③ **三个小决定**：M4-06 默认粒度（设置页现为"步骤"）/ M4-07 统计卡 3 格 vs 7 格 / 手动出口要不要先做。④ **授权包④**（push 52 个提交）。⚠️ 会**写会话**的那几条探针（替换→再替换→回滚、跨压缩恢复、可续接子会话）动手前要用**可弃会话**并逐条确认。仓库侧：`node scripts/release-check.mjs` → 全部通过（共 11 步） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -164,7 +164,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | # | 议题 | 裁定 |
 |---|---|---|
 | **D1** | 运行时版本 | **`0.2.0-rc.2`**（实测：安装树 `@deepseek-ai/dsh` 与 profile 内 `browser-use` 两包都是 rc.2）。peer 写 `>=0.2.0-rc.2 <0.3.0`。提到 rc.1 只允许出现在**显式标注「历史」**的行（如当时装了什么的记录） |
-| **D2** | 参考插件 | **复制基线 = git tag `v0.59.2`**（写法必须带 `v` 前缀或「基线」字样）；**并存对手 = profile 实装 `0.60.0`**（npm 版本声明不许写 0.59.2）。已实测：0.60.0 仍注册同样的三条 `/api/dsh-context/*` 路由与 `contextTimeline/headers/activity` 投影 key ⟹ F1/F2 冲突结论不变 |
+| **D2** | 参考插件 | **复制基线 = git tag `v0.59.2`**（写法必须带 `v` 前缀或「基线」字样）；**并存对手 = profile 实装 `0.64.0`**（npm 版本声明不许写 0.59.2）。已实测（**2026-10-06 复测**，`docs/01` F51）：0.64.0 仍注册同样的三条 `/api/dsh-context/*` 路由与 `contextTimeline/headers/activity` 投影 key ⟹ F1/F2 冲突结论不变；只有版本锚点与计数要跟着更新 |
 | **D3** | 目录定版（**唯一一套**） | 实现 = `src/redline/**`（纯逻辑，禁 `node:*`/DOM/React）+ `src/host/redline-channel.ts`（**唯一**上游接线文件）+ `src/client/**` + `src/shared/**`；测试 = `tests/edit/**`、`tests/channel/**`（`*.spec.ts`）。`src/edit/**`、`src/orchestrate/**`、`src/edit/pure/**`、`tests/redline/**`、`test/**`（单数）**都是归档线旧名**，只允许出现在带「归档/历史/旧」的行 |
 | **D3.1** | `src/host/` 下**只放我们自己的接线文件，且必须带 `redline-` 前缀**（`redline-channel.ts` / `redline-command.ts` / `redline-service.ts`）；其余逻辑（编排、冻结、团队桥、草稿、固定块、快照）一律 `src/redline/**`；**上游文件**（`src/host/index.ts`、`settings.ts`、`src/client/*` 等）只在必须接线处改动 |
 | **D4** | 装配时序 | **授权包① 是 M1 的收口动作，不是第一步**：仓库内骨架 + `tsc`/`tsdown`/`vitest` 全绿 → 装配进 web profile → `dsh --profile web --dump-config` 无冲突 → **停下等用户重启** |
@@ -566,7 +566,7 @@ tip 两行口径（`tip.turn1`）。**颜色不抄**，仍走我们的主题令�
 | # | 事实 | 为什么会踩 |
 |---|---|---|
 | **F39** | `dsh-settings` 在 0.2.0-rc.2 **没有** `SettingsProvider`、**没有** `register(ns, schema)`（服务是 `SettingsForms`，表单来自 loader `Config` 的 `.volatile()` 字段） | 上游那套"插件注册偏好命名空间"在这个运行时上**恒为 no-op**；处理口径 = `docs/10` **M3-23** |
-| **F40** | 插件 CSS 是**不分层注进同一个 document** 的全局规则 ⟹ 两个插件共用类名前缀时后注入者**静默**顶掉先注入者 | 上游整套 chrome 用 `lc-*`（实装 0.60.0 里 572 处）⟹ 我们整套改 `redline-*` |
+| **F40** | 插件 CSS 是**不分层注进同一个 document** 的全局规则 ⟹ 两个插件共用类名前缀时后注入者**静默**顶掉先注入者 | 上游整套 chrome 用 `lc-*`（实装 0.64.0 里 **1482** 处 / `.lc-*` 455 个）⟹ 我们整套改 `redline-*` |
 | **F41** | 离线跑上游 lane 需要的平台包闭包（`dsh-scope` / `dsh-client-store` + `zustand` + `immer` / `shiki` / `clsx` / `diff` / `micromark-*` / `mdast-*`）+ jsdom 的 `ResizeObserver` 桩 | `.npmrc` 是 `auto-install-peers=false`，缺一个就 42 个测试文件整片加载失败 |
 | **F42** | 本仓库**不建** `node_modules/@deepseek-ai` 符号链接，**从 registry 直装**；`docs/01` F14/F15 的三段式安装**已作废** | 实测 profile 层只剩 5 个包、链它解析不到 `dsh-session`；而"链接 + `pnpm install`"正是真实发生过的写穿故障 |
 

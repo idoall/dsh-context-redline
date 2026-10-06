@@ -10,7 +10,7 @@
 | 仓库 | `https://github.com/bowenliang123/dsh-context` |
 | 许可 | **Apache-2.0**（`LICENSE-Apache-2.0` 原样保留） |
 | 我们复制的版本 | **tag `v0.59.2`**，commit `fc44fff9548d404da3c4935525d01b5e4fb62517` |
-| 选择它的理由 | 它就是我们的**复制基线**（`git tag v0.59.2`）。本机 profile 里**实装的是 `dsh-context@0.60.0`**（同源的后继版本，见 D2）；选 `v0.59.2` 是因为它在本机运行时 **DSH `0.2.0-rc.2`**（2026-10-01 实测）上被真实跑过，且基线一旦选定就不再追上游。对比：早期的 v2 分支基于 `v0.59.0`（`addccdd4aa95b4e01b054d1d7f7e6ff9b468d2d4`），而它的验证运行时是 `0.1.7-rc.2`（**历史**） |
+| 选择它的理由 | 它就是我们的**复制基线**（`git tag v0.59.2`）。本机 profile 里**实装的是 `dsh-context@0.64.0`**（同源的后继版本，见 D2；2026-10-06 复测，此前记为 0.60.0）；选 `v0.59.2` 是因为它在本机运行时 **DSH `0.2.0-rc.2`**（2026-10-01 实测）上被真实跑过，且基线一旦选定就不再追上游。对比：早期的 v2 分支基于 `v0.59.0`（`addccdd4aa95b4e01b054d1d7f7e6ff9b468d2d4`），而它的验证运行时是 `0.1.7-rc.2`（**历史**） |
 | 本机 clone（只读参考） | `<upstream-clone>`（带完整 history 与 tag，`git show v0.59.2:<path>` 即可取原文） |
 | 上游**未发布**的更新 | 该 clone 的 `main` HEAD = `67787685fefc70d978d736e95680c7055ea9ff9b`（2026-09-29），**在 v0.59.2 之后**；我们**不**跟随，按需 cherry-pick |
 | npm 包内容 | 只有编译产物（`files` = `lib/*` + `locale/*.json` + `icon.svg` + `cordis.patch.yml` + README + LICENSE），**没有源码**——所以"改"只能从 git 源码来 |
@@ -29,7 +29,7 @@
 
 ### 3.1 命名空间化（**必须**，理由是硬约束而非偏好）
 
-复制上游源码会和 **profile 里实装的 `dsh-context@0.60.0`** 直接冲突（我们的**复制基线 = git tag `v0.59.2`**，两者同源；0.60.0 实测仍注册同样的三条路由与三个投影 key，所以下面的改动面一条都不少）。
+复制上游源码会和 **profile 里实装的 `dsh-context@0.64.0`** 直接冲突（我们的**复制基线 = git tag `v0.59.2`**，两者同源；0.64.0 实测仍注册同样的三条路由与三个投影 key，所以下面的改动面一条都不少）。
 其中 **1/2/3/6** 撞车会**抛错**，**4/5/7/8** 多半是**静默**的（偏好被共用、slot 被顶掉、localStorage 互相覆盖）：
 
 | # | 冲突面 | 上游值 | 我们改成 | 依据 |
@@ -50,7 +50,7 @@
 | 6 | 插件 `name` / bundle 注册 id | `dsh-context` | `dsh-context-redline`（= 包名，客户端 bundle 的注册 id 必须等于包名） | DSH 的 `dsh-client-modules` 按包名校验，不一致会抛 `loaded without registering "<id>"` |
 | 7 | 数据目录 | 无（上游只读） | `$DSH_HOME/dsh-context-redline` | 我们自己的草稿/固定块/快照存放处 |
 | 8 | 其余命名面（**静默撞车**，最容易漏） | `SETTINGS_NAMESPACE` / `SIDEBAR_CONTEXT_ID` / `SIDEBAR_CONTEXT_KIND` 都是 `dsh-context`；localStorage key `dsh-context:platform-balance` | 一律换成 `dsh-context-redline` 系 | 逐项取值与出处见 [`docs/01` F4](docs/01-platform-facts.md)；机器断言必须用带排除的正则 `dsh-context(?!-redline)` |
-| 9 | **CSS 类名前缀**（**静默撞车**，M1 实测新增） | 整套 chrome 用 `lc-*`（468 个不同类名；实装 0.60.0 的 `lib/client.js` 里 572 处） | 一律换成 `redline-*`（类名 + CSS 变量 `--redline-i` + Tailwind 动画键 `--animate-redline-*`/`@keyframes redline-*` + `data-redline-*`） | 插件的样式是**不分层地注进同一个 document**（`document.head.appendChild(<style>)`），同特异性下后注入者顶掉先注入者、不报错。实测与理由见 [`docs/01` F40](docs/01-platform-facts.md) |
+| 9 | **CSS 类名前缀**（**静默撞车**，M1 实测新增） | 整套 chrome 用 `lc-*`（455 个 `.lc-*` 选择器；实装 0.64.0 的 `lib/client.js` 里 1482 处） | 一律换成 `redline-*`（类名 + CSS 变量 `--redline-i` + Tailwind 动画键 `--animate-redline-*`/`@keyframes redline-*` + `data-redline-*`） | 插件的样式是**不分层地注进同一个 document**（`document.head.appendChild(<style>)`），同特异性下后注入者顶掉先注入者、不报错。实测与理由见 [`docs/01` F40](docs/01-platform-facts.md) |
 | 10 | **客户端斜杠命令名** | `/context`（`src/client/command.ts` 的 `COMMAND`） | `/redline` | 斜杠命令名是全局的；与上游面板并存时不能两边都占 `/context`。与 `docs/02` §5.3 的 `/redline` 口径一致 |
 
 ### 3.2 上游文件的改动点（**M1 实际改了什么**，2026-10-04）
@@ -177,3 +177,55 @@ diff -rq <(git -C <upstream-clone> archive v0.59.2 | tar -xO 2>/dev/null) src/  
 - 复核动作（可重跑）：`ls LICENSE* NOTICE UPSTREAM.md`（三份都在）、
   `shasum -a 256 LICENSE-Apache-2.0`（与上游原始文件比对不变）、
   以及 `node -e` 遍历 `package.json.files` 确认每个条目都真实存在。
+
+---
+
+## 分叉清单（fork manifest，2026-10-06 实测）
+
+为什么需要它：我们的源码是上游 `v0.59.2` 的**整树改名副本**（`lc-*` → `redline-*`、路由/投影/插槽/命名空间全换），所以上游此后每个版本的变化**不会以 Git 冲突的形式出现** —— 不主动对账就会静默落后。下面是可复现的三方对照（`src/**`，同名文件逐个比较内容哈希）。
+
+**复测命令**（只读；需要本地有上游 clone 与 `v0.59.2` tag）：
+
+```bash
+CLONE=/path/to/dsh-context   # 上游 clone（只读）
+git -C "$CLONE" fetch --tags
+# 同名文件逐个比较：ours  vs  clone@HEAD  vs  clone@v0.59.2（我们的复制基线）
+for f in $(cd src && find . -type f | sed "s|^\./||"); do
+  [ -f "$CLONE/src/$f" ] || continue
+  a=$(shasum -a 256 "src/$f" | cut -d" " -f1)
+  b=$(git -C "$CLONE" show "HEAD:src/$f" 2>/dev/null | shasum -a 256 | cut -d" " -f1)
+  c=$(git -C "$CLONE" show "v0.59.2:src/$f" 2>/dev/null | shasum -a 256 | cut -d" " -f1)
+  [ "$a" = "$c" ] && [ "$b" = "$c" ] && echo "NEITHER $f"
+  [ "$a" != "$c" ] && [ "$b" = "$c" ] && echo "WE-ONLY $f"
+  [ "$a" = "$c" ] && [ "$b" != "$c" ] && echo "UPSTREAM-ONLY $f"
+  [ "$a" != "$c" ] && [ "$b" != "$c" ] && echo "BOTH $f"
+done | sort | uniq -c | sort -rn | head
+```
+
+| 桶 | 数量 | 含义与处置 |
+|---|---|---|
+| 双方都没动 | 21 | 与基线逐字相同 ⟹ 无需处置 |
+| **只我们改** | 50 | 我们的有意改动（改名 + 按 `docs/03` 的界面重做）⟹ **保留差异**，无需跟随上游 |
+| **只上游改** | 5 | 我们一行没碰、上游动了 ⟹ **可低成本跟进**（列在下面，逐条决定"跟上/不跟"） |
+| **双方都改** | 25 | 真合并面 ⟹ 要人看（列在下面，尤其 `host/attribution.ts` 我们已经跟过一轮） |
+| 上游独有文件 | 10 | 洞察/总览那一套（我们有意外不提供）⟹ 不跟 |
+| 我们独有文件 | 14 | 我们的新增（`redline-*` 通道/草稿/编排/可见性等）⟹ 上游没有对应物 |
+
+**只上游改（5 个，建议逐个决定）**：`client/dna.ts`、`client/fileActivity.ts`、`client/format.ts`、`host/pricing.ts`、`shared/imageTokens.ts`
+
+**双方都改（25 个，合并时要人看）**：`client/components/browser.tsx`、`client/components/contextModal.tsx`、`client/components/contextView.tsx`、`client/components/settingsCard.tsx`、`client/components/statsTiming.tsx`、`client/components/trendChart.tsx`、`client/i18n.ts`、`client/icon.tsx`、`client/index.ts`、`client/services.ts`、`client/settings.ts`、`client/styles/base.css`、`client/styles/browser.css`、`client/styles/fileCard.css`、`client/styles/requestDetail.css`、`client/styles/stats.css`、`client/styles/trendChart.css`、`client/timelineSource.ts`、`host/attribution.ts`、`host/config.ts`、`host/fold.ts`、`host/logShapes.ts`、`host/settings.ts`、`host/timeline.ts`、`shared/types.ts`
+
+**上游独有（10 个，不提供）**：`client/components/balanceCapsule.tsx`、`client/components/heatmap.tsx`、`client/components/hoverTip.tsx`、`client/components/overviewCard.tsx`、`client/components/overviewPanel.tsx`、`client/components/overviewTokens.tsx`、`client/components/overviewUsage.tsx`、`client/components/timingStrip.tsx`、`client/insightPage.ts`、`client/styles/overview.css`
+
+**我们独有（14 个）**：`client/components/redlineEdit.tsx`、`client/redlineChannel.ts`、`client/redlineDrafts.ts`、`client/surfaceVisibility.ts`、`host/redline-channel.ts`、`redline/inspect.ts`、`redline/orchestrate.ts`、`redline/plan.ts`、`shared/redline-ability.ts`、`shared/redline-drafts.ts`、`shared/redline-errors.ts`、`shared/redline-paths.ts`、`shared/redline-route.ts`、`shared/redline-turn.ts`
+
+> 版本锚点：**实装 `dsh-context@0.64.0`**（clone 头 `v0.64.0-1-ga4c2b67`）；三条路由与三个投影 key 未变 ⟹ `docs/01` F1/F2/F40 与 F51 的结论全部继续成立。
+
+### 图标（原创，非上游素材）
+
+`icon.svg` 是**为本分支原创绘制**的图形（红线批注压在"上下文若干行"上的构图），
+**不是**上游那份的复制 —— 两边曾是**逐字相同**的文件（同一个 sha256），
+在 Plugins 页面上两个插件的卡片会长得一模一样，用户分不出哪个是哪个。
+构图与配色都在本仓库绘制，按 MIT 授权；组件半 `src/client/icon.tsx` 在构建时用
+`?raw` 内联**同一份文件**，`tests/client/icon.spec.ts` 的 lockstep 断言把两者钉在一起
+（组件改了文件没改、或文件改了组件没跟，都会红）。

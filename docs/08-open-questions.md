@@ -434,7 +434,7 @@ R7 又抓到我把**平台内部实现当公开 API**、把**best-effort 投递�
 
 评审同时**确认无误**的部分（`checked_ok`）——⚠️ **2026-10-01 抽查后更正了两条的覆盖范围**：路由重复注册异常、投影 stateVersion 冲突逻辑、废弃的同步读 API、
 `sessionQuery`/`compactNow`/`startContinuable` **的方法存在性**（**只覆盖"有没有这个方法"；不覆盖调用形状/参数签名**，签名一律以安装树 `.d.ts` 为准）、上游 tag `v0.59.2` 的 Apache-2.0 归属（实测：该 tag 的 `package.json` 写 `"license": "Apache-2.0"`）、
-归档 tag 与 121 提交（**归档线仓库已丢失，本仓库不可复核 → 只作当时的历史记录，不当依据**）、D1 的 80 字预览缺陷、M0 工作树确无实现源码、profile 里 `dsh-context` 的 `^0.60.0` 声明（实测 `~/.dsh/profiles/web/package.json` 第 11 行）。
+归档 tag 与 121 提交（**归档线仓库已丢失，本仓库不可复核 → 只作当时的历史记录，不当依据**）、D1 的 80 字预览缺陷、M0 工作树确无实现源码、profile 里 `dsh-context` 的声明（**当时**实测 `^0.60.0`；**现行实装已是 `^0.64.0`**，见 `docs/01` F51）。
 
 #### R2 处置明细（`verdict = reject` → 11 条全部采纳）
 

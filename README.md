@@ -8,7 +8,7 @@
 **Status: M1 landed in-repo (skeleton + identity), not yet installed into a profile.** The context shell is
 copied from upstream [`dsh-context`](https://github.com/bowenliang123/dsh-context) at git tag **`v0.59.2`** and renamed
 into our own namespaces; the editing layer (M2) and the UI wiring (M3) are next. The clickable prototype that
-defines the interface is [`demo/`](demo/README.md) — **it is the standard** if any document disagrees.
+defines the interface is [`demo/`](https://github.com/idoall/dsh-context-redline/blob/main/demo/README.md) — **it is the standard** if any document disagrees.
 
 ---
 
@@ -23,7 +23,7 @@ defines the interface is [`demo/`](demo/README.md) — **it is the standard** if
 **In one line**: read the context → edit one item → save (local only) → open a child session with the edited context.
 
 ## What it looks like
-![The interface (interactive demo, the current standard)](demo/screenshots/01-dark.png)
+![The interface (interactive demo, the current standard)](https://raw.githubusercontent.com/idoall/dsh-context-redline/main/demo/screenshots/01-dark.png)
 
 > ⚠️ This image is from the repository's **interactive demo** (`demo/`, dark theme) — the
 > **current interface standard** the plugin is built to match. **Plugin screenshots cannot be
@@ -31,22 +31,22 @@ defines the interface is [`demo/`](demo/README.md) — **it is the standard** if
 > `docs/10` M3-22). Presenting a demo capture as a plugin capture is the one easy misreading
 > here, so it is called out.
 
-Five cards, in two columns ([`demo/`](demo/README.md) is the authority):
+Five cards, in two columns ([`demo/`](https://github.com/idoall/dsh-context-redline/blob/main/demo/README.md) is the authority):
 
 - **Left**: context stats · context trend (per turn / per step, total / delta, adaptive scale) · context events.
 - **Right**: the context browser (7 categories, counts / ≈tokens / share / non-zero δ per row) · child sessions.
 - **On a row**: `#seq`, the category, a preview — and **`Edit`**, the only action. Rows the platform cannot rewrite
   (assistant messages, compacted-away rows, shadowed originals) carry **a one-line reason and no action at all**.
 - **The editor** expands **inline under that row** (never a modal) and is prefilled with the **full text** — never the
-  80-character list preview (that mistake destroyed a message in the earlier attempt; see [`docs/01`](docs/01-platform-facts.md) F35).
+  80-character list preview (that mistake destroyed a message in the earlier attempt; see [`docs/01`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md) F35).
 - **Every save is temporary** (hard constraint). It is written to the plugin's local store only, so the **current**
   session's model never sees it. Rows with a local edit show `已改（本地）` plus `丢弃这条改动`; clicking `Edit` again
   prefills what you last saved, and saving **overwrites that same local edit** (it does not stack).
 - **The only write point is `开启子会话`**: its confirmation lists the local edits, and on confirm they are written
   **verbatim into the new session's first message**. A child session always starts at the parent's **last completed
-  turn** — there is **no parameter** to pick an earlier cut point ([`docs/01`](docs/01-platform-facts.md) F38).
+  turn** — there is **no parameter** to pick an earlier cut point ([`docs/01`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md) F38).
 
-![Context Redline running (real panel capture, 2026-10-04)](docs/screenshots/01-panel-live.png)
+![Context Redline running (real panel capture, 2026-10-04)](https://raw.githubusercontent.com/idoall/dsh-context-redline/main/docs/screenshots/01-panel-live.png)
 
 > ⚠️ This is the **plugin's own live capture** (the 「上下文批改」 tab inside `dsh web`, 2026-10-04, a
 > 25-turn / 591-step session): the tabs read `对话 | 轨迹 | 上下文 | 上下文批改` (upstream still owns the
@@ -73,7 +73,7 @@ Five cards, in two columns ([`demo/`](demo/README.md) is the authority):
 - ❌ No "delete history" (the DSH session log is append-only; only **shadowing** and **compaction** exist — the latter irreversible).
 - ❌ No auto-fork, no auto-compaction, no auto-apply of local edits.
 - ❌ No **AI-generated content** anywhere. This is the project's reason to exist: every character that reaches the model is human-written.
-- ❌ No "context assembly / templates / extends" layer in this round (a different data model — see [`docs/00`](docs/00-scope.md) §4).
+- ❌ No "context assembly / templates / extends" layer in this round (a different data model — see [`docs/00`](https://github.com/idoall/dsh-context-redline/blob/main/docs/00-scope.md) §4).
 
 ---
 
@@ -81,21 +81,21 @@ Five cards, in two columns ([`demo/`](demo/README.md) is the authority):
 
 | File | Content |
 |---|---|
-| [`docs/00-scope.md`](docs/00-scope.md) | Goals / non-goals / user stories / **acceptance criteria** / glossary |
-| [`docs/01-platform-facts.md`](docs/01-platform-facts.md) | **Platform facts**, each with a source and a `measured` / `inferred` tag, plus open verification items |
-| [`docs/02-architecture.md`](docs/02-architecture.md) | Five layers, two data flows, module layout, RPC / command / service surface, storage |
-| [`docs/03-ui-spec.md`](docs/03-ui-spec.md) | **UI spec**, numbered requirements, exact copy, acceptance checklist, explicit non-goals |
-| [`docs/04-roadmap.md`](docs/04-roadmap.md) | Stages M0–M7 (deliverables / tests / **who accepts** / **authorization gates**) |
-| [`docs/05-test-plan.md`](docs/05-test-plan.md) | Test lanes, real-route test pattern, human-gate checklist, failure-mode cases |
-| [`docs/06-orchestration.md`](docs/06-orchestration.md) | Child session / compaction semantics, authorization list, error-code mapping |
-| [`docs/08-open-questions.md`](docs/08-open-questions.md) | **Questions and rulings** (each with a recommendation and its final ruling) + the external-model review log |
-| [`docs/09-requirements-traceability.md`](docs/09-requirements-traceability.md) | **Requirement traceability**: every original request and every capability from the WeChat screenshots → which goal → done / not done / downgraded |
-| [`demo/`](demo/README.md) | **Clickable interaction prototype** (M0.5 gate): fake data, real interactions, and a "what does this button do" explain mode |
-| [`docs/12-user-guide.md`](docs/12-user-guide.md) | **User guide**: what this is / five-minute tour / which of the seven kinds can be edited / when editing is blocked / glossary / FAQ |
-| [`docs/11-session-handoff.md`](docs/11-session-handoff.md) | **Session handoff**: a copy-paste block plus the fields to refresh at each wrap-up |
-| [`docs/10-execution-checklist.md`](docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, **285 items**; steps needing you are marked `WAIT🙋` |
-| [`AGENTS.md`](AGENTS.md) | Working agreement: hard constraints, platform pitfalls, testing discipline |
-| [`UPSTREAM.md`](UPSTREAM.md) / [`NOTICE`](NOTICE) | Upstream provenance, license compliance, list of our modifications |
+| [`docs/00-scope.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/00-scope.md) | Goals / non-goals / user stories / **acceptance criteria** / glossary |
+| [`docs/01-platform-facts.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md) | **Platform facts**, each with a source and a `measured` / `inferred` tag, plus open verification items |
+| [`docs/02-architecture.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/02-architecture.md) | Five layers, two data flows, module layout, RPC / command / service surface, storage |
+| [`docs/03-ui-spec.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/03-ui-spec.md) | **UI spec**, numbered requirements, exact copy, acceptance checklist, explicit non-goals |
+| [`docs/04-roadmap.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/04-roadmap.md) | Stages M0–M7 (deliverables / tests / **who accepts** / **authorization gates**) |
+| [`docs/05-test-plan.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/05-test-plan.md) | Test lanes, real-route test pattern, human-gate checklist, failure-mode cases |
+| [`docs/06-orchestration.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/06-orchestration.md) | Child session / compaction semantics, authorization list, error-code mapping |
+| [`docs/08-open-questions.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/08-open-questions.md) | **Questions and rulings** (each with a recommendation and its final ruling) + the external-model review log |
+| [`docs/09-requirements-traceability.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/09-requirements-traceability.md) | **Requirement traceability**: every original request and every capability from the WeChat screenshots → which goal → done / not done / downgraded |
+| [`demo/`](https://github.com/idoall/dsh-context-redline/blob/main/demo/README.md) | **Clickable interaction prototype** (M0.5 gate): fake data, real interactions, and a "what does this button do" explain mode |
+| [`docs/12-user-guide.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/12-user-guide.md) | **User guide**: what this is / five-minute tour / which of the seven kinds can be edited / when editing is blocked / glossary / FAQ |
+| [`docs/11-session-handoff.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/11-session-handoff.md) | **Session handoff**: a copy-paste block plus the fields to refresh at each wrap-up |
+| [`docs/10-execution-checklist.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/10-execution-checklist.md) | **Long-task execution checklist (single source of truth)**: fine-grained table `ID / task / status / frozen file scope`, **285 items**; steps needing you are marked `WAIT🙋` |
+| [`AGENTS.md`](https://github.com/idoall/dsh-context-redline/blob/main/AGENTS.md) | Working agreement: hard constraints, platform pitfalls, testing discipline |
+| [`UPSTREAM.md`](https://github.com/idoall/dsh-context-redline/blob/main/UPSTREAM.md) / [`NOTICE`](https://github.com/idoall/dsh-context-redline/blob/main/NOTICE) | Upstream provenance, license compliance, list of our modifications |
 
 > **Numbering note**: `docs/07` used to be the audit of the earlier attempt; it was **已删除 (deleted)** on 2026-09-30 at the user's request, and **编号不复用 (the number is not reused)**, to avoid confusion with historical references.
 
@@ -103,10 +103,10 @@ Five cards, in two columns ([`demo/`](demo/README.md) is the authority):
 
 ## How to review
 
-1. [`docs/00-scope.md`](docs/00-scope.md) §2 (non-goals) and §3 (acceptance criteria) — *is this the right thing to build?*
-2. [`docs/01-platform-facts.md`](docs/01-platform-facts.md) — *is the evidence real?* (note §6, the deliberately unverified items)
-3. [`docs/03-ui-spec.md`](docs/03-ui-spec.md) and [`docs/06-orchestration.md`](docs/06-orchestration.md) — *is the human/irreversibility story honest?*
-4. [`docs/08-open-questions.md`](docs/08-open-questions.md) — *rule on a specific numbered question.*
+1. [`docs/00-scope.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/00-scope.md) §2 (non-goals) and §3 (acceptance criteria) — *is this the right thing to build?*
+2. [`docs/01-platform-facts.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md) — *is the evidence real?* (note §6, the deliberately unverified items)
+3. [`docs/03-ui-spec.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/03-ui-spec.md) and [`docs/06-orchestration.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/06-orchestration.md) — *is the human/irreversibility story honest?*
+4. [`docs/08-open-questions.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/08-open-questions.md) — *rule on a specific numbered question.*
 
 ## Install / usage
 
@@ -134,7 +134,7 @@ dsh plugin --profile web add /absolute/path/dsh-context-redline   # local direct
 
 You then have to **restart `dsh web` yourself** (on this machine that step carries the session
 you are using). **Client-side changes only need a hard refresh**, not a restart
-([`docs/01`](docs/01-platform-facts.md) F16).
+([`docs/01`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md) F16).
 
 **Limits of this chain** (product definitions, not TODOs):
 - **Saving writes to the plugin's own local store only** — the current session's model cannot see
@@ -142,17 +142,17 @@ you are using). **Client-side changes only need a hard refresh**, not a restart
 - **Assistant messages / the system prompt / tool schemas cannot be edited** (a platform limit and
   host protection; the row states the reason).
 - The UI offers **no version history / rollback** (it would conflict with "saving is local only" —
-  [`docs/11`](docs/11-session-handoff.md) D19).
+  [`docs/11`](https://github.com/idoall/dsh-context-redline/blob/main/docs/11-session-handoff.md) D19).
 ## License
 
-This project is **MIT** ([`LICENSE`](LICENSE)); the portions copied from upstream `dsh-context` are
-**Apache-2.0** (verbatim in [`LICENSE-Apache-2.0`](LICENSE-Apache-2.0); provenance and modification list in
-[`UPSTREAM.md`](UPSTREAM.md)). This is an independent fork, **not affiliated with or endorsed by** the
+This project is **MIT** ([`LICENSE`](https://github.com/idoall/dsh-context-redline/blob/main/LICENSE)); the portions copied from upstream `dsh-context` are
+**Apache-2.0** (verbatim in [`LICENSE-Apache-2.0`](https://github.com/idoall/dsh-context-redline/blob/main/LICENSE-Apache-2.0); provenance and modification list in
+[`UPSTREAM.md`](https://github.com/idoall/dsh-context-redline/blob/main/UPSTREAM.md)). This is an independent fork, **not affiliated with or endorsed by** the
 upstream author.
 
 ## About the earlier attempt
 
 This repository previously carried an earlier line built on upstream `v0.59.0` (during 2026-09). **Its directory and git
 history are gone**, and the audit document was deleted at the user's request. This line re-forks from tag `v0.59.2`;
-**only the "don't repeat these" conclusions survive**, kept in [`docs/01`](docs/01-platform-facts.md) and
-[`AGENTS.md`](AGENTS.md) §2.
+**only the "don't repeat these" conclusions survive**, kept in [`docs/01`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md) and
+[`AGENTS.md`](https://github.com/idoall/dsh-context-redline/blob/main/AGENTS.md) §2.

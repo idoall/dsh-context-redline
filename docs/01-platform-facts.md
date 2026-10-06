@@ -19,7 +19,7 @@
 |---|---|---|
 | DSH 版本 | **0.2.0-rc.2** | `$DSH_PKG` 各包 `package.json`（2026-10-01 实测：安装树与 `$DSH_PROFILE` 都是 rc.2） |
 | Node | v24.15.0 | 当前进程 |
-| 参考插件 | profile 里**实装 `dsh-context@0.60.0`**（`^0.60.0`），**已装并在跑**；我们的**复制基线 = git tag `v0.59.2`**（两者同源） | `$DSH_HOME/profiles/web/package.json` 的 dependencies + `node_modules/dsh-context/package.json` |
+| 参考插件 | profile 里**实装 `dsh-context@0.64.0`**（`^0.64.0`；2026-10-06 复测，此前长期记为 0.60.0），**已装并在跑**；我们的**复制基线 = git tag `v0.59.2`**（两者同源） | `$DSH_HOME/profiles/web/package.json` 的 dependencies + `node_modules/dsh-context/package.json` |
 | 我们的插件 | 目录 symlink 在 `$DSH_HOME/profiles/web/node_modules/dsh-context-redline`，但**不在** `dsh.profile.bundles` 里 → **当前未启用** | 同上 |
 | 早期那次尝试 的验证运行时 | `0.1.7-rc.2`（**历史**，不是现在这个） | `git show v2-archive-20260928:AGENTS.md` |
 
@@ -585,9 +585,10 @@ SpawnTeammateRequest = {
 | F26 | **fork 子会话可以可续接**：fork provider 实现了 `prepareContinuable`（方法存在即能力）→ `startContinuable({provider:'fork'})` 可用 | `$DSH_PKG/dsh-subagent-fork-in-process/lib/index.js` 全文；`dsh-subagent/lib/types/types.d.ts:360-375`；见 §F13.2 |
 | F27 | 可续接子会话的回传由**运行时**负责：建时自动追加**返回指引**（`withContinuableReturnGuidance` —— ⛔ **插件禁止** import/调用它，只传人写的首条任务），settle 时往**父会话日志**追加 `subagent-settled` **结算通知** | `$DSH_PKG/dsh-subagent/lib/index.js:599,633`；见 §F12.1 |
 | F39 | **设置服务的注册面在 0.2.0-rc.2 已经没有了**：`@deepseek-ai/dsh-settings` 导出 `SettingsForms`（`describe/update/replace/mutate`）而**没有** `SettingsProvider`、**没有** `register(ns, schema)` ⟹ 上游那套"插件注册自己的偏好命名空间"的写法在这个运行时上**恒为 no-op**（需要改成"偏好声明为 loader Config 的 `.volatile()` 字段"或删掉） | §F39（本机实测） | ⚠️ **2026-10-05 补正（真机实测）**：`register(ns, schema)` 这个 **API 形状**确实没了，但**不等于设置面不能用** —— 真机上点插件信息卡的 `打开插件设置` 会打开宿主的**插件设置页**（整页，不是弹窗），里面把本插件 schema 的**六个字段**都渲染成可改的下拉（入口位置 / 洞察入口 / 趋势图·默认粒度 / 趋势图·默认展示方式 / 工具定义·默认排序 / 文件活动·默认排序），并显示 `包含的组件：上下文批改 · 运行中`。⟹ 读这条时别得出"设置面废了"的结论（`docs/10` M3-23 已按此改判）。
-| F40 | **插件的 CSS 会被注进同一个 document，且是不分层（unlayered）的全局规则** ⟹ 两个插件若共用类名前缀，**同特异性下后注入者顶掉先注入者**（不报错）。上游整套 chrome 用 `lc-*`（实装 0.60.0 的 `lib/client.js` 里 572 处、我们复制基线里 468 个不同类名）⟹ 必须换前缀 | §F40（本机实测） |
+| F40 | **插件的 CSS 会被注进同一个 document，且是不分层（unlayered）的全局规则** ⟹ 两个插件若共用类名前缀，**同特异性下后注入者顶掉先注入者**（不报错）。上游整套 chrome 用 `lc-*`（实装 **0.64.0** 的 `lib/client.js` 里 **1482** 处、**455** 个 `.lc-*` 选择器；复制基线 v0.59.2 里 468 个不同类名）⟹ 必须换前缀 | §F40（本机实测） |
 | F43 | **官方有一个现成的「事件 → 语义文本」提取器，但插件不能 import 它**：`@deepseek-ai/dsh-session-query` 导出 `extractSessionEventText(event)`；然而（a）它**不在 profile 层的依赖树里**（F42：那里只有 5 个包）⟹ 真机 import 解析不到；（b）加进 `peerDependencies` 会被 tsdown 当外部依赖、真机仍解析不到；（c）加进 `dependencies` 会把整包**内联**进宿主 bundle（复制一份）。⟹ 我们自己写 `src/redline/inspect.ts`，并用 `tests/edit/fulltext.spec.ts` 把它钉在与宿主一致的事件形状上 | §F43（本机实测，2026-10-04） |
 | F50 | **V11 端到端真机跑通（2026-10-06，`child.start` 第一次真的开出子会话）**：在已加载且轮次闭合的会话
+| F51 | **参考插件在 2026-10-06 已升到 `dsh-context@0.64.0`（clone 头 `v0.64.0-1-ga4c2b67`），但"会撞的三面"没变**：路由仍是 `/api/dsh-context/{detail,balance,backfill}`，投影 key 仍是 `contextTimeline`/`contextHeaders`/`contextActivity` ⟹ **F1/F2/F40 的结论全部继续成立，只有版本锚点与计数变了**。分叉三方对照（以 `git tag v0.59.2` 为基线、`src/**` 同名 101 个文件）：**21 双方都没动 · 50 只我们改 · 5 只上游改 · 25 双方都改**；另有**上游独有 10 个**（洞察/总览面：`overviewPanel`/`insightPage`/`overview.css` 等，我们有意外不提供）与**我们独有 14 个**（`redline-*` 通道/草稿/编排/可见性等）。逐条处置与复测命令见 [`UPSTREAM.md`](UPSTREAM.md) §分叉清单 | 2026-10-06 本机实测 |
 `session-d27155c3`（可弃）上调 `child.start` → 返回 `{childId:"66da37b9-…", messageId:"aeb5e73b-…"}`，
 `~/.dsh/sessions/<项目>/` 目录数 **28 → 29**，新增目录名就是那个 `childId`（⚠️ 注意：**childId 没有 `session-` 前缀**，
 我第一版拿 `session-<childId>` 去读，得到"不可读"，纯属自己传错 id）。**两条结论**：
@@ -634,7 +635,7 @@ SpawnTeammateRequest = {
 
 1. 样式注入方式（上游 `tsdown.config.ts` 的 `dsh-css-*` 通道）：每个 `.css` 被编译成一段字符串，在 factory 执行时
    `document.createElement('style')` + `document.head.appendChild(tag)` —— **document 级、不分层**；
-2. 实装 `dsh-context@0.60.0` 的 `lib/client.js` 里 `.lc-*` / `lc-*` 出现 **572** 次；
+2. 实装 `dsh-context@0.64.0` 的 `lib/client.js` 里 `lc-*` 出现 **1482** 次（`.lc-*` 选择器 **455** 个）；
 3. 我们的复制基线（tag `v0.59.2`）里有 **468** 个不同的 `lc-*` 类名、`src` + `tests` 共 **3043** 处。
 
 两个插件**同时挂载**时，两边都把 `.lc-*` 规则注入同一张 CSSOM：同特异性下**后注入的覆盖先注入的**，

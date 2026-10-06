@@ -569,7 +569,7 @@
 27. 键盘：`Esc` 关编辑器；`Cmd/Ctrl+Enter` 提交。（R3.5/R3.6）
 28. 保存失败：就地报错、输入不丢、可重试。（R3.5）
 29. 当前 demo 没有未生效吸顶条；本条不在 demo 门禁中。（R4.1）
-30. `dsh-context@0.60.0`（profile 实装；我们的复制基线是 git tag `v0.59.2`）的面板**照常工作**；console 无 `already registered` / `loaded without registering`（含观察窗口与证据留存要求，见 `docs/00` S6）。（S6）
+30. `dsh-context@0.64.0`（profile 实装；我们的复制基线是 git tag `v0.59.2`）的面板**照常工作**；console 无 `already registered` / `loaded without registering`（含观察窗口与证据留存要求，见 `docs/00` S6）。（S6）
 
 **帮助**
 31. **当前 demo 没有总体帮助按钮或「指给我看」入口**；提供右上角「讲解模式」，序号可打开讲解抽屉且不拦截按钮交互。（R7.1）

@@ -42,6 +42,7 @@
   "scripts": {
     "build": "tsdown",
     "prepack": "pnpm run build",
+    "pack:check": "pnpm pack --dry-run",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "namespace-contract": "node scripts/namespace-contract.mjs",

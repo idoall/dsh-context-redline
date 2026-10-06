@@ -59,4 +59,5 @@ jobs:
       - run: node scripts/namespace-contract.mjs
       - run: node scripts/css-closure.mjs   # CSS 闭包：我们的样式出不去、别人的删了也影响不到我们
       - run: pnpm run build
+      - run: pnpm run pack:check              # 发布包清单烟测（prepack 会先 build）
       - run: pnpm run test

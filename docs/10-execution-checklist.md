@@ -66,7 +66,7 @@
 
 ---
 
-## 2. M0.5 · 交互 demo（**96 / 101 DONE**，剩定稿）
+## 2. M0.5 · 交互 demo（**100 / 101 DONE**，剩定稿）
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
@@ -165,10 +165,10 @@
 | M3-38 | **【CR-P1-1】与参考插件的 CSS / JS 共享可变状态清零（闭包）**：实测 13 个同名 `:root` 变量 + 36 个同名通用工具类（今天同值 ⟹ 无报错，但任一侧改值就会改掉对方） | DONE | → ① 色板改 `base.css` 的普通变量 `--redline-color-*`（⚠️ 踩过坑：放 `@theme` 里改名会**整块不发射** → 颜色全失效）；② `--spacing` 用 `@theme inline` ⟹ 工具类内联成 px、产物里连声明都没有；③ 工具类编译后用 `:where(.redline-root, …)` **零特异性**收缩进我们自己的根（`:root` / `:host` 与 at-rule 豁免）。门禁新增 4 条（含「自己的色板必须自足」），全部反向验证过 |
 | M3-39 | **【CR-P2】DOM id 每实例唯一**：`baseGrp` / `turnPick` / `stepPick` 写死，而 `placement:'all'` 会双挂载 ⟹ 同文档重复 id | DONE | → `useId()` + `data-redline-*` 锚；迁走 12 处按旧 id 选控件的测试；门禁面 5′ 禁止写死无前缀 id；**反向验证**：写回 `id="baseGrp"` → 红 |
 | M6-13 | **【CR-P2】发布就绪门禁**：两个临时探针（宿主 op `probe.services` / 客户端 `?redline-probe=1`）「发布前必须删」却无机械门禁；npm 发布前提也缺（`repository.url`、`prepack`、`files` 缺 CHANGELOG） | DONE | → 新增 `scripts/check-release-ready.mjs`（**探针还在时它就是红的，这是对的**）并接进 `release-check`；补 `repository.url` / `prepack` / `files`；探针不再回传会话原文片段 |
-| M3-40 | **【CR-P2·剩】`data-*` 属性与上游同名**（`data-agent` / `data-cat` / `data-catdim` / `data-seq` / `data-kind`）：宿主 34 个 `dsh-client-*` 包对这些选择器实测 **0 命中** ⟹ 无即时污染，但全局脚本 / QA 会同时命中两个插件 | TODO | → 前缀化成 `data-redline-*`（涉及多处 TSX 与测试选择器，建议与下一次 UI 改动同批做；`scripts/css-closure.mjs` 已有宿主属性门禁可扩展） |
-| M6-14 | **【CR-P2·剩】npm 包内文档链接**：`README.md` 内嵌 `docs/screenshots/01-panel-live.png` 并索引 13 篇文档，而 `files` 不含 `docs/**` ⟹ npm 页面死链 / 裂图 | TODO | → 二选一：把必要文档/截图纳入 `files`，或把 README 里的仓库内链接改成绝对仓库 URL；补 CI 的 `pnpm pack --dry-run` 烟测 |
-| M6-15 | **【CR-P2·剩】与上游 0.64.0 的分叉清单与版本锚点**：`docs/01` / `UPSTREAM.md` 仍把并存对手写成 0.60.0（实装 0.64.0）；101 个同名文件中 **36 个已分叉**（含上游的修复与新能力混在我们的有意改动里），因全量改名**不会以冲突形式出现** | TODO | → 出「分叉清单 + 逐条处置（跟上 / 保留差异 / 记录理由）」；更新版本锚点与实测数字。归 docs 任务 |
-| M6-16 | **【CR-P2·剩】`icon.svg` 与上游逐字相同**（两个插件同图标，用户分不清） | TODO | → 发布前换原创 / 许可明确的图标 |
+| M3-40 | **【CR-P2】`data-*` 属性与上游同名**（`data-agent` / `data-cat` / `data-catdim` / `data-seq` / `data-kind`）：宿主 34 个 `dsh-client-*` 包实测 **0 命中** ⟹ 无即时污染，但全局脚本 / QA 会同时命中两个插件 | DONE | → TDD：先改 `tests/**` 64 处选择器 → `client`+`client-ui` **红 27 条** → 再改 `src/**` 34 处（组件 + `trendChart.css`）→ 绿；`namespace-contract` 新增面 **5′ data attribute**（旧裸键出现即红，反向验证过）；`demo/` 有意保持原样（它是独立的、你已确认过的交互产物） |
+| M6-14 | **【CR-P2】npm 包内文档链接**：`README.md` / `README.zh.md` 各内嵌 1 张截图并索引 13 篇文档，而 `files` 不含 `docs/**` / `demo/**` ⟹ npm 页面死链 / 裂图 | DONE | → 全库实测：图片目录 **12M**（不进 npm）、文档 644K；选**绝对链接**方案（GitHub 与 npm 都 100% 可用）：两 README 共 40 个链接 + 2 张图全部改成 `github.com/.../blob/main/...`（图走 `raw.githubusercontent.com`），`files` 保持精简；`check-release-ready` 新增门禁「README 里不许有相对链接」（反向验证：放回一个相对链接 → 红）；新增 `pnpm run pack:check`（`pnpm pack --dry-run` 清单烟测）并接进 CI |
+| M6-15 | **【CR-P2】与上游 0.64.0 的分叉清单与版本锚点**：`docs/01` / `UPSTREAM.md` 等仍把并存对手写成 0.60.0 | DONE | → **实测复测**：实装 `dsh-context@0.64.0`（`^0.64.0`）、clone 头 `v0.64.0-1-ga4c2b67`、`lc-*` **1482** 处 / `.lc-*` **455** 个；**三条路由与三个投影 key 未变 ⟹ F1/F2/F40 结论继续成立**，新增 `docs/01` **F51** 记录复测；把"现行实装"口径的版本锚点（`docs/00`/`docs/01`/`docs/03` S6/`docs/05`/`docs/08`/`docs/09`/`docs/11` D2/F40/`UPSTREAM.md`）改成 0.64.0，历史叙述（"照上游 0.60.0 抄"）保留并标注；`UPSTREAM.md` 新增**分叉清单**：以 `v0.59.2` 为基线三方对照 `src/**` 同名 101 个文件 = **21 双方未动 · 50 只我们改 · 5 只上游改 · 25 双方都改**，另上游独有 10（洞察/总览面，不提供）与我们独有 14，附可复现的复测命令 |
+| M6-16 | **【CR-P2】`icon.svg` 与上游逐字相同**（两插件同图标，用户分不清） | DONE | → 原创重绘（红线批注压在上下文行上的构图；10 条 path / 6 色，与上游 sha256 不同）；**没动任何断言**：`tests/client/icon.spec.ts` 的 lockstep 与 10-path/6-色 检查原样通过，`tsdown` 重建后把 `?raw` 内联进 `lib/client.js`；来源与授权记在 `UPSTREAM.md` §图标 |
 | M05-15 | 🙋 **交互定稿**：你逐条按 R 编号确认 → 结论回写 `docs/03` | WAIT🙋 | `docs/03-ui-spec.md`（只改对应 R 各条） |
 | M05-55 | **demo 跟随「起点口径」改写**（评审 P0 的界面侧）：`orch.spawn` 讲解词改成"**起点由平台定、记录是凭证**"；冻结记录行按 `isBranchable`（切点 == 当前最后一个 `turn/end`）决定给不给 `从这里开子会话`，**更早的记录只给 `平台暂不能从更早的切点分叉` 标记 + 替代路径**；确认框 ① 拆成「本条记录（凭证）」与「平台实际种子」两条；首屏预置记录冻在最新切点；`demo/README.md` 与 `DESIGN-BRIEF.md` 同步（设计 brief 第 6 条补"平台服务整体缺席 / 能力开关为 false → 入口**必须隐藏**"这一例外） | DONE | → 护栏按新口径重写（只有 1 个 spawn 按钮 + 原因标记在 + 不再出现"种子 = 这一条" + 确认框两个切点都在 + 更早的记录被拒建会话）→ **静态绿 + 208/208 绿**；重打包 `demo/redline-panel.standalone.html`（指纹 `82b9a0e`）。**浏览器实测**（`http://127.0.0.1:5180/redline-panel.standalone.html`，1440px，读数逐字见 `demo/screenshots/measure-log.md` §6）：首屏 1 个 spawn 按钮 → 在第 1 轮末再冻一条后**按钮仍是 1 个**，更早那条显示 `平台暂不能从更早的切点分叉`（title = 平台只取最后一个 turn/end）+ `更早的记录 … 这条作凭证`；确认框逐字含 `① 本条记录（凭证）snap-…120412 · 第 28 轮末 · 41 条` 与 `① 平台实际种子 父会话当前最后一个轮次末（28·3 及其之前）`；子会话行 = `来源记录 snap-20260930-120412`（截图 `demo/screenshots/seed-scope-rows.png`、`demo/screenshots/seed-scope-confirm.png`） `demo/demo.js`、`demo/check-runtime.mjs`、`demo/README.md`、`demo/DESIGN-BRIEF.md`、`demo/screenshots/measure-log.md`、`demo/redline-panel.standalone.html` |
 
@@ -420,7 +420,7 @@
 |---|---|---|---|---|---|
 | X 横切 | 8 | **2** | 4 | 1 | 1 |
 | M0   文档集 | 22 | **22** | 0 | 0 | 0 |
-| M0.5   交互 demo | 101 | **96** | 0 | 4 | 1 |
+| M0.5   交互 demo | 101 | **100** | 0 | 0 | 1 |
 | M1   骨架与身份 | 14 | **13** | 0 | 0 | 1 |
 | M2   编辑面 | 34 | **32** | 0 | 2 | 0 |
 | M3   右侧界面 | 36 | **32** | 1 | 3 | 0 |
@@ -429,7 +429,7 @@
 | M5   快照 → 子会话 → 压缩 → 对接官方团队 | 28 | **5** | 2 | 20 | 1 |
 | M6   入口与发布准备 | 12 | **7** | 1 | 4 | 0 |
 | M7+   本轮明确不做 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **285** | **221** | **11** | **46** | **7** |
+| **合计** | **285** | **225** | **11** | **42** | **7** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 

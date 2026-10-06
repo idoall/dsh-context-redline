@@ -51,6 +51,22 @@ if (pkg !== null) {
   }
 }
 
+/** ④ README 链接：`files` 不发 docs/demo ⟹ 相对链接在 npm 页面上会死（Code Review P2 / M6-14）。 */
+for (const doc of ['README.md', 'README.zh.md']) {
+  const text = read(doc)
+  const relative = []
+  for (const m of text.matchAll(/!?\[[^\]]*\]\(([^)]+)\)/g)) {
+    const url = m[1].trim()
+    if (url.startsWith('http') || url.startsWith('#') || url.startsWith('mailto:')) continue
+    relative.push(url)
+  }
+  if (relative.length > 0) {
+    problems.push(`${doc} 里有 ${relative.length} 个相对链接（npm 页面上会 404/裂图）：`
+      + `${[...new Set(relative)].slice(0, 3).join(', ')} … —— 改成绝对仓库 URL`
+      + `（图片用 raw.githubusercontent.com，其余用 github.com/.../blob/main/...）`)
+  }
+}
+
 if (problems.length === 0) {
   console.log('✅ 发布就绪检查通过（临时探针已清零、发布前提齐备）')
   process.exit(0)
