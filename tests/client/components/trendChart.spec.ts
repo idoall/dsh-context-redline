@@ -180,7 +180,7 @@ describe('TrendChart step granularity, total mode', () => {
     // Zero-value categories are skipped entirely (r3.user = 0 → five segments, no user-green segment).
     const segs3 = queryAll(bs[2], '.redline-bar-stack > div')
     assert.equal(segs3.length, 5)
-    assert.ok(![...segs3].some(s => s.style.background.includes('var(--color-green-500)')))
+    assert.ok(![...segs3].some(s => s.style.background.includes('var(--redline-color-green-500)')))
 
     // Total-mode axis: full quartile graduation — max, ¾, ½, ¼, 0.
     assert.equal(query(m.container, '.redline-axis-top').textContent, '660')
@@ -195,8 +195,8 @@ describe('TrendChart step granularity, total mode', () => {
     assert.equal(turns.length, 2)
     assert.equal(turns[0].style.width, '30px')
     assert.equal(turns[1].style.width, '14px')
-    assert.ok(turns[0].style.background.includes('var(--color-neutral-500) 12%'))
-    assert.ok(turns[1].style.background.includes('var(--color-neutral-500) 26%'))
+    assert.ok(turns[0].style.background.includes('var(--redline-color-neutral-500) 12%'))
+    assert.ok(turns[1].style.background.includes('var(--redline-color-neutral-500) 26%'))
     assert.deepEqual(turns.map(t => t.textContent), ['1', '0'])
     await m.unmount()
   })

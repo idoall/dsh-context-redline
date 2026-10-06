@@ -404,14 +404,14 @@ describe('tokenPartsOf', () => {
     assert.deepEqual(folded, {
       total: 210,
       parts: [
-        { key: 'system', color: 'var(--color-indigo-500)', value: 42 },
-        { key: 'tools', color: 'var(--color-amber-500)', value: 16 },
-        { key: 'user', color: 'var(--color-green-500)', value: 10 },
-        { key: 'inject', color: 'var(--color-purple-500)', value: 3 },
-        { key: 'skill', color: 'var(--color-orange-500)', value: 3 },
-        { key: 'assistant', color: 'var(--color-blue-500)', value: 64 },
-        { key: 'tool', color: 'var(--color-teal-500)', value: 32 },
-        { key: 'output', color: 'var(--color-pink-500)', value: 40 },
+        { key: 'system', color: 'var(--redline-color-indigo-500)', value: 42 },
+        { key: 'tools', color: 'var(--redline-color-amber-500)', value: 16 },
+        { key: 'user', color: 'var(--redline-color-green-500)', value: 10 },
+        { key: 'inject', color: 'var(--redline-color-purple-500)', value: 3 },
+        { key: 'skill', color: 'var(--redline-color-orange-500)', value: 3 },
+        { key: 'assistant', color: 'var(--redline-color-blue-500)', value: 64 },
+        { key: 'tool', color: 'var(--redline-color-teal-500)', value: 32 },
+        { key: 'output', color: 'var(--redline-color-pink-500)', value: 40 },
       ],
     })
   })
@@ -428,7 +428,7 @@ describe('tokenPartsOf', () => {
     assert.deepEqual(tokenPartsOf([hostile]), { parts: [], total: 0 })
     assert.deepEqual(tokenPartsOf([hostile, plain]), {
       total: 10,
-      parts: [{ key: 'system', color: 'var(--color-indigo-500)', value: 10 }],
+      parts: [{ key: 'system', color: 'var(--redline-color-indigo-500)', value: 10 }],
     })
   })
 })
@@ -470,7 +470,7 @@ describe('kpisOf', () => {
     // The aggregate cards' sources: the composition-folded billed split (the
     // unbilled session adds nothing) and the summed timing totals.
     assert.equal(kpi.tokenParts?.total, 200)
-    assert.deepEqual(kpi.tokenParts?.parts.find(p => p.key === 'system'), { key: 'system', color: 'var(--color-indigo-500)', value: 32 })
+    assert.deepEqual(kpi.tokenParts?.parts.find(p => p.key === 'system'), { key: 'system', color: 'var(--redline-color-indigo-500)', value: 32 })
     assert.deepEqual(kpi.timing, { wallMs: 120_000, ttftMs: 1_000, genMs: 30_000, calls: 6, toolsMs: 20_000, toolCalls: 7, tools: {} })
   })
 

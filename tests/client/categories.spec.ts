@@ -24,13 +24,13 @@ describe('partsOf', () => {
   test('reads all seven categories in CATS order with their colors', () => {
     const parts = partsOf(current({ system: 1, tools: 2, user: 3, inject: 4, skill: 5, assistant: 6, tool: 7 }))
     assert.deepEqual(parts.map(p => [p.key, p.color, p.value]), [
-      ['system', 'var(--color-indigo-500)', 1],
-      ['tools', 'var(--color-amber-500)', 2],
-      ['user', 'var(--color-green-500)', 3],
-      ['inject', 'var(--color-purple-500)', 4],
-      ['skill', 'var(--color-orange-500)', 5],
-      ['assistant', 'var(--color-blue-500)', 6],
-      ['tool', 'var(--color-teal-500)', 7],
+      ['system', 'var(--redline-color-indigo-500)', 1],
+      ['tools', 'var(--redline-color-amber-500)', 2],
+      ['user', 'var(--redline-color-green-500)', 3],
+      ['inject', 'var(--redline-color-purple-500)', 4],
+      ['skill', 'var(--redline-color-orange-500)', 5],
+      ['assistant', 'var(--redline-color-blue-500)', 6],
+      ['tool', 'var(--redline-color-teal-500)', 7],
     ])
   })
 
@@ -132,14 +132,14 @@ describe('billedParts', () => {
     // Input 400 equals the estimated total, so the ratios carry over as-is;
     // the eight parts sum to the chat line's 460 by construction.
     assert.deepEqual(parts.map(p => [p.key, p.color, p.value]), [
-      ['system', 'var(--color-indigo-500)', 50],
-      ['tools', 'var(--color-amber-500)', 50],
-      ['user', 'var(--color-green-500)', 100],
-      ['inject', 'var(--color-purple-500)', 0],
-      ['skill', 'var(--color-orange-500)', 0],
-      ['assistant', 'var(--color-blue-500)', 100],
-      ['tool', 'var(--color-teal-500)', 100],
-      ['output', 'var(--color-pink-500)', 60],
+      ['system', 'var(--redline-color-indigo-500)', 50],
+      ['tools', 'var(--redline-color-amber-500)', 50],
+      ['user', 'var(--redline-color-green-500)', 100],
+      ['inject', 'var(--redline-color-purple-500)', 0],
+      ['skill', 'var(--redline-color-orange-500)', 0],
+      ['assistant', 'var(--redline-color-blue-500)', 100],
+      ['tool', 'var(--redline-color-teal-500)', 100],
+      ['output', 'var(--redline-color-pink-500)', 60],
     ])
   })
 
