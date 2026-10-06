@@ -343,6 +343,38 @@ describe('the turn boundary (docs/03 R4.3: the demo disables 保存 mid-turn)', 
   })
 })
 
+describe('concurrent saves on one session must not lose an edit (Code Review P1-4)', () => {
+  test('two saves started together both survive (read-modify-write is serialized)', async () => {
+    const ops = await boot()
+    // 同时发起：两个 handler 会在第一个 await 处交错，各自读到同一份旧表。
+    // 没有串行化时，后写的整文件覆盖先写的 ⟹ 只剩 1 条（静默丢数据，而本地是唯一副本）。
+    const [a, b] = await Promise.all([
+      call(ops, { op: 'draft.update', sessionId: ops.sessionId, seq: 1301, edit: { text: '并发第一条', reasoning: '', isError: false } }),
+      call(ops, { op: 'draft.update', sessionId: ops.sessionId, seq: 1302, edit: { text: '并发第二条', reasoning: '', isError: false } }),
+    ])
+    assert.equal(a.ok, true, JSON.stringify(a))
+    assert.equal(b.ok, true, JSON.stringify(b))
+    const stored = JSON.parse(readFileSync(draftPath(ops), 'utf8')) as { edits: { seq: number, text: string }[] }
+    const seqs = stored.edits.map(e => e.seq).sort((x, y) => x - y)
+    assert.deepEqual(seqs, [1301, 1302], `两条都要在，实际 ${JSON.stringify(stored.edits)}`)
+    assert.deepEqual(ops.sessionWrites, [], '并发也只是写我们自己的文件')
+  })
+
+  test('a save racing a discard keeps the final file coherent', async () => {
+    const ops = await boot()
+    await call(ops, { op: 'draft.update', sessionId: ops.sessionId, seq: 1301, edit: { text: '先存一条', reasoning: '', isError: false } })
+    const [saved, dropped] = await Promise.all([
+      call(ops, { op: 'draft.update', sessionId: ops.sessionId, seq: 1302, edit: { text: '再存一条', reasoning: '', isError: false } }),
+      call(ops, { op: 'draft.drop', sessionId: ops.sessionId, seq: 1301 }),
+    ])
+    assert.equal(saved.ok, true, JSON.stringify(saved))
+    assert.equal(dropped.ok, true, JSON.stringify(dropped))
+    const stored = JSON.parse(readFileSync(draftPath(ops), 'utf8')) as { edits: { seq: number }[] }
+    // 无论谁先谁后，文件必须是"一条 1302"，而不是丢了一半的中间态。
+    assert.deepEqual(stored.edits.map(e => e.seq), [1302], JSON.stringify(stored.edits))
+  })
+})
+
 describe('the host re-checks what the row may do (Code Review P1-3)', () => {
   test('an assistant/message row is refused with assistant-immutable, and writes nothing', async () => {
     const ops = await boot()

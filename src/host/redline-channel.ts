@@ -163,12 +163,41 @@ async function readTable(ctx: Context, sessionId: string): Promise<RedlineEnvelo
   return redlineOk(parsed.table)
 }
 
+/**
+ * Per-session write queue (Code Review P1-4).
+ *
+ * `draft.update` / `draft.drop` are read-modify-write over ONE file, and the local
+ * edits are the only copy that exists (the session log never sees them). Two clients
+ * (two tabs, a double click, a stale page) used to interleave: both read the same
+ * table, both wrote it whole, and the later write won — silently losing the other
+ * edit. Serializing per session makes the pair of operations atomic with respect to
+ * each other; different sessions still proceed in parallel.
+ */
+const writeQueues = new Map<string, Promise<unknown>>()
+let writeTicket = 0
+
+/** Run `task` after every earlier queued write for that session has settled. */
+function withSessionLock<T>(sessionId: string, task: () => Promise<T>): Promise<T> {
+  const previous = writeQueues.get(sessionId) ?? Promise.resolve()
+  // Run regardless of whether the previous write succeeded or failed.
+  const run = previous.then(task, task)
+  const tail = run.then(() => undefined, () => undefined)
+  writeQueues.set(sessionId, tail)
+  void tail.then(() => {
+    // Only the last queued write clears the slot (a later one may have replaced it).
+    if (writeQueues.get(sessionId) === tail) writeQueues.delete(sessionId)
+  })
+  return run
+}
+
 /** Write a session's local edits atomically (`.tmp` + rename) — our ONLY write. */
 async function writeTable(ctx: Context, sessionId: string, table: DraftTable): Promise<RedlineEnvelope<DraftTable>> {
   const dir = dataDirOf(ctx)
   if (dir === null) return fail(REDLINE_ERROR.internal, 'the harness home is not available')
   const target = join(dir, draftFileName(sessionId))
-  const temp = `${target}.tmp-${process.pid}-${Date.now().toString(36)}`
+  // 唯一临时名：同进程同一毫秒的两次并发写不能用同一个 .tmp（Code Review P1-4 实测到
+  // rename 互相搬走 ⟹ ENOENT，比"后写覆盖先写"更早暴露）。
+  const temp = `${target}.tmp-${process.pid}-${Date.now().toString(36)}-${(writeTicket += 1).toString(36)}`
   try {
     await mkdir(dir, { recursive: true })
     await writeFile(temp, serializeDrafts(sessionId, table), 'utf8')
@@ -427,6 +456,8 @@ const updateDraft: RedlineOpHandler = async ({ ctx, call }) => {
   if (!state.known) return fail(REDLINE_ERROR.notLive)
   if (state.open) return fail(REDLINE_ERROR.turnOpen)
 
+  // 读—改—写整段串行化（同一会话的并发保存不再互相覆盖）。
+  return await withSessionLock(sessionId, async () => {
   const current = await readTable(ctx, sessionId)
   if (!current.ok) return current
   const event = await resolveEvent(ctx, sessionId, seq)
@@ -472,6 +503,7 @@ const updateDraft: RedlineOpHandler = async ({ ctx, call }) => {
     ...(typeof bag.name === 'string' ? { name: bag.name } : {}),
   }
   return await writeTable(ctx, sessionId, putEdit(current.value, localEdit))
+  })
 }
 
 /** Forget one row's local edit (the row goes back to its original). */
@@ -484,12 +516,14 @@ const dropDraft: RedlineOpHandler = async ({ ctx, call }) => {
   const state = await turnStateOfSession(ctx, sessionId)
   if (!state.known) return fail(REDLINE_ERROR.notLive)
   if (state.open) return fail(REDLINE_ERROR.turnOpen)
-  const current = await readTable(ctx, sessionId)
-  if (!current.ok) return current
-  const next = dropEdit(current.value, seq)
-  // 没有任何改动可丢：什么都不做，也不创建文件（幂等且零副作用）。
-  if (next === current.value) return redlineOk(current.value)
-  return await writeTable(ctx, sessionId, next)
+  return await withSessionLock(sessionId, async () => {
+    const current = await readTable(ctx, sessionId)
+    if (!current.ok) return current
+    const next = dropEdit(current.value, seq)
+    // 没有任何改动可丢：什么都不做，也不创建文件（幂等且零副作用）。
+    if (next === current.value) return redlineOk(current.value)
+    return await writeTable(ctx, sessionId, next)
+  })
 }
 
 /**
