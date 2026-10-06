@@ -35,3 +35,11 @@
 .redline-confirm-field textarea { font: inherit; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base, transparent); border: 1px solid var(--dsw-alias-border-l1); border-radius: 5px; padding: 6px 8px; resize: vertical; }
 .redline-modal-foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .redline-ok { font-size: 11px; color: var(--dsw-alias-state-success-primary, #22c55e); }
+
+/* 结果回流（`docs/06` §3.3）：结算通知的徽章。三态用同一个语汇（圆点 + 文字），
+   颜色只做辅助：未确认 = 琥珀（要人看一眼）、已接着做 = 绿（父会话自己处理过了）、
+   已查看 = 灰（在我们自己的表里标过，不写会话）。 */
+.redline-settled { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-secondary); }
+.redline-settled-unseen { border-color: var(--dsw-alias-state-warn-primary, #f59e0b); color: var(--dsw-alias-state-warn-primary, #f59e0b); }
+.redline-settled-continued { border-color: var(--dsw-alias-state-success-primary, #22c55e); color: var(--dsw-alias-state-success-primary, #22c55e); }
+.redline-settled-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }

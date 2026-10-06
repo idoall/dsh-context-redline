@@ -246,6 +246,13 @@ export interface Snapshot {
   requests: RequestRecord[]
   events: ContextEventRecord[]
   /**
+   * Settle notices with their three-state judgement (oldest first). ADDITIVE-
+   * OPTIONAL: absent when the log holds no notice (and on rows folded before
+   * the field existed) - the child-session card then shows no badge. Bounded
+   * at the fold's own notice cap, so it never grows with the log.
+   */
+  pending?: PendingRow[]
+  /**
    * Cumulative session-cost raw material (per-provider, per-model billed
    * token totals — see SessionCostUsage). Absent until a request with a
    * known model reports usage.
@@ -631,6 +638,38 @@ export interface RequestRecord {
 }
 
 /** A notable context event (compaction, prune, injection, model switch). */
+/**
+ * One `subagent-settled` notice from the runtime (`docs/06` §3.3 result
+ * flow-back): the parent's log carries a `user/message` whose durable
+ * `source.kind` is `subagent-settled`, with `summary` (the runtime's own
+ * one-line account) and `senderSessionId` (the child that settled). We never
+ * summarize a child's work, never write a session and never touch the child's
+ * state - the panel only makes the notice and its state visible.
+ */
+export interface SettleNotice {
+  /** Log seq of the notice message (identity + ordering). */
+  seq: number
+  /** The child that settled (`source.senderSessionId`). */
+  childId: string
+  /** The runtime's account, shown verbatim. */
+  summary: string
+  /** Event time. */
+  at: number
+}
+
+/**
+ * `continued` = a later request proves the parent carried on; `seen` = the
+ * human marked it in our own store (never in a session); `unseen` = nobody
+ * has. Ordered by evidence strength, so the strongest wins.
+ */
+export type PendingState = 'continued' | 'seen' | 'unseen'
+
+/** One settle notice with its judged state. */
+export interface PendingRow {
+  notice: SettleNotice
+  state: PendingState
+}
+
 export interface ContextEventRecord {
   seq: number
   time: number
@@ -642,6 +681,12 @@ export interface ContextEventRecord {
   name?: string
   /** One-line producer account (notice-form summary), shown after the name. */
   detail?: string
+  /**
+   * Set ONLY on `subagent-settled` notices: the child session that settled
+   * (`source.senderSessionId`) — the link from a notice to a child-session
+   * index row. Absent on every other event kind.
+   */
+  childId?: string
   from?: string
   to?: string
   /** Turn/step of the request logged right BEFORE the event (host-stamped). */

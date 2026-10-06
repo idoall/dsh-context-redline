@@ -148,6 +148,11 @@ export interface MessageSource {
   sections?: ({ name?: string } | null)[]
   // agent-instructions reconciliation entries (same nullable-entry caution).
   changes?: ({ path?: string } | null)[]
+  // The runtime's own account that a continuable child settled
+  // (`source.kind === 'subagent-settled'`): the child's session id. Structural
+  // and optional like every other producer field here — the fold reads it only
+  // to link the notice to an index row (`docs/06` §3.3).
+  senderSessionId?: string
 }
 
 /**

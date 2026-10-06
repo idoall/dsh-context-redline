@@ -22,6 +22,7 @@ import { createElement as h, useCallback, useEffect, useRef, useState, type Chan
 import type { ViewKit } from '../viewkit'
 import type { ChildRow } from '../childSessions'
 import type { ChildPlan, ChildStarted, RedlineResult } from '../redlineChannel'
+import type { PendingRow } from '../../shared/types'
 
 export interface ChildCardProps {
   /** The parent session the panel is showing. */
@@ -34,6 +35,12 @@ export interface ChildCardProps {
   readonly turnOpen: boolean
   /** How many local edits the confirm box will carry (0 → the sentence says "no edits"). */
   readonly carriedCount: number
+  /**
+   * Result flow-back rows from the parent's log (`docs/06` §3.3): one per
+   * `subagent-settled` notice, judged by the host. Absent = this log has no
+   * notices (or an older host half), which simply means no badge.
+   */
+  readonly pending?: readonly PendingRow[]
   /** `child.plan` — read-only, builds the five items for this exact task text. */
   readonly plan: (humanTask: string) => Promise<RedlineResult<ChildPlan>>
   /** `child.start` — the ONLY session write the panel can perform. */
@@ -115,12 +122,19 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
     }, [busy, plan, refused, props.start, task])
 
     const active = props.rows.filter(row => row.live === true && row.open === true).length
+    // Result flow-back: how many settle notices nobody has dealt with. The host
+    // does the judging (`src/redline/pending.ts`); the card only counts.
+    const unseen = (props.pending ?? []).filter(item => item.state === 'unseen').length
     const errKey = errorCode === null ? null : `redline.err.${errorCode.replace('redline/', '')}`
 
     return h('div', { className: 'redline-card' },
       h('div', { className: 'redline-card-title' },
         h('span', { className: 'redline-card-title-text' }, t('child.title')),
         h('span', { className: 'redline-card-scale' }, t('child.bmeta', { a: active, n: props.rows.length })),
+        unseen > 0
+          ? h('span', { className: 'redline-settled redline-settled-unseen', 'data-redline-unseen': String(unseen), title: t('child.settled.tip') },
+            h('i', { className: 'redline-settled-dot' }), t('child.settled.count', { n: unseen }))
+          : null,
       ),
 
       h('section', { className: 'redline-orch-block', 'data-redline-block': 'spawn' },
@@ -146,6 +160,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
           ? h('div', { className: 'redline-cap' }, t('child.empty'))
           : props.rows.map((row) => {
             const state = stateOf(row)
+            const settled = props.pending?.find(item => item.notice.childId === row.id)
             const clock = clockOf(row.createdAt)
             return h('div', { className: 'redline-orch-row', key: row.id, 'data-redline-child': row.id },
               h('div', { className: 'redline-orch-id' },
@@ -154,6 +169,13 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
                 h('span', { className: 'redline-badge-state' },
                   h('i', { className: 'redline-mstat redline-mstat-' + state.tone }),
                   t(state.key)),
+                settled === undefined
+                  ? null
+                  : h('span', {
+                    className: 'redline-settled redline-settled-' + settled.state,
+                    'data-redline-settled': settled.state,
+                    title: t('child.settled.tip') + '\n' + settled.notice.summary,
+                  }, h('i', { className: 'redline-settled-dot' }), t('child.settled'), ' · ', t('child.settled.' + settled.state)),
                 row.label === '' ? null : h('span', { className: 'redline-cap' }, row.label),
                 clock === null ? null : h('span', { className: 'redline-cap' }, clock),
               ),

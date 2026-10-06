@@ -180,3 +180,51 @@ describe('第 5 张卡：确认框（宿主的五项 + 第一句话由人写）'
     await m.unmount()
   })
 })
+
+describe('第 5 张卡：结果回流徽章（读父会话的结算通知）', () => {
+  const pendingOf = (childId: string, state: 'unseen' | 'seen' | 'continued') => ([
+    { notice: { seq: 42, childId, summary: 'Background subagent finished', at: 1_700_000_000_000 }, state },
+  ])
+
+  test('有通知的行显示「已结算 · 未确认」，卡片标题给出待确认计数', async () => {
+    const m = await open({ pending: pendingOf('66da37b9-4bdb-4b9a-98a4-93c0c1747787', 'unseen') })
+    const badge = query(m.container, '[data-redline-settled]')
+    assert.equal(badge.getAttribute('data-redline-settled'), 'unseen')
+    const body = text(badge)
+    assert.ok(body.includes(DICT_EN['child.settled']), '先说"已结算"')
+    assert.ok(body.includes(DICT_EN['child.settled.unseen']), '再说它现在的状态')
+    assert.equal(query(m.container, '[data-redline-unseen]').getAttribute('data-redline-unseen'), '1')
+    await m.unmount()
+  })
+
+  test('三态各自渲染，且**只有**未确认会被计数', async () => {
+    const m = await open({
+      rows: [
+        { id: 'a', short: 'a', label: '', mode: 'continuable', createdAt: 0, live: false, open: false },
+        { id: 'b', short: 'b', label: '', mode: 'continuable', createdAt: 0, live: false, open: false },
+        { id: 'c', short: 'c', label: '', mode: 'continuable', createdAt: 0, live: false, open: false },
+      ],
+      pending: [
+        { notice: { seq: 1, childId: 'a', summary: 'x', at: 0 }, state: 'unseen' },
+        { notice: { seq: 2, childId: 'b', summary: 'y', at: 0 }, state: 'seen' },
+        { notice: { seq: 3, childId: 'c', summary: 'z', at: 0 }, state: 'continued' },
+      ],
+    })
+    assert.deepEqual(queryAll(m.container, '[data-redline-settled]').map(e => e.getAttribute('data-redline-settled')), ['unseen', 'seen', 'continued'])
+    assert.equal(query(m.container, '[data-redline-unseen]').getAttribute('data-redline-unseen'), '1', '待确认只有那一条')
+    await m.unmount()
+  })
+
+  test('没有通知就不长徽章（也不显示计数）', async () => {
+    const m = await open()
+    assert.equal(queryAll(m.container, '[data-redline-settled]').length, 0)
+    assert.equal(queryAll(m.container, '[data-redline-unseen]').length, 0)
+    await m.unmount()
+  })
+
+  test('通知里带的是别的子会话 ⟹ 不贴到这一行上', async () => {
+    const m = await open({ pending: pendingOf('not-in-this-list', 'unseen') })
+    assert.equal(queryAll(m.container, '[data-redline-settled]').length, 0, '按 childId 对上才贴')
+    await m.unmount()
+  })
+})

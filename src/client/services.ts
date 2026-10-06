@@ -394,6 +394,7 @@ export function timelineOf(value: unknown): ContextTimeline | null {
   // The split-generation head fields survive sanitizing too.
   const counts = countsOf(data.counts)
   const last = lastOf(data.last)
+  const pending = pendingOf(data.pending)
   const safe: ContextTimeline = {
     ok: true,
     ...(unsupported !== null ? { unsupported } : {}),
@@ -421,6 +422,7 @@ export function timelineOf(value: unknown): ContextTimeline | null {
     archive: objectsOf(data.archive),
     ...(counts !== undefined ? { counts } : {}),
     ...(last !== undefined ? { last } : {}),
+    ...(pending !== undefined ? { pending } : {}),
     ...(typeof data.detailRev === 'number' && Number.isFinite(data.detailRev) ? { detailRev: data.detailRev } : {}),
     ...(cost !== undefined ? { cost } : {}),
     ...(timing !== null ? { timing } : {}),
@@ -431,6 +433,38 @@ export function timelineOf(value: unknown): ContextTimeline | null {
     ...(typeof data.fileOpsFloor === 'number' ? { fileOpsFloor: data.fileOpsFloor } : {}),
   }
   return safe
+}
+
+/**
+ * The settle-notice rows, re-proved per entry: a row whose notice lacks a
+ * finite seq / non-empty child id / string summary, or whose state is not one
+ * of the three, drops out. An empty result stays absent, so the card's badge
+ * logic never has to distinguish "no notices" from "all of them were junk".
+ */
+function pendingOf(value: unknown): ContextTimeline['pending'] {
+  const list = objectsOf<Record<string, unknown>>(value)
+  const out: NonNullable<ContextTimeline['pending']> = []
+  for (const entry of list) {
+    const notice = entry.notice
+    if (notice === null || typeof notice !== 'object') continue
+    const rec = notice as Record<string, unknown>
+    const seq = rec.seq
+    const childId = rec.childId
+    const state = entry.state
+    if (typeof seq !== 'number' || !Number.isFinite(seq)) continue
+    if (typeof childId !== 'string' || childId === '') continue
+    if (state !== 'continued' && state !== 'seen' && state !== 'unseen') continue
+    out.push({
+      notice: {
+        seq,
+        childId,
+        summary: typeof rec.summary === 'string' ? rec.summary : '',
+        at: typeof rec.at === 'number' && Number.isFinite(rec.at) ? rec.at : 0,
+      },
+      state,
+    })
+  }
+  return out.length > 0 ? out : undefined
 }
 
 /**

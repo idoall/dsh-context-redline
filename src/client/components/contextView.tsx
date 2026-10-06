@@ -538,6 +538,7 @@ export function makeContextView(
               live={redline.turn.known}
               turnOpen={redline.turn.open}
               carriedCount={Object.keys(redline.table).length}
+              pending={data.pending}
               plan={children.plan}
               start={children.start}
             />
