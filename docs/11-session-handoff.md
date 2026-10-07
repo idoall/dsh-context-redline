@@ -1175,3 +1175,42 @@ M5-18 的另一半（我们自己的"已查看"标记）做完了：`src/shared/
 1. **做 M5 剩余项之前，先把 D14 那一节读完** —— `docs/10` 的行可能是 D14 之前的旧计划；
 2. **"界面减法"做完以后，`docs/10` 里与之冲突的行要同一轮改掉** —— 否则下一个会话会把删掉的东西再"做回来"（这次就是这么来的）；
 3. **作废不是删事实**：平台的 `subagent-settled`、`agentTeams` 服务、`tryMembership` 这些**平台事实**照旧写在 `docs/01`，只是我们**不再拿它们做界面入口**。
+
+### D55 的真机收尾读数（2026-10-07 22:23 重启之后）
+
+**判据一：三条 op 真的没了**（`POST /api/dsh-context-redline/redline`，走 3081 那条能鉴权的入口）：
+
+```
+probe.services → {"ok":true,…}                     ← 新宿主半边已加载（重启生效）
+team.list      → {"ok":false,"error":{"code":"redline/unknown-op","message":"unknown redline op: team.list"}}
+pending.list   → {"ok":false,"error":{"code":"redline/unknown-op",…}}
+pending.seen   → {"ok":false,"error":{"code":"redline/unknown-op",…}}
+```
+
+**留下的没被误伤**：`turnState` → `{"known":false,"open":false}` · `draft.list` → `{}` ·
+`child.plan`（人写"把测试补上"）→ 五项齐全、`carriedSeqs` 与第一句话都在。
+
+**判据二：界面回到两块**（headless Chromium 打开 3081，点开「上下文批改」页签）：
+
+```
+blocks        = ["spawn","children"]     ← demo 契约
+teamBlock = 0 · seenButtons = 0 · settledBadges = 0 · unseenCount = 0
+spawnButton = 1 · childRows = 1 · 99 个 redline- 类名
+子会话  活跃 0 · 共 0 个 / 开子会话 … / [开启子会话] … / 子会话  你开出去的新会话 · 看状态与来源 /（还没有子会话）
+```
+
+截图：[`08-child-card-two-blocks.png`](screenshots/08-child-card-two-blocks.png) · [`07-panel-after-removal.png`](screenshots/07-panel-after-removal.png)
+
+**判据三：事实照旧显示**（同一次读数里，事件卡的活证据）：
+`通知 · subagent-settled · Background subagent 4f18f548-… finished…`（第 82 轮 · 第 70 步 22:09:42）——
+就是我们这一个子代理结算时运行时自己写进父会话的那条：**入口撤了，事实还在**。
+
+**顺手排除一条 404**：控制台里那条 `404 /api/changes.summary?sessionId=…` **不是我们的命名空间**
+（我们只注册 `/api/dsh-context-redline/{redline,detail,balance,backfill}`，全仓没有 `changes.summary`）⟹ 是别人的端点，不计入我们的门禁。
+
+### 真机顺手抓到的下一个缺口（= `docs/10` **M5-13**）
+
+demo 的标题是 **`活跃 N / 8 · 共 M 个`**，我们只显示 **`活跃 0 · 共 0 个`** —— **少了 `/ 8`**。口径已钉：
+`maxMembers` 的**库默认是 16**，而这台机器由
+`…/@deepseek-ai/dsh-experimental-agent-team-profile/cordis.patch.yml:20` 配成 **8**（`docs/01` F31）⟹
+实现要**从活服务防御性读取**（`teams.config?.maxMembers`），读不到就**只写 `活跃 N`、不编数字**，触顶时给人话。
