@@ -86,6 +86,18 @@ interface SessionQueryFace {
  * 所以"拿不到活 Agent"与"服务不在"都要当成"这台运行时不提供这份数据"处理（`docs/10` M5-24：返回 `null`）。
  */
 interface AgentTeamsFace {
+  /**
+   * 建一个**官方团队成员**（M5-01 的优先路径）。签名按安装树：
+   * `spawnTeammate(caller, { name, description, prompt: ContentBlock[], context, provider, signal })`。
+   */
+  spawnTeammate?(caller: unknown, request: {
+    name: string
+    description: string
+    prompt: readonly { type: string; text: string }[]
+    context: 'fresh' | 'fork'
+    provider: string
+    signal: AbortSignal
+  }): Promise<unknown>
   listTasks?(caller: unknown): unknown
   membership?(sessionId: string): unknown
 }
@@ -629,13 +641,30 @@ const startChild: RedlineOpHandler = async ({ ctx, call }) => {
     return fail(REDLINE_ERROR.noSubagents)
   }
   const label = '上下文批改 · ' + sessionId.slice(-8)
+  const prompt = [{ type: 'text', text: first.prompt }]
+  const signal = new AbortController().signal
+  // M5-01 优先 / M5-02 兜底：有官方团队服务就建**官方成员**（它能被官方界面管理、也能收团队消息）；
+  // 没有才退回"裸子会话"，并让调用方知道走的是哪条路（界面要如实标注）。
+  const teams = ctx.get('agentTeams') as AgentTeamsFace | undefined | null
+  if (teams !== undefined && teams !== null && typeof teams.spawnTeammate === 'function') {
+    const asMember = await teams.spawnTeammate(parent, {
+      name: label,
+      // description 用**人写的第一句话**本身（不替用户概括、不生成新内容）。
+      description: first.prompt.split('\n', 1)[0].slice(0, 80),
+      prompt,
+      context: 'fork',
+      provider: 'fork',
+      signal,
+    })
+    return redlineOk({ via: 'official-member', label, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: asMember === undefined ? null : asMember })
+  }
   const started = await subagents.startContinuable({
     provider: 'fork',
     label,
-    request: { parent, prompt: [{ type: 'text', text: first.prompt }] },
-    signal: new AbortController().signal,
+    request: { parent, prompt },
+    signal,
   })
-  return redlineOk({ label, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: started === undefined ? null : started })
+  return redlineOk({ via: 'bare-child', label, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: started === undefined ? null : started })
 }
 
 /**

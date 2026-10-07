@@ -42,6 +42,7 @@ interface ChildOps {
   logOffset: () => number
   starts: Record<string, unknown>[]
   teamCalls: unknown[]
+  spawnCalls: { caller: unknown, request: Record<string, unknown> }[]
   /** 假的活 Agent：`request.parent` 该收到它。 */
   agent: unknown
   setLog: (next: { type: string }[]) => void
@@ -49,7 +50,7 @@ interface ChildOps {
 
 let nullableAgentFor = ''
 
-async function boot(options: { withSubagents?: boolean, withTeams?: 'ok' | 'throws' | 'off' } = {}): Promise<ChildOps> {
+async function boot(options: { withSubagents?: boolean, withTeams?: 'ok' | 'throws' | 'off' | 'spawn' } = {}): Promise<ChildOps> {
   const { withSubagents = true, withTeams = 'off' } = options
   const home = mkdtempSync(join(tmpdir(), 'redline-child-'))
   homes.push(home)
@@ -58,6 +59,8 @@ async function boot(options: { withSubagents?: boolean, withTeams?: 'ok' | 'thro
   const starts: Record<string, unknown>[] = []
   /** 每次 team.list 调官方 listTasks 时收到的 caller。 */
   const teamCalls: unknown[] = []
+  /** 每次 team.list 调官方 spawnTeammate 时收到的 (caller, request)。 */
+  const spawnCalls: { caller: unknown, request: Record<string, unknown> }[] = []
   const ctx = new Context()
   ctx.provide('connection', {
     fetch: { register(route: CapturedRoute) { routes.push(route); return () => {} } },
@@ -108,6 +111,14 @@ async function boot(options: { withSubagents?: boolean, withTeams?: 'ok' | 'thro
         return [{ id: 't-1', revision: 3, subject: '把测试补上', status: 'pending', ready: true, ownerName: '小王' }]
       },
       membership() { return { role: 'lead' } },
+      ...(withTeams === 'spawn'
+        ? {
+            async spawnTeammate(caller: unknown, request: Record<string, unknown>) {
+              spawnCalls.push({ caller, request })
+              return { member: { id: 'member-1', name: '上下文批改 · test', role: 'teammate', phase: 'active' } }
+            },
+          }
+        : {}),
     })
   }
   if (withSubagents) {
@@ -132,7 +143,7 @@ async function boot(options: { withSubagents?: boolean, withTeams?: 'ok' | 'thro
   assert.ok(channel !== undefined, 'the channel registered')
   return {
     ctx, channel, home, sessionId: session.id, sessionWrites,
-    logOffset: () => session.seq, starts, agent: fakeAgent, teamCalls,
+    logOffset: () => session.seq, starts, agent: fakeAgent, teamCalls, spawnCalls,
     setLog: (next) => { log = next },
   }
 }
@@ -278,5 +289,32 @@ describe('team.list：官方 Agent Teams 那份数据（M5-24 的契约：不提
     const reply = await call(ops, { op: 'team.list', sessionId: ops.sessionId })
     assert.equal(reply.ok, true, '通道永远不因为对方的错而炸')
     assert.equal(reply.value, null)
+  })
+})
+
+describe('M5-01 优先路径：有官方团队服务就建官方成员（不行才兜底裸子会话）', () => {
+  test('官方服务在 → 调 spawnTeammate（request 形状按安装树），且**不走**兜底那条路', async () => {
+    const ops = await boot({ withTeams: 'spawn' })
+    await saveEdit(ops, 1301, EDITED)
+    const value = (await call(ops, { op: 'child.start', sessionId: ops.sessionId, humanTask: '按改好的上下文继续' })).value as Record<string, unknown>
+    assert.equal(value.via, 'official-member', '界面据此如实标注走的是哪条路')
+    assert.equal(ops.spawnCalls.length, 1, '官方被调一次')
+    assert.equal(ops.starts.length, 0, '不许同时走两条路')
+    const { caller, request } = ops.spawnCalls[0]
+    assert.equal(caller, ops.agent, 'caller 是那个活 Agent')
+    assert.equal(request.context, 'fork')
+    assert.equal(request.provider, 'fork')
+    assert.ok(Array.isArray(request.prompt) && (request.prompt as unknown[]).length === 1)
+    assert.ok((request.prompt as { text: string }[])[0].text.includes(EDITED), '改后正文逐字进去')
+    assert.ok(request.signal instanceof AbortSignal, 'signal 必填')
+    assert.equal(request.description, '按改好的上下文继续', 'description 用的是人写的第一句话本身，不替用户概括')
+  })
+
+  test('官方服务不在 → 走兜底，并如实标成 bare-child', async () => {
+    const ops = await boot({ withTeams: 'off' })
+    const value = (await call(ops, { op: 'child.start', sessionId: ops.sessionId, humanTask: '继续' })).value as Record<string, unknown>
+    assert.equal(value.via, 'bare-child')
+    assert.equal(ops.starts.length, 1)
+    assert.equal(ops.spawnCalls.length, 0)
   })
 })
