@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { planChild, readCapacity, readOrigins, readTurnState, startChild, type ChildPlan, type ChildStarted, type RedlineResult } from './redlineChannel'
 import { viaOf, type OriginRecord, type OriginVia } from '../shared/redline-origins'
+import { REDLINE_ERROR as ERR } from '../shared/redline-errors'
 import { UNKNOWN_CAPACITY, capacityOf, type ChildCapacity } from '../shared/redline-capacity'
 
 /** One row of the index. */
@@ -97,6 +98,11 @@ export interface ChildController {
    * **不许**说成"不是在这儿开的"（那是把一个我们没证据的结论说成事实）。
    */
   readonly originsKnown: boolean
+  /**
+   * 台账**为什么**读不出来（错误码）；\`null\` = 没有这件事。
+   * 界面要把它说出来 —— 只说"来源未知"等于把原因吞掉（`docs/11` D54 的教训）。
+   */
+  readonly originsError: string | null
   /** Open the confirm box: the five items the host builds for this exact task. */
   readonly plan: (humanTask: string) => Promise<RedlineResult<ChildPlan>>
   /** The only call in this whole panel that writes a session (`docs/11` D15). */
@@ -146,19 +152,24 @@ export function useChildSessions(
   }, [base])
 
   // 来源台账：跟着会话取一次；`known:false` 的初值意味着"在回答到达之前不冒充知道"。
-  const [origins, setOrigins] = useState<{ known: boolean, records: readonly OriginRecord[] }>({ known: false, records: [] })
+  // 与上面的索引探测同一个惯用法：用"第几代"而不是 `let cancelled`（后者会被
+  // `no-unnecessary-condition` 判成恒假 —— 规则看不见闭包里的赋值）。
+  interface OriginsState { known: boolean; records: readonly OriginRecord[]; error: string | null }
+  const EMPTY_ORIGINS: OriginsState = { known: false, records: [], error: null }
+  const [origins, setOrigins] = useState<OriginsState>(EMPTY_ORIGINS)
+  const originsGeneration = useRef(0)
   useEffect(() => {
     if (sessionId === undefined || sessionId === '') return
-    let cancelled = false
+    originsGeneration.current += 1
+    const mine = originsGeneration.current
     void (async () => {
       const answer = await readOrigins(sessionId)
-      if (cancelled) return
-      if (!answer.ok) { setOrigins({ known: false, records: [] }); return }
+      if (originsGeneration.current !== mine) return
+      if (!answer.ok) { setOrigins({ known: false, records: [], error: ERR.transport }); return }
       setOrigins(answer.value.records === null
-        ? { known: false, records: [] }
-        : { known: true, records: answer.value.records })
+        ? { known: false, records: [], error: answer.value.error ?? ERR.originCorrupt }
+        : { known: true, records: answer.value.records, error: null })
     })()
-    return () => { cancelled = true }
   }, [sessionId])
 
   const rows = useMemo(
@@ -198,7 +209,7 @@ export function useChildSessions(
   }, [sessionId])
 
   return useMemo(
-    () => ({ rows, capacity, originsKnown: origins.known, plan, start }),
-    [rows, capacity, origins.known, plan, start],
+    () => ({ rows, capacity, originsKnown: origins.known, originsError: origins.error, plan, start }),
+    [rows, capacity, origins.known, origins.error, plan, start],
   )
 }

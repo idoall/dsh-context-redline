@@ -308,4 +308,13 @@ describe('第 5 张卡：来源徽章（M5-12，靠我们自己记的台账）',
     assert.notEqual(text(badge(m)), DICT_EN['child.src.other'], '没有证据就不许下结论')
     await m.unmount()
   })
+
+  test('台账读不出来时**把原因说出来**（错误码 → 人话，不许只写"来源未知"）', async () => {
+    const m = await open({ rows: withVia(null), originsKnown: false, originsError: 'redline/origin-corrupt' })
+    const line = query(m.container, '[data-redline-origins-error]')
+    assert.equal(line.getAttribute('data-redline-origins-error'), 'redline/origin-corrupt')
+    assert.equal(text(line), DICT_EN['redline.err.origin-corrupt'], '原料是错误码，界面给的是人话')
+    assert.equal(text(line).includes('origin-corrupt'), false, '不许把码直接丢给人看')
+    await m.unmount()
+  })
 })

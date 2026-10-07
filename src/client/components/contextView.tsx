@@ -535,6 +535,7 @@ export function makeContextView(
               rows={children.rows}
               capacity={children.capacity}
               originsKnown={children.originsKnown}
+              originsError={children.originsError}
               live={redline.turn.known}
               turnOpen={redline.turn.open}
               carriedCount={Object.keys(redline.table).length}

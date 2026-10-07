@@ -179,6 +179,9 @@ export const DICT_ZH: Record<string, string> = {
   'redline.err.bad-request': '这条改动的参数不合法（这是缺陷，请把这条报出来）',
   'redline.err.internal': '宿主保存失败，你的输入还在',
   'redline.err.unknown-op': '这一条请求宿主不认（多半是页面版本比插件旧）：刷新页面再试',
+  // 来源台账（M5-12）：读不出来时要说**原因**，不许只写"来源未知"（错误码 → 人话）。
+  'redline.err.origin-corrupt': '本地那份「来源」台账读不出来（可能被手改过或写坏过）—— 删掉它就能重建；这只影响界面显示的来源，不影响任何会话',
+  'redline.err.origin-schema': '本地那份「来源」台账来自另一个版本的插件 —— 删掉它就能重建；不影响任何会话',
   'redline.err.no-draft': '这一条还没有本地改动可丢',
   'redline.err.empty-task': '子会话的第一句话必须由你自己写 —— 它要做什么不能替你决定',
   'redline.err.no-subagents': '这台运行时没有可用的子会话服务：只能把改好的正文手动带过去',
@@ -433,6 +436,8 @@ export const DICT_EN: Record<string, string> = {
   'redline.err.bad-request': 'The save arguments were invalid (this is a defect — please report it)',
   'redline.err.internal': 'The host failed to save; your input is kept',
   'redline.err.unknown-op': 'The host does not know this request (the page is probably older than the plugin): reload and retry',
+  'redline.err.origin-corrupt': 'The local origin ledger cannot be read (hand-edited or written badly) - deleting it rebuilds it; this only affects the origin shown in the UI, never a session',
+  'redline.err.origin-schema': 'The local origin ledger comes from another plugin version - deleting it rebuilds it; no session is affected',
   'redline.err.no-draft': 'There is no local edit on this row to discard',
   'redline.err.empty-task': 'The first task must be written by you — the plugin cannot decide what the child does',
   'redline.err.no-subagents': 'This runtime exposes no child-session service: carry the edited text over by hand',

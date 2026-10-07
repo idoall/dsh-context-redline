@@ -641,10 +641,10 @@ const startChild: RedlineOpHandler = async ({ ctx, call }) => {
  */
 function childIdOfStarted(started: unknown, via: OriginVia): string | null {
   if (started === null || typeof started !== 'object') return null
-  const bag = started as { childSessionId?: unknown, member?: unknown }
+  const bag = started as { childSessionId?: unknown; member?: unknown }
   const holder = via === 'official-member' ? bag.member : bag
   if (holder === null || typeof holder !== 'object') return null
-  const raw = (holder as { id?: unknown, childSessionId?: unknown })[via === 'official-member' ? 'id' : 'childSessionId']
+  const raw = (holder as { id?: unknown; childSessionId?: unknown })[via === 'official-member' ? 'id' : 'childSessionId']
   return typeof raw === 'string' && raw !== '' ? raw : null
 }
 

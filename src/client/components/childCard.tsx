@@ -31,6 +31,8 @@ export interface ChildCardProps {
   readonly rows: readonly ChildIndexRow[]
   /** 我们那本来源台账读得出来吗（缺省按"读得出来"处理，独立渲染时行为可预期）。 */
   readonly originsKnown?: boolean
+  /** 读不出来时的**原因**（错误码）；界面要把它说成人话，不许只写"来源未知"。 */
+  readonly originsError?: string | null
   /** 这台机器允许几个团队成员（M5-13 的分母）；缺省 = 不知道。 */
   readonly capacity?: ChildCapacity
   /** The parent is live in this process (`turnState.known`). */
@@ -159,6 +161,10 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
         atCap
           ? h('div', { className: 'redline-cap', 'data-redline-cap': '1' }, t('child.cap.reached', { max: capacity.max }))
           : null,
+        props.originsError === undefined || props.originsError === null
+          ? null
+          : h('div', { className: 'redline-cap', 'data-redline-origins-error': props.originsError },
+            t('redline.err.' + props.originsError.replace('redline/', ''))),
         props.rows.length === 0
           ? h('div', { className: 'redline-cap' }, t('child.empty'))
           : props.rows.map((row) => {
