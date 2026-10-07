@@ -165,7 +165,10 @@ export function useChildSessions(
     void (async () => {
       const answer = await readOrigins(sessionId)
       if (originsGeneration.current !== mine) return
-      if (!answer.ok) { setOrigins({ known: false, records: [], error: ERR.transport }); return }
+      // ⚠️ 用**宿主回答里的错误码**，别硬套 transport 那句 ——
+      // 旧宿主没有这个 op 时答的是 \`redline/unknown-op\`，对应的人话是"刷新页面再试"，
+      // 而 transport 那句是"保存没有送到宿主"，用在这里是**误导**。
+      if (!answer.ok) { setOrigins({ known: false, records: [], error: answer.code === '' ? ERR.transport : answer.code }); return }
       setOrigins(answer.value.records === null
         ? { known: false, records: [], error: answer.value.error ?? ERR.originCorrupt }
         : { known: true, records: answer.value.records, error: null })
