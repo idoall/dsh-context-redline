@@ -79,6 +79,17 @@ interface SessionQueryFace {
   listEvents?(sessionId: string): Promise<readonly TurnBoundaryEvent[]>
 }
 
+/**
+ * `ctx.agentTeams` 里我们真正要用的那一小块（签名按安装树 `@deepseek-ai/dsh-experimental-agent-team`）。
+ *
+ * ⚠️ `listTasks(caller: Agent)` 是**同步**方法，而且 caller 必须是**活着的团队成员**（Lead 行）——
+ * 所以"拿不到活 Agent"与"服务不在"都要当成"这台运行时不提供这份数据"处理（`docs/10` M5-24：返回 `null`）。
+ */
+interface AgentTeamsFace {
+  listTasks?(caller: unknown): unknown
+  membership?(sessionId: string): unknown
+}
+
 /** `ctx.subagents` 里我们真正要用的那一小块（签名按 `docs/06` §3.1.1 的实测）。 */
 interface SubagentsFace {
   startContinuable?(spec: {
@@ -663,6 +674,32 @@ const markSeen: RedlineOpHandler = async ({ ctx, call }) => {
 }
 
 /**
+ * 官方 Agent Teams 那份数据（M5-07 的宿主半边）。
+ *
+ * 契约（`docs/10` M5-24）：**这台运行时不提供就返回 `null`** —— 界面据此隐藏对接点，而不是显示一个空队伍。
+ * 三种情况都算"不提供"：服务不在、这个会话拿不到活 Agent（不是团队成员）、`listTasks` 抛错。
+ * 我们**只读**：这里不建成员、不派活、不改任务（那些是官方界面的职责，`docs/11` D14）。
+ */
+const readTeam: RedlineOpHandler = ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return Promise.resolve(fail(REDLINE_ERROR.badRequest))
+  const teams = ctx.get('agentTeams') as AgentTeamsFace | undefined | null
+  if (teams === undefined || teams === null || typeof teams.listTasks !== 'function') return Promise.resolve(redlineOk(null))
+  const agents = ctx.get('agents') as { get?: (id: string) => unknown } | undefined | null
+  const caller = typeof agents?.get === 'function' ? agents.get(sessionId) : undefined
+  if (caller === undefined) return Promise.resolve(redlineOk(null))
+  try {
+    return Promise.resolve(redlineOk({
+      tasks: teams.listTasks(caller) ?? null,
+      membership: typeof teams.membership === 'function' ? (teams.membership(sessionId) ?? null) : null,
+    }))
+  } catch {
+    // 官方拒绝（例如 caller 不是团队成员）也算「这份数据现在拿不到」——不假装成功，也不把异常抛给界面。
+    return Promise.resolve(redlineOk(null))
+  }
+}
+
+/**
  * The op table. M2's entries; M3/M5 add theirs here and nowhere else.
  */
 const OPS = new Map<string, RedlineOpHandler>([
@@ -676,6 +713,7 @@ const OPS = new Map<string, RedlineOpHandler>([
   ['pending.seen', markSeen],
   ['child.plan', planChild],
   ['child.start', startChild],
+  ['team.list', readTeam],
 ])
 
 /** One JSON reply on the channel. `no-store` matches every other plugin route. */

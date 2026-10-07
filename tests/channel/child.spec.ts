@@ -41,6 +41,7 @@ interface ChildOps {
   sessionWrites: string[]
   logOffset: () => number
   starts: Record<string, unknown>[]
+  teamCalls: unknown[]
   /** 假的活 Agent：`request.parent` 该收到它。 */
   agent: unknown
   setLog: (next: { type: string }[]) => void
@@ -48,13 +49,15 @@ interface ChildOps {
 
 let nullableAgentFor = ''
 
-async function boot(options: { withSubagents?: boolean } = {}): Promise<ChildOps> {
-  const { withSubagents = true } = options
+async function boot(options: { withSubagents?: boolean, withTeams?: 'ok' | 'throws' | 'off' } = {}): Promise<ChildOps> {
+  const { withSubagents = true, withTeams = 'off' } = options
   const home = mkdtempSync(join(tmpdir(), 'redline-child-'))
   homes.push(home)
   const routes: CapturedRoute[] = []
   const sessionWrites: string[] = []
   const starts: Record<string, unknown>[] = []
+  /** 每次 team.list 调官方 listTasks 时收到的 caller。 */
+  const teamCalls: unknown[] = []
   const ctx = new Context()
   ctx.provide('connection', {
     fetch: { register(route: CapturedRoute) { routes.push(route); return () => {} } },
@@ -97,6 +100,16 @@ async function boot(options: { withSubagents?: boolean } = {}): Promise<ChildOps
       return id === nullableAgentFor ? undefined : fakeAgent
     },
   })
+  if (withTeams !== 'off') {
+    ctx.provide('agentTeams', {
+      listTasks(caller: unknown) {
+        teamCalls.push(caller)
+        if (withTeams === 'throws') throw new Error('caller is not a team member')
+        return [{ id: 't-1', revision: 3, subject: '把测试补上', status: 'pending', ready: true, ownerName: '小王' }]
+      },
+      membership() { return { role: 'lead' } },
+    })
+  }
   if (withSubagents) {
     ctx.provide('subagents', {
       async startContinuable(argument: Record<string, unknown>) {
@@ -119,7 +132,7 @@ async function boot(options: { withSubagents?: boolean } = {}): Promise<ChildOps
   assert.ok(channel !== undefined, 'the channel registered')
   return {
     ctx, channel, home, sessionId: session.id, sessionWrites,
-    logOffset: () => session.seq, starts, agent: fakeAgent,
+    logOffset: () => session.seq, starts, agent: fakeAgent, teamCalls,
     setLog: (next) => { log = next },
   }
 }
@@ -229,5 +242,41 @@ describe('child.start：全插件唯一的写入点', () => {
     assert.deepEqual(ok.carriedSeqs, [1301])
     assert.equal(ops.sessionWrites.length, 0, '会话一个字都没写')
     assert.equal(ops.logOffset(), before, '日志 offset 不动')
+  })
+})
+
+describe('team.list：官方 Agent Teams 那份数据（M5-24 的契约：不提供就返回 null）', () => {
+  test('没有 agentTeams 服务 → null（界面据此隐藏对接点，而不是显示空队伍）', async () => {
+    const ops = await boot({ withTeams: 'off' })
+    const reply = await call(ops, { op: 'team.list', sessionId: ops.sessionId })
+    assert.equal(reply.ok, true, JSON.stringify(reply))
+    assert.equal(reply.value, null, '不提供就是 null')
+    assert.deepEqual(ops.sessionWrites, [], '只读：不写会话')
+  })
+
+  test('拿不到活 Agent（不是团队成员）→ null', async () => {
+    const ops = await boot({ withTeams: 'ok' })
+    nullableAgentFor = ops.sessionId
+    try {
+      const reply = await call(ops, { op: 'team.list', sessionId: ops.sessionId })
+      assert.equal(reply.value, null)
+      assert.equal(ops.teamCalls.length, 0, '连官方都不该去调')
+    } finally { nullableAgentFor = '' }
+  })
+
+  test('服务在、caller 活着 → 官方的 tasks/membership 原样交回（我们不改写）', async () => {
+    const ops = await boot({ withTeams: 'ok' })
+    const value = (await call(ops, { op: 'team.list', sessionId: ops.sessionId })).value as Record<string, unknown>
+    assert.equal((value.tasks as unknown[]).length, 1)
+    assert.deepEqual(value.membership, { role: 'lead' })
+    assert.equal(ops.teamCalls.length, 1, '官方被问了一次')
+    assert.equal(ops.teamCalls[0], ops.agent, 'caller 就是那个活 Agent')
+  })
+
+  test('官方抛错（例如 caller 不是成员）→ null，不把异常抛给界面', async () => {
+    const ops = await boot({ withTeams: 'throws' })
+    const reply = await call(ops, { op: 'team.list', sessionId: ops.sessionId })
+    assert.equal(reply.ok, true, '通道永远不因为对方的错而炸')
+    assert.equal(reply.value, null)
   })
 })
