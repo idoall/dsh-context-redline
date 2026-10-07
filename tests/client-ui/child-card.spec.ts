@@ -311,3 +311,36 @@ describe('官方团队那块（M5-07 读半边）：只读、三件事都诚实'
     await m.unmount()
   })
 })
+
+describe('官方团队那块的回退：投影读不到时问宿主（M5-07 / M5-24）', () => {
+  const withFetch = async (payload: unknown, run: () => Promise<void>): Promise<void> => {
+    const prev = globalThis.fetch
+    let called = 0
+    globalThis.fetch = (async () => { called++; return Response.json({ ok: true, value: payload }) }) as typeof fetch
+    try { await run(); assert.equal(called, 1, '回退只问一次') } finally { globalThis.fetch = prev }
+  }
+
+  test('宿主给了任务 → 显示它们，并写明这块是直接问宿主拿的（没有名单）', async () => {
+    await withFetch({ tasks: [{ id: 't-9', revision: 1, subject: '回退拿到的任务', status: 'pending', ready: false }], membership: null }, async () => {
+      const m = await open({ team: null })
+      await act(async () => { await new Promise(r => setTimeout(r, 50)) })
+      const body = text(query(m.container, '[data-redline-block="team"]'))
+      assert.ok(body.includes(DICT_EN['team.fallback.note']), '要说清来源，不能假装是官方投影给的')
+      assert.ok(body.includes('回退拿到的任务'))
+      assert.deepEqual(queryAll(m.container, '[data-redline-task]').map(e => e.getAttribute('data-redline-task')), ['t-9'])
+      assert.equal(queryAll(m.container, '[data-redline-member]').length, 0, '回退里没有名单，就不显示名单')
+      await m.unmount()
+    })
+  })
+
+  test('投影与宿主都说没有 → 界面才说「这台运行时没有这份数据」', async () => {
+    await withFetch(null, async () => {
+      const m = await open({ team: null })
+      await act(async () => { await new Promise(r => setTimeout(r, 50)) })
+      const body = text(query(m.container, '[data-redline-block="team"]'))
+      assert.ok(body.includes(DICT_EN['team.none']))
+      assert.equal(queryAll(m.container, '[data-redline-task]').length, 0)
+      await m.unmount()
+    })
+  })
+})

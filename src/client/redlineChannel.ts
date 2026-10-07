@@ -178,3 +178,21 @@ export interface ChildStarted {
 export async function startChild(sessionId: string, humanTask: string): Promise<RedlineResult<ChildStarted>> {
   return await call<ChildStarted>({ op: 'child.start', sessionId, humanTask })
 }
+
+/** 官方团队那份数据（**投影读不到时的回退**）：`null` = 这台运行时不提供。 */
+export interface TeamFromHost {
+  /** 官方给的任务列表（原样，不归一化 —— 界面用 `teamBoardOf` 处理不了的那部分会自己判）。 */
+  tasks: unknown
+  /** 官方给的成员身份（`membership`），没有就是 null。 */
+  membership: unknown
+}
+
+/**
+ * 问宿主要官方团队那份数据（op `team.list`）。
+ *
+ * **它只在官方投影读不到时才用**（`agentTeam` 投影是主路，客户端直读、不需要往返）；
+ * 这条是兜底：投影没送到、但宿主其实拿得到的时候，界面不至于错误地说"这台运行时没有这个数据"。
+ */
+export async function listTeam(sessionId: string): Promise<RedlineResult<TeamFromHost | null>> {
+  return await call<TeamFromHost | null>({ op: 'team.list', sessionId })
+}

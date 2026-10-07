@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import { afterEach, describe, test } from 'vitest'
 import { REDLINE_ERROR } from '../../src/shared/redline-errors'
 import { REDLINE_CHANNEL_ROUTE } from '../../src/shared/redline-route'
-import { dropDraft, listDrafts, planChild, readRow, saveDraft, startChild } from '../../src/client/redlineChannel'
+import { dropDraft, listDrafts, listTeam, planChild, readRow, saveDraft, startChild } from '../../src/client/redlineChannel'
 
 interface Call { url: string, init: RequestInit | undefined }
 
@@ -168,5 +168,27 @@ describe('open a child session (the ONLY write point)', () => {
     const started = await startChild('sv-1', '继续')
     assert.equal(started.ok, true)
     if (started.ok) assert.deepEqual(started.value.started, receipt)
+  })
+})
+
+describe('team.list（投影读不到时的回退）', () => {
+  test('打到我们的路由、body 正确，并把 null（不提供）如实交回', async () => {
+    calls.length = 0
+    stubFetch(() => envelope(null))
+    const result = await listTeam('sv-1')
+    assert.equal(result.ok, true)
+    if (result.ok) assert.equal(result.value, null, '不提供就是 null，界面据此隐藏对接点')
+    assert.equal(calls[0].url, REDLINE_CHANNEL_ROUTE)
+    assert.equal(bodyOf(calls[0]).op, 'team.list')
+    assert.equal(bodyOf(calls[0]).sessionId, 'sv-1')
+  })
+
+  test('宿主给了数据 → 原样交回（我们不在这里改写官方的字段）', async () => {
+    calls.length = 0
+    const payload = { tasks: [{ id: 't-1' }], membership: { role: 'lead' } }
+    stubFetch(() => envelope(payload))
+    const result = await listTeam('sv-1')
+    if (result.ok) assert.deepEqual(result.value, payload)
+    else assert.fail('应当成功')
   })
 })

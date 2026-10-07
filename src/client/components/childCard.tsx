@@ -21,7 +21,8 @@
 import { createElement as h, useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react'
 import type { ViewKit } from '../viewkit'
 import type { ChildRow } from '../childSessions'
-import type { ChildPlan, ChildStarted, RedlineResult } from '../redlineChannel'
+import { listTeam, type ChildPlan, type ChildStarted, type RedlineResult } from '../redlineChannel'
+import { teamBoardOf, type TeamTaskRow } from '../../shared/redline-team'
 import type { PendingRow } from '../../shared/types'
 
 import type { TeamBoard } from '../../shared/redline-team'
@@ -85,6 +86,11 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
     const [busy, setBusy] = useState(false)
     const [errorCode, setErrorCode] = useState<string | null>(null)
     const [started, setStarted] = useState<ChildStarted | null>(null)
+    /**
+     * 官方投影读不到时的**回退**：直接问宿主拿任务（`team.list`）。
+     * `'pending'` = 还在问，`'none'` = 宿主也说不提供（界面这才说「没有这份数据」）。
+     */
+    const [hostTeam, setHostTeam] = useState<'pending' | 'none' | readonly TeamTaskRow[]>('pending')
     // A late plan answer for an older task must not overwrite the newer one.
     const generation = useRef(0)
 
@@ -102,6 +108,21 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
     // The confirm box's five items come from the host and depend on the task text
     // (item 3 IS that text, and the refusal fires on an empty one), so refetch on change —
     // debounced, because every keystroke would otherwise be a round trip.
+    // 投影缺失才去问宿主：主路是官方 `agentTeam` 投影（客户端直读、不往返）。
+    useEffect(() => {
+      if (props.team !== null) return
+      const sessionId = props.sessionId
+      if (typeof sessionId !== 'string' || sessionId === '') { setHostTeam('none'); return }
+      let live = true
+      setHostTeam('pending')
+      void listTeam(sessionId).then((reply) => {
+        if (!live) return
+        const board = reply.ok && reply.value !== null ? teamBoardOf({ tasks: reply.value.tasks }) : null
+        setHostTeam(board === null ? 'none' : board.tasks)
+      })
+      return () => { live = false }
+    }, [props.team, props.sessionId])
+
     useEffect(() => {
       if (!open) return
       generation.current += 1
@@ -266,7 +287,24 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
         h('div', { className: 'redline-orch-head' }, t('team.head'),
           h('span', { className: 'redline-orch-hint' }, t('team.hint'))),
         props.team === undefined ? h('div', { className: 'redline-cap' }, t('team.loading'))
-          : props.team === null ? h('div', { className: 'redline-cap' }, t('team.none'))
+          : props.team === null
+            ? hostTeam === 'pending' ? h('div', { className: 'redline-cap' }, t('team.loading'))
+              : hostTeam === 'none' ? h('div', { className: 'redline-cap' }, t('team.none'))
+                : h('div', {},
+                  h('div', { className: 'redline-cap' }, t('team.fallback.note')),
+                  hostTeam.length === 0
+                    ? h('div', { className: 'redline-cap' }, t('team.tasks.empty'))
+                    : hostTeam.map(task => h('div', { className: 'redline-orch-row', key: task.id, 'data-redline-task': task.id },
+                      h('div', { className: 'redline-orch-id' },
+                        h('span', { className: 'redline-chip-soft' }, task.status),
+                        task.ready ? h('span', { className: 'redline-badge-state' }, t('team.task.ready')) : null,
+                      ),
+                      h('div', { className: 'redline-orch-body' },
+                        h('div', { className: 'redline-orch-label' }, task.subject),
+                        task.ownerName === null ? null : h('div', { className: 'redline-cap' }, t('team.task.owner', { name: task.ownerName })),
+                      ),
+                    )),
+                )
             : h('div', {},
               props.team.failure === null
                 ? null
