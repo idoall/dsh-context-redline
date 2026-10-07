@@ -19,7 +19,7 @@
  *   the request/event records are the raw material of `buildTimelineView`.
  */
 
-import type { Category, ContextEventRecord, ContextTimelineDetail, CostModelUsage, FileOpRecord, RequestRecord, SessionCostUsage, SettleNotice, Snapshot, SurfaceNode, SystemPromptNode, TimingTotals, ToolTimingTotals } from '../shared/types'
+import type { Category, ContextEventRecord, ContextTimelineDetail, CostModelUsage, FileOpRecord, RequestRecord, SessionCostUsage, Snapshot, SurfaceNode, SystemPromptNode, TimingTotals, ToolTimingTotals } from '../shared/types'
 import { isDeepSeekProvider } from '../shared/providers'
 import { estimateSystemContent } from '../shared/estimate'
 import type { FoldBounds } from './config'
@@ -107,16 +107,6 @@ export interface TimelineState {
    */
   turnRuns?: number
   events: ContextEventRecord[]
-  /**
-   * `subagent-settled` notices, oldest first, capped at {@link SETTLED_NOTICE_CAP}.
-   * Kept APART from `events` on purpose: the event list is retention-trimmed, and
-   * a notice that fell out of it would silently disappear from the card - while
-   * the whole point of result flow-back is that a notice stays visible until
-   * somebody deals with it (`docs/06` §3.3). Absent on rows folded before the
-   * field existed (the first post-restore notice recreates it), the same
-   * additive-optional shape as `turnRuns`.
-   */
-  settled?: SettleNotice[]
   /**
    * Recently removed surface nodes (stamped COPIES carrying `gone`), in
    * removal order. Feeds the Context browser's per-step reconstruction.
@@ -307,13 +297,6 @@ function trimState(st: TimelineState, bounds: FoldBounds): void {
   }
 }
 
-/**
- * How many settle notices the fold keeps (newest win). A session can settle
- * hundreds of children over its life; the card shows the recent ones, and the
- * cap is what keeps `pending` bounded on every push frame.
- */
-const SETTLED_NOTICE_CAP = 50
-
 export function createTimelineState(): TimelineState {
   return {
     surface: [],
@@ -323,7 +306,6 @@ export function createTimelineState(): TimelineState {
     requests: [],
     turnRuns: 0,
     events: [],
-    settled: [],
     archived: [],
     callNames: {},
     fileOps: [],
@@ -1070,18 +1052,6 @@ export function applyTimeline(state: TimelineState, event: TimelineEvent, bounds
             if (source.form === 'notice' && typeof source.summary === 'string' && source.summary !== '') {
               rec.detail = source.summary
             }
-            // Result flow-back (`docs/06` §3.3): the runtime's own account that a
-            // continuable child settled. We keep identity + the verbatim summary
-            // for the child-session card and NEVER write anything back - no
-            // session write, no child-state touch, no summarizing of the child's
-            // work. `senderSessionId` is the only link from a notice to a row.
-            const settledChild = source.kind === 'subagent-settled' ? source.senderSessionId : undefined
-            if (typeof settledChild === 'string' && settledChild !== '') {
-              rec.childId = settledChild
-              const notices = s.settled ?? (s.settled = [])
-              notices.push({ seq: event.seq, childId: settledChild, summary: typeof source.summary === 'string' ? source.summary : '', at: event.time })
-              if (notices.length > SETTLED_NOTICE_CAP) notices.splice(0, notices.length - SETTLED_NOTICE_CAP)
-            }
           }
           s.events.push(rec)
         } else {
@@ -1432,22 +1402,6 @@ function headFieldsOf(state: TimelineState): Snapshot {
   // already degrade on (they fall back to the header epoch's own figure).
   if (state.systems !== undefined && state.systems.length > 0) {
     result.systems = state.systems.map(n => ({ ...n }))
-  }
-  // Result flow-back (`docs/06` §3.3 / `docs/10` M5-18/M5-19). The fold reports
-  // the FACTS (which notices exist, verbatim); the JUDGEMENT lives in
-  // `src/shared/redline-pending.ts` and runs in the client, because one of its
-  // three inputs - our "seen" marks - lives in our own store and must never ride
-  // the projection (a projection is a fold over the session's log, and the marks
-  // are not in the log). The client has the other two inputs already: these
-  // notices, and the newest request seq on the head (`last`).
-  const notices = state.settled ?? []
-  if (notices.length > 0) {
-    result.notices = notices.map(n => ({ ...n }))
-    // The flow-back evidence ("has the parent carried on since?") as a plain
-    // scalar on the SHARED head: the slim head's `last` is a billing anchor and
-    // is absent from the inline view, so the client cannot rely on it.
-    const newestRequest = state.requests.at(-1)
-    if (newestRequest !== undefined) result.lastRequestSeq = newestRequest.seq
   }
   return result
 }

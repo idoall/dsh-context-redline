@@ -20,7 +20,6 @@ import { makeContextBrowser } from './browser'
 import { useRedlineDrafts } from '../redlineDrafts'
 import { useChildSessions } from '../childSessions'
 import { makeChildCard } from './childCard'
-import { teamBoardOf } from '../../shared/redline-team'
 import { makeEventList } from './events'
 import { makeUpgradeGate } from './upgradeGate'
 import { makeRequestDetail } from './requestDetail'
@@ -87,17 +86,10 @@ export function makeContextView(
     }
     // 子会话卡的数据源（`docs/03` R5.1）：父会话自己的 `subagentCatalog` 投影（不重画会话树）。
     const childCatalog = projectionOf(props, 'subagentCatalog', raw => (Array.isArray(raw) ? raw : null))
-    // 官方 Agent Teams 那份数据（M5-07 读半边）：投影没有 → null，界面如实说「没有这个数据」。
-    const teamBoard = projectionOf(props, 'agentTeam', teamBoardOf)
     const probeCatalog = projectionOf(props, 'subagentCatalog', raw => probeShape(raw))
     const probeTiming = projectionOf(props, 'subagentTiming', raw => probeShape(raw))
-    // ⚠️ 2026-10-06 扩了一条：V13 要问「官方团队的状态面到底叫什么键、客户端读不读得到」。
-    // 键名从安装树取：`@deepseek-ai/dsh-experimental-agent-team/lib/types/projection.d.ts`
-    // 的 `declare module … SessionProjectionStateMap { agentTeam: TeamProjectionState }` ⟹ 就是 `agentTeam`。
-    // 只报**形状**（类型 / 顶层键名），不落任何会话正文（M6-13 起探针就不许回传原文）。
-    const probeTeam = projectionOf(props, 'agentTeam', raw => probeShape(raw))
     const probeOut = typeof location !== 'undefined' && location.search.includes('redline-probe=1')
-      ? JSON.stringify({ catalog: probeCatalog, timing: probeTiming, team: probeTeam })
+      ? JSON.stringify({ catalog: probeCatalog, timing: probeTiming })
       : null
     // `redlineHeaders` companion projection (full system prompt + tool schemas) for the Context browser; absent key = older Host half →
     // those sections degrade to tokens-only with a note.
@@ -453,8 +445,6 @@ export function makeContextView(
     const children = useChildSessions(
       typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined,
       childCatalog,
-      data.notices,
-      data.lastRequestSeq,
     )
     const browserCard = (
       <ContextBrowser
@@ -541,15 +531,11 @@ export function makeContextView(
         <div className="redline-cols">
           <div className="redline-col flex-1 min-w-[min(360px,100%)]">
             <ChildCard
-              team={teamBoard}
               sessionId={sessionId}
               rows={children.rows}
               live={redline.turn.known}
               turnOpen={redline.turn.open}
               carriedCount={Object.keys(redline.table).length}
-              pending={children.pending}
-              onMarkSeen={(seq, seen) => { void children.markSeen(seq, seen) }}
-              marksError={children.marksError}
               plan={children.plan}
               start={children.start}
             />

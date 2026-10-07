@@ -355,36 +355,36 @@
 
 ---
 
-## 8. M5 · 快照 → 子会话 → 压缩 → 对接官方团队（**12 / 28 DONE**）
+## 8. M5 · 子会话 → 官方成员（**压缩与团队对接入口已按用户裁定撤下**）（**23 / 28 DONE**）
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
 | M5-01 | `child.fork`（op 名以 `docs/02` §5.2 为准）优先路径：`agentTeams.spawnTeammate(lead,{context:'fork',provider:forkProvider,…})` | DONE | `src/redline/orchestrate.ts`  → ✅ **优先路径落地（2026-10-07）**：`child.start` 现在**优先调官方** `agentTeams.spawnTeammate(caller, request)`（签名按安装树：`{name, description, prompt: ContentBlock[], context:'fork', provider, signal}`）—— 建的是**官方团队成员**，能被官方界面管理、也能收团队消息；返回里带 `via: 'official-member'` 让界面如实标注走的是哪条路。`description` 用的是**人写的第一句原话**（不替用户概括、不生成新内容）。**2 条门禁**：官方服务在 → 调 spawnTeammate 且**不许同时走兜底那条路**（`starts.length === 0`）、request 形状逐项校验；官方服务不在 → 走兜底并标 `bare-child`。 |
 | M5-02 | 兜底路径：`subagents.startContinuable({provider:'fork'})`，界面如实标注"裸子会话" | DONE | `src/redline/orchestrate.ts`、`src/client/**`  → ✅ 宿主路径已实现并锁住：**兜底路径 `subagents.startContinuable({provider:'fork', label, request:{parent, prompt}})`** 落在通道 op `child.start`（`src/host/redline-channel.ts`），纯逻辑在 `src/redline/orchestrate.ts`；`tests/channel/child.spec.ts` 6 条钉住（拒绝顺序 / 成功路径 / **会话零写入**）。⏳ 界面那句"裸子会话"的如实标注待客户端一起做  → ✅ 兜底路径本身早已实现并被 6 条门禁锁住（`subagents.startContinuable({provider:'fork', …})`），现在还会在返回里标 `via: 'bare-child'`；⏳ **界面那句「裸子会话」的如实标注还没做**（客户端读 `via` 显示在开启结果里）—— 做完这条才 DONE。  → ✅ **界面半边也做完了（2026-10-07）**：确认成功后卡里显示「走的是哪条路」（`via`）—— 走官方成员就写「（官方成员：能在官方团队视图里看到它）」，兜底就写「（裸子会话：不在官方名单里，官方界面看不到它）」，宿主没报就写「（这次没拿到走的是哪条路）」——**不猜、也不含糊**。3 条 client-ui 门禁钉住三种情形。 |
-| M5-03 | 可选注入 `agentTeams`：团队未启用时插件仍能加载、对接点全隐 | TODO | 插件入口 |
+| M5-03 | 【作废】~~可选注入 `agentTeams`：团队未启用时插件仍能加载、对接点全隐~~ | DONE | **2026-10-07 作废（用户裁定「按 demo 撤掉这两样」；原裁定见 `docs/11` D14，2026-10-02）**：团队对接点已整体撤下 ⟹ 「团队未启用时对接点全隐」没有主语了；「`agentTeams` 缺失时插件照常加载」这一半由 `child.start` 的兜底路径（`bare-child`）覆盖，不需要单独一条。 插件入口 |
 | M5-04 | 首条任务必须人写（空则拒绝创建） | DONE | `src/redline/orchestrate.ts`  → `buildFirstTask` 空/纯空白即拒绝（`redline/empty-task`，并给出人话理由）；纯逻辑 + `child.start` 的拒绝顺序都在单测里（`tests/edit/orchestrate.spec.ts` 4 条 + `tests/channel/child.spec.ts`） |
 | M5-05 | 确认框五项内容生成 | DONE | `src/redline/orchestrate.ts`、`src/client/**`  → `forkConfirmItems()` 产出**恰好五项**（从哪儿开始 / 会带上的改动 / 第一句话由人写 / 会带什么不带什么 / 取消=什么都不发生），并有一条测试**禁止出现内部词**（provider·种子·切点·继承范围·fork）；`child.plan` 把它只读地报给界面 |
 | M5-06 | 取消零副作用：`child.list` 无新项 + 事件数不变 | DONE | → **2026-10-06 两半都收口**：① 已有半边 —— `tests/channel/child.spec.ts` 断言 `child.plan`（人还没点确认那一步）**不调 `startContinuable`、不写会话、不写草稿**；② 卡的半边 —— 取消 = 不建会话不写日志（`tests/client-ui/child-card.spec.ts` 断言取消时 `start` **零调用**），而且我们的索引**根本不发写请求**（数据来自 `subagentCatalog` 投影 + 每个子会话一次只读 `turnState`）。⚠️ **"打开它"不做**（不是欠账，是**查证后的决定**）：第三方客户端插件没有"打开某个会话"的服务，导航入口归官方（父会话页头的「N 个子智能体」）⟹ 见 `docs/01` **F55**、`docs/03` R5.1.1；界面因此改成**指名入口**的一句话（"用父会话页头右侧的「N 个子智能体」目录打开它"）。|
-| M5-07 | 官方对接（读）：`agentTeam` 投影 / `listTasks` → 面板显示官方那份数据 | DOING | `src/redline/team-bridge.ts`  → ✅ **读半边落地（2026-10-07）**：**面板已接上官方投影**（`agentTeam` → 第 5 张卡第三块，只读，硬刷新可见）；**宿主 op `team.list` 也已就位**（`src/host/redline-channel.ts`）并按 `docs/10` M5-24 的契约锁住：**服务不在 / 拿不到活 Agent / 官方抛错 → 一律返回 `null`**（4 条门禁在 `tests/channel/child.spec.ts`；**已接线**：面板在**官方投影读不到**时回退调它（`src/client/redlineChannel.ts` 的 `listTeam` → 卡里只显示任务、并写明「这块是直接问宿主拿到的」——**回退里没有名单就不显示名单**，不拿空数组冒充）。⏳ 剩：**`spawnTeammate(caller, request)` 的真机读数**（M45-07 并入本条）—— 属写操作，与"重启批次"一起验。|
-| M5-08 | 官方对接（写）：`createTask({subject,description,blockedBy,writeScopes})` | TODO | `src/redline/team-bridge.ts` |
-| M5-09 | 官方对接（写）：`updateTask`（`expectedRevision` 过期被拒，不覆盖） | TODO | `src/redline/team-bridge.ts` |
-| M5-10 | 派活：`sendMessage(lead,{target,content})` + 如实显示 `accepted`/`queued`（queued 不重发） | TODO | `src/redline/team-bridge.ts`、`src/client/**` |
-| M5-11 | 打断：团队成员走 `agentTeams.interrupt`；裸子会话走 `interruptByParent` | TODO | `src/redline/orchestrate.ts` |
+| M5-07 | 【作废】~~官方对接（读）：`agentTeam` 投影 / `listTasks` → 面板显示官方那份数据~~ | DONE | **2026-10-07 作废（用户裁定「按 demo 撤掉这两样」；原裁定见 `docs/11` D14，2026-10-02）**：官方团队块（成员名册 / 任务板）与 `team.list` op 一并删除 —— 用户 2026-10-02 已裁定「官方团队整块删」，10-06/07 又被做回面板，今天按 demo 撤掉。 `src/redline/team-bridge.ts`  → ✅ **读半边落地（2026-10-07）**：**面板已接上官方投影**（`agentTeam` → 第 5 张卡第三块，只读，硬刷新可见）；**宿主 op `team.list` 也已就位**（`src/host/redline-channel.ts`）并按 `docs/10` M5-24 的契约锁住：**服务不在 / 拿不到活 Agent / 官方抛错 → 一律返回 `null`**（4 条门禁在 `tests/channel/child.spec.ts`；**已接线**：面板在**官方投影读不到**时回退调它（`src/client/redlineChannel.ts` 的 `listTeam` → 卡里只显示任务、并写明「这块是直接问宿主拿到的」——**回退里没有名单就不显示名单**，不拿空数组冒充）。⏳ 剩：**`spawnTeammate(caller, request)` 的真机读数**（M45-07 并入本条）—— 属写操作，与"重启批次"一起验。|
+| M5-08 | 【作废】~~官方对接（写）：`createTask({subject,description,blockedBy,writeScopes})`~~ | DONE | **2026-10-07 作废（用户裁定「按 demo 撤掉这两样」；原裁定见 `docs/11` D14，2026-10-02）**：本插件**不提供** `派活` / `建成官方任务` 入口（`docs/06` §3.2 末 + D14）：那是官方 Agent Teams 的职责，直接在官方视图里做。 `src/redline/team-bridge.ts` |
+| M5-09 | 【作废】~~官方对接（写）：`updateTask`（`expectedRevision` 过期被拒，不覆盖）~~ | DONE | **2026-10-07 作废（用户裁定「按 demo 撤掉这两样」；原裁定见 `docs/11` D14，2026-10-02）**：同上：任务的新建与改写都归官方视图，本插件不给入口 ⟹ `updateTask` 的对接面作废。 `src/redline/team-bridge.ts` |
+| M5-10 | 【作废】~~派活：`sendMessage(lead,{target,content})` + 如实显示 `accepted`/`queued`（queued 不重发）~~ | DONE | **2026-10-07 作废（用户裁定「按 demo 撤掉这两样」；原裁定见 `docs/11` D14，2026-10-02）**：同上：`sendMessage` 的入口作废（demo 里也没有「发消息」）。子会话要收人话只能靠官方视图；本插件不再转发。 `src/redline/team-bridge.ts`、`src/client/**` |
+| M5-11 | 【作废】~~打断：团队成员走 `agentTeams.interrupt`；裸子会话走 `interruptByParent`~~ | DONE | **2026-10-07 作废（用户裁定「按 demo 撤掉这两样」；原裁定见 `docs/11` D14，2026-10-02）**：用户 2026-10-02 晚已裁定面板**不提供压缩 / 打断**（「进入子智能体当前会话时，右边有个箭头，可以随时打断或进行压缩命令；前面加了这两个反而多余」）⟹ 两条都作废。 `src/redline/orchestrate.ts` |
 | M5-12 | 来源判定 `tryMembership` → 徽章（本项目发起 / 来自 Agent Teams），不按 label 猜 | TODO | `src/redline/team-bridge.ts` |
-| M5-13 | 容量：显示 `活跃 N/8` + 触顶给人话（不含糊、不说"稍后重试"） | TODO | `src/client/**`、`src/redline/orchestrate.ts` |
+| M5-13 | 容量：显示 `活跃 N/8` + 触顶给人话（不含糊、不说"稍后重试"）—— ⚠️ **2026-10-07 复核：这条是 demo 内容，不是团队对接点**（demo 的子会话块标题就是 `活跃 ${active} / 8 · 共 N 个`，`demo/demo.js` 的 `renderOrch()`），**不作废**。`/8` 的口径：demo 硬编码 8；真机取官方 `agentTeams.Config.maxMembers`（`docs/01` F31 记本机为 8） | TODO | `src/client/**`、`src/redline/orchestrate.ts` |
 | M5-14 | 【作废】~~压缩体检：在跑 / 未闭合 / 已在压 / 不在本进程 / 服务缺失 → `canCompact` + 理由~~ | DONE |  **2026-10-06 作废（真机不可达，不是没做）**：`ctx.compaction` **被注册在 agent 隔离作用域里**（顶层那份 `disabled: true`，真正生效的在 `dsh-web-app` 的 `isolate: { compaction: true }` 组里）⟹ **第三方插件从自己的 fiber 调不到**（`docs/01` **F54** 三证）。这恰好命中 `docs/04` 预先写好的降级路径：**界面不提供压缩执行入口**，改为"引导你在子会话里执行 `/compact`"。⚠️ **我们仍然如实显示日志里已经发生的压缩**（事件卡的「压缩」那一类，读 `compaction/summary`）—— 那一半早已实现。 |
 | M5-15 | 【作废】~~压缩确认：列出将被替代的区间与条目数 + 不可逆提示~~ | DONE |  **2026-10-06 作废（真机不可达，不是没做）**：`ctx.compaction` **被注册在 agent 隔离作用域里**（顶层那份 `disabled: true`，真正生效的在 `dsh-web-app` 的 `isolate: { compaction: true }` 组里）⟹ **第三方插件从自己的 fiber 调不到**（`docs/01` **F54** 三证）。这恰好命中 `docs/04` 预先写好的降级路径：**界面不提供压缩执行入口**，改为"引导你在子会话里执行 `/compact`"。⚠️ **我们仍然如实显示日志里已经发生的压缩**（事件卡的「压缩」那一类，读 `compaction/summary`）—— 那一半早已实现。 |
 | M5-16 | 【作废】~~压缩执行：`compactNow` + 失败码人话~~ | DONE |  **2026-10-06 作废（真机不可达，不是没做）**：`ctx.compaction` **被注册在 agent 隔离作用域里**（顶层那份 `disabled: true`，真正生效的在 `dsh-web-app` 的 `isolate: { compaction: true }` 组里）⟹ **第三方插件从自己的 fiber 调不到**（`docs/01` **F54** 三证）。这恰好命中 `docs/04` 预先写好的降级路径：**界面不提供压缩执行入口**，改为"引导你在子会话里执行 `/compact`"。⚠️ **我们仍然如实显示日志里已经发生的压缩**（事件卡的「压缩」那一类，读 `compaction/summary`）—— 那一半早已实现。 |
 | M5-17 | 【作废】~~压缩后如实显示实际范围（不是预估）~~ | DONE |  **2026-10-06 作废**：触发压缩不在我们手里（见 M5-14），"执行后显示实际范围"随之失去主语；而"**如实显示已经发生的压缩**"那一半**已经实现**：事件卡的「压缩」类按 `compaction/summary` 事件列出（含条数与发生在第几轮第几步），真机上面板读数就是「压缩 21」。⚠️ 若将来要显示**精确区间**（被替掉的 start..end），那是事件卡的一个小改进，登记为后续而不是 M5 的前置。 |
-| M5-18 | 结果回流：读父会话 `subagent-settled` + 我们自己那份"已查看"标记 | DONE | → **2026-10-06 两半都落地**（真机读数见 `docs/11` D53/D54）：① **读**：fold `state.settled`（上限 50，**不塞进会被 retention 裁掉的 `events`**）+ head 上 `notices`（原始事实）与 `lastRequestSeq`（"父会话又跑了"的证据；⚠️ 两条**都是测试抓出来的接线错误**：先写在 `buildTimelineHead` 时只有瘦线可见 ⟹ 移到共用的 `headFieldsOf`）；② **"已查看"标记**：`src/shared/redline-seen.ts`（纯序列化/解析：坏文件/串档/版本不认识三种都是**大声拒绝**，缺文件才是空表）+ 宿主原子写 + 两个 op `pending.list` / `pending.seen`；落点 `$DSH_HOME/dsh-context-redline/redline-seen-<会话>.json`（`docs/06` §3.3 已按真实落点更正）；③ 判定归一处：`src/shared/redline-pending.ts` 由**客户端**用（宿主给事实、本地给标记、head 给证据），三态在 `M5-19`；④ 界面：行上 `已结算 · 未确认/已查看/已接着做` + 「标为已查看 / 取消标记」（**`continued` 的行不给按钮** —— 点了也不会改变显示，那就是假按钮，这条是测试抓出来的契约）；⑤ **重启天然正确**：通知在日志里、标记在文件里，恢复不依赖进程内存。⚠️ 过程中的两个教训都写进 commit：把判定放在 `src/redline/**` 时**客户端 import 不了**（纯度门禁 face 9）⟹ 移到 `src/shared/`；纯函数三个输入都得守（`pending.list` 的回答形状被 fetch 桩喂错时曾把渲染炸掉，`docs/11` D54）。| `src/shared/redline-seen.ts` + `src/host/redline-channel.ts` + `src/client/**` 
-| M5-19 | 三态判定：已收到结算通知 / 有可关联的后续请求 / 未确认 | DONE | → 见 `M5-18` 的证据（同一次落地）：`src/shared/redline-pending.ts`（**从 `src/redline/` 移过来**：客户端要用它，而 face 9 禁止 client import redline）；8 条单测 + 反向验证（`>`→`>=` 的边界缺口是反向验证抓出来的）+ "三个输入都不是数组也不许炸"。| `src/shared/redline-pending.ts` 
+| M5-18 | 【作废】~~结果回流：读父会话 `subagent-settled` + 我们自己那份"已查看"标记~~ | DONE | **2026-10-07 作废（用户裁定「按 demo 撤掉这两样」；原裁定见 `docs/11` D14，2026-10-02）**：界面不再显示回流可见性与「已查看」标记（用户 2026-10-02：**这是人工不应该干预的地方**）。⚠️ **没有丢事实**：平台自己写进父会话的 `subagent-settled` 结算通知仍在「上下文事件」卡里作为普通事件出现（那一半不属于本条，未改动）。 → **2026-10-06 两半都落地**（真机读数见 `docs/11` D53/D54）：① **读**：fold `state.settled`（上限 50，**不塞进会被 retention 裁掉的 `events`**）+ head 上 `notices`（原始事实）与 `lastRequestSeq`（"父会话又跑了"的证据；⚠️ 两条**都是测试抓出来的接线错误**：先写在 `buildTimelineHead` 时只有瘦线可见 ⟹ 移到共用的 `headFieldsOf`）；② **"已查看"标记**：`src/shared/redline-seen.ts`（纯序列化/解析：坏文件/串档/版本不认识三种都是**大声拒绝**，缺文件才是空表）+ 宿主原子写 + 两个 op `pending.list` / `pending.seen`；落点 `$DSH_HOME/dsh-context-redline/redline-seen-<会话>.json`（`docs/06` §3.3 已按真实落点更正）；③ 判定归一处：`src/shared/redline-pending.ts` 由**客户端**用（宿主给事实、本地给标记、head 给证据），三态在 `M5-19`；④ 界面：行上 `已结算 · 未确认/已查看/已接着做` + 「标为已查看 / 取消标记」（**`continued` 的行不给按钮** —— 点了也不会改变显示，那就是假按钮，这条是测试抓出来的契约）；⑤ **重启天然正确**：通知在日志里、标记在文件里，恢复不依赖进程内存。⚠️ 过程中的两个教训都写进 commit：把判定放在 `src/redline/**` 时**客户端 import 不了**（纯度门禁 face 9）⟹ 移到 `src/shared/`；纯函数三个输入都得守（`pending.list` 的回答形状被 fetch 桩喂错时曾把渲染炸掉，`docs/11` D54）。| `src/shared/redline-seen.ts` + `src/host/redline-channel.ts` + `src/client/**` 
+| M5-19 | 【作废】~~三态判定：已收到结算通知 / 有可关联的后续请求 / 未确认~~ | DONE | **2026-10-07 作废（用户裁定「按 demo 撤掉这两样」；原裁定见 `docs/11` D14，2026-10-02）**：三态判定只服务上面那两块（徽章 + 已查看标记），随 M5-18 一起作废。 → 见 `M5-18` 的证据（同一次落地）：`src/shared/redline-pending.ts`（**从 `src/redline/` 移过来**：客户端要用它，而 face 9 禁止 client import redline）；8 条单测 + 反向验证（`>`→`>=` 的边界缺口是反向验证抓出来的）+ "三个输入都不是数组也不许炸"。| `src/shared/redline-pending.ts` 
 | M5-20 | `plan.next` 次序机器化：waitTurn > applyDrafts > pinInvariants > startChild > compactChild > reviewChild | DONE | `src/redline/plan.ts`  → `src/redline/plan.ts`（纯函数，`tests/edit/plan.spec.ts` 10 条）✅ **规格更正**：原次序里的 `pinInvariants` **不实现** —— 固定块/不变量那一层已整套删除（`docs/11` D14、`docs/03`「已删除的卡」），照原文实现等于给界面塞一个永远为假的步骤。另外补了一个规格里隐含、但原先没建模的输入：**已提交进会话的改动条数**（§6 第 4 条的前提是「改完」，没有它就无法区分「没改过」和「改完已提交」）。 |
 | M5-21 | 不膨胀可观测：周期内父会话事件数/字节增量 + 逐条说明来源 | TODO | `src/redline/metrics.ts` |
 | M5-22 | 单测：`plan.next` 每种输入组合（含"到我这为止"） | DONE | `tests/edit/**`  → `tests/edit/plan.spec.ts`：10 条覆盖每一种输入组合（含「轮次未闭合压过一切」「没改过 → idle」「在跑的子会话不提议压缩」「有结果可看时压缩优先」），另有一条**钉住次序不变量**与一条**钉住“不许出现 pinInvariants”**（防那条已被删的步骤复活）。 |
 | M5-23 | 单测：草稿不进种子（只写本地） | TODO | `tests/edit/**` |
-| M5-24 | 单测：团队服务缺失 → `team.*` 返回 `null` 且界面隐藏对接点 | TODO | `tests/channel/**` |
-| M5-25 | 🙋 端到端验收（授权包③，你在场点按钮）：**开子会话** → 建成员 → 压缩 → 回流（冻结已删，不在链路里） | WAIT🙋 | `docs/00-scope.md` S5.5 |
-| M5-26 | 回流未确认的人工入口（"让主会话接着做"）可用 | TODO | `src/client/**` |
+| M5-24 | 【作废】~~单测：团队服务缺失 → `team.*` 返回 `null` 且界面隐藏对接点~~ | DONE | **2026-10-07 作废（用户裁定「按 demo 撤掉这两样」；原裁定见 `docs/11` D14，2026-10-02）**：没有 `team.*` op 了 ⟹ 这条契约失去主语；「服务缺失 → 界面隐藏对接点」由更强的形态取代：界面**根本没有**对接点（demo 的两块）。 `tests/channel/**` |
+| M5-25 | 🙋 端到端验收（授权包③，你在场点按钮）：**开子会话**（优先建官方成员，界面如实标 `via`）→ 子会话索引读到状态（只读 `turnState`）→ 父会话的「上下文事件」里能看到子会话的结算通知（平台自己写的，不是我们造的）。**压缩与回流入口已作废**（`M5-11`/`M5-14`/`M5-18`），不在链路里；冻结已删（`docs/11` D10） | WAIT🙋 | `docs/00-scope.md` S5.5 |
+| M5-26 | 【作废】~~回流未确认的人工入口（"让主会话接着做"）可用~~ | DONE | **2026-10-07 作废（用户裁定「按 demo 撤掉这两样」；原裁定见 `docs/11` D14，2026-10-02）**：用户 2026-10-02 明确不要「让主会话接着做」这类人工干预入口 ⟹ 作废。 `src/client/**` |
 | M5-27 | **起点口径落地**（评审 P0，`docs/01` F38）：记录一律当**凭证**；开子会话入口只长在"切点 == 当前最后一个 `turn/end`"的记录上，更早的记录**不给入口**（给原因 + 替代路径）；确认框 ① 同时写"本条记录（凭证）"与"平台实际种子"；传给平台的参数**不含** `seed` / `cutSeq` / `recordId`（A25/A26 锁死） | TODO | `src/redline/orchestrate.ts`、`src/client/**` |
 | M5-28 | 【D10 已取消】🙋 起点口径确认 —— 冻结删除后**这个问题不存在了**：界面上不再有任何"选起点"的承诺，起点恒为"最后聊完的那一轮"（平台限制，`docs/01` F38）；要真正的历史切点分叉只能向平台请求（`M7-04`） | DONE | → `docs/11` D10 |
 
@@ -394,7 +394,7 @@
 
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
-| M6-01 | RPC op 全量可用：**以 `docs/02` §5.2 的 A 段为准**（2026-10-06 复核：已实现 **8** 条 —— 只读 `node.read` / `turnState` / `draft.list` / `child.plan`（+ 临时 `probe.services`）· 写本地 `draft.update` / `draft.drop` · 会话唯一写入点 `child.start`）；B 段（`child.list` / `team.*` / 压缩）随 M5 落地。⚠️ 旧行写的"只读 14 · 写入 13 · 官方团队写入 4"是转向前的合同，已作废 | DONE | → **A 段 8 条全部实现且每条都有测试**：`node.read`（`tests/channel/redline-ops.spec.ts` + `tests/edit/namespace.spec.ts` + `tests/client-logic/redline-channel.spec.ts`）· `turnState` / `draft.list` / `draft.drop` / `probe.services`（`redline-ops.spec.ts`）· `draft.update` / `child.plan` / `child.start`（`tests/channel/child.spec.ts`）· 客户端半个通道（`client-logic/redline-channel.spec.ts`）。**B 段不算这条的欠账** —— 它按定义随 M5 落地（`child.list` = M5-06 另一半、`team.*` = M5-07…12、压缩 = M5-14/16）。`src/host/redline-channel.ts` |
+| M6-01 | RPC op 全量可用：**以 `docs/02` §5.2 的 A 段为准**（2026-10-06 复核：已实现 **8** 条 —— 只读 `node.read` / `turnState` / `draft.list` / `child.plan`（+ 临时 `probe.services`）· 写本地 `draft.update` / `draft.drop` · 会话唯一写入点 `child.start`）；B 段里的 `child.list` 随 M5-06 落地；~~`team.*` / 压缩~~ 已按用户裁定作废（`team.*` 见 `docs/11` D14/D55；压缩见 `docs/01` F54）。⚠️ 旧行写的"只读 14 · 写入 13 · 官方团队写入 4"是转向前的合同，已作废 | DONE | → **A 段 8 条全部实现且每条都有测试**：`node.read`（`tests/channel/redline-ops.spec.ts` + `tests/edit/namespace.spec.ts` + `tests/client-logic/redline-channel.spec.ts`）· `turnState` / `draft.list` / `draft.drop` / `probe.services`（`redline-ops.spec.ts`）· `draft.update` / `child.plan` / `child.start`（`tests/channel/child.spec.ts`）· 客户端半个通道（`client-logic/redline-channel.spec.ts`）。**B 段不算这条的欠账** —— 它按定义随 M5 落地（`child.list` = M5-06 另一半、`team.*` = M5-07…12、压缩 = M5-14/16）。`src/host/redline-channel.ts` |
 | M6-02 |【作废】~~`/redline` 命令：只读报告 + 一句话建议（`plan.next` 的 reason 必显）~~ | DONE | → **2026-10-06 收口：并入 `M7-02`（只读工具入口），用户已定"本轮不做"**。依据：产品形态是**面板**（`docs/03` + demo），命令入口与"编辑必须在界面上看着那一行做"这条理由方向相反；`docs/02` §5.3 已从"斜杠命令规格"改成"**当前不提供任何斜杠命令**"并保留那张旧表说明来龙去脉（含"为什么命令里不给编辑"）。`plan.next` 的 `reason` 仍由 `src/redline/plan.ts` 的纯函数产出（10 条单测），等真做命令/工具入口时直接用 |
 | M6-03 |【作废】~~内部服务导出（`ctx.redline`）：`inspect`/`apply`/`annotate`/`invariants.*`/`freeze`/`plan`~~ | DONE | → **2026-10-06 收口：不导出 cordis Service**。依据：① **没有消费者**（本仓库只有这一个插件；官方团队走它自己的服务与工具，见 `docs/01` F47/F53）；② 旧规格里的成员**大半已作废**（`apply`/`annotate`/`invariants.*`/`freeze` 随回滚+批注+固定块整套删除，`docs/11` D10/D19）。`inspect`（`src/redline/inspect.ts`）与 `plan`（`src/redline/plan.ts`，M5 的契约、10 条单测）**保留为仓库内模块，不对外暴露**；`docs/02` §5.4 已按此改写。将来真要复用就单独立项，且不许复活 §5.2 C 段那批名字 |
 | M6-04 | README 双语（成对）+ 截图 + 安装/使用/限制 | DONE | → 双语**成对**复核：两份各有 **9 节**且顺序一致（它要解决什么 / 它长什么样 / 四条规则 / 明确不做 / 文档索引 / 怎么读 / 安装与使用 / 许可 / 关于早期那次尝试）；**加了截图**并在两处都写明它来自 `demo/`（**当前界面准绳**），以及"**插件截图还欠**：要重启后在真面板上截（M3-22）"—— 不许把 demo 截图说成插件截图；**安装 / 使用 / 限制**三节补齐（`限制` 三条：保存只到本地、三类改不了、无版本历史/回滚）；文档索引补上 `docs/12`  **✅ 2026-10-06 补**：真机截图进了 README（`02-editor-live-noquestion.png` 编辑器无「?」、`03-advanced-switch-live.png` 高级编辑开关reveal 出「编辑」，加上原有的 01 那张），并**删掉了那句陈旧的话**（原文写"插件的截图还没法给：那要在重启后在真面板上截" —— 现在能给了，写着就是误导）；两 README 成对：图片各 **4**、绝对链接各 **35**、相对链接 **0**（`check-release-ready` 的"不许相对链接"门禁仍绿）。顺带修了 README 里 `namespace-contract` 的旧计数（25 → **28** 项）。 |
@@ -432,52 +432,41 @@
 | M3   右侧界面 | 36 | **35** | 1 | 0 | 0 |
 | M4   轮次联动 | 7 | **7** | 0 | 0 | 0 |
 | M4.5   平台能力验证 | 19 | **19** | 0 | 0 | 0 |
-| M5   快照 → 子会话 → 压缩 → 对接官方团队 | 28 | **14** | 1 | 12 | 1 |
+| M5   子会话（压缩与团队对接入口已按用户裁定撤下） | 28 | **22** | 0 | 5 | 1 |
 | M6   入口与发布准备 | 12 | **11** | 0 | 1 | 0 |
 | M7+   本轮明确不做 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **291** | **262** | **6** | **19** | **4** |
+| **合计** | **291** | **270** | **5** | **12** | **4** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 
 > 这一节是给用户看的："点哪一下能解锁多少条"。数字是**从表里数出来的**（不是估的），
 > 归不进任何一组的行 = 我们漏了依赖，那是缺陷。
 
-**① 等你重启 `dsh web`**（**1 条** + 1 条 DOING）— ⚠️ 2026-10-04 本节已按实测更正：
-`M1-01`（授权行本身）, `M3-22`（DOING）
-- ✅ **重启已经做过**：`M1-02`（挂载日志 / 两面板并存 / console 零注册错误）、`M3-21`（窄屏与粗指针 44px）、`M4-04` 都已 **DONE**（真机读过数）。
-- **仍需再重启一次**，但原因变了：只为让**只读探针 op** `probe.services` 生效（`docs/01` **F46** —— 宿主半边开机加载，`tsc`/`tsdown` 都过了、进程仍答 `unknown-op`）。重启后一条 curl 就能拿到 `M45-01/03/04` 的读数。
+**① 等你本人动作：一次重启 + 交互定稿**（**2 条 WAIT**）
+`M1-01`（授权行本身）、`M05-15`（demo 交互逐条确认）
+- **为什么必须你重启**：本插件的**宿主半边是开机加载的**（`docs/01` **F46**）—— 仓库里 `tsc`/`tsdown` 都过了，运行中的进程仍会答 `unknown-op`。
+- **这一批重启能一次验收三件**：① 按你的裁定**撤掉官方团队块与「已查看」标记**（客户端硬刷新即可看到界面变化；**宿主侧的 op 删除要重启才生效** —— 重启后 `team.list` / `pending.*` 应当答 `unknown-op`，那正是"删干净了"的证据）；② 临时只读探针 `probe.services` 的读数；③ 开子会话那条链（优先 `spawnTeammate` / 兜底 `startContinuable`）的真机读数 —— `docs/01` **F58** 那条"官方按 `sessionId` 找人、Agent 的 `sessionId` 是 `null`"仍作为**平台事实**保留（它是 M5-12 来源判定要绕开的坑），但 `team.list` 这个 op 已经不存在了。
+- **规矩**：重启一律由**你**执行（AGENTS §1 —— 助手自行重启会立刻杀掉你当前的会话）。
 
-**② 等你给授权包②**（专用可弃会话；**41 条**）
-`M45-01`, `M45-02`, `M45-04`, `M45-05`, `M45-06`, `M45-07`, `M45-08`, `M45-09`, `M45-10`, `M45-12`, `M45-16`, `M45-17`, `M5-01`, `M5-02`, `M5-03`, `M5-04`, `M5-05`, `M5-06`, `M5-07`, `M5-08`, `M5-09`, `M5-10`, `M5-11`, `M5-12`, `M5-13`, `M5-14`, `M5-15`, `M5-16`, `M5-17`, `M5-18`, `M5-19`, `M5-20`, `M5-21`, `M5-22`, `M5-23`, `M5-24`, `M5-25`, `M5-26`, `M5-27`, `M3-16`, `M3-17`
-- 其中 `M45-*` 是 8 条探针（清单在本文件 §7 节头），跑完 **M4.5 才全绿**；
-- ⛔ **硬门禁**：M4.5 全绿之前**不许进 M5**（`docs/04` 已落纸）⟹ M5 那批与子会话卡（`M3-16`/`M3-17`）全在这条链上。
+**② 需要专用可弃会话 / 你本人在场**（**2 条 TODO + 1 条 WAIT**）
+`M5-12`（来源判定：`tryMembership` 读真机事实）、`M5-21`（不膨胀可观测：父会话事件数 / 字节的真机读数）· WAIT：`M5-25`（端到端验收 = 授权包③，你在场点按钮）
 
-**③ 等你拍决定**（**3 条** + 两个"不是条目但必须你点头"的待定项：首轮 δ、**手动出口**——见下）
-`M4-06`, `M4-07`, `M3-23`
-- `M4-06` 默认粒度（跟 demo 按轮次 = 连带改 ~18 处上游断言 / 保留按步骤 = 改 `docs/03` R1.5 一行）；
-- `M4-07` 统计卡格子 —— **✅ 已定：取 3 格（跟 demo，用户 2026-10-06）**，实现待做；
-- `M3-23` **已收口（2026-10-06）**：平台已无 `register(ns, schema)`（`docs/01` F39）⟹ **摘掉死路、保留唯一活路**（loader Config 的 `.volatile()` 字段 + `plugins.bundle.config` 卡片），不需要你再选。
-- ⚠️ **手动出口（新提出，2026-10-04 实测发现的"承诺 vs 能力"缺口）**：界面文案写着"**开启子会话时**，改后的正文会逐字带进新会话的第一句话"（`redline.save.tip` / `redline.local.tip` / `redline.reason.assistant.tip` 三处），但**开启子会话那条链还没做**（属 M5，被硬门禁挡着）⟹ **今天你保存的改动没有出口**：除了自己去 `$DSH_HOME/dsh-context-redline/` 找那个 JSON，没有别的办法把它拿出来用。
-  · 三种走法，**请你选一个**：(a) **先做"手动带出"那一版** —— 把改好的正文显示成可复制的文本（**不需要任何平台 op**，失败决策表里 V11 的降级路径本来就许了它），代价：这是 demo 没有的退化形态，且将来要么保留要么删；(b) **什么都不做**，等你授权包②、M4.5 全绿后直接做正式的开启子会话；(c) **先把文案改准**（明写"这条链尚未接线"），等 M5 再改回来 —— 代价是两次改文案。
+**③ 等你拍决定**：**0 条**（`M4-06` / `M4-07` / `M3-23` / `M5-28` 都已收口；今天撤下的两块（官方团队 / 已查看标记）也是**你已裁定的方向**，不需要新决定）
 
-**④ 等发布授权（包④）**（**5 条**：4 条 TODO + `X-06`(WAIT)）
-`M6-07`, `M6-01`, `M6-02`, `M6-03`, `X-06`
-- `M6-07` 干净环境安装验证要装进一个独立 profile；`M6-01`/`M6-02`/`M6-03` 是 RPC ops 全量 / `/redline` 命令 / 内部服务导出，**本身就是 M5 之后的编排面**。
+**④ 等发布授权（包④）**（**1 条 TODO + 1 条 WAIT**）
+`M6-07`（干净环境安装验证要装进一个独立 profile）· WAIT：`X-06`
+- `M6-13`（发布就绪：探针清零 + npm 前提）**故意保持红**：临时探针还在树里。
 
-**⑤ 我自己就能做、不欠你**（**3 条 TODO** + `X-03`/`X-04`/`X-05`/`X-08` 四条 DOING + 三条 M4.5/M6 的 DOING 静态半边）
-`X-02`, `M2-20`, `M2-26`
-- `M2-20` 的消费者是 M5 的确认框、`M2-26` 依赖 M2-20 与 M4-07 ⟹ 都还没到；`X-*` 是每次收尾本就要做的事。
+**⑤ 我自己就能做、不欠你**（**5 条 TODO + 5 条 DOING**）
+`M2-20`, `M2-26`, `M5-13`, `M5-23`, `M5-27` · DOING：`X-03`, `X-04`, `X-05`, `X-08`, `M3-22`
+- `M2-20` 的消费者（开子会话确认框）已经落地 ⟹ 现在可以收口；`M2-26` 依赖 M2-20 与 M4-07（后者已 DONE）。
 
 **不算欠账的**（用户已定"本轮不做"）：`M7-01`, `M7-02`, `M7-03`, `M7-04`
 
-**对账**：① 3 TODO + 3 WAIT · ② 37 TODO + 4 WAIT · ③ 3 TODO · ④ 4 TODO + 1 WAIT · ⑤ 3 TODO + 4 DOING
-= **TODO 50 + M7 那 4 条 = 54**（与 §11 一致）、**WAIT 8**（与 §11 一致）、**DOING 8**（其中 4 条在 ⑤；`M45-03` / `M45-11` / `M45-19` / `M6-10` 是"静态半边已完成"的那四条）。
+**对账**（数字直接从上面的表里数出来，不是估的）：① 2 WAIT · ② 2 TODO + 1 WAIT · ③ 0 · ④ 1 TODO + 1 WAIT · ⑤ 4 TODO + 5 DOING
+= **TODO 8 + M7 那 4 条 = 12**（与 §11 的 TODO 列一致）、**WAIT 4**（一致）、**DOING 5**（一致；`X-03`/`X-04`/`X-05`/`X-08` 是每次收尾本就要做的横切，`M3-22` 是客户端手感验收）。
 **这个对账就是"没有第六种去处"的证明。**
 
 > ⚠️ 改完任何一张表，**必须回来同步这一张**（否则这里就成了第二个"真相"）。
-> 当前卡点：**M1 的收口动作 = 授权包①（装进 web profile + 你重启，见 M1-01）**；
-> 另有 **M05-15 交互定稿（等你）**。
-> **M1 的仓库内部分已全绿**（11/14 DONE，剩下 2 条都要装进 profile 才能做）：`tsc` / `tsdown` /
-> `vitest`（自有 lane 15/15、含上游 lane 共 1689/1689）/ `namespace-contract`（24 项 0 失败）/ `oxlint` 全绿。
-> **下一步（M2）**：在 `tests/edit/**` 先写红、再实现本地草稿 + 全文读取 + 按底层事件类型的能力判定。
-
+> **当前卡点**：**你重启一次**（①）—— 宿主半边的修正与删除才会生效；随后是 `M5-25` 的端到端验收（②）。
+> **2026-10-07 的账目变化**：官方团队块与「已查看」标记按你的裁定**整体撤下** ⟹ 11 行转 `【作废】`（见各行开头），M5 由 `DONE 14` 变 `DONE 22`（11 行转 `【作废】`，`M5-13` 复核后保留 TODO）。

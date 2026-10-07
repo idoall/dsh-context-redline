@@ -456,7 +456,7 @@ class ForkInProcessProvider {
 2. **每个方法都要一个"活的 Agent"当凭据**，且**角色决定权限**（`spawnTeammate`/`interrupt` 要 Lead）。
    我们以**该会话的 live Agent**（`ctx.agents.get(sessionId)`）作 caller —— 会话不 live 时对接点全不可用（与 V3 同源）。
 3. **团队状态写在 Lead 会话日志里**（事件 `team/member`、`team/task`、`team/message/queued|delivered`）
-   → 又是"平台权威、我们**不复制**"。我们的 sqlite 只存平台不知道的东西（快照、来源关联、已查看标记）。
+   → 又是"平台权威、我们**不复制**"。我们的本地存储只存平台不知道的东西（本地草稿；来源关联）。
 
 ### F33 · ★★ `spawnTeammate` 支持 **`context: 'fork'`** ——"用我编辑过的上下文建一个成员"是官方正路
 
@@ -478,7 +478,7 @@ SpawnTeammateRequest = {
 - **兜底**（团队未启用 / 服务缺失 / 拿不到 live Lead）：退回 `ctx.subagents.startContinuable({provider:'fork'})`
   → 一个**不进名册的裸续接子会话**：仍会被官方页头目录看到、仍会自动回流，但**没有任务板、没有官方派活**；
   界面必须**如实标注**当前是哪一种（`docs/03` R5.1）。
-- **仍然自有的只有三样**：① 冻结快照记录；② "这条成员/子会话来自哪条快照"（`snapshot_links`）；③ 结算通知的"已查看"标记（`pending_results`）。
+- **仍然自有的**：① 冻结快照记录（**已按 `docs/11` D10 删除**）；② "这条成员/子会话来自哪条快照"（`snapshot_links`）；③ ~~结算通知的"已查看"标记（`pending_results`）~~ **【已删 · 2026-10-07】**（用户 2026-10-02 裁定"人工不应该干预回流"，`docs/11` D14/D55）。
 
 ### F34 · 客户端读的是 `agentTeam` 投影（我们读**同一份**）
 
@@ -593,7 +593,7 @@ SpawnTeammateRequest = {
 | F53 | **官方团队的两个面都能读到，但「按 sessionId 判 Lead」那条口径不成立** —— ① **客户端投影**：键名就是 **`agentTeam`**（安装树 `@deepseek-ai/dsh-experimental-agent-team/lib/types/projection.d.ts` 的 `declare module '@deepseek-ai/dsh-session-projection/types' { interface SessionProjectionStateMap { agentTeam: TeamProjectionState } }`），真面板上读到的形状是 **`object:members,tasks`**（顶层可枚举键就这两个：成员集合与任务集合）⟹ 我们要的"团队成员/任务看板"有官方投影可读，**不必自己 fold**；同一次读数：`subagentCatalog = array:4`（本会话 4 个子代理）、`subagentTiming = object:settledMs`。② **宿主服务**：`ctx.get('agentTeams')` 在册（23 个成员），但 **`tryMembership(sessionId)` 对三个会话（含当前活会话）都返回 `undefined`** ⟹ 用它按 **sessionId** 判"这个会话是不是 Lead/成员"**不成立**（要么它按 agent id 索引、要么本会话确实不在任何 team 里）。M5 的"来源判定 → 徽章"（M5-12）因此**要换口径**：从 `agentTeam` 投影的 `members` 里找、或问 agent 侧；真团队里再验一次（写会话，属授权包②） | 2026-10-06 本机实测（宿主探针 + 临时客户端探针，见 `docs/11` D45） |
 | F54 | ⚠️ **压缩服务 `ctx.compaction` 在类型上就叫这个名字，但它被注册在「agent 隔离作用域」里 —— 我们的插件调不到**（2026-10-06 静态 + 真机双证）：① 类型：`@deepseek-ai/dsh-compaction/lib/types/index.d.ts:68` 声明 `interface Context { compaction: CompactionEngine }`；② 组合树：**顶层** `compaction-basic` 被 web-app 补丁 **`disabled: true`**，真正生效的那份在 `@deepseek-ai/dsh-web-app` 的嵌套组里 —— `- id: compaction / name: cordis:group / group: true / isolate: { compaction: true, toolResultPruner: true }`；③ 真机：`probe.services` 枚举 11 个 key（`subagents`/`agents`/`agentTeams`/`sessionQuery`/`sessions`/`settings`/`tools`/`commands` **都在册**）**只有 `compaction` 缺席**。⟹ **这是设计如此，不是配错**（`docs/06` §3.3 早就写着"压缩要 agent 作用域的 ctx"）：**第三方插件不能从自己的 fiber 触发压缩**。按 `docs/04` 预先写好的降级路径收口：**界面不提供压缩执行入口**，只保留"引导你在子会话里执行 `/compact`"+ 如实显示日志里**已经发生**的压缩（事件卡那条，读 `compaction/summary`）。 | 2026-10-06 本机实测（类型 + `dump-config` + 运行期探针三证） |
 | F55 | ⚠️ **第三方客户端插件没有「切换/打开某个会话」的服务** —— 所以我们的子会话索引**不给跳转按钮**（2026-10-06 静态核实）：`@deepseek-ai/dsh-client-ui-subagent/lib/client.js` 里对 `ctx.sessions` 只用到 **`list` / `retain` / `refreshProjections`** 三个方法，而"打开某个子会话"是它**自己实现的 UI 行为**（`openChild` / `openChildAside`：把子会话的对话**渲染**进当前视图/右侧 Sidebar），不是调一个公共的 switch-session API；类型里也 grep 不到 `openSession` / `selectSession` / `setActiveSession` / `activeSessionId`。⟹ 结论（与 `docs/03` R5.1.1 一致）：**导航入口归官方**（父会话页头右侧的「N 个子智能体」谱系目录），我们的卡只负责**如实说清状态** + **指名去哪儿打开**；我们不去复制一个会话视图，也不猜一个内部 API。 | 2026-10-06 读安装树 `dsh-client-ui-subagent/lib/client.js` 实测 |
-| F56 | **父会话里的「结算通知」长什么样**（`docs/06` §3.3 ⑦ 的落点，2026-10-06 双证）：它不是 Agent 消息、也不是工具结果，而是一条 **`user/message`**，其 durable `source` 为 `{ kind: 'subagent-settled', form: 'notice', summary: <运行时自己写的一句话>, senderSessionId: <子会话 id> }`（类型见 `@deepseek-ai/dsh-subagent/lib/types/continuation-messages.d.ts`：注释明写"这是 manager 在陈述孩子的结局，与 Agent 消息分开正是为了不把孩子没说过的话记到它头上"）。**运行时自动写**（我们不需要做任何事），所以"结果回流"对我们只剩**可见性**：把 `senderSessionId` 与 `summary` 如实显示 + 标出"还没人管"。真机：`92414bcf…` 结算时，父会话的「上下文事件」里出现 `通知 · subagent-settled · Background subagent 92414bcf-… finished…`（第 60 轮 · 第 3 步 22:27:09）。 | 2026-10-06 类型 + 真机日志双证 |
+| F56 | **父会话里的「结算通知」长什么样**（`docs/06` §3.3 ⑦ 的落点，2026-10-06 双证）：它不是 Agent 消息、也不是工具结果，而是一条 **`user/message`**，其 durable `source` 为 `{ kind: 'subagent-settled', form: 'notice', summary: <运行时自己写的一句话>, senderSessionId: <子会话 id> }`（类型见 `@deepseek-ai/dsh-subagent/lib/types/continuation-messages.d.ts`：注释明写"这是 manager 在陈述孩子的结局，与 Agent 消息分开正是为了不把孩子没说过的话记到它头上"）。**运行时自动写**（我们不需要做任何事），所以"结果回流"的**可见性**原本只需如实显示 `senderSessionId` 与 `summary`；⚠️ **2026-10-07 更正**：连这份可见性入口也按用户裁定撤下（界面不做回流状态、不做"已查看"标记，`docs/11` D14/**D55**）——这条 F56 只作为**平台事实**保留：通知确实在父会话日志里，我们的「上下文事件」卡会把它当普通事件显示出来。真机：`92414bcf…` 结算时，父会话的「上下文事件」里出现 `通知 · subagent-settled · Background subagent 92414bcf-… finished…`（第 60 轮 · 第 3 步 22:27:09）。 | 2026-10-06 类型 + 真机日志双证 |
 `session-d27155c3`（可弃）上调 `child.start` → 返回 `{childId:"66da37b9-…", messageId:"aeb5e73b-…"}`，
 `~/.dsh/sessions/<项目>/` 目录数 **28 → 29**，新增目录名就是那个 `childId`（⚠️ 注意：**childId 没有 `session-` 前缀**，
 我第一版拿 `session-<childId>` 去读，得到"不可读"，纯属自己传错 id）。**两条结论**：
@@ -610,11 +610,10 @@ SpawnTeammateRequest = {
 `/^[a-z0-9]+(-[a-z0-9]+)*$/`、≤64 字、≠ `lead`。 | §F57（实测 2026-10-07） |
 | F58 | **`agentTeams.listTasks(caller)` 会拒绝我们要给的那个 caller（2026-10-07 真机）**：原文
 `agent "undefined" is not a member of an active Agent Team` —— 官方**按身份**在名单里找人，而我们的 caller
-（`ctx.get('agents').get(sessionId)`）让它读出了 `undefined`（`Agent` 的身份字段是 `sessionId`）。
+（`ctx.get('agents').get(sessionId)`）让它读出了 `undefined`。**2026-10-07 更正（同一轮的后一条读数）**：运行时的 `Agent` 上 **`sessionId` 是 `null`**、身份在 **`id`** 上 —— 所以真要给它一个能通过校验的 caller，得用 `Object.create(caller, { sessionId: { value: sessionId } })` 把身份补到位（当时的修法）。⚠️ **这条 op 已按用户裁定删除**（`team.list`，见 [`docs/11`](11-session-handoff.md) D14/**D55**），但**平台事实保留**：M5-12 的"来源判定"仍要绕开这个坑。
 **同一轮里 `spawnTeammate(parent, …)` 却成功了**（真建出成员 `268a957e…`、`status: running`）⟹
 **"建成员"不校验名单，"读任务"校验**。诊断经验：宿主日志（`dsh-web.log` / `~/.dsh/logs/*` / launchd plist）
-里**找不到**我们 `ctx.logger.warn` 的输出，所以拒绝原文改为写进**我们自己的数据目录**
-`$DSH_HOME/dsh-context-redline/redline-team-list-error-<会话>.log`（返回值仍保持 `null`，M5-24 契约不变）。 | §F58（实测 2026-10-07） |
+里**找不到**我们 `ctx.logger.warn` 的输出，所以当时的拒绝原文改为写进**我们自己的数据目录**（`redline-team-list-error-<会话>.log`；**该文件名与那段写盘代码已随 op 一起删除** —— `$DSH_HOME/dsh-context-redline/` 下若还留着那份诊断文件，是历史残留，可以直接删）。 | §F58（实测 2026-10-07） |
 | F49 | **2026-10-05 第二轮真机只读探针 + 静态查证（新 pid 85196）**：**① `ctx` 的服务不可枚举** ——
 `Object.keys(ctx)` 只给出 `["fiber"]` ⟹ 找服务只能靠**按名字试探**或**读安装树的 `.d.ts`**（这条顺便解释了 F48 里
 "知道有服务但不知道键名"的困境）。**② 压缩服务要的是"agent 上下文"，不是会话 id** —— `@deepseek-ai/dsh-compaction` 的

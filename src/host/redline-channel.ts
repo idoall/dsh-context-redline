@@ -50,9 +50,7 @@ import {
   type DraftTable,
   type LocalEdit,
   type SurfaceRowText,
-  teamListErrorFileName,
 } from '../shared/redline-drafts'
-import { dropSeen, parseSeen, putSeen, seenFileName, serializeSeen } from '../shared/redline-seen'
 import { fullReasoningOf, fullTextOf, isErrorOf, seqOf, typeOf } from '../redline/inspect'
 import { ability, type RowClass } from '../shared/redline-ability'
 import { turnStateOf, type TurnBoundaryEvent, type TurnState } from '../shared/redline-turn'
@@ -82,9 +80,6 @@ interface SessionQueryFace {
 
 /**
  * `ctx.agentTeams` 里我们真正要用的那一小块（签名按安装树 `@deepseek-ai/dsh-experimental-agent-team`）。
- *
- * ⚠️ `listTasks(caller: Agent)` 是**同步**方法，而且 caller 必须是**活着的团队成员**（Lead 行）——
- * 所以"拿不到活 Agent"与"服务不在"都要当成"这台运行时不提供这份数据"处理（`docs/10` M5-24：返回 `null`）。
  */
 interface AgentTeamsFace {
   /**
@@ -99,8 +94,6 @@ interface AgentTeamsFace {
     provider: string
     signal: AbortSignal
   }): Promise<unknown>
-  listTasks?(caller: unknown): unknown
-  membership?(sessionId: string): unknown
 }
 
 /** `ctx.subagents` 里我们真正要用的那一小块（签名按 `docs/06` §3.1.1 的实测）。 */
@@ -234,44 +227,6 @@ async function writeTable(ctx: Context, sessionId: string, table: DraftTable): P
     return fail(REDLINE_ERROR.internal, error instanceof Error ? error.message : String(error))
   }
   return redlineOk(table)
-}
-
-/**
- * Read a session's flow-back "seen" marks. A missing file is an empty set; a
- * corrupt one refuses loudly (`docs/06` §3.3: the marks are OURS, deleting the
- * file is always safe and the message says so).
- */
-async function readSeen(ctx: Context, sessionId: string): Promise<RedlineEnvelope<number[]>> {
-  const dir = dataDirOf(ctx)
-  if (dir === null) return fail(REDLINE_ERROR.internal, 'the harness home is not available')
-  let raw: string | null = null
-  try {
-    raw = await readFile(join(dir, seenFileName(sessionId)), 'utf8')
-  } catch (error) {
-    if ((error as { code?: string }).code !== 'ENOENT') {
-      return fail(REDLINE_ERROR.internal, error instanceof Error ? error.message : String(error))
-    }
-  }
-  const parsed = parseSeen(raw, sessionId)
-  if (!parsed.ok) return fail(parsed.code, parsed.message)
-  return redlineOk(parsed.seen)
-}
-
-/** Write a session's seen marks atomically (`.tmp` + rename) — the same rule as the drafts. */
-async function writeSeen(ctx: Context, sessionId: string, seen: readonly number[]): Promise<RedlineEnvelope<number[]>> {
-  const dir = dataDirOf(ctx)
-  if (dir === null) return fail(REDLINE_ERROR.internal, 'the harness home is not available')
-  const target = join(dir, seenFileName(sessionId))
-  const temp = `${target}.tmp-${process.pid}-${Date.now().toString(36)}-${(writeTicket += 1).toString(36)}`
-  try {
-    await mkdir(dir, { recursive: true })
-    await writeFile(temp, serializeSeen(sessionId, seen), 'utf8')
-    await rename(temp, target)
-  } catch (error) {
-    await rm(temp, { force: true }).catch(() => undefined)
-    return fail(REDLINE_ERROR.internal, error instanceof Error ? error.message : String(error))
-  }
-  return redlineOk([...seen])
 }
 
 /**
@@ -673,101 +628,6 @@ const startChild: RedlineOpHandler = async ({ ctx, call }) => {
 }
 
 /**
- * Result flow-back: WHICH notices the human has already looked at. Read-only.
- * The marks live in our own file (never in a session); the client merges them
- * with the host's notices to get the state it shows (`docs/06` §3.3).
- */
-const listSeen: RedlineOpHandler = async ({ ctx, call }) => {
-  const sessionId = sessionIdOf(call)
-  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
-  return await readSeen(ctx, sessionId)
-}
-
-/**
- * Mark (or unmark) one settle notice as seen — the ONLY write this op performs,
- * and it writes our own file only: no session write, no child-state change, no
- * message. `seq` must be the notice's log seq; the host does not re-check that it
- * IS a notice (the client only offers the action on a notice row, and a stale
- * mark for a seq that is not a notice is harmless: the judgement ignores seqs it
- * has no notice for).
- */
-const markSeen: RedlineOpHandler = async ({ ctx, call }) => {
-  const sessionId = sessionIdOf(call)
-  const seq = seqArgOf(call.seq)
-  if (sessionId === null || seq === null) return fail(REDLINE_ERROR.badRequest)
-  if (typeof call.seen !== 'boolean') return fail(REDLINE_ERROR.badRequest)
-  return await withSessionLock(sessionId, async () => {
-    const current = await readSeen(ctx, sessionId)
-    if (!current.ok) return current
-    const next = call.seen ? putSeen(current.value, seq) : dropSeen(current.value, seq)
-    if (next.length === current.value.length && next.every((one, index) => one === current.value[index])) {
-      return current
-    }
-    return await writeSeen(ctx, sessionId, next)
-  })
-}
-
-/**
- * 官方 Agent Teams 那份数据（M5-07 的宿主半边）。
- *
- * 契约（`docs/10` M5-24）：**这台运行时不提供就返回 `null`** —— 界面据此隐藏对接点，而不是显示一个空队伍。
- * 三种情况都算"不提供"：服务不在、这个会话拿不到活 Agent（不是团队成员）、`listTasks` 抛错。
- * 我们**只读**：这里不建成员、不派活、不改任务（那些是官方界面的职责，`docs/11` D14）。
- */
-const readTeam: RedlineOpHandler = async ({ ctx, call }) => {
-  const sessionId = sessionIdOf(call)
-  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
-  const teams = ctx.get('agentTeams') as AgentTeamsFace | undefined | null
-  if (teams === undefined || teams === null || typeof teams.listTasks !== 'function') return redlineOk(null)
-  const agents = ctx.get('agents') as { get?: (id: string) => unknown } | undefined | null
-  const caller = typeof agents?.get === 'function' ? agents.get(sessionId) : undefined
-  if (caller === undefined) return redlineOk(null)
-  // ⚠️ **真机纠正（2026-10-07，F58）**：运行时的 Agent 上 **`sessionId` 是 null**、身份在 `id` 上，
-  // 而官方的 `listTasks` 是**按 `sessionId` 在名单里找人**的 —— 直接把它给的 Agent 传过去，
-  // 官方会读到 `undefined` 并答 `agent "undefined" is not a member of an active Agent Team`。
-  // 这里给它一个**自己的 `sessionId` 就位、其余能力照旧继承**的 caller（原型链不动，方法都还在）。
-  const asMember = Object.create(caller, {
-    sessionId: { value: sessionId, enumerable: true, configurable: true, writable: false },
-  }) as unknown
-  try {
-    return redlineOk({
-      tasks: teams.listTasks(asMember) ?? null,
-      membership: typeof teams.membership === 'function' ? (teams.membership(sessionId) ?? null) : null,
-    })
-  } catch (error) {
-    // 官方拒绝（例如 caller 不是团队成员）也算「这份数据现在拿不到」——**返回值保持 `null`**（M5-24 契约不变），
-    // 但**原因必须留下**：2026-10-07 真机上出现过"成员建好了、team.list 却是 null"，当时连原因都看不到。
-    const why = messageOf(error)
-    ctx.logger.warn('dsh-context-redline: team.list 拿不到官方团队数据（' + why + '）')
-    // 再写一份到**我们自己的数据目录**：宿主的日志落点不可靠（2026-10-07 实测在 `dsh-web.log`、
-    // `~/.dsh/logs/*`、launchd plist 里都找不到我们的输出），而"官方为什么拒绝"必须有原文可查。
-    // 写失败不影响返回值（诊断不能变成新的失败点）。
-    const dir = dataDirOf(ctx)
-    if (dir !== null) {
-      try {
-        await mkdir(dir, { recursive: true })
-        // 连 caller 的**真实形状**一起记：官方报的 `agent "undefined" is not a member…` 说明它读身份读出了空，
-        // 而我们的 caller 是 `agents.get(sessionId)` 给的 —— 到底缺哪个字段，写下来才不用猜。
-        const callerShape = (() => {
-          const c = caller as { sessionId?: unknown; id?: unknown }
-          const proto = Object.getPrototypeOf(caller) as object | null
-          return JSON.stringify({
-            ownKeys: Object.keys(c).slice(0, 20),
-            protoKeys: proto === null ? null : Object.getOwnPropertyNames(proto).slice(0, 20),
-            sessionId: c.sessionId ?? null,
-            id: c.id ?? null,
-            passedSessionId: sessionId,
-          })
-        })()
-        await writeFile(join(dir, teamListErrorFileName(sessionId)), new Date().toISOString() + ' ' + why + '\ncaller=' + callerShape + '\n', 'utf8')
-      } catch { /* 诊断写不进去就算了 */ }
-    }
-    // 也算「这份数据现在拿不到」——不假装成功，也不把异常抛给界面。
-    return Promise.resolve(redlineOk(null))
-  }
-}
-
-/**
  * The op table. M2's entries; M3/M5 add theirs here and nowhere else.
  */
 const OPS = new Map<string, RedlineOpHandler>([
@@ -777,11 +637,8 @@ const OPS = new Map<string, RedlineOpHandler>([
   ['draft.list', listDrafts],
   ['draft.update', updateDraft],
   ['draft.drop', dropDraft],
-  ['pending.list', listSeen],
-  ['pending.seen', markSeen],
   ['child.plan', planChild],
   ['child.start', startChild],
-  ['team.list', readTeam],
 ])
 
 /** One JSON reply on the channel. `no-store` matches every other plugin route. */

@@ -8,7 +8,7 @@
 //   ④ 这台运行时没有子会话服务时，如实拒绝（`redline/no-subagents`），不装作能开。
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, test } from 'vitest'
@@ -19,7 +19,7 @@ import { apply, inject, name } from '../../src/host/index'
 import { REDLINE_ERROR } from '../../src/shared/redline-errors'
 import { REDLINE_CHANNEL_ROUTE } from '../../src/shared/redline-route'
 import { REDLINE_DATA_DIR_NAME } from '../../src/shared/redline-paths'
-import { draftFileName, teamListErrorFileName } from '../../src/shared/redline-drafts'
+import { draftFileName } from '../../src/shared/redline-drafts'
 
 type RouteFetch = (request: Request) => Promise<Response>
 interface CapturedRoute { path: string, methods: readonly string[], fetch: RouteFetch }
@@ -41,7 +41,6 @@ interface ChildOps {
   sessionWrites: string[]
   logOffset: () => number
   starts: Record<string, unknown>[]
-  teamCalls: unknown[]
   spawnCalls: { caller: unknown, request: Record<string, unknown> }[]
   /** 假的活 Agent：`request.parent` 该收到它。 */
   agent: unknown
@@ -50,16 +49,14 @@ interface ChildOps {
 
 let nullableAgentFor = ''
 
-async function boot(options: { withSubagents?: boolean, withTeams?: 'ok' | 'throws' | 'off' | 'spawn' } = {}): Promise<ChildOps> {
+async function boot(options: { withSubagents?: boolean, withTeams?: 'off' | 'spawn' } = {}): Promise<ChildOps> {
   const { withSubagents = true, withTeams = 'off' } = options
   const home = mkdtempSync(join(tmpdir(), 'redline-child-'))
   homes.push(home)
   const routes: CapturedRoute[] = []
   const sessionWrites: string[] = []
   const starts: Record<string, unknown>[] = []
-  /** 每次 team.list 调官方 listTasks 时收到的 caller。 */
-  const teamCalls: unknown[] = []
-  /** 每次 team.list 调官方 spawnTeammate 时收到的 (caller, request)。 */
+  /** 每次 child.start 调官方 spawnTeammate 时收到的 (caller, request)。 */
   const spawnCalls: { caller: unknown, request: Record<string, unknown> }[] = []
   const ctx = new Context()
   ctx.provide('connection', {
@@ -103,24 +100,12 @@ async function boot(options: { withSubagents?: boolean, withTeams?: 'ok' | 'thro
       return id === nullableAgentFor ? undefined : fakeAgent
     },
   })
-  if (withTeams !== 'off') {
+  if (withTeams === 'spawn') {
     ctx.provide('agentTeams', {
-      listTasks(caller: unknown) {
-        teamCalls.push(caller)
-        // 真机纠正（F58）：官方**按 `sessionId`** 在名单里找人；运行时的 Agent 上它是 null。
-        if ((caller as { sessionId?: unknown }).sessionId !== readable) throw new Error('agent is not a member of an active Agent Team')
-        if (withTeams === 'throws') throw new Error('caller is not a team member')
-        return [{ id: 't-1', revision: 3, subject: '把测试补上', status: 'pending', ready: true, ownerName: '小王' }]
+      async spawnTeammate(caller: unknown, request: Record<string, unknown>) {
+        spawnCalls.push({ caller, request })
+        return { member: { id: 'member-1', name: '上下文批改 · test', role: 'teammate', phase: 'active' } }
       },
-      membership() { return { role: 'lead' } },
-      ...(withTeams === 'spawn'
-        ? {
-            async spawnTeammate(caller: unknown, request: Record<string, unknown>) {
-              spawnCalls.push({ caller, request })
-              return { member: { id: 'member-1', name: '上下文批改 · test', role: 'teammate', phase: 'active' } }
-            },
-          }
-        : {}),
     })
   }
   if (withSubagents) {
@@ -145,7 +130,7 @@ async function boot(options: { withSubagents?: boolean, withTeams?: 'ok' | 'thro
   assert.ok(channel !== undefined, 'the channel registered')
   return {
     ctx, channel, home, sessionId: session.id, sessionWrites,
-    logOffset: () => session.seq, starts, agent: fakeAgent, teamCalls, spawnCalls,
+    logOffset: () => session.seq, starts, agent: fakeAgent, spawnCalls,
     setLog: (next) => { log = next },
   }
 }
@@ -255,50 +240,6 @@ describe('child.start：全插件唯一的写入点', () => {
     assert.deepEqual(ok.carriedSeqs, [1301])
     assert.equal(ops.sessionWrites.length, 0, '会话一个字都没写')
     assert.equal(ops.logOffset(), before, '日志 offset 不动')
-  })
-})
-
-describe('team.list：官方 Agent Teams 那份数据（M5-24 的契约：不提供就返回 null）', () => {
-  test('没有 agentTeams 服务 → null（界面据此隐藏对接点，而不是显示空队伍）', async () => {
-    const ops = await boot({ withTeams: 'off' })
-    const reply = await call(ops, { op: 'team.list', sessionId: ops.sessionId })
-    assert.equal(reply.ok, true, JSON.stringify(reply))
-    assert.equal(reply.value, null, '不提供就是 null')
-    assert.deepEqual(ops.sessionWrites, [], '只读：不写会话')
-  })
-
-  test('拿不到活 Agent（不是团队成员）→ null', async () => {
-    const ops = await boot({ withTeams: 'ok' })
-    nullableAgentFor = ops.sessionId
-    try {
-      const reply = await call(ops, { op: 'team.list', sessionId: ops.sessionId })
-      assert.equal(reply.value, null)
-      assert.equal(ops.teamCalls.length, 0, '连官方都不该去调')
-    } finally { nullableAgentFor = '' }
-  })
-
-  test('服务在、caller 活着 → 官方的 tasks/membership 原样交回（我们不改写）', async () => {
-    const ops = await boot({ withTeams: 'ok' })
-    const value = (await call(ops, { op: 'team.list', sessionId: ops.sessionId })).value as Record<string, unknown>
-    assert.equal((value.tasks as unknown[]).length, 1)
-    assert.deepEqual(value.membership, { role: 'lead' })
-    assert.equal(ops.teamCalls.length, 1, '官方被问了一次')
-    // caller 必须是「身份就位」的那个：`sessionId` = 会话 id（真机纠正 F58），且仍继承原 Agent 的能力。
-    const got = ops.teamCalls[0] as { sessionId?: unknown }
-    assert.equal(got.sessionId, ops.sessionId, 'caller.sessionId 必须是会话 id')
-    assert.equal(Object.getPrototypeOf(got), ops.agent, '原型链没动，方法都还在')
-  })
-
-  test('官方抛错（例如 caller 不是成员）→ null，不把异常抛给界面；**但原因必须留在我们自己的诊断文件里**', async () => {
-    const ops = await boot({ withTeams: 'throws' })
-    const reply = await call(ops, { op: 'team.list', sessionId: ops.sessionId })
-    assert.equal(reply.ok, true, '通道永远不因为对方的错而炸')
-    assert.equal(reply.value, null)
-    // 2026-10-07 真机上 `ctx.logger.warn` 的输出在宿主日志里找不到 ⟹ 写进我们自己的数据目录，
-    // 这样"官方为什么拒绝"永远有原文可查（返回值仍保持 null，契约不变）。
-    const diag = join(ops.home, REDLINE_DATA_DIR_NAME, teamListErrorFileName(ops.sessionId))
-    assert.ok(existsSync(diag), '诊断文件必须被写下：' + diag)
-    assert.ok(readFileSync(diag, 'utf8').includes('caller is not a team member'), '原文要在里面')
   })
 })
 

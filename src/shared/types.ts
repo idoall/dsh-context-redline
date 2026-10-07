@@ -174,25 +174,6 @@ export type SettingsField = keyof PluginSettings
 export interface Snapshot {
   ok: boolean
   /**
-   * Settle notices found in the log (oldest first, copies). ADDITIVE-OPTIONAL:
-   * absent when the log holds none (and on rows folded before the field
-   * existed) - the child-session card then shows no badge. Bounded at the
-   * fold's own notice cap, so it never grows with the log.
-   *
-   * The three-state JUDGEMENT deliberately does NOT ride the projection: its
-   * "seen" input lives in our own store (`docs/06` §3.3), and a projection has
-   * to stay a fold over the session's log. The client merges these notices with
-   * that store via `src/shared/redline-pending.ts`.
-   */
-  notices?: SettleNotice[]
-  /**
-   * Seq of the newest folded request, present ONLY alongside `notices`. It is
-   * the third input of the flow-back judgement (a request after a notice proves
-   * the parent ran again), served as a shared-head scalar because the slim
-   * head's `last` billing anchor is absent from the inline view.
-   */
-  lastRequestSeq?: number
-  /**
    * The host's baseline-gate record, present ONLY when the running harness
    * is below the plugin's supported baseline: the host then folds nothing
    * and every figure in this snapshot is zero/empty. The client keeps
@@ -650,38 +631,6 @@ export interface RequestRecord {
 }
 
 /** A notable context event (compaction, prune, injection, model switch). */
-/**
- * One `subagent-settled` notice from the runtime (`docs/06` §3.3 result
- * flow-back): the parent's log carries a `user/message` whose durable
- * `source.kind` is `subagent-settled`, with `summary` (the runtime's own
- * one-line account) and `senderSessionId` (the child that settled). We never
- * summarize a child's work, never write a session and never touch the child's
- * state - the panel only makes the notice and its state visible.
- */
-export interface SettleNotice {
-  /** Log seq of the notice message (identity + ordering). */
-  seq: number
-  /** The child that settled (`source.senderSessionId`). */
-  childId: string
-  /** The runtime's account, shown verbatim. */
-  summary: string
-  /** Event time. */
-  at: number
-}
-
-/**
- * `continued` = a later request proves the parent carried on; `seen` = the
- * human marked it in our own store (never in a session); `unseen` = nobody
- * has. Ordered by evidence strength, so the strongest wins.
- */
-export type PendingState = 'continued' | 'seen' | 'unseen'
-
-/** One settle notice with its judged state. */
-export interface PendingRow {
-  notice: SettleNotice
-  state: PendingState
-}
-
 export interface ContextEventRecord {
   seq: number
   time: number
@@ -693,12 +642,6 @@ export interface ContextEventRecord {
   name?: string
   /** One-line producer account (notice-form summary), shown after the name. */
   detail?: string
-  /**
-   * Set ONLY on `subagent-settled` notices: the child session that settled
-   * (`source.senderSessionId`) — the link from a notice to a child-session
-   * index row. Absent on every other event kind.
-   */
-  childId?: string
   from?: string
   to?: string
   /** Turn/step of the request logged right BEFORE the event (host-stamped). */

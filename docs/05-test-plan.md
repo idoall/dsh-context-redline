@@ -175,7 +175,7 @@ node scripts/check-docs.mjs ; node demo/check-static.mjs ; node demo/check-runti
 | `docs/03` §7 的条目 | 前置 |
 |---|---|
 | `#16`（不可恢复态都有文案） | 无（任何情况下都要执行） |
-| `#19` / `#23`（开子会话 / 建子会话 + 结果回流） | ① M4.5 的 ② `agents`、③ `fork`、**V10**（`subagentCatalog` 等投影可读）、**V11**（续存 fork 端到端，含"父不在进程 / 父正忙"两种情形）、**V14**（起点口径：有没有受支持的更早切点）都有结论；② **官方 `dsh-client-ui-subagent` 已挂载**，父会话页头的血缘触发器存在且能打开一个 child（否则"打开 → 官方视图"这条承诺无法兑现）。任一不满足 → 按 `docs/04` 的同步变更表验"不存在 / 降级"；**V14 未出结论时，只能按"更早的记录不给入口"的降级形态验**（A26） |
+| `#19` / `#23`（开子会话 / 建子会话；~~结果回流~~ 已按用户裁定撤下，`docs/11` D14/D55） | ① M4.5 的 ② `agents`、③ `fork`、**V10**（`subagentCatalog` 等投影可读）、**V11**（续存 fork 端到端，含"父不在进程 / 父正忙"两种情形）、**V14**（起点口径：有没有受支持的更早切点）都有结论；② **官方 `dsh-client-ui-subagent` 已挂载**，父会话页头的血缘触发器存在且能打开一个 child（否则"打开 → 官方视图"这条承诺无法兑现）。任一不满足 → 按 `docs/04` 的同步变更表验"不存在 / 降级"；**V14 未出结论时，只能按"更早的记录不给入口"的降级形态验**（A26） |
 | `#21`（压缩体检） | M4.5 的 ④ 有结论（可用 → 验执行；不可用 → 验"不显示执行按钮"） |
 | `#30`（并存） | 两插件同 profile（需授权） |
 | **另立一条门禁**：官方 subagent UI 可用 | 与 `#30`（与 `dsh-context@0.64.0` 并存）**分开验**：本插件**不得注册或替代**官方的 subagent 槽位（`conversation.session.header.lineage` / `.actions` / `sidebar.chat.conversation` / `sidebar.right.pane.tab` / `conversation.composer`） |

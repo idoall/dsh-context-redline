@@ -21,38 +21,19 @@
 import { createElement as h, useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react'
 import type { ViewKit } from '../viewkit'
 import type { ChildRow } from '../childSessions'
-import { listTeam, type ChildPlan, type ChildStarted, type RedlineResult } from '../redlineChannel'
-import { teamBoardOf, type TeamTaskRow } from '../../shared/redline-team'
-import type { PendingRow } from '../../shared/types'
-
-import type { TeamBoard } from '../../shared/redline-team'
+import type { ChildPlan, ChildStarted, RedlineResult } from '../redlineChannel'
 
 export interface ChildCardProps {
   /** The parent session the panel is showing. */
   readonly sessionId?: string
   /** The index, already probed (`childSessions.ts`). */
   readonly rows: readonly ChildRow[]
-  /**
-   * 官方 Agent Teams 那份数据（M5-07 读半边）：`null` = **这台运行时没有这份数据**，
-   * `undefined` = 还没读到。我们只显示它，**不改一个字段**（`src/shared/redline-team.ts` 归一化）。
-   */
-  readonly team?: TeamBoard | null
   /** The parent is live in this process (`turnState.known`). */
   readonly live: boolean
   /** The parent's turn has not closed yet. */
   readonly turnOpen: boolean
   /** How many local edits the confirm box will carry (0 → the sentence says "no edits"). */
   readonly carriedCount: number
-  /**
-   * Result flow-back rows from the parent's log (`docs/06` §3.3): one per
-   * `subagent-settled` notice, judged by the host. Absent = this log has no
-   * notices (or an older host half), which simply means no badge.
-   */
-  readonly pending?: readonly PendingRow[]
-  /** Mark (or unmark) one notice as seen — our own store only. */
-  readonly onMarkSeen?: (seq: number, seen: boolean) => void
-  /** A failed marks read/write, shown as `redline.err.<code>`. */
-  readonly marksError?: string | null
   /** `child.plan` — read-only, builds the five items for this exact task text. */
   readonly plan: (humanTask: string) => Promise<RedlineResult<ChildPlan>>
   /** `child.start` — the ONLY session write the panel can perform. */
@@ -86,11 +67,6 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
     const [busy, setBusy] = useState(false)
     const [errorCode, setErrorCode] = useState<string | null>(null)
     const [started, setStarted] = useState<ChildStarted | null>(null)
-    /**
-     * 官方投影读不到时的**回退**：直接问宿主拿任务（`team.list`）。
-     * `'pending'` = 还在问，`'none'` = 宿主也说不提供（界面这才说「没有这份数据」）。
-     */
-    const [hostTeam, setHostTeam] = useState<'pending' | 'none' | readonly TeamTaskRow[]>('pending')
     // A late plan answer for an older task must not overwrite the newer one.
     const generation = useRef(0)
 
@@ -108,21 +84,6 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
     // The confirm box's five items come from the host and depend on the task text
     // (item 3 IS that text, and the refusal fires on an empty one), so refetch on change —
     // debounced, because every keystroke would otherwise be a round trip.
-    // 投影缺失才去问宿主：主路是官方 `agentTeam` 投影（客户端直读、不往返）。
-    useEffect(() => {
-      if (props.team !== null) return
-      const sessionId = props.sessionId
-      if (typeof sessionId !== 'string' || sessionId === '') { setHostTeam('none'); return }
-      let live = true
-      setHostTeam('pending')
-      void listTeam(sessionId).then((reply) => {
-        if (!live) return
-        const board = reply.ok && reply.value !== null ? teamBoardOf({ tasks: reply.value.tasks }) : null
-        setHostTeam(board === null ? 'none' : board.tasks)
-      })
-      return () => { live = false }
-    }, [props.team, props.sessionId])
-
     useEffect(() => {
       if (!open) return
       generation.current += 1
@@ -154,20 +115,12 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
     }, [busy, plan, refused, props.start, task])
 
     const active = props.rows.filter(row => row.live === true && row.open === true).length
-    // Result flow-back: how many settle notices nobody has dealt with. The host
-    // does the judging (`src/redline/pending.ts`); the card only counts.
-    const unseen = (props.pending ?? []).filter(item => item.state === 'unseen').length
     const errKey = errorCode === null ? null : `redline.err.${errorCode.replace('redline/', '')}`
-    const marksKey = props.marksError == null ? null : `redline.err.${props.marksError.replace('redline/', '')}`
 
     return h('div', { className: 'redline-card' },
       h('div', { className: 'redline-card-title' },
         h('span', { className: 'redline-card-title-text' }, t('child.title')),
         h('span', { className: 'redline-card-scale' }, t('child.bmeta', { a: active, n: props.rows.length })),
-        unseen > 0
-          ? h('span', { className: 'redline-settled redline-settled-unseen', 'data-redline-unseen': String(unseen), title: t('child.settled.tip') },
-            h('i', { className: 'redline-settled-dot' }), t('child.settled.count', { n: unseen }))
-          : null,
       ),
 
       h('section', { className: 'redline-orch-block', 'data-redline-block': 'spawn' },
@@ -184,7 +137,6 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
           h('span', { className: 'redline-cap' }, t('child.spawn.note')),
         ),
         blockedKey !== null ? h('div', { className: 'redline-cap' }, t(blockedKey)) : null,
-        marksKey === null ? null : h('div', { className: 'redline-editor-err', role: 'alert' }, t(marksKey)),
       ),
 
       h('section', { className: 'redline-orch-block', 'data-redline-block': 'children' },
@@ -194,7 +146,6 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
           ? h('div', { className: 'redline-cap' }, t('child.empty'))
           : props.rows.map((row) => {
             const state = stateOf(row)
-            const settled = props.pending?.find(item => item.notice.childId === row.id)
             const clock = clockOf(row.createdAt)
             return h('div', { className: 'redline-orch-row', key: row.id, 'data-redline-child': row.id },
               h('div', { className: 'redline-orch-id' },
@@ -203,25 +154,6 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
                 h('span', { className: 'redline-badge-state' },
                   h('i', { className: 'redline-mstat redline-mstat-' + state.tone }),
                   t(state.key)),
-                settled === undefined
-                  ? null
-                  : h('span', {
-                    className: 'redline-settled redline-settled-' + settled.state,
-                    'data-redline-settled': settled.state,
-                    title: t('child.settled.tip') + '\n' + settled.notice.summary,
-                  }, h('i', { className: 'redline-settled-dot' }), t('child.settled'), ' · ', t('child.settled.' + settled.state)),
-                // No mark button on `continued`: the parent already carried on, and the
-                // state stays `continued` either way — a control that cannot change what
-                // the row shows is exactly the fake button this project refuses to ship.
-                settled === undefined || settled.state === 'continued' || props.onMarkSeen === undefined
-                  ? null
-                  : h('button', {
-                    type: 'button',
-                    className: 'redline-settled-act',
-                    'data-redline-seen': settled.notice.seq,
-                    title: t('child.settled.tip'),
-                    onClick: () => { props.onMarkSeen?.(settled.notice.seq, settled.state !== 'seen') },
-                  }, t(settled.state === 'seen' ? 'child.seen.unmark' : 'child.seen.mark')),
                 row.label === '' ? null : h('span', { className: 'redline-cap' }, row.label),
                 clock === null ? null : h('span', { className: 'redline-cap' }, clock),
               ),
@@ -287,58 +219,6 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
           ),
         ))
         : null,
-      h('section', { className: 'redline-orch-block', 'data-redline-block': 'team' },
-        h('div', { className: 'redline-orch-head' }, t('team.head'),
-          h('span', { className: 'redline-orch-hint' }, t('team.hint'))),
-        props.team === undefined ? h('div', { className: 'redline-cap' }, t('team.loading'))
-          : props.team === null
-            ? hostTeam === 'pending' ? h('div', { className: 'redline-cap' }, t('team.loading'))
-              : hostTeam === 'none' ? h('div', { className: 'redline-cap' }, t('team.none'))
-                : h('div', {},
-                  h('div', { className: 'redline-cap' }, t('team.fallback.note')),
-                  hostTeam.length === 0
-                    ? h('div', { className: 'redline-cap' }, t('team.tasks.empty'))
-                    : hostTeam.map(task => h('div', { className: 'redline-orch-row', key: task.id, 'data-redline-task': task.id },
-                      h('div', { className: 'redline-orch-id' },
-                        h('span', { className: 'redline-chip-soft' }, task.status),
-                        task.ready ? h('span', { className: 'redline-badge-state' }, t('team.task.ready')) : null,
-                      ),
-                      h('div', { className: 'redline-orch-body' },
-                        h('div', { className: 'redline-orch-label' }, task.subject),
-                        task.ownerName === null ? null : h('div', { className: 'redline-cap' }, t('team.task.owner', { name: task.ownerName })),
-                      ),
-                    )),
-                )
-            : h('div', {},
-              props.team.failure === null
-                ? null
-                : h('div', { className: 'redline-editor-err', role: 'alert' }, t('team.failure', { why: props.team.failure })),
-              props.team.members.length === 0
-                ? h('div', { className: 'redline-cap' }, t('team.members.empty'))
-                : props.team.members.map(member => h('div', { className: 'redline-orch-row', key: member.id, 'data-redline-member': member.id },
-                  h('div', { className: 'redline-orch-id' },
-                    h('span', { className: 'redline-chip-soft' }, t('team.role.' + member.role)),
-                    h('span', { className: 'redline-badge-state' }, t('team.phase.' + member.phase)),
-                  ),
-                  h('div', { className: 'redline-orch-body' },
-                    h('div', { className: 'redline-orch-label' }, member.name),
-                    member.error === null ? null : h('div', { className: 'redline-cap' }, member.error),
-                  ),
-                )),
-              props.team.tasks.length === 0
-                ? h('div', { className: 'redline-cap' }, t('team.tasks.empty'))
-                : props.team.tasks.map(task => h('div', { className: 'redline-orch-row', key: task.id, 'data-redline-task': task.id },
-                  h('div', { className: 'redline-orch-id' },
-                    h('span', { className: 'redline-chip-soft' }, task.status),
-                    task.ready ? h('span', { className: 'redline-badge-state' }, t('team.task.ready')) : null,
-                  ),
-                  h('div', { className: 'redline-orch-body' },
-                    h('div', { className: 'redline-orch-label' }, task.subject),
-                    task.ownerName === null ? null : h('div', { className: 'redline-cap' }, t('team.task.owner', { name: task.ownerName })),
-                  ),
-                )),
-            ),
-      ),
 
     )
   }

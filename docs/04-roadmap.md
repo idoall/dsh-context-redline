@@ -178,11 +178,11 @@
 
 | 项 | 内容 |
 |---|---|
-| 产物 | `src/redline/`（编排判定，纯逻辑）+ `src/client/`（面板）+ `src/host/redline-channel.ts`（唯一上游接线）：**建子会话（A′ 对接官方）**（冻结记录已按 `docs/11` D10 删除）——**优先** `ctx.agentTeams.spawnTeammate(lead, { context:'fork', provider:<forkProvider>, … })`（进 roster 的正式成员，**种子 = 平台自算的"当前最后一个 `turn/end` 及其之前"**，见 `docs/01` F38），**兜底** `ctx.subagents.startContinuable({provider:'fork'})`（裸子会话，界面如实标注）；**官方对接**：`team.tasks`/`team.members` 读投影、`createTask`/`updateTask` 写官方任务板、`sendMessage` **经官方**派活、`interrupt`（团队成员）／`interruptByParent`（裸子会话）；`ctx.compaction.compactNow(...)` + 失败码映射；**结果回流可见性**（读父会话 `subagent-settled`）；`plan.next` 判定与面板。**可选注入** `agentTeams`（团队未启用时对接点全部消失） |
-| 依赖 | **M4.5 已逐项给出结论**，且 **V14 必须有结论**（起点口径）。**M5 按两档验收（不许混）**：<br>· **完整 A′ 档**（V12 **且** V13 通过）：官方成员 + 任务板 + 派活 + 打断全链路；<br>· **降级档**（V12 或 V13 未通过）：**只做**"裸可续接子会话 + 编辑 + 开子会话"，对接点**不出现**（`docs/00` S10 的开关口径）；降级档通过**不等于**"A′ 已验证"，验收记录里必须写明是哪一档 |
+| 产物 | `src/redline/`（编排判定，纯逻辑）+ `src/client/`（面板）+ `src/host/redline-channel.ts`（唯一上游接线）：**建子会话（A′ 对接官方）**（冻结记录已按 `docs/11` D10 删除）——**优先** `ctx.agentTeams.spawnTeammate(lead, { context:'fork', provider:<forkProvider>, … })`（进 roster 的正式成员，**种子 = 平台自算的"当前最后一个 `turn/end` 及其之前"**，见 `docs/01` F38），**兜底** `ctx.subagents.startContinuable({provider:'fork'})`（裸子会话，界面如实标注）；~~**官方对接**：`team.tasks`/`team.members` 读投影、`createTask`/`updateTask` 写官方任务板、`sendMessage` **经官方**派活、`interrupt`（团队成员）／`interruptByParent`（裸子会话）；`ctx.compaction.compactNow(...)` + 失败码映射；**结果回流可见性**（读父会话 `subagent-settled`）~~ **【作废 · 2026-10-07】**（[`docs/11`](11-session-handoff.md) **D14** / **D55**）：官方团队的名册/任务板/派活/打断**不进我们的界面**（在官方视图里做）；压缩执行真机不可达（[`docs/01`](01-platform-facts.md) F54）；回流可见性不显示。**保留下来的**：建子会话（优先 `spawnTeammate` / 兜底 `startContinuable`）+ 只读索引状态；`plan.next` 判定与面板。**可选注入** `agentTeams`（团队未启用时对接点全部消失） |
+| 依赖 | **M4.5 已逐项给出结论**，且 **V14 必须有结论**（起点口径）。**M5 按两档验收（不许混）**：<br>· **完整 A′ 档**（V12 **且** V13 通过）：**子会话建为官方成员**（`spawnTeammate`，在官方视图里被管理）+ 我们的面板只做"开子会话 + 只读索引"两块 —— ⚠️ 2026-10-07 更正：**任务板 / 派活 / 打断不在我们界面**（[`docs/11`](11-session-handoff.md) D14/D55）；<br>· **降级档**（V12 或 V13 未通过）：**只做**"裸可续接子会话 + 编辑 + 开子会话"，对接点**不出现**（`docs/00` S10 的开关口径）；降级档通过**不等于**"A′ 已验证"，验收记录里必须写明是哪一档 |
 | 测试 | 纯逻辑（`plan.next` 的判定次序与"是否需要授权"）可自验；**真机每一步都要证据**：新成员在**官方 roster**里可见、**种子 = 平台口径（当前最后一个 `turn/end` 及其之前；不是我们点的那条记录）**、父会话新轮次**不进去**、压缩后出现 `compaction/*`、`createTask` 后**官方任务板能看到**、`sendMessage` 返回 `accepted/queued` |
 | 验收人 | **你在场，逐动作授权** |
-| 授权点（**逐个**） | ① `child.create`（建成员/裸子会话）② `child.compact`（不可逆）③ `派活`（**经官方** `sendMessage`，写成员邮箱）④ `team.task.create`/`update`（写官方任务板）⑤ `invariant.inject`（写会话）⑥ `apply`/`annotate`（写会话） |
+| 授权点（**逐个**） | ① `child.create`（建成员 / 裸子会话 —— **确认框 = `child.plan` + `child.start`，已落地**）~~② `child.compact`（不可逆）③ `派活`（经官方 `sendMessage`，写成员邮箱）④ `team.task.create`/`update`（写官方任务板）~~ **【作废 · 2026-10-07】**（`docs/11` D14/D55：界面不提供压缩、派活、官方任务入口）⑤ `invariant.inject`（写会话）⑥ `apply`/`annotate`（写会话） |
 | 降级路径 | 若 V2 失败（压缩后端缺失）→ 压缩改为"引导你在子会话里执行 `/compact`"，插件只做体检与记录 |
 | 不做什么 | 不自动开子会话、不自动压缩、不自动重注入（`docs/00` N2） |
 
@@ -192,7 +192,7 @@
 3. **「允许创建」确认框**（S5.3）：取消 → `child.list` 无新会话；确认 → 新会话存在。
 4. **起点正确（按平台口径）**：① 子会话能看到父会话**到"当前最后一个 `turn/end` 为止"**的已完成轮次（**逐字比对**，含我们已应用的编辑）；② 父会话**其后**再跑一轮，子会话日志**无变化**；③ **负例（产品回归）**：spy 断言 `child.fork` 的入参里**没有**任何"切点/种子/记录"参数，且界面上**没有任何地方**承诺"可选起点"（`docs/01` F38 / `docs/11` D10）。**平台探针**（可选，包 B）：直接调服务确认"拿到的是最新已完成前缀"，只作**平台事实记录**，**不作为产品验收项**。
 5. **压缩如实报**（S5.4）：执行前列出将被替代的区间与条目数 + 不可逆提示；执行后显示实际范围；`busy` 能被复现并显示人话。
-6. **派活闭环**（S5.5）：人写任务 → 子会话 idle→running 并留下**可核对的任务执行事件** → 主会话显示状态 → **打断**后状态可见。
+6. ~~**派活闭环**（S5.5）~~ **【作废 · 2026-10-07】**（[`docs/11`](11-session-handoff.md) D14/D55：本插件不提供派活/打断入口）。**现行闭环**：人写第一句话 → 开子会话（优先官方成员）→ 索引里读到它的状态 → 父会话的「上下文事件」里能看到它结算的通知（平台自己写的）。
 7. **不膨胀可观测**（S9）：记录派活前后的父会话**事件数**与**字节增量**，并逐条说明增量来源；若用 token 则说明口径，若不可靠就只用事件数/字节。
 8. **每步单独授权**的痕迹：`docs/06` §4 的清单在界面上逐次出现，且事后可从日志核对。
 

@@ -62,7 +62,7 @@ describe('第 5 张卡：子会话索引（只读）', () => {
   test('两块都在：开子会话 + 子会话索引；索引按行列出 id/mode/状态，且**没有**跳转按钮', async () => {
     const m = await open()
     const blocks = queryAll(m.container, '[data-redline-block]').map(e => e.getAttribute('data-redline-block'))
-    assert.deepEqual(blocks, ['spawn', 'children', 'team'], '三块：开子会话 + 子会话索引 + 官方团队（只读）；冻结/派活/压缩仍是后续阶段')
+    assert.deepEqual(blocks, ['spawn', 'children'], 'demo 的卡片只有两块：开子会话 + 子会话索引')
     const list = queryAll(m.container, '[data-redline-child]').map(e => e.getAttribute('data-redline-child'))
     assert.deepEqual(list, ['66da37b9-4bdb-4b9a-98a4-93c0c1747787', '92414bcf-396a-4272-9ca1-4486700c6805'], '最新的在前')
     const body = text(m.container)
@@ -185,167 +185,17 @@ describe('第 5 张卡：确认框（宿主的五项 + 第一句话由人写）'
   })
 })
 
-describe('第 5 张卡：结果回流徽章（读父会话的结算通知）', () => {
-  const pendingOf = (childId: string, state: 'unseen' | 'seen' | 'continued') => ([
-    { notice: { seq: 42, childId, summary: 'Background subagent finished', at: 1_700_000_000_000 }, state },
-  ])
-
-  test('有通知的行显示「已结算 · 未确认」，卡片标题给出待确认计数', async () => {
-    const m = await open({ pending: pendingOf('66da37b9-4bdb-4b9a-98a4-93c0c1747787', 'unseen') })
-    const badge = query(m.container, '[data-redline-settled]')
-    assert.equal(badge.getAttribute('data-redline-settled'), 'unseen')
-    const body = text(badge)
-    assert.ok(body.includes(DICT_EN['child.settled']), '先说"已结算"')
-    assert.ok(body.includes(DICT_EN['child.settled.unseen']), '再说它现在的状态')
-    assert.equal(query(m.container, '[data-redline-unseen]').getAttribute('data-redline-unseen'), '1')
-    await m.unmount()
-  })
-
-  test('三态各自渲染，且**只有**未确认会被计数', async () => {
-    const m = await open({
-      rows: [
-        { id: 'a', short: 'a', label: '', mode: 'continuable', createdAt: 0, live: false, open: false },
-        { id: 'b', short: 'b', label: '', mode: 'continuable', createdAt: 0, live: false, open: false },
-        { id: 'c', short: 'c', label: '', mode: 'continuable', createdAt: 0, live: false, open: false },
-      ],
-      pending: [
-        { notice: { seq: 1, childId: 'a', summary: 'x', at: 0 }, state: 'unseen' },
-        { notice: { seq: 2, childId: 'b', summary: 'y', at: 0 }, state: 'seen' },
-        { notice: { seq: 3, childId: 'c', summary: 'z', at: 0 }, state: 'continued' },
-      ],
-    })
-    assert.deepEqual(queryAll(m.container, '[data-redline-settled]').map(e => e.getAttribute('data-redline-settled')), ['unseen', 'seen', 'continued'])
-    assert.equal(query(m.container, '[data-redline-unseen]').getAttribute('data-redline-unseen'), '1', '待确认只有那一条')
-    await m.unmount()
-  })
-
-  test('没有通知就不长徽章（也不显示计数）', async () => {
+describe('按 demo 撤下的两块（2026-10-02 用户裁定 + 2026-10-07 复核）', () => {
+  // 这两样都是用户让删过的：官方团队整块（成员名册 / 任务板）与「标为已查看」。
+  // 2026-10-06/07 被按 docs/10 又做回了插件，2026-10-07 用户裁定「按 demo 撤掉」⟹ 这里锁死"不出现"。
+  test('卡片只有两块：官方团队块、已查看标记、已结算徽章都不出现', async () => {
     const m = await open()
-    assert.equal(queryAll(m.container, '[data-redline-settled]').length, 0)
-    assert.equal(queryAll(m.container, '[data-redline-unseen]').length, 0)
+    const blocks = queryAll(m.container, '[data-redline-block]').map(e => e.getAttribute('data-redline-block'))
+    assert.deepEqual(blocks, ['spawn', 'children'], 'demo 的卡片只有这两块')
+    assert.equal(queryAll(m.container, '[data-redline-block="team"]').length, 0, '官方团队块已按 demo 撤下')
+    assert.equal(queryAll(m.container, '[data-redline-seen]').length, 0, '「标为已查看」已按 demo 撤下')
+    assert.equal(queryAll(m.container, '[data-redline-settled]').length, 0, '结算徽章随那两块一起撤下')
     await m.unmount()
-  })
-
-  test('通知里带的是别的子会话 ⟹ 不贴到这一行上', async () => {
-    const m = await open({ pending: pendingOf('not-in-this-list', 'unseen') })
-    assert.equal(queryAll(m.container, '[data-redline-settled]').length, 0, '按 childId 对上才贴')
-    await m.unmount()
-  })
-})
-
-describe('第 5 张卡：把通知标为已查看（写的是我们自己的表）', () => {
-  const pendingOf = (state: 'unseen' | 'seen' | 'continued') => ([
-    { notice: { seq: 42, childId: '66da37b9-4bdb-4b9a-98a4-93c0c1747787', summary: 'x', at: 0 }, state },
-  ])
-
-  test('未确认的行给「标为已查看」，按下时带 seq 与 seen=true', async () => {
-    const calls: [number, boolean][] = []
-    const m = await open({ pending: pendingOf('unseen'), onMarkSeen: (seq, seen) => { calls.push([seq, seen]) } })
-    const button = query<HTMLButtonElement>(m.container, '[data-redline-seen]')
-    assert.equal(button.getAttribute('data-redline-seen'), '42', '带的是通知的 seq')
-    assert.equal(text(button), DICT_EN['child.seen.mark'])
-    await act(async () => { button.click() })
-    assert.deepEqual(calls, [[42, true]], '点一下就是把这一条标成已查看')
-    await m.unmount()
-  })
-
-  test('已查看的行给「取消标记」，按下时带 seen=false', async () => {
-    const calls: [number, boolean][] = []
-    const m = await open({ pending: pendingOf('seen'), onMarkSeen: (seq, seen) => { calls.push([seq, seen]) } })
-    const button = query<HTMLButtonElement>(m.container, '[data-redline-seen]')
-    assert.equal(text(button), DICT_EN['child.seen.unmark'])
-    await act(async () => { button.click() })
-    assert.deepEqual(calls, [[42, false]])
-    await m.unmount()
-  })
-
-  test('已接着做的通知不给标记按钮（父会话自己处理过了，标它没意义）', async () => {
-    const m = await open({ pending: pendingOf('continued'), onMarkSeen: () => {} })
-    assert.equal(queryAll(m.container, '[data-redline-seen]').length, 0)
-    await m.unmount()
-  })
-
-  test('标记读写失败时把原因显示出来（不是静默）', async () => {
-    const m = await open({ marksError: 'redline/seen-corrupt' })
-    const alert = query(m.container, '[role="alert"]')
-    assert.ok(text(alert).includes(DICT_EN['redline.err.seen-corrupt']), '人话原样显示')
-    await m.unmount()
-  })
-})
-
-describe('官方团队那块（M5-07 读半边）：只读、三件事都诚实', () => {
-  test('投影读不到（null）→ 如实写「这台运行时没有这份数据」，不显示一个空队伍骗人', async () => {
-    const m = await open({ team: null })
-    const block = query(m.container, '[data-redline-block="team"]')
-    assert.ok(text(block).includes(DICT_EN['team.none']))
-    assert.equal(queryAll(m.container, '[data-redline-member]').length, 0)
-    assert.equal(queryAll(m.container, '[data-redline-task]').length, 0)
-    await m.unmount()
-  })
-
-  test('官方给了数据 → 名单与任务按行显示（身份/状态/负责人都是官方那份，不改写）', async () => {
-    const m = await open({
-      team: {
-        members: [
-          { id: 's-lead', name: '我', role: 'lead', phase: 'active', error: null },
-          { id: 's-mate', name: '小王', role: 'teammate', phase: 'provisioning', error: '起不来' },
-        ],
-        tasks: [{ id: 't-1', revision: 2, subject: '把测试补上', status: 'pending', ownerName: '小王', ready: true }],
-        failure: null,
-      },
-    })
-    const block = query(m.container, '[data-redline-block="team"]')
-    const body = text(block)
-    assert.deepEqual(queryAll(m.container, '[data-redline-member]').map(e => e.getAttribute('data-redline-member')), ['s-lead', 's-mate'])
-    assert.deepEqual(queryAll(m.container, '[data-redline-task]').map(e => e.getAttribute('data-redline-task')), ['t-1'])
-    assert.ok(body.includes('我') && body.includes('小王'))
-    assert.ok(body.includes(DICT_EN['team.role.lead']) && body.includes(DICT_EN['team.role.teammate']))
-    assert.ok(body.includes(DICT_EN['team.phase.provisioning']))
-    assert.ok(body.includes('把测试补上') && body.includes(DICT_EN['team.task.ready']))
-    assert.ok(body.includes(DICT_EN['team.task.owner'].replace('{name}', '小王')), '负责人那句话原样来自官方')
-    assert.ok(body.includes('起不来'), '成员级的失败说明原样显示')
-    await m.unmount()
-  })
-
-  test('官方报的 failure 必须原样显示（空队伍也要显示它）', async () => {
-    const m = await open({ team: { members: [], tasks: [], failure: 'team/task 被拒：writeScopes 非法' } })
-    const body = text(query(m.container, '[data-redline-block="team"]'))
-    assert.ok(body.includes('team/task 被拒：writeScopes 非法'), '静默掉就是骗人')
-    assert.ok(body.includes(DICT_EN['team.members.empty']) && body.includes(DICT_EN['team.tasks.empty']))
-    await m.unmount()
-  })
-})
-
-describe('官方团队那块的回退：投影读不到时问宿主（M5-07 / M5-24）', () => {
-  const withFetch = async (payload: unknown, run: () => Promise<void>): Promise<void> => {
-    const prev = globalThis.fetch
-    let called = 0
-    globalThis.fetch = (async () => { called++; return Response.json({ ok: true, value: payload }) }) as typeof fetch
-    try { await run(); assert.equal(called, 1, '回退只问一次') } finally { globalThis.fetch = prev }
-  }
-
-  test('宿主给了任务 → 显示它们，并写明这块是直接问宿主拿的（没有名单）', async () => {
-    await withFetch({ tasks: [{ id: 't-9', revision: 1, subject: '回退拿到的任务', status: 'pending', ready: false }], membership: null }, async () => {
-      const m = await open({ team: null })
-      await act(async () => { await new Promise(r => setTimeout(r, 50)) })
-      const body = text(query(m.container, '[data-redline-block="team"]'))
-      assert.ok(body.includes(DICT_EN['team.fallback.note']), '要说清来源，不能假装是官方投影给的')
-      assert.ok(body.includes('回退拿到的任务'))
-      assert.deepEqual(queryAll(m.container, '[data-redline-task]').map(e => e.getAttribute('data-redline-task')), ['t-9'])
-      assert.equal(queryAll(m.container, '[data-redline-member]').length, 0, '回退里没有名单，就不显示名单')
-      await m.unmount()
-    })
-  })
-
-  test('投影与宿主都说没有 → 界面才说「这台运行时没有这份数据」', async () => {
-    await withFetch(null, async () => {
-      const m = await open({ team: null })
-      await act(async () => { await new Promise(r => setTimeout(r, 50)) })
-      const body = text(query(m.container, '[data-redline-block="team"]'))
-      assert.ok(body.includes(DICT_EN['team.none']))
-      assert.equal(queryAll(m.container, '[data-redline-task]').length, 0)
-      await m.unmount()
-    })
   })
 })
 
