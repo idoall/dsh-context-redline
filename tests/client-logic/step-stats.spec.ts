@@ -58,6 +58,28 @@ describe('stepStatsOf — the three cells the demo defines', () => {
 
   test('an empty list degrades to zeros, never to NaN', () => {
     const stats = stepStatsOf({ nodes: [] })
-    assert.deepEqual(stats, { listed: 0, visible: 0, shadowed: 0, user: 0, inject: 0, tokens: 0 })
+    assert.deepEqual(stats, { listed: 0, visible: 0, shadowed: 0, user: 0, inject: 0, tokens: 0, missingTokens: 0 })
+  })
+})
+
+describe('S1.1 的第三个样本：token 缺失不得用 0 冒充（M2-26）', () => {
+  // `docs/00` S1.1 原文：「token 用宿主投影里该节点的 tokens；**缺失时显示 `—`**，不得用 0 冒充」。
+  // 求和那格没法显示 `—`，但**绝不能把"没有 token"算成 0 之后当完整数字报出去** ⟹
+  // 单列一个计数，界面据此说明"另有 N 条未计入"。
+  test('把"没有 token"的条数单列出来（0 是"都齐"，不是"缺了但看不见"）', () => {
+    const stats = stepStatsOf({ nodes: [
+      node(1, 'user', 100),
+      // ⚠️ 线上 schema 里 tokens 是 optional、而 TS 类型写成必填 ⟹ 这里只能断言过去。
+      { seq: 2, cat: 'inject' } as unknown as SurfaceNode,
+      { seq: 3, cat: 'inject', tokens: 0 }, // 明确是 0 ⟹ 算"有"，不算缺
+      node(4, 'assistant', 50),
+    ] })
+    assert.equal(stats.missingTokens, 1, '只有真的没有 tokens 的那条才算缺')
+    assert.equal(stats.tokens, 150, '缺的那条不计入合计（而不是当 0 混进去）')
+  })
+
+  test('全都齐的时候是 0（界面才敢不加任何说明）', () => {
+    assert.equal(stepStatsOf({ nodes: [node(1, 'user', 10)] }).missingTokens, 0)
+    assert.equal(stepStatsOf({ nodes: [] }).missingTokens, 0)
   })
 })

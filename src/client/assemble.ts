@@ -123,6 +123,13 @@ export interface StepStats {
   readonly inject: number
   /** 整张列表的估算 token 合计（`≈` 前缀由界面加）。 */
   readonly tokens: number
+  /**
+   * 列表里**没有** `tokens` 的条数（`docs/00` S1.1：缺失时显示 `—`，不得用 0 冒充）。
+   * 线上 schema 里 `tokens` 是 **optional**（`z.number().optional()`），而 TS 类型写成必填 ——
+   * 也就是这种情况**真的会发生**（丑陋的类型/契约错位，先按"数出来、说清楚"处理，见下）。
+   * 求和那格没法显示 `—`，所以单列出来，界面据此说明「另有 N 条未计入」。
+   */
+  readonly missingTokens: number
 }
 
 /**
@@ -146,11 +153,13 @@ export function stepStatsOf(assembly: { readonly nodes: readonly SurfaceNode[] }
   let user = 0
   let inject = 0
   let tokens = 0
+  let missingTokens = 0
   for (const n of assembly.nodes) {
     if (seen.has(n.seq)) continue
     seen.add(n.seq)
     listed += 1
-    tokens += typeof n.tokens === 'number' ? n.tokens : 0
+    if (typeof n.tokens === 'number') tokens += n.tokens
+    else missingTokens += 1
     if (n.gone === undefined) {
       visible += 1
       if (n.cat === 'user') user += 1
@@ -159,5 +168,5 @@ export function stepStatsOf(assembly: { readonly nodes: readonly SurfaceNode[] }
       shadowed += 1
     }
   }
-  return { listed, visible, shadowed, user, inject, tokens }
+  return { listed, visible, shadowed, user, inject, tokens, missingTokens }
 }

@@ -432,3 +432,34 @@ describe('起点口径（M5-27 / A25 / A26）：传给平台的参数里**没有
     for (const word of ['记录', '凭证', '冻结', '快照']) assert.equal(first.text.includes(word), false, word + ' 不许出现（冻结/记录整套已删，docs/11 D10）')
   })
 })
+
+describe('首条任务的计数契约（M2-20）：plan 报的字节数 = 真正发出去那段字的字节数', () => {
+  test('plan.metrics 与 child.start 实际发出去的 prompt 逐字节对得上', async () => {
+    const ops = await boot()
+    await saveEdit(ops, 1301, EDITED)
+    const plan = value(await call(ops, { op: 'child.plan', sessionId: ops.sessionId, humanTask: '把测试补上' })) as {
+      prompt: string, carriedSeqs: number[], metrics: { bytes: number, lines: number, edits: number } | null,
+    }
+    assert.ok(plan.metrics !== null, 'plan 必须带上读数')
+    assert.equal(plan.metrics.edits, plan.carriedSeqs.length, '带几条改动 = carriedSeqs 的条数')
+    const bytesOfPrompt = (text: string): number => {
+      let n = 0
+      for (const ch of text) { const code = ch.codePointAt(0) ?? 0; n += code < 0x80 ? 1 : code < 0x800 ? 2 : code < 0x10000 ? 3 : 4 }
+      return n
+    }
+    assert.equal(plan.metrics.bytes, bytesOfPrompt(plan.prompt), 'plan 说的字节数就是那段字的字节数')
+
+    await call(ops, { op: 'child.start', sessionId: ops.sessionId, humanTask: '把测试补上' })
+    const sent = (ops.starts[0].request as { prompt: { text: string }[] }).prompt[0].text
+    assert.equal(sent, plan.prompt, 'start 发出去的与 plan 报的是同一段字')
+    assert.equal(plan.metrics.bytes, bytesOfPrompt(sent), '**计数契约**：报出去的数字与真正发出去的字逐字节一致')
+    assert.equal(ops.sessionWrites.length, 0, '全程零写入')
+  })
+
+  test('被拒绝（空任务）时 metrics 是 null，不许给一个"0 字节"糊弄', async () => {
+    const ops = await boot()
+    const plan = value(await call(ops, { op: 'child.plan', sessionId: ops.sessionId, humanTask: '   ' })) as { metrics: unknown, refusal: unknown }
+    assert.equal(plan.metrics, null)
+    assert.ok(plan.refusal !== null, '同时给了拒绝原因')
+  })
+})

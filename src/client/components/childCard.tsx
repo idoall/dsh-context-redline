@@ -218,7 +218,13 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
             : plan === null
               ? h('div', { className: 'redline-cap' }, t('child.confirm.preparing'))
               : h('ul', { className: 'redline-confirm-list' },
-                plan.items.map(item => h('li', { key: item.label },
+                plan.metrics === null || typeof plan.metrics?.bytes !== 'number'
+                ? null
+                : h('li', { key: 'metrics' },
+                  h('span', { className: 'redline-confirm-label' }, t('child.confirm.metrics.label')),
+                  h('span', { className: 'redline-confirm-text', 'data-redline-first-task': String(plan.metrics.bytes) },
+                    t('child.confirm.metrics', { bytes: plan.metrics.bytes, edits: plan.metrics.edits }))),
+              plan.items.map(item => h('li', { key: item.label },
                   h('b', null, item.label),
                   h('span', null, item.text)))),
           errKey !== null ? h('div', { className: 'redline-editor-err', role: 'alert' }, t(errKey)) : null,

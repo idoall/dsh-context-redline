@@ -109,6 +109,10 @@ export function makeStatsContext(
           {ready
             ? <span className="redline-bmeta">{t('stats.bmeta', { n: fmt(stats.listed), k: fmt(stats.tokens) })}</span>
             : null}
+          {ready && stats.missingTokens > 0
+            // S1.1：缺 token 时不许把 `≈N` 说成完整数字（那一格显示不了 `—`，就把缺的条数说出来）。
+            ? <span className="redline-stat-hint" data-redline-missing-tokens={String(stats.missingTokens)}>{t('stats.missing', { m: fmt(stats.missingTokens) })}</span>
+            : null}
         </div>
         <div className="redline-stats grid grid-cols-[repeat(auto-fit,minmax(108px,1fr))] gap-1.5">
           {cell(t('stats.visibleItems') + shadowNote, value(stats.visible))}

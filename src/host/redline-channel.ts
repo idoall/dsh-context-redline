@@ -55,6 +55,7 @@ import { fullReasoningOf, fullTextOf, isErrorOf, seqOf, typeOf } from '../redlin
 import { ability, type RowClass } from '../shared/redline-ability'
 import { turnStateOf, type TurnBoundaryEvent, type TurnState } from '../shared/redline-turn'
 import { buildFirstTask, forkConfirmItems } from '../redline/orchestrate'
+import { firstTaskMetricsOf } from '../redline/metrics'
 import { capacityFromService } from '../shared/redline-capacity'
 import { originsFileName, parseOrigins, putOrigin, serializeOrigins, type OriginVia } from '../shared/redline-origins'
 
@@ -565,6 +566,8 @@ const planChild: RedlineOpHandler = async ({ ctx, call }) => {
     items: forkConfirmItems({ position, humanTask, edits }),
     carriedSeqs: edits.map(e => e.seq),
     prompt: first.ok ? first.prompt : null,
+    // M2-20：人点确认之前就该看得到这句话有多大（UTF-8 字节）与带了几条改动。
+    metrics: first.ok ? firstTaskMetricsOf(first.prompt, edits.length) : null,
     refusal: first.ok ? null : { code: REDLINE_ERROR.emptyTask, message: first.message },
   })
 }

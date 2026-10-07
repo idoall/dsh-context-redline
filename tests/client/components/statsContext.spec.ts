@@ -61,7 +61,7 @@ describe('countsOfRecords (the inline generation derivation)', () => {
 describe('StatsContext — the three cells the demo defines (docs/10 M4-07)', () => {
   /** 该步读数（`stepStatsOf` 的产物）：卡片只负责渲染，口径在 assemble.ts 的纯函数里。 */
   const stepStats = (over: Partial<StepStats> = {}): StepStats =>
-    ({ listed: 4, visible: 4, shadowed: 0, user: 1, inject: 2, tokens: 1_234, ...over })
+    ({ listed: 4, visible: 4, shadowed: 0, user: 1, inject: 2, tokens: 1_234, missingTokens: 0, ...over })
 
   test('renders exactly three cells with the demo\'s words and the step reading line', async () => {
     const m = await mount(h(StatsContext, { stats: stepStats(), turn: 3, step: 4, live: false, ready: true }))
@@ -100,7 +100,7 @@ describe('StatsContext — the three cells the demo defines (docs/10 M4-07)', ()
 
   test('the zh locale localizes the labels and the reading line', async () => {
     const m = await mount(h(StatsContextZh, {
-      stats: stepStats({ listed: 5, visible: 3, shadowed: 2, user: 1, inject: 1, tokens: 900 }),
+      stats: stepStats({ listed: 5, visible: 3, shadowed: 2, user: 1, inject: 1, tokens: 900, missingTokens: 0 }),
       turn: 2, step: 3, live: false, ready: true,
     }))
     await flush()
@@ -113,7 +113,7 @@ describe('StatsContext — the three cells the demo defines (docs/10 M4-07)', ()
 
   test('before the detail lands the three cells read — (never a made-up 0)', async () => {
     const m = await mount(h(StatsContext, {
-      stats: { listed: 0, visible: 0, shadowed: 0, user: 0, inject: 0, tokens: 0 },
+      stats: { listed: 0, visible: 0, shadowed: 0, user: 0, inject: 0, tokens: 0, missingTokens: 0 },
       turn: 3, step: 4, live: false, ready: false,
     }))
     await flush()
@@ -125,7 +125,7 @@ describe('StatsContext — the three cells the demo defines (docs/10 M4-07)', ()
 
   test('zero everything still renders three cells, never a dash grid', async () => {
     const m = await mount(h(StatsContext, {
-      stats: { listed: 0, visible: 0, shadowed: 0, user: 0, inject: 0, tokens: 0 },
+      stats: { listed: 0, visible: 0, shadowed: 0, user: 0, inject: 0, tokens: 0, missingTokens: 0 },
       live: true, ready: true,
     }))
     await flush()

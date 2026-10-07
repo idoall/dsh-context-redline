@@ -137,6 +137,8 @@ export interface ChildPlan {
   carriedSeqs: readonly number[]
   /** 组装好的首条任务；被拒绝时为 `null`。 */
   prompt: string | null
+  /** 首条任务的读数（M2-20）：UTF-8 字节 / 行 / 带了几条改动；被拒绝时为 `null`。 */
+  metrics: { bytes: number; lines: number; edits: number } | null
   /** 被拒绝时给一句人话（例如"第一句话必须你自己写"）。 */
   refusal: { code: string; message: string } | null
 }

@@ -28,6 +28,8 @@ const PLAN = {
   ],
   carriedSeqs: [7879],
   prompt: '【探针】\n\n以下是我在「上下文批改」里改好的上下文……',
+  // M2-20：确认框要显示「首条任务有多大」 ⟹ 桩里也得有这份读数。
+  metrics: { bytes: 120, lines: 3, edits: 1 },
   refusal: null,
 }
 
@@ -195,6 +197,24 @@ describe('按 demo 撤下的两块（2026-10-02 用户裁定 + 2026-10-07 复核
     assert.equal(queryAll(m.container, '[data-redline-block="team"]').length, 0, '官方团队块已按 demo 撤下')
     assert.equal(queryAll(m.container, '[data-redline-seen]').length, 0, '「标为已查看」已按 demo 撤下')
     assert.equal(queryAll(m.container, '[data-redline-settled]').length, 0, '结算徽章随那两块一起撤下')
+    await m.unmount()
+  })
+})
+
+describe('第 5 张卡：确认框报出「首条任务有多大」（M2-20）', () => {
+  test('确认框里有一行读数：字节数原样来自宿主的 metrics', async () => {
+    const m = await open()
+    await openDialog(m)
+    const line = query(m.container, '[data-redline-first-task]')
+    assert.equal(line.getAttribute('data-redline-first-task'), '120', '字节数就是宿主给的那个')
+    assert.equal(text(line), DICT_EN['child.confirm.metrics'].replace('{bytes}', '120').replace('{edits}', '1'))
+    await m.unmount()
+  })
+
+  test('宿主没给 metrics（老宿主 / 被拒绝）⟹ 这一行不出现，也不编一个数', async () => {
+    const m = await open({ plan: () => Promise.resolve({ ok: true as const, value: { ...PLAN, metrics: null } }) })
+    await openDialog(m)
+    assert.equal(queryAll(m.container, '[data-redline-first-task]').length, 0, '没有读数就不画这一行')
     await m.unmount()
   })
 })
