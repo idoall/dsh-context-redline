@@ -50,6 +50,7 @@ import {
   type DraftTable,
   type LocalEdit,
   type SurfaceRowText,
+  teamListErrorFileName,
 } from '../shared/redline-drafts'
 import { dropSeen, parseSeen, putSeen, seenFileName, serializeSeen } from '../shared/redline-seen'
 import { fullReasoningOf, fullTextOf, isErrorOf, seqOf, typeOf } from '../redline/inspect'
@@ -713,23 +714,34 @@ const markSeen: RedlineOpHandler = async ({ ctx, call }) => {
  * 三种情况都算"不提供"：服务不在、这个会话拿不到活 Agent（不是团队成员）、`listTasks` 抛错。
  * 我们**只读**：这里不建成员、不派活、不改任务（那些是官方界面的职责，`docs/11` D14）。
  */
-const readTeam: RedlineOpHandler = ({ ctx, call }) => {
+const readTeam: RedlineOpHandler = async ({ ctx, call }) => {
   const sessionId = sessionIdOf(call)
-  if (sessionId === null) return Promise.resolve(fail(REDLINE_ERROR.badRequest))
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
   const teams = ctx.get('agentTeams') as AgentTeamsFace | undefined | null
-  if (teams === undefined || teams === null || typeof teams.listTasks !== 'function') return Promise.resolve(redlineOk(null))
+  if (teams === undefined || teams === null || typeof teams.listTasks !== 'function') return redlineOk(null)
   const agents = ctx.get('agents') as { get?: (id: string) => unknown } | undefined | null
   const caller = typeof agents?.get === 'function' ? agents.get(sessionId) : undefined
-  if (caller === undefined) return Promise.resolve(redlineOk(null))
+  if (caller === undefined) return redlineOk(null)
   try {
-    return Promise.resolve(redlineOk({
+    return redlineOk({
       tasks: teams.listTasks(caller) ?? null,
       membership: typeof teams.membership === 'function' ? (teams.membership(sessionId) ?? null) : null,
-    }))
+    })
   } catch (error) {
     // 官方拒绝（例如 caller 不是团队成员）也算「这份数据现在拿不到」——**返回值保持 `null`**（M5-24 契约不变），
     // 但**原因必须留下**：2026-10-07 真机上出现过"成员建好了、team.list 却是 null"，当时连原因都看不到。
-    ctx.logger.warn('dsh-context-redline: team.list 拿不到官方团队数据（' + messageOf(error) + '）')
+    const why = messageOf(error)
+    ctx.logger.warn('dsh-context-redline: team.list 拿不到官方团队数据（' + why + '）')
+    // 再写一份到**我们自己的数据目录**：宿主的日志落点不可靠（2026-10-07 实测在 `dsh-web.log`、
+    // `~/.dsh/logs/*`、launchd plist 里都找不到我们的输出），而"官方为什么拒绝"必须有原文可查。
+    // 写失败不影响返回值（诊断不能变成新的失败点）。
+    const dir = dataDirOf(ctx)
+    if (dir !== null) {
+      try {
+        await mkdir(dir, { recursive: true })
+        await writeFile(join(dir, teamListErrorFileName(sessionId)), new Date().toISOString() + ' ' + why + '\n', 'utf8')
+      } catch { /* 诊断写不进去就算了 */ }
+    }
     // 也算「这份数据现在拿不到」——不假装成功，也不把异常抛给界面。
     return Promise.resolve(redlineOk(null))
   }

@@ -8,7 +8,7 @@
 //   ④ 这台运行时没有子会话服务时，如实拒绝（`redline/no-subagents`），不装作能开。
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, test } from 'vitest'
@@ -19,7 +19,7 @@ import { apply, inject, name } from '../../src/host/index'
 import { REDLINE_ERROR } from '../../src/shared/redline-errors'
 import { REDLINE_CHANNEL_ROUTE } from '../../src/shared/redline-route'
 import { REDLINE_DATA_DIR_NAME } from '../../src/shared/redline-paths'
-import { draftFileName } from '../../src/shared/redline-drafts'
+import { draftFileName, teamListErrorFileName } from '../../src/shared/redline-drafts'
 
 type RouteFetch = (request: Request) => Promise<Response>
 interface CapturedRoute { path: string, methods: readonly string[], fetch: RouteFetch }
@@ -284,11 +284,16 @@ describe('team.list：官方 Agent Teams 那份数据（M5-24 的契约：不提
     assert.equal(ops.teamCalls[0], ops.agent, 'caller 就是那个活 Agent')
   })
 
-  test('官方抛错（例如 caller 不是成员）→ null，不把异常抛给界面', async () => {
+  test('官方抛错（例如 caller 不是成员）→ null，不把异常抛给界面；**但原因必须留在我们自己的诊断文件里**', async () => {
     const ops = await boot({ withTeams: 'throws' })
     const reply = await call(ops, { op: 'team.list', sessionId: ops.sessionId })
     assert.equal(reply.ok, true, '通道永远不因为对方的错而炸')
     assert.equal(reply.value, null)
+    // 2026-10-07 真机上 `ctx.logger.warn` 的输出在宿主日志里找不到 ⟹ 写进我们自己的数据目录，
+    // 这样"官方为什么拒绝"永远有原文可查（返回值仍保持 null，契约不变）。
+    const diag = join(ops.home, REDLINE_DATA_DIR_NAME, teamListErrorFileName(ops.sessionId))
+    assert.ok(existsSync(diag), '诊断文件必须被写下：' + diag)
+    assert.ok(readFileSync(diag, 'utf8').includes('caller is not a team member'), '原文要在里面')
   })
 })
 

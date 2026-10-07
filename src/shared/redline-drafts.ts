@@ -94,6 +94,18 @@ function stableKeyOf(sessionId: string): string {
 }
 
 /** The on-disk name of one session's draft file. */
+/**
+ * 官方 `listTasks` 拒绝时的诊断文件名（**我们自己的数据目录**，与草稿并列）。
+ *
+ * 为什么不用宿主的日志：2026-10-07 真机上 `ctx.logger.warn` 的输出在 `~/.dsh/dsh-web.log`、
+ * `~/.dsh/logs/*` 与 launchd 的 plist 里都找不到（宿主可能压根不落盘）——
+ * 而"官方为什么拒绝我们"这句话是必须留下证据的，所以写进我们自己的目录。
+ */
+export function teamListErrorFileName(sessionId: string): string {
+  const readable = sessionId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40)
+  return `redline-team-list-error-${readable}-${stableKeyOf(sessionId)}.log`
+}
+
 export function draftFileName(sessionId: string): string {
   const readable = sessionId.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40)
   return `redline-drafts-${readable}-${stableKeyOf(sessionId)}.json`
