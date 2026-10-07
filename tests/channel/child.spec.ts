@@ -22,6 +22,7 @@ import { REDLINE_CHANNEL_ROUTE } from '../../src/shared/redline-route'
 import { REDLINE_DATA_DIR_NAME } from '../../src/shared/redline-paths'
 import { draftFileName } from '../../src/shared/redline-drafts'
 import { originsFileName, parseOrigins, serializeOrigins } from '../../src/shared/redline-origins'
+import { parseDrafts } from '../../src/shared/redline-drafts'
 
 type RouteFetch = (request: Request) => Promise<Response>
 interface CapturedRoute { path: string, methods: readonly string[], fetch: RouteFetch }
@@ -47,6 +48,8 @@ interface ChildOps {
   /** 假的活 Agent：`request.parent` 该收到它。 */
   agent: unknown
   setLog: (next: { type: string }[]) => void
+  /** 日志**内容**（不只 offset）：M5-23 要证明种子来源里一个字都没有。 */
+  logEntries: () => readonly { type: string }[]
 }
 
 let nullableAgentFor = ''
@@ -137,6 +140,7 @@ async function boot(options: { withSubagents?: boolean, withTeams?: 'off' | 'spa
     ctx, channel, home, sessionId: session.id, sessionWrites,
     logOffset: () => session.seq, starts, agent: fakeAgent, spawnCalls,
     setLog: (next) => { log = next },
+    logEntries: () => log,
   }
 }
 
@@ -356,5 +360,39 @@ describe('child.origins：我们自己那本"来源台账"（M5-12）', () => {
     await writeFile(file, JSON.stringify({ schemaVersion: 99, sessionId: ops.sessionId, records: [] }), 'utf8')
     const old = await call(ops, { op: 'child.origins', sessionId: ops.sessionId })
     assert.deepEqual(old, { ok: true, value: { records: null, error: REDLINE_ERROR.originSchema } })
+  })
+})
+
+describe('草稿不进种子（M5-23）：它唯一的出口是新会话的第一句话', () => {
+  test('保存与开子会话都不碰父会话日志；草稿文件始终是唯一一份副本', async () => {
+    const ops = await boot()
+    const before = ops.logOffset()
+    const logBefore = JSON.stringify(ops.logEntries())
+
+    await saveEdit(ops, 1301, EDITED)
+    // ① 保存只写我们自己的目录：日志 offset 与**内容**都不动
+    assert.equal(ops.logOffset(), before, '保存不动日志')
+    assert.equal(JSON.stringify(ops.logEntries()), logBefore, '保存不往日志里写任何东西')
+    assert.deepEqual(ops.sessionWrites, [], '没有任何一次 Session.append')
+
+    // ② 草稿文件落在我们自己的数据目录，而且是唯一一份副本
+    const draftPath = join(ops.home, REDLINE_DATA_DIR_NAME, draftFileName(ops.sessionId))
+    assert.equal(existsSync(draftPath), true, '草稿在我们自己的目录里')
+    const parsed = parseDrafts(readFileSync(draftPath, 'utf8'), ops.sessionId)
+    assert.equal(parsed.ok, true)
+    if (parsed.ok) assert.equal(parsed.table[1301].text, EDITED, '文件里就是改后的正文')
+
+    await call(ops, { op: 'child.start', sessionId: ops.sessionId, humanTask: '把测试补上' })
+
+    // ③ fork 的种子取自**父会话日志**（docs/01 F50）⟹ 日志没变，种子就不可能带着草稿
+    assert.equal(JSON.stringify(ops.logEntries()), logBefore, '开子会话也不写日志')
+    assert.equal(ops.logOffset(), before, 'offset 还是不动')
+    assert.deepEqual(ops.sessionWrites, [], '全程零 append')
+    assert.equal(existsSync(draftPath), true, '开完之后草稿还在（临时保存，没被搬走）')
+
+    // ④ 它唯一的出口 = 新会话的第一句话，且人写的那句在最前面（不生成任何新内容）
+    const request = ops.starts[0].request as { prompt: { text: string }[] }
+    assert.ok(request.prompt[0].text.startsWith('把测试补上'), '人写的第一句在最前面')
+    assert.ok(request.prompt[0].text.includes(EDITED), '改后正文逐字跟在后面')
   })
 })
