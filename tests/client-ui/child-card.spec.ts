@@ -235,3 +235,40 @@ describe('M5-02 界面半边：走的是哪条路如实标出来', () => {
     await m.unmount()
   })
 })
+
+describe('第 5 张卡：容量（M5-13，分母来自活服务、读不到就不写）', () => {
+  // demo 的 `活跃 N / 8`：N = **运行中 + 空闲**（= 在场），不是"只有正在跑的"。
+  const three = [
+    { id: 'a', short: 'a', label: '', mode: 'continuable' as const, createdAt: 0, live: true, open: true },
+    { id: 'b', short: 'b', label: '', mode: 'continuable' as const, createdAt: 0, live: true, open: false },
+    { id: 'c', short: 'c', label: '', mode: 'continuable' as const, createdAt: 0, live: false, open: false },
+  ]
+  const scale = (m: Mounted): string => text(query(m.container, '.redline-card-scale'))
+
+  test('知道上限 → 标题写「活跃 2 / 8 · 共 3 个」，且活跃 = 在场（运行中 + 空闲）', async () => {
+    const m = await open({ rows: three, capacity: { known: true, max: 8 } })
+    assert.equal(scale(m), DICT_EN['child.bmeta.cap'].replace('{a}', '2').replace('{max}', '8').replace('{n}', '3'))
+    assert.equal(queryAll(m.container, '[data-redline-cap]').length, 0, '没触顶就不出现那句话')
+    await m.unmount()
+  })
+
+  test('不知道上限 → 只写「活跃 2 · 共 3 个」，**不写分母**也不写那句话', async () => {
+    const m = await open({ rows: three })
+    assert.equal(scale(m), DICT_EN['child.bmeta'].replace('{a}', '2').replace('{n}', '3'))
+    assert.equal(scale(m).includes('/'), false, '不知道就不许编分母')
+    assert.equal(queryAll(m.container, '[data-redline-cap]').length, 0)
+    await m.unmount()
+  })
+
+  test('触顶 → 给人话（说清是什么上限、下一步做什么），不许说"稍后重试"', async () => {
+    const m = await open({
+      rows: three.slice(0, 2),
+      capacity: { known: true, max: 2 },
+    })
+    const cap = query(m.container, '[data-redline-cap]')
+    const body = text(cap)
+    assert.equal(body, DICT_EN['child.cap.reached'].replace('{max}', '2'))
+    assert.equal(/稍后重试|later/i.test(body), false, '不含糊、不说稍后重试')
+    await m.unmount()
+  })
+})

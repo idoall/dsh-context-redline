@@ -55,6 +55,7 @@ import { fullReasoningOf, fullTextOf, isErrorOf, seqOf, typeOf } from '../redlin
 import { ability, type RowClass } from '../shared/redline-ability'
 import { turnStateOf, type TurnBoundaryEvent, type TurnState } from '../shared/redline-turn'
 import { buildFirstTask, forkConfirmItems } from '../redline/orchestrate'
+import { capacityFromService } from '../shared/redline-capacity'
 
 /** The host `connection` service, as far as this route consumes it. */
 interface ConnectionHostFace {
@@ -628,6 +629,16 @@ const startChild: RedlineOpHandler = async ({ ctx, call }) => {
 }
 
 /**
+ * M5-13 的分母：这台机器允许几个团队成员（`src/shared/redline-capacity.ts`）。
+ *
+ * **只读、且不做任何写入**：从活服务上防御性读 `config.maxMembers`（TS-private 的普通属性），
+ * 读不到就如实答 `{known:false,max:null}` —— 界面那时只写 `活跃 N`，**绝不编一个分母**
+ * （库默认是 16、本机 profile 配的是 8，写死哪个都会在另一种部署上变成假话，`docs/01` F31）。
+ */
+const readCapacity: RedlineOpHandler = ({ ctx }) =>
+  Promise.resolve(redlineOk(capacityFromService(ctx.get('agentTeams'))))
+
+/**
  * The op table. M2's entries; M3/M5 add theirs here and nowhere else.
  */
 const OPS = new Map<string, RedlineOpHandler>([
@@ -637,6 +648,7 @@ const OPS = new Map<string, RedlineOpHandler>([
   ['draft.list', listDrafts],
   ['draft.update', updateDraft],
   ['draft.drop', dropDraft],
+  ['child.capacity', readCapacity],
   ['child.plan', planChild],
   ['child.start', startChild],
 ])

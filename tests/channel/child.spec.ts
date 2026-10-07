@@ -49,8 +49,8 @@ interface ChildOps {
 
 let nullableAgentFor = ''
 
-async function boot(options: { withSubagents?: boolean, withTeams?: 'off' | 'spawn' } = {}): Promise<ChildOps> {
-  const { withSubagents = true, withTeams = 'off' } = options
+async function boot(options: { withSubagents?: boolean, withTeams?: 'off' | 'spawn', maxMembers?: unknown } = {}): Promise<ChildOps> {
+  const { withSubagents = true, withTeams = 'off', maxMembers } = options
   const home = mkdtempSync(join(tmpdir(), 'redline-child-'))
   homes.push(home)
   const routes: CapturedRoute[] = []
@@ -102,6 +102,9 @@ async function boot(options: { withSubagents?: boolean, withTeams?: 'off' | 'spa
   })
   if (withTeams === 'spawn') {
     ctx.provide('agentTeams', {
+      // M5-13：真实服务的 config 是 TS-private 的普通属性（`this.config`）⟹ 防御性读它，
+      // 这里用 options 模拟"配了 / 没配 / 配了垃圾"三种情形。
+      config: maxMembers === undefined ? undefined : { maxMembers },
       async spawnTeammate(caller: unknown, request: Record<string, unknown>) {
         spawnCalls.push({ caller, request })
         return { member: { id: 'member-1', name: '上下文批改 · test', role: 'teammate', phase: 'active' } }
@@ -272,5 +275,25 @@ describe('M5-01 优先路径：有官方团队服务就建官方成员（不行�
     assert.equal(value.via, 'bare-child')
     assert.equal(ops.starts.length, 1)
     assert.equal(ops.spawnCalls.length, 0)
+  })
+})
+
+describe('child.capacity：这台机器允许几个成员（M5-13 的分母）', () => {
+  test('没有官方团队服务 → 如实说"上限不知道"（绝不编 8 / 16）', async () => {
+    const ops = await boot({ withTeams: 'off' })
+    assert.deepEqual(await call(ops, { op: 'child.capacity' }), { ok: true, value: { known: false, max: null } })
+  })
+
+  test('服务在且配了 maxMembers（本机 8）→ 读出那个数', async () => {
+    const ops = await boot({ withTeams: 'spawn', maxMembers: 8 })
+    assert.deepEqual(await call(ops, { op: 'child.capacity' }), { ok: true, value: { known: true, max: 8 } })
+  })
+
+  test('读不到 / 读到垃圾 → 一律"不知道"，且这个 op 不做任何写入', async () => {
+    for (const bad of [undefined, 0, -1, 3.5, '8', null, NaN]) {
+      const ops = await boot({ withTeams: 'spawn', maxMembers: bad })
+      assert.deepEqual(await call(ops, { op: 'child.capacity' }), { ok: true, value: { known: false, max: null } }, 'maxMembers=' + String(bad))
+      assert.equal(ops.sessionWrites.length, 0, '只读 op')
+    }
   })
 })

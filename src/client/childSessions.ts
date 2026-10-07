@@ -21,7 +21,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { planChild, readTurnState, startChild, type ChildPlan, type ChildStarted, type RedlineResult } from './redlineChannel'
+import { planChild, readCapacity, readTurnState, startChild, type ChildPlan, type ChildStarted, type RedlineResult } from './redlineChannel'
+import { UNKNOWN_CAPACITY, capacityOf, type ChildCapacity } from '../shared/redline-capacity'
 
 /** One row of the index. */
 export interface ChildRow {
@@ -79,6 +80,11 @@ export function childRowsOf(raw: unknown): ChildRow[] {
 export interface ChildController {
   /** The index rows; `live`/`open` fill in as the per-child probes answer. */
   readonly rows: readonly ChildRow[]
+  /**
+   * 这台机器允许几个团队成员（M5-13 标题里的分母）。**读不到就是"不知道"**
+   * （`known:false`）⟹ 界面那时只写 `活跃 N`，不编一个分母。
+   */
+  readonly capacity: ChildCapacity
   /** Open the confirm box: the five items the host builds for this exact task. */
   readonly plan: (humanTask: string) => Promise<RedlineResult<ChildPlan>>
   /** The only call in this whole panel that writes a session (`docs/11` D15). */
@@ -132,6 +138,23 @@ export function useChildSessions(
     [base, states],
   )
 
+  // 分母只问一次（与选哪个会话无关：它是这台机器的配置，不是某条日志的性质）。
+  // 回答的形状不可信 ⟹ 先 `capacityOf()` re-prove 再进渲染（`docs/11` D54 的教训）。
+  const [capacity, setCapacity] = useState<ChildCapacity>(UNKNOWN_CAPACITY)
+  // 与上面那个索引探测同一个惯用法：用"第几代"而不是 `let alive`
+  // （`let alive` 会被 `no-unnecessary-condition` 判成恒假 —— 那是规则对闭包赋值看不见，
+  //  但**改成代次计数器既绕开它、又和本文件既有写法一致**）。
+  const capGeneration = useRef(0)
+  useEffect(() => {
+    capGeneration.current += 1
+    const mine = capGeneration.current
+    void (async () => {
+      const answer = await readCapacity()
+      if (capGeneration.current !== mine || !answer.ok) return
+      setCapacity(capacityOf(answer.value))
+    })()
+  }, [])
+
   const plan = useCallback(async (humanTask: string): Promise<RedlineResult<ChildPlan>> => {
     if (sessionId === undefined || sessionId === '') {
       return { ok: false, code: 'redline/not-live', message: 'no session' }
@@ -147,7 +170,7 @@ export function useChildSessions(
   }, [sessionId])
 
   return useMemo(
-    () => ({ rows, plan, start }),
-    [rows, plan, start],
+    () => ({ rows, capacity, plan, start }),
+    [rows, capacity, plan, start],
   )
 }

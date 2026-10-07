@@ -115,7 +115,7 @@ P0（不裁定就没法开工 / 会做出错东西）｜P1（会误导用户或�
 | 仓库路径 | `/Volumes/SSD/Home/lionm4/my_project/_dsh/idoall/dsh-context-redline` |
 | 分支 / 是否 push | `main` / **未 push** |
 | 最新提交 | 以 `git log -1` 为准（哈希不写死）；**2026-10-04：M1 + M2 的仓库内部分已落地**（骨架 + 命名空间分家 + 本地保存那条链） |
-| 进度 | `docs/10`：**DONE 270 / 共 291**（DOING 5 · TODO 12 · WAIT🙋 4；2026-10-07 按用户裁定撤下官方团队块与「已查看」标记，10 行转 `【作废】`，见 **D55**） |
+| 进度 | `docs/10`：**DONE 271 / 共 291**（DOING 5 · TODO 11 · WAIT🙋 4；2026-10-07 按用户裁定撤下官方团队块与「已查看」标记，10 行转 `【作废】`，见 **D55**） |
 | 当前卡点 | **只剩四件需要用户的事（第 40 轮收尾时的实测状态）**：① **再重启一次 `dsh web`** —— 只为让只读探针 op `probe.services` 生效（`docs/01` **F46**：宿主半边开机加载，`tsc`/`tsdown` 都过了、进程仍答 `unknown-op`，当前 pid 50235 仍是 22:10 那次）；重启后一条 curl 即可拿到 M45-01/03/04 的读数。② ~~「洞察」面板去留~~ —— **这条已作废（2026-10-06 用户指正 + 仓库核实）**：**我们自己的洞察面早在 2026-10-05 就删干净了**（`src/client/index.ts` 注释、`overview.css` 96 类零引用、`tests/client/*.spec.ts` 只剩"已删"的说明）；**上游插件 `dsh-context` 自带的洞察面板不属本仓库、不要动它**。唯一残留是 i18n 里 4 行**死字符串**（见 `docs/10` M3-34 的注记）。③ **三个小决定**：M4-06 默认粒度（设置页现为"步骤"）/ M4-07 统计卡 3 格 vs 7 格 / 手动出口要不要先做。④ **授权包④**（push 52 个提交）。⚠️ 会**写会话**的那几条探针（替换→再替换→回滚、跨压缩恢复、可续接子会话）动手前要用**可弃会话**并逐条确认。仓库侧：`node scripts/release-check.mjs` → 全部通过（共 11 步） |
 | demo 地址 | 给用户：`http://10.0.0.30:5180/redline-panel.html`（多文件版，资源 `?v=5`）· `http://10.0.0.30:5180/redline-panel.standalone.html`（单文件版，页头带打包指纹）；`bash demo/serve.sh` 起（`demo/serve.py`，发 no-store）。⚠️ **打不开时先自查**：`bash demo/serve.sh status` → 若"没在跑"就 `bash demo/serve.sh` 重启（**2026-10-02 真发生过一次**：守护进程无声退出、日志里只有成功的 200，重启即恢复）；**重启电脑后也必须重跑一次** |
 | 实测记录 | [`demo/screenshots/measure-log.md`](../demo/screenshots/measure-log.md)（1440 / 880 / 879 / 390 原始数据 + 20 余张截图） |
@@ -1214,3 +1214,15 @@ demo 的标题是 **`活跃 N / 8 · 共 M 个`**，我们只显示 **`活跃 0 
 `maxMembers` 的**库默认是 16**，而这台机器由
 `…/@deepseek-ai/dsh-experimental-agent-team-profile/cordis.patch.yml:20` 配成 **8**（`docs/01` F31）⟹
 实现要**从活服务防御性读取**（`teams.config?.maxMembers`），读不到就**只写 `活跃 N`、不编数字**，触顶时给人话。
+
+### M5-13 落地（2026-10-07 晚）：分母不是常数，是一条只读 op
+
+- **形状**：新 op `child.capacity`（只读、**不做任何写入**）+ 纯函数 `src/shared/redline-capacity.ts`：
+  `capacityFromService()` 读活服务（`agentTeams.config.maxMembers`，TS-private 的普通属性，**不是** `#private`）、
+  `capacityOf()` 验通道回答 —— **两半共用一份口径**（`docs/02` §5.2 A 段第 9 条）。
+- **诚实原则**：读到正规正整数才写 `活跃 N / max`；**读不到 / 读到 0-负数-小数-字符串-NaN 一律 `known:false`**，
+  界面那时只写 `活跃 N`，**绝不编 8 / 16**（库默认 16、本机 profile 配 8，`docs/01` F31）。
+  触顶（`active >= max`）给人话：说清"到的是**成员上限**、要先去官方视图里停掉或清掉一个"，**不说"稍后重试"**。
+- **顺带修掉一个真口径错**：`活跃` 原先只数 `live && open`（只有正在跑的），demo 数的是**运行中 + 空闲**（= 在场）。
+- **⚠️ 生效范围**：客户端半边（口径、触顶句、标题两态）**硬刷新即可**；**`child.capacity` 是宿主 op ⟹ 要下次重启才存在**。
+  在旧宿主上界面会走"不知道"那条路（只写 `活跃 N`）——**那正是降级路径，不是错**。

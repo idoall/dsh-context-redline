@@ -533,6 +533,7 @@ export function makeContextView(
             <ChildCard
               sessionId={sessionId}
               rows={children.rows}
+              capacity={children.capacity}
               live={redline.turn.known}
               turnOpen={redline.turn.open}
               carriedCount={Object.keys(redline.table).length}

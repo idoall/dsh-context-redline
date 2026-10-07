@@ -21,6 +21,7 @@
 import { createElement as h, useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react'
 import type { ViewKit } from '../viewkit'
 import type { ChildRow } from '../childSessions'
+import { UNKNOWN_CAPACITY, type ChildCapacity } from '../../shared/redline-capacity'
 import type { ChildPlan, ChildStarted, RedlineResult } from '../redlineChannel'
 
 export interface ChildCardProps {
@@ -28,6 +29,8 @@ export interface ChildCardProps {
   readonly sessionId?: string
   /** The index, already probed (`childSessions.ts`). */
   readonly rows: readonly ChildRow[]
+  /** 这台机器允许几个团队成员（M5-13 的分母）；缺省 = 不知道。 */
+  readonly capacity?: ChildCapacity
   /** The parent is live in this process (`turnState.known`). */
   readonly live: boolean
   /** The parent's turn has not closed yet. */
@@ -114,13 +117,22 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
       })()
     }, [busy, plan, refused, props.start, task])
 
-    const active = props.rows.filter(row => row.live === true && row.open === true).length
+    // ⚠️ 口径跟 demo（`renderOrch()` 的 `state === 'running' || state === 'idle'`）：
+    // 「活跃」= **在场的子会话**（运行中 + 空闲），**不是**"只有正在跑的" ——
+    // 2026-10-07 真机读数时发现我们原先少算了一半（只在 `open` 为真时计数）。
+    const active = props.rows.filter(row => row.live === true).length
+    const capacity = props.capacity ?? UNKNOWN_CAPACITY
+    // 分母只在**真读到**的时候写；读不到就只写 `活跃 N`（绝不编 8 / 16，`docs/01` F31）。
+    const scale = capacity.known && capacity.max !== null
+      ? t('child.bmeta.cap', { a: active, max: capacity.max, n: props.rows.length })
+      : t('child.bmeta', { a: active, n: props.rows.length })
+    const atCap = capacity.known && capacity.max !== null && active >= capacity.max
     const errKey = errorCode === null ? null : `redline.err.${errorCode.replace('redline/', '')}`
 
     return h('div', { className: 'redline-card' },
       h('div', { className: 'redline-card-title' },
         h('span', { className: 'redline-card-title-text' }, t('child.title')),
-        h('span', { className: 'redline-card-scale' }, t('child.bmeta', { a: active, n: props.rows.length })),
+        h('span', { className: 'redline-card-scale' }, scale),
       ),
 
       h('section', { className: 'redline-orch-block', 'data-redline-block': 'spawn' },
@@ -142,6 +154,9 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
       h('section', { className: 'redline-orch-block', 'data-redline-block': 'children' },
         h('div', { className: 'redline-orch-head' }, t('child.list.head'),
           h('span', { className: 'redline-orch-hint' }, t('child.list.hint'))),
+        atCap
+          ? h('div', { className: 'redline-cap', 'data-redline-cap': '1' }, t('child.cap.reached', { max: capacity.max }))
+          : null,
         props.rows.length === 0
           ? h('div', { className: 'redline-cap' }, t('child.empty'))
           : props.rows.map((row) => {

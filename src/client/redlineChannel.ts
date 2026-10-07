@@ -21,6 +21,7 @@
 
 import { REDLINE_ERROR } from '../shared/redline-errors'
 import { REDLINE_CHANNEL_ROUTE, type RedlineEnvelope } from '../shared/redline-route'
+import type { ChildCapacity } from '../shared/redline-capacity'
 import type { DraftTable } from '../shared/redline-drafts'
 import type { TurnState } from '../shared/redline-turn'
 
@@ -166,4 +167,12 @@ export interface ChildStarted {
  */
 export async function startChild(sessionId: string, humanTask: string): Promise<RedlineResult<ChildStarted>> {
   return await call<ChildStarted>({ op: 'child.start', sessionId, humanTask })
+}
+
+/**
+ * M5-13 的分母：问宿主"这台机器允许几个团队成员"。
+ * 只读；形状不可信 ⟹ 调用方要用 `capacityOf()` re-prove 一遍再进渲染。
+ */
+export async function readCapacity(): Promise<RedlineResult<ChildCapacity>> {
+  return await call<ChildCapacity>({ op: 'child.capacity' })
 }

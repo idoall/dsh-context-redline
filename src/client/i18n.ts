@@ -134,6 +134,9 @@ export const DICT_ZH: Record<string, string> = {
   'child.via.bare': '（裸子会话：不在官方名单里，官方界面看不到它）',
   'child.via.unknown': '（这次没拿到走的是哪条路）',
   'child.bmeta': '活跃 {a} · 共 {n} 个',
+  // 分母只在真读到上限时才写（M5-13）；读不到就退回上一条，不编数字。
+  'child.bmeta.cap': '活跃 {a} / {max} · 共 {n} 个',
+  'child.cap.reached': '已经到这台机器的上限（{max} 个成员）—— 要再开一个，得先在官方视图里停掉或清掉一个。',
   'child.spawn.head': '开子会话',
   'child.spawn.hint': '常驻入口，直接点就行',
   'child.spawn.button': '开启子会话',
@@ -381,6 +384,8 @@ export const DICT_EN: Record<string, string> = {
   'child.via.bare': '(bare child: not on the official roster, invisible to the official UI)',
   'child.via.unknown': '(the path was not reported this time)',
   'child.bmeta': '{a} active · {n} total',
+  'child.bmeta.cap': '{a} active / {max} · {n} total',
+  'child.cap.reached': 'This machine is at its cap ({max} members) - to open another, stop or clear one in the official view first.',
   'child.spawn.head': 'Open a child session',
   'child.spawn.hint': 'An always-here entry — just press it',
   'child.spawn.button': 'Open child session',
