@@ -31,6 +31,12 @@ export const REDLINE_ERROR = {
   emptyTask: 'redline/empty-task',
   /** 这台运行时没有可用的子会话服务：别装作能开，如实说"只能人工搬运"。 */
   noSubagents: 'redline/no-subagents',
+  /** A child provider returned without the child identity required to prove creation. */
+  childStartUnconfirmed: 'redline/child-start-unconfirmed',
+  /** Official and bare child creation both failed; no child was reported as started. */
+  childStartFailed: 'redline/child-start-failed',
+  /** Drafts changed after the user reviewed the confirmation; they must review again. */
+  draftsChanged: 'redline/drafts-changed',
   /** `assistant/message` cannot be rewritten on this platform (`docs/01` F7.2). */
   assistantImmutable: 'redline/assistant-immutable',
   /** The target is no longer a surface node (it was replaced) (`docs/01` F7). */
@@ -80,6 +86,9 @@ export const REDLINE_ERROR_MESSAGE: Readonly<Record<RedlineErrorCode, string>> =
   [REDLINE_ERROR.emptyContent]: 'the draft has no content at all',
   [REDLINE_ERROR.emptyTask]: 'the first task must be written by the human',
   [REDLINE_ERROR.noSubagents]: 'this runtime exposes no subagents service',
+  [REDLINE_ERROR.childStartUnconfirmed]: 'the child provider did not return a child identity',
+  [REDLINE_ERROR.childStartFailed]: 'the child could not be created by either available provider',
+  [REDLINE_ERROR.draftsChanged]: 'the local edits changed after confirmation was prepared',
   [REDLINE_ERROR.assistantImmutable]: 'assistant/message cannot be rewritten',
   [REDLINE_ERROR.shadowed]: 'that seq is no longer a surface node',
   [REDLINE_ERROR.notFound]: 'that seq is not in this session log',

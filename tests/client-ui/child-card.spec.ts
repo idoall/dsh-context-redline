@@ -27,6 +27,7 @@ const PLAN = {
     { label: '取消', text: '取消就是什么都不发生。' },
   ],
   carriedSeqs: [7879],
+  draftRevision: 'd1-test-plan',
   prompt: '【探针】\n\n以下是我在「上下文批改」里改好的上下文……',
   // M2-20：确认框要显示「首条任务有多大」 ⟹ 桩里也得有这份读数。
   metrics: { bytes: 120, lines: 3, edits: 1 },
@@ -150,11 +151,11 @@ describe('第 5 张卡：确认框（宿主的五项 + 第一句话由人写）'
     await m.unmount()
   })
 
-  test('写一句话后按钮可用；确认只调一次 child.start，成功后显示回执', async () => {
-    const starts: string[] = []
+  test('写一句话后按钮可用；确认只调一次 child.start，带上已审阅的草稿版本并显示回执', async () => {
+    const starts: { task: string, revision: string }[] = []
     const m = await open({
       plan: () => Promise.resolve({ ok: true as const, value: PLAN }),
-      start: (task: string) => { starts.push(task); return Promise.resolve({ ok: true as const, value: { via: 'official-member', label: '上下文批改 · abcd1234', prompt: 'p', carriedSeqs: [7879], started: null } }) },
+      start: (task: string, revision: string) => { starts.push({ task, revision }); return Promise.resolve({ ok: true as const, value: { via: 'official-member', label: '上下文批改 · abcd1234', prompt: 'p', carriedSeqs: [7879], started: null } }) },
     })
     await openDialog(m)
     const area = query<HTMLTextAreaElement>(m.container, '[data-redline-task]')
@@ -167,7 +168,7 @@ describe('第 5 张卡：确认框（宿主的五项 + 第一句话由人写）'
     const ok = query<HTMLButtonElement>(m.container, '[data-redline-confirm-ok]')
     assert.equal(ok.disabled, false)
     await act(async () => { ok.click() })
-    assert.deepEqual(starts, ['【探针】请只回答四个字：收到探针。'], '逐字把用户写的任务交给宿主')
+    assert.deepEqual(starts, [{ task: '【探针】请只回答四个字：收到探针。', revision: 'd1-test-plan' }], '逐字交任务，同时只允许创建已审阅过的草稿版本')
     assert.ok(text(m.container).includes(DICT_EN['child.confirm.started'].replace('{label}', '上下文批改 · abcd1234')))
     // M5-02 的界面半边：走的是哪条路必须如实标出来（官方成员 vs 裸子会话，可管理性完全不同）。
     const via = query(m.container, '[data-redline-via]')
@@ -280,15 +281,20 @@ describe('第 5 张卡：容量（M5-13，分母来自活服务、读不到就�
     await m.unmount()
   })
 
-  test('触顶 → 给人话（说清是什么上限、下一步做什么），不许说"稍后重试"', async () => {
+  test('触顶 → 给人话（说清是什么上限、下一步做什么），并禁用开启按钮，零计划请求', async () => {
+    let planned = 0
     const m = await open({
       rows: three.slice(0, 2),
       capacity: { known: true, max: 2 },
+      plan: () => { planned += 1; return Promise.resolve({ ok: true as const, value: PLAN }) },
     })
     const cap = query(m.container, '[data-redline-cap]')
     const body = text(cap)
     assert.equal(body, DICT_EN['child.cap.reached'].replace('{max}', '2'))
     assert.equal(/稍后重试|later/i.test(body), false, '不含糊、不说稍后重试')
+    assert.equal(spawnButton(m).disabled, true, '已知触顶时不该诱导一次必然失败的创建')
+    await act(async () => { spawnButton(m).click() })
+    assert.equal(planned, 0, '禁用状态不许请求 child.plan')
     await m.unmount()
   })
 })

@@ -132,6 +132,7 @@ describe('open a child session (the ONLY write point)', () => {
     stubFetch(() => envelope({
       items: [{ label: '从哪儿开始', text: '…' }, { label: '取消', text: '什么都不发生' }],
       carriedSeqs: [3358],
+      draftRevision: 'd1-plan',
       prompt: '继续\n\n改好的正文',
       refusal: null,
     }))
@@ -152,20 +153,21 @@ describe('open a child session (the ONLY write point)', () => {
   test('startChild posts child.start; a refusal comes back as a stable code + sentence (never thrown)', async () => {
     calls.length = 0
     stubFetch(() => failure(REDLINE_ERROR.emptyTask, '子会话的第一句话必须由你自己写'))
-    const refused = await startChild('sv-1', '   ')
+    const refused = await startChild('sv-1', '   ', 'd1-plan')
     assert.equal(refused.ok, false)
     if (!refused.ok) {
       assert.equal(refused.code, REDLINE_ERROR.emptyTask)
       assert.ok(refused.message.includes('自己写'), refused.message)
     }
     assert.equal(bodyOf(calls[0]).op, 'child.start')
+    assert.equal(bodyOf(calls[0]).draftRevision, 'd1-plan')
   })
 
   test('a successful startChild hands back the platform receipt untouched', async () => {
     calls.length = 0
     const receipt = { childId: '66da37b9', messageId: 'aeb5e73b' }
     stubFetch(() => envelope({ label: '上下文批改 · x', prompt: '继续', carriedSeqs: [], started: receipt }))
-    const started = await startChild('sv-1', '继续')
+    const started = await startChild('sv-1', '继续', 'd1-plan')
     assert.equal(started.ok, true)
     if (started.ok) assert.deepEqual(started.value.started, receipt)
   })

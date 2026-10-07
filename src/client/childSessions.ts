@@ -106,7 +106,7 @@ export interface ChildController {
   /** Open the confirm box: the five items the host builds for this exact task. */
   readonly plan: (humanTask: string) => Promise<RedlineResult<ChildPlan>>
   /** The only call in this whole panel that writes a session (`docs/11` D15). */
-  readonly start: (humanTask: string) => Promise<RedlineResult<ChildStarted>>
+  readonly start: (humanTask: string, draftRevision: string) => Promise<RedlineResult<ChildStarted>>
 }
 
 /**
@@ -204,11 +204,11 @@ export function useChildSessions(
     return await planChild(sessionId, humanTask)
   }, [sessionId])
 
-  const start = useCallback(async (humanTask: string): Promise<RedlineResult<ChildStarted>> => {
+  const start = useCallback(async (humanTask: string, draftRevision: string): Promise<RedlineResult<ChildStarted>> => {
     if (sessionId === undefined || sessionId === '') {
       return { ok: false, code: 'redline/not-live', message: 'no session' }
     }
-    return await startChild(sessionId, humanTask)
+    return await startChild(sessionId, humanTask, draftRevision)
   }, [sessionId])
 
   return useMemo(

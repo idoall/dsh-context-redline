@@ -54,8 +54,14 @@ interface ChildOps {
 
 let nullableAgentFor = ''
 
-async function boot(options: { withSubagents?: boolean, withTeams?: 'off' | 'spawn', maxMembers?: unknown } = {}): Promise<ChildOps> {
-  const { withSubagents = true, withTeams = 'off', maxMembers } = options
+async function boot(options: {
+  withSubagents?: boolean
+  withTeams?: 'off' | 'spawn' | 'throw' | 'undefined-result'
+  maxMembers?: unknown
+  bareResult?: unknown
+  bareThrows?: boolean
+} = {}): Promise<ChildOps> {
+  const { withSubagents = true, withTeams = 'off', maxMembers, bareResult = { childSessionId: 'child-session-1' }, bareThrows = false } = options
   const home = mkdtempSync(join(tmpdir(), 'redline-child-'))
   homes.push(home)
   const routes: CapturedRoute[] = []
@@ -105,13 +111,15 @@ async function boot(options: { withSubagents?: boolean, withTeams?: 'off' | 'spa
       return id === nullableAgentFor ? undefined : fakeAgent
     },
   })
-  if (withTeams === 'spawn') {
+  if (withTeams !== 'off') {
     ctx.provide('agentTeams', {
       // M5-13：真实服务的 config 是 TS-private 的普通属性（`this.config`）⟹ 防御性读它，
       // 这里用 options 模拟"配了 / 没配 / 配了垃圾"三种情形。
       config: maxMembers === undefined ? undefined : { maxMembers },
       async spawnTeammate(caller: unknown, request: Record<string, unknown>) {
         spawnCalls.push({ caller, request })
+        if (withTeams === 'throw') throw new Error('official team temporarily unavailable')
+        if (withTeams === 'undefined-result') return undefined
         return { member: { id: 'member-1', name: '上下文批改 · test', role: 'teammate', phase: 'active' } }
       },
     })
@@ -120,7 +128,8 @@ async function boot(options: { withSubagents?: boolean, withTeams?: 'off' | 'spa
     ctx.provide('subagents', {
       async startContinuable(argument: Record<string, unknown>) {
         starts.push(argument)
-        return { childSessionId: 'child-session-1' }
+        if (bareThrows) throw new Error('bare child unavailable')
+        return bareResult
       },
     })
   }
@@ -145,8 +154,18 @@ async function boot(options: { withSubagents?: boolean, withTeams?: 'off' | 'spa
 }
 
 async function call(ops: ChildOps, body: unknown): Promise<Record<string, unknown>> {
+  // Existing success-path specs exercise the UI contract: a start follows its plan
+  // and therefore carries plan.draftRevision. Deliberate stale/missing cases call
+  // the captured route directly below.
+  let sent = body
+  if (body !== null && typeof body === 'object' && (body as { op?: unknown }).op === 'child.start'
+    && (body as { draftRevision?: unknown }).draftRevision === undefined) {
+    const start = body as { sessionId: string, humanTask: string }
+    const planned = await call(ops, { op: 'child.plan', sessionId: start.sessionId, humanTask: start.humanTask })
+    sent = { ...start, op: 'child.start', draftRevision: (planned.value as { draftRevision: string }).draftRevision }
+  }
   const response = await ops.channel.fetch(new Request(`http://dsh.test${REDLINE_CHANNEL_ROUTE}`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(sent),
   }))
   assert.equal(response.status, 200)
   return await response.json() as Record<string, unknown>
@@ -284,6 +303,36 @@ describe('M5-01 优先路径：有官方团队服务就建官方成员（不行�
   })
 })
 
+describe('Code Review P1：官方成员路径失败时的诚实兜底与成功确认', () => {
+  test('官方成员服务存在但创建抛错 → 只走一次裸子会话兜底，不能把这条主链路卡死', async () => {
+    const ops = await boot({ withTeams: 'throw' })
+    const reply = value(await call(ops, { op: 'child.start', sessionId: ops.sessionId, humanTask: '继续' }))
+    assert.equal(reply.via, 'bare-child')
+    assert.equal(ops.spawnCalls.length, 1, '先尽力走官方成员')
+    assert.equal(ops.starts.length, 1, '官方失败后才走一次兜底')
+  })
+
+  test('官方成员服务返回了没有 member.id 的结果 → 不能假装已成功，改走裸子会话', async () => {
+    const ops = await boot({ withTeams: 'undefined-result' })
+    const reply = value(await call(ops, { op: 'child.start', sessionId: ops.sessionId, humanTask: '继续' }))
+    assert.equal(reply.via, 'bare-child')
+    assert.equal(ops.starts.length, 1)
+  })
+
+  test('裸子会话的回执没有 childSessionId → 不许报告「已开启」', async () => {
+    const ops = await boot({ withTeams: 'off', bareResult: {} })
+    const reply = await call(ops, { op: 'child.start', sessionId: ops.sessionId, humanTask: '继续' })
+    assert.equal(code(reply), REDLINE_ERROR.childStartUnconfirmed)
+    assert.equal(ops.starts.length, 1, '平台只被请求一次')
+  })
+
+  test('两条创建路径都失败 → 返回稳定的创建失败码，而不是泄漏 redline/internal', async () => {
+    const ops = await boot({ withTeams: 'throw', bareThrows: true })
+    const reply = await call(ops, { op: 'child.start', sessionId: ops.sessionId, humanTask: '继续' })
+    assert.equal(code(reply), REDLINE_ERROR.childStartFailed)
+  })
+})
+
 describe('child.capacity：这台机器允许几个成员（M5-13 的分母）', () => {
   test('没有官方团队服务 → 如实说"上限不知道"（绝不编 8 / 16）', async () => {
     const ops = await boot({ withTeams: 'off' })
@@ -360,6 +409,34 @@ describe('child.origins：我们自己那本"来源台账"（M5-12）', () => {
     await writeFile(file, JSON.stringify({ schemaVersion: 99, sessionId: ops.sessionId, records: [] }), 'utf8')
     const old = await call(ops, { op: 'child.origins', sessionId: ops.sessionId })
     assert.deepEqual(old, { ok: true, value: { records: null, error: REDLINE_ERROR.originSchema } })
+  })
+})
+
+describe('Code Review P2：确认框必须绑定它实际要携带的草稿版本', () => {
+  test('计划后草稿变了 → 旧确认不能创建子会话，必须重新审阅', async () => {
+    const ops = await boot()
+    await saveEdit(ops, 1301, '第一版')
+    const plan = value(await call(ops, { op: 'child.plan', sessionId: ops.sessionId, humanTask: '继续' })) as { draftRevision: string }
+    await saveEdit(ops, 1301, '第二版')
+    const reply = await ops.channel.fetch(new Request(`http://dsh.test${REDLINE_CHANNEL_ROUTE}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ op: 'child.start', sessionId: ops.sessionId, humanTask: '继续', draftRevision: plan.draftRevision }),
+    }))
+    const body = await reply.json() as Record<string, unknown>
+    assert.equal(code(body), REDLINE_ERROR.draftsChanged)
+    assert.equal(ops.starts.length, 0, '不能按已经过期的确认内容创建')
+  })
+
+  test('同一份 plan 的 revision 进入 start → 真正发出去的 prompt 与确认内容完全相同', async () => {
+    const ops = await boot()
+    await saveEdit(ops, 1301, EDITED)
+    const plan = value(await call(ops, { op: 'child.plan', sessionId: ops.sessionId, humanTask: '把测试补上' })) as { draftRevision: string, prompt: string }
+    const started = value(await call(ops, {
+      op: 'child.start', sessionId: ops.sessionId, humanTask: '把测试补上', draftRevision: plan.draftRevision,
+    }))
+    assert.equal(started.prompt, plan.prompt)
+    const sent = (ops.starts[0].request as { prompt: { text: string }[] }).prompt[0].text
+    assert.equal(sent, plan.prompt)
   })
 })
 

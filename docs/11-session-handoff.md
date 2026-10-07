@@ -1325,3 +1325,14 @@ POST /api/dsh-context-redline/redline
 
 另外顺带记一条**已验成**的读数（2026-10-08 重启后）：`child.plan` 的计数契约在真机上成立 ——
 `metrics.bytes = 15`，而返回的 `prompt` 实际 UTF-8 字节数也正好 15（`carriedSeqs: []`、`edits: 0`）。
+
+## D59 · 代码 Review 收口：确认内容与实际创建必须是同一份草稿（2026-10-08）
+
+Review 发现 4 个会削弱「编辑 → 确认 → 子会话携带改写」可信度的缺口，现已按 demo 原交互收口（**没有新增控制或产品功能**）：
+
+1. `spawnTeammate` 虽在、但抛错或回执没有 `member.id` 时，改走一次既定的裸子会话兜底；裸路径也没有 `childSessionId` 则拒绝，**不把 `undefined` 说成已开启**。两条路径都失败给稳定的 `redline/child-start-failed`。
+2. 已从活服务读到达到 `maxMembers` 时，现有的「开启子会话」按钮直接禁用，旁边仍显示「先结束或关掉一个」的人话；demo 同步该状态。
+3. `child.plan` 现在附 `draftRevision`；确认后的 `child.start` 带回它，并和保存/丢弃草稿共用每会话锁。草稿在确认后改变会返回 `redline/drafts-changed`，必须重开确认框——避免用户审的是 A、实际发出去是 B。
+4. 全部有先红后绿的门禁；故意把 revision 判断反过来后 channel lane **18 条红**，还原后恢复绿。静态 demo `194/194`、自有 lane `262/262` 也已重跑。
+
+**因此 M5-25 的操作未变**，但验收应使用这次宿主重建后的版本：宿主半边有改动，仍需要你重启 `dsh web`；客户端 bundle 硬刷新不足以让新的 `child.start` 生效。重启后先在空闲会话按 D57 清单点验。

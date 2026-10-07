@@ -44,7 +44,7 @@ export interface ChildCardProps {
   /** `child.plan` — read-only, builds the five items for this exact task text. */
   readonly plan: (humanTask: string) => Promise<RedlineResult<ChildPlan>>
   /** `child.start` — the ONLY session write the panel can perform. */
-  readonly start: (humanTask: string) => Promise<RedlineResult<ChildStarted>>
+  readonly start: (humanTask: string, draftRevision: string) => Promise<RedlineResult<ChildStarted>>
 }
 
 /** The state dot + word a row shows, from the probed `turnState`. */
@@ -113,7 +113,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
       setBusy(true)
       setErrorCode(null)
       void (async () => {
-        const answer = await props.start(task)
+        const answer = await props.start(task, plan.draftRevision)
         setBusy(false)
         if (!answer.ok) { setErrorCode(answer.code); return }
         setStarted(answer.value)
@@ -147,7 +147,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
             type: 'button',
             className: 'redline-btn',
             'data-redline-spawn': '1',
-            disabled: blockedKey !== null,
+            disabled: blockedKey !== null || atCap,
             onClick: () => { setTask(''); setStarted(null); setOpen(true) },
           }, t('child.spawn.button')),
           h('span', { className: 'redline-cap' }, t('child.spawn.note')),

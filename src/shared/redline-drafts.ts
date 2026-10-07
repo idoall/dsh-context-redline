@@ -184,6 +184,22 @@ export function serializeDrafts(sessionId: string, table: DraftTable): string {
   return `${JSON.stringify(file, null, 2)}\n`
 }
 
+/**
+ * A deterministic version token for the exact draft set a child-confirmation dialog
+ * reviewed. It is a stale-confirmation guard, not an authorization mechanism: the
+ * route remains authenticated by the harness. The canonical serialization means
+ * record order cannot change the version, while any carried field can.
+ */
+export function draftRevisionOf(sessionId: string, table: DraftTable): string {
+  const source = serializeDrafts(sessionId, table)
+  let hash = 0x811c9dc5
+  for (let i = 0; i < source.length; i += 1) {
+    hash ^= source.charCodeAt(i)
+    hash = (hash + ((hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24))) >>> 0
+  }
+  return `d1-${hash.toString(16).padStart(8, '0')}`
+}
+
 export type ParseResult =
   | { readonly ok: true; readonly table: DraftTable }
   | { readonly ok: false; readonly code: string; readonly message: string }

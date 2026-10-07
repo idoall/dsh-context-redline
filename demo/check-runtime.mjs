@@ -974,6 +974,19 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   check('子会话卡：每块都有自己的标题（.blocktitle）', (registry.get('cardOrch').innerHTML.match(/class="subhead blocktitle"/g) || []).length === 2);
 }
 
+/* ---------------- 已知容量触顶时不诱导一次必然失败的创建 ---------------- */
+{
+  const S = api.S();
+  S.children = Array.from({ length: 8 }, (_, i) => ({ id: `cap-${i}`, src: 'own', state: 'idle', label: '占用名额' }));
+  api.render();
+  const card = registry.get('cardOrch');
+  const spawn = card.querySelector('[data-act="spawn"]');
+  check('子会话触顶：开启按钮禁用，并明确说要先结束或关掉一个',
+    /<button[^>]*data-act="spawn"[^>]*disabled/.test(card.innerHTML)
+      && /已达上限 8/.test(card.innerHTML) && /结束或关掉一个/.test(card.innerHTML));
+  S.children = []; api.render();
+}
+
 /* ---------------- 借鉴 V0 的"小细节"（配色不动）：两端对齐读数 / 焦点块 / 行右 › ---------------- */
 {
   const S = api.S();

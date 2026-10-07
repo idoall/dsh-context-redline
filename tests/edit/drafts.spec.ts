@@ -20,6 +20,7 @@ import {
   checkChange,
   dropEdit,
   draftFileName,
+  draftRevisionOf,
   editOf,
   effectiveIsError,
   effectiveReasoning,
@@ -108,6 +109,19 @@ describe('write / read round-trip', () => {
     const raw = JSON.stringify({ schemaVersion: REDLINE_DRAFT_SCHEMA_VERSION + 1, sessionId: 's1', edits: [] })
     const parsed = parseDrafts(raw)
     assert.equal(parsed.ok, false)
+  })
+})
+
+describe('draft revision for a reviewed child-confirmation', () => {
+  test('is stable for one exact table and changes for every carried-field change', () => {
+    const one = putEdit(emptyDrafts(), edit(7, '第一版'))
+    const same = putEdit(emptyDrafts(), edit(7, '第一版'))
+    const changedText = putEdit(emptyDrafts(), edit(7, '第二版'))
+    const changedReasoning = putEdit(emptyDrafts(), edit(7, '第一版', { reasoning: '理由' }))
+    assert.equal(draftRevisionOf('s1', one), draftRevisionOf('s1', same))
+    assert.notEqual(draftRevisionOf('s1', one), draftRevisionOf('s1', changedText))
+    assert.notEqual(draftRevisionOf('s1', one), draftRevisionOf('s1', changedReasoning))
+    assert.notEqual(draftRevisionOf('s1', one), draftRevisionOf('s2', one), 'revision cannot cross session ids')
   })
 })
 

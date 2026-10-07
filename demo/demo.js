@@ -1127,6 +1127,7 @@ function wireHelpButtons() {
 function renderOrch() {
   const c = S.children;
   const active = c.filter((x) => x.state === 'running' || x.state === 'idle').length;
+  const atCapacity = active >= 8;
   const stateOf = (s) => (s === 'running' ? ['s-run', '运行中'] : s === 'idle' ? ['s-idle', '空闲'] : ['s-done', '已结束']);
   /**
    * 排布约定（用户 2026-09-30 反馈"这块没有其他几个部分好看"）：
@@ -1149,8 +1150,10 @@ function renderOrch() {
       <span class="bmeta">${S.children.length ? `已开 ${S.children.length} 个` : '还没开过'}</span></div>
 
     <div class="orch-toolbar">
-      <button class="btn sm" data-act="spawn" data-explain="orch.spawn" ${!S.sw.live ? 'disabled' : ''}>开启子会话</button>
-      <span class="cap">新会话从<b>最后聊完的那一轮</b>往下接着干（平台自己算的，没有更早的位置可选）；它会继承你已经改好的上下文。</span>
+      <button class="btn sm" data-act="spawn" data-explain="orch.spawn" ${!S.sw.live || atCapacity ? 'disabled' : ''}>开启子会话</button>
+      <span class="cap">${atCapacity
+        ? '活跃子会话已达上限 8：先在官方视图里结束或关掉一个，才能再开启。'
+        : '新会话从<b>最后聊完的那一轮</b>往下接着干（平台自己算的，没有更早的位置可选）；它会继承你已经改好的上下文。'}</span>
     </div>
 
     </section>

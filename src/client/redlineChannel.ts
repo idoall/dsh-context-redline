@@ -135,6 +135,8 @@ export interface ChildPlan {
   items: readonly { label: string; text: string }[]
   /** 会逐字带过去的本地改动（按 seq）。 */
   carriedSeqs: readonly number[]
+  /** Exact local-draft set reviewed by this plan; required by `child.start`. */
+  draftRevision: string
   /** 组装好的首条任务；被拒绝时为 `null`。 */
   prompt: string | null
   /** 首条任务的读数（M2-20）：UTF-8 字节 / 行 / 带了几条改动；被拒绝时为 `null`。 */
@@ -168,8 +170,8 @@ export interface ChildStarted {
  * 只在人**明确点了确认**之后调用；`humanTask` 是人写的第一句话（空着会被宿主拒绝）。
  * 拒绝一律以稳定的 code + 一句人话回来（transport 从不抛），界面照它显示就行。
  */
-export async function startChild(sessionId: string, humanTask: string): Promise<RedlineResult<ChildStarted>> {
-  return await call<ChildStarted>({ op: 'child.start', sessionId, humanTask })
+export async function startChild(sessionId: string, humanTask: string, draftRevision: string): Promise<RedlineResult<ChildStarted>> {
+  return await call<ChildStarted>({ op: 'child.start', sessionId, humanTask, draftRevision })
 }
 
 /** `child.origins` 的回答：`records: null` = 我们那本台账**读不出来**（界面必须说"来源未知"）。 */

@@ -42,6 +42,7 @@ import {
 import {
   REDLINE_DATA_DIR_NAME,
   checkChange,
+  draftRevisionOf,
   draftFileName,
   dropEdit,
   parseDrafts,
@@ -565,6 +566,8 @@ const planChild: RedlineOpHandler = async ({ ctx, call }) => {
   return redlineOk({
     items: forkConfirmItems({ position, humanTask, edits }),
     carriedSeqs: edits.map(e => e.seq),
+    /** The exact local-draft set this confirmation reviewed; `child.start` rechecks it. */
+    draftRevision: draftRevisionOf(sessionId, drafts.value),
     prompt: first.ok ? first.prompt : null,
     // M2-20：人点确认之前就该看得到这句话有多大（UTF-8 字节）与带了几条改动。
     metrics: first.ok ? firstTaskMetricsOf(first.prompt, edits.length) : null,
@@ -582,58 +585,68 @@ const planChild: RedlineOpHandler = async ({ ctx, call }) => {
  */
 const startChild: RedlineOpHandler = async ({ ctx, call }) => {
   const sessionId = sessionIdOf(call)
-  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const expectedDraftRevision = typeof call.draftRevision === 'string' ? call.draftRevision : null
+  if (sessionId === null || expectedDraftRevision === null || expectedDraftRevision === '') return fail(REDLINE_ERROR.badRequest)
   const turn = await turnStateOfSession(ctx, sessionId)
   if (!turn.known) return fail(REDLINE_ERROR.notLive)
   if (turn.open) return fail(REDLINE_ERROR.turnOpen)
-  const drafts = await readTable(ctx, sessionId)
-  if (!drafts.ok) return drafts
-  // `DraftTable` 是按 seq 键控的 Record（不是数组）⟹ 取值再按 seq 排序，顺序才稳定
-  const edits = Object.values(drafts.value).sort((a, b) => a.seq - b.seq).map(edit => ({ seq: edit.seq, text: edit.text }))
   const humanTask = typeof call.humanTask === 'string' ? call.humanTask : ''
-  const first = buildFirstTask({ humanTask, edits })
-  if (!first.ok) return redlineFailure(REDLINE_ERROR.emptyTask, first.message)
-  // 活 Agent：真机的 request.parent 要的是它（agents.get 只对「本进程加载过的会话」有值 —— docs/01 F48）。
-  const agents = ctx.get('agents') as { get?: (id: string) => unknown } | undefined | null
-  const parent = typeof agents?.get === 'function' ? agents.get(sessionId) : undefined
-  if (parent === undefined) return fail(REDLINE_ERROR.notLive)
-  const subagents = ctx.get('subagents') as SubagentsFace | undefined | null
-  if (subagents === undefined || subagents === null || typeof subagents.startContinuable !== 'function') {
-    return fail(REDLINE_ERROR.noSubagents)
-  }
-  const label = '上下文批改 · ' + sessionId.slice(-8)
-  // ⚠️ **真机约束（2026-10-07）**：官方的 `spawnTeammate` 拒绝中文名 ——
-  // 「teammate name must be lower-kebab-case, at most 64 characters, and not "lead"」。
-  // 所以我们自己的显示名（label，中文）与官方成员名分开：成员名用包名 + 会话短 id 拼，天然 kebab、也短。
-  const memberName = 'context-redline-' + sessionId.replace(/[^a-zA-Z0-9]/g, '').slice(-8).toLowerCase()
-  const prompt = [{ type: 'text', text: first.prompt }]
-  const signal = new AbortController().signal
-  // M5-01 优先 / M5-02 兜底：有官方团队服务就建**官方成员**（它能被官方界面管理、也能收团队消息）；
-  // 没有才退回"裸子会话"，并让调用方知道走的是哪条路（界面要如实标注）。
-  const teams = ctx.get('agentTeams') as AgentTeamsFace | undefined | null
-  if (teams !== undefined && teams !== null && typeof teams.spawnTeammate === 'function') {
-    const asMember = await teams.spawnTeammate(parent, {
-      name: memberName,
-      // description 用**人写的第一句话**本身（不替用户概括、不生成新内容）。
-      description: first.prompt.split('\n', 1)[0].slice(0, 80),
-      prompt,
-      context: 'fork',
-      provider: 'fork',
-      signal,
-    })
-    const official = asMember === undefined ? null : asMember
-    await recordOrigin(ctx, sessionId, official, 'official-member')
-    return redlineOk({ via: 'official-member', label, memberName, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: official })
-  }
-  const started = await subagents.startContinuable({
-    provider: 'fork',
-    label,
-    request: { parent, prompt },
-    signal,
+
+  // The confirmation dialog is a promise about an EXACT local draft set. Put its
+  // read, comparison, and provider call behind the same lock as draft mutations:
+  // no tab can save/drop an edit between the final check and the child request.
+  return await withSessionLock(sessionId, async () => {
+    const drafts = await readTable(ctx, sessionId)
+    if (!drafts.ok) return drafts
+    if (draftRevisionOf(sessionId, drafts.value) !== expectedDraftRevision) return fail(REDLINE_ERROR.draftsChanged)
+    // `DraftTable` 是按 seq 键控的 Record（不是数组）⟹ 取值再按 seq 排序，顺序才稳定
+    const edits = Object.values(drafts.value).sort((a, b) => a.seq - b.seq).map(edit => ({ seq: edit.seq, text: edit.text }))
+    const first = buildFirstTask({ humanTask, edits })
+    if (!first.ok) return redlineFailure(REDLINE_ERROR.emptyTask, first.message)
+    // 活 Agent：真机的 request.parent 要的是它（agents.get 只对「本进程加载过的会话」有值 —— docs/01 F48）。
+    const agents = ctx.get('agents') as { get?: (id: string) => unknown } | undefined | null
+    const parent = typeof agents?.get === 'function' ? agents.get(sessionId) : undefined
+    if (parent === undefined) return fail(REDLINE_ERROR.notLive)
+    const subagents = ctx.get('subagents') as SubagentsFace | undefined | null
+    if (subagents === undefined || subagents === null || typeof subagents.startContinuable !== 'function') {
+      return fail(REDLINE_ERROR.noSubagents)
+    }
+    const label = '上下文批改 · ' + sessionId.slice(-8)
+    const memberName = 'context-redline-' + sessionId.replace(/[^a-zA-Z0-9]/g, '').slice(-8).toLowerCase()
+    const prompt = [{ type: 'text', text: first.prompt }]
+    const signal = new AbortController().signal
+    const teams = ctx.get('agentTeams') as AgentTeamsFace | undefined | null
+    if (teams !== undefined && teams !== null && typeof teams.spawnTeammate === 'function') {
+      try {
+        const official = await teams.spawnTeammate(parent, {
+          name: memberName,
+          // description 用**人写的第一句话**本身（不替用户概括、不生成新内容）。
+          description: first.prompt.split('\n', 1)[0].slice(0, 80),
+          prompt,
+          context: 'fork',
+          provider: 'fork',
+          signal,
+        })
+        if (childIdOfStarted(official, 'official-member') !== null) {
+          await recordOrigin(ctx, sessionId, official, 'official-member', true)
+          return redlineOk({ via: 'official-member', label, memberName, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: official })
+        }
+      } catch (error) {
+        ctx.logger.warn('dsh-context-redline: 官方成员创建失败，尝试裸子会话兜底（' + messageOf(error) + '）')
+      }
+    }
+    try {
+      const bare = await subagents.startContinuable({
+        provider: 'fork', label, request: { parent, prompt }, signal,
+      })
+      if (childIdOfStarted(bare, 'bare-child') === null) return fail(REDLINE_ERROR.childStartUnconfirmed)
+      await recordOrigin(ctx, sessionId, bare, 'bare-child', true)
+      return redlineOk({ via: 'bare-child', label, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: bare })
+    } catch (error) {
+      ctx.logger.warn('dsh-context-redline: 裸子会话创建失败（' + messageOf(error) + '）')
+      return fail(REDLINE_ERROR.childStartFailed)
+    }
   })
-  const bare = started === undefined ? null : started
-  await recordOrigin(ctx, sessionId, bare, 'bare-child')
-  return redlineOk({ via: 'bare-child', label, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: bare })
 }
 
 /**
@@ -657,34 +670,36 @@ function childIdOfStarted(started: unknown, via: OriginVia): string | null {
  * ⚠️ 写不进去**不影响**"子会话已经开了"这个事实（返回照旧），只记一条 warn ——
  * 失败的副作用是界面之后把这条说成"不是在这儿开的"，所以这里不能假装成功。
  */
-async function recordOrigin(ctx: Context, sessionId: string, started: unknown, via: OriginVia): Promise<void> {
+async function recordOrigin(ctx: Context, sessionId: string, started: unknown, via: OriginVia, lockHeld = false): Promise<void> {
   const childId = childIdOfStarted(started, via)
   if (childId === null) return
   const dir = dataDirOf(ctx)
   if (dir === null) return
+  const writeOrigin = async (): Promise<void> => {
+    const target = join(dir, originsFileName(sessionId))
+    let raw: string | null = null
+    try {
+      raw = await readFile(target, 'utf8')
+    } catch (error) {
+      if ((error as { code?: string }).code !== 'ENOENT') throw error
+    }
+    const parsed = parseOrigins(raw, sessionId)
+    // 台账读不出来 ⟹ **重开一本**：刚开的这条必须留下（不然界面会把它说成"不是在这儿开的"，
+    // 那是假话）；读不出来的旧内容本来就已经不可用（读 op 那时答"来源未知"）。
+    const records = parsed.ok ? parsed.records : []
+    const temp = `${target}.tmp-${process.pid}-${Date.now().toString(36)}-${(writeTicket += 1).toString(36)}`
+    try {
+      await mkdir(dir, { recursive: true })
+      await writeFile(temp, serializeOrigins(sessionId, putOrigin(records, { childId, via, at: Date.now() })), 'utf8')
+      await rename(temp, target)
+    } catch (error) {
+      await rm(temp, { force: true }).catch(() => undefined)
+      throw error
+    }
+  }
   try {
-    await withSessionLock(sessionId, async () => {
-      const target = join(dir, originsFileName(sessionId))
-      let raw: string | null = null
-      try {
-        raw = await readFile(target, 'utf8')
-      } catch (error) {
-        if ((error as { code?: string }).code !== 'ENOENT') throw error
-      }
-      const parsed = parseOrigins(raw, sessionId)
-      // 台账读不出来 ⟹ **重开一本**：刚开的这条必须留下（不然界面会把它说成"不是在这儿开的"，
-      // 那是假话）；读不出来的旧内容本来就已经不可用（读 op 那时答"来源未知"）。
-      const records = parsed.ok ? parsed.records : []
-      const temp = `${target}.tmp-${process.pid}-${Date.now().toString(36)}-${(writeTicket += 1).toString(36)}`
-      try {
-        await mkdir(dir, { recursive: true })
-        await writeFile(temp, serializeOrigins(sessionId, putOrigin(records, { childId, via, at: Date.now() })), 'utf8')
-        await rename(temp, target)
-      } catch (error) {
-        await rm(temp, { force: true }).catch(() => undefined)
-        throw error
-      }
-    })
+    if (lockHeld) await writeOrigin()
+    else await withSessionLock(sessionId, writeOrigin)
   } catch (error) {
     ctx.logger.warn('dsh-context-redline: 来源台账写不进去（' + messageOf(error) + '）')
   }
