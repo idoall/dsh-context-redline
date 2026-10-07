@@ -622,6 +622,14 @@ M5-12 改为**我们自己的台账**：`child.start` 成功时按"新子会话�
 （官方路 = `SpawnTeammateResult.member.id`，其类型就是 `SessionId`；兜底路 = `ContinuableStart.childSessionId`），
 落 `$DSH_HOME/dsh-context-redline/redline-origins-<会话>.json`。三种诚实态：台账里有 = 本项目发起（并写明官方成员/裸子会话）·
 台账里没有 = **不是在这儿开的**（不猜是谁开的，**不读官方名册** —— 那块界面已按用户裁定撤下）· 台账读不出来 = **来源未知**。 | §F59（实测 2026-10-07） |
+| F60 | **会话日志文件是"多帧 zstd"的追加式文件 ⟹ 别想直接读它（2026-10-07 本机实测）**：一条会话的日志在
+`$DSH_HOME/sessions/<工作区转义名>/<会话id>/session.v<版本>.jsonl.zstd`，**文件名带日志格式版本**
+（老会话是 `v3`，当前运行时 0.2.1-alpha.1 写的是 **`v4`**）。关键是：它是**多个 zstd 帧拼接**的
+（实测一份 10 MiB 的 v4 日志里有 **4161 个帧**，每帧对应一次追加）——Node 自带的
+`zstdDecompressSync` 与 `createZstdDecompress` **都只解出第一帧**（只能拿到 `{"type":"session",…}` 那一行），
+本机也**没有** `zstd` CLI ⟹ "直接读日志文件量事件"这条路**走不通**。
+**正确读路径 = 平台自己的读 API**（`ctx.sessionQuery` / 我们自己的 `POST /api/dsh-context-redline/detail`，
+见 `src/host/detail.ts`）：`M5-21` 的读数工具 `scripts/cycle-metrics.mjs` 就是走它。 | §F60（实测 2026-10-07） |
 | F49 | **2026-10-05 第二轮真机只读探针 + 静态查证（新 pid 85196）**：**① `ctx` 的服务不可枚举** ——
 `Object.keys(ctx)` 只给出 `["fiber"]` ⟹ 找服务只能靠**按名字试探**或**读安装树的 `.d.ts`**（这条顺便解释了 F48 里
 "知道有服务但不知道键名"的困境）。**② 压缩服务要的是"agent 上下文"，不是会话 id** —— `@deepseek-ai/dsh-compaction` 的
