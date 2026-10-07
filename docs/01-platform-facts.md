@@ -608,6 +608,13 @@ SpawnTeammateRequest = {
 界面用中文 `label`，官方成员名用 `context-redline-<会话短id>`（天然 lower-kebab、够短、也不是 `lead`），
 并在 `child.start` 的返回里一并交出 `memberName` 让界面/台账对得上。**门禁**：`tests/channel/child.spec.ts` 断言名字匹配
 `/^[a-z0-9]+(-[a-z0-9]+)*$/`、≤64 字、≠ `lead`。 | §F57（实测 2026-10-07） |
+| F58 | **`agentTeams.listTasks(caller)` 会拒绝我们要给的那个 caller（2026-10-07 真机）**：原文
+`agent "undefined" is not a member of an active Agent Team` —— 官方**按身份**在名单里找人，而我们的 caller
+（`ctx.get('agents').get(sessionId)`）让它读出了 `undefined`（`Agent` 的身份字段是 `sessionId`）。
+**同一轮里 `spawnTeammate(parent, …)` 却成功了**（真建出成员 `268a957e…`、`status: running`）⟹
+**"建成员"不校验名单，"读任务"校验**。诊断经验：宿主日志（`dsh-web.log` / `~/.dsh/logs/*` / launchd plist）
+里**找不到**我们 `ctx.logger.warn` 的输出，所以拒绝原文改为写进**我们自己的数据目录**
+`$DSH_HOME/dsh-context-redline/redline-team-list-error-<会话>.log`（返回值仍保持 `null`，M5-24 契约不变）。 | §F58（实测 2026-10-07） |
 | F49 | **2026-10-05 第二轮真机只读探针 + 静态查证（新 pid 85196）**：**① `ctx` 的服务不可枚举** ——
 `Object.keys(ctx)` 只给出 `["fiber"]` ⟹ 找服务只能靠**按名字试探**或**读安装树的 `.d.ts`**（这条顺便解释了 F48 里
 "知道有服务但不知道键名"的困境）。**② 压缩服务要的是"agent 上下文"，不是会话 id** —— `@deepseek-ai/dsh-compaction` 的

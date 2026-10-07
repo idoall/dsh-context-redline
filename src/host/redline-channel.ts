@@ -739,7 +739,20 @@ const readTeam: RedlineOpHandler = async ({ ctx, call }) => {
     if (dir !== null) {
       try {
         await mkdir(dir, { recursive: true })
-        await writeFile(join(dir, teamListErrorFileName(sessionId)), new Date().toISOString() + ' ' + why + '\n', 'utf8')
+        // 连 caller 的**真实形状**一起记：官方报的 `agent "undefined" is not a member…` 说明它读身份读出了空，
+        // 而我们的 caller 是 `agents.get(sessionId)` 给的 —— 到底缺哪个字段，写下来才不用猜。
+        const callerShape = (() => {
+          const c = caller as { sessionId?: unknown; id?: unknown }
+          const proto = Object.getPrototypeOf(caller) as object | null
+          return JSON.stringify({
+            ownKeys: Object.keys(c).slice(0, 20),
+            protoKeys: proto === null ? null : Object.getOwnPropertyNames(proto).slice(0, 20),
+            sessionId: c.sessionId ?? null,
+            id: c.id ?? null,
+            passedSessionId: sessionId,
+          })
+        })()
+        await writeFile(join(dir, teamListErrorFileName(sessionId)), new Date().toISOString() + ' ' + why + '\ncaller=' + callerShape + '\n', 'utf8')
       } catch { /* 诊断写不进去就算了 */ }
     }
     // 也算「这份数据现在拿不到」——不假装成功，也不把异常抛给界面。
