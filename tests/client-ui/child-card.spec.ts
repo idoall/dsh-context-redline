@@ -152,7 +152,7 @@ describe('第 5 张卡：确认框（宿主的五项 + 第一句话由人写）'
     const starts: string[] = []
     const m = await open({
       plan: () => Promise.resolve({ ok: true as const, value: PLAN }),
-      start: (task: string) => { starts.push(task); return Promise.resolve({ ok: true as const, value: { label: '上下文批改 · abcd1234', prompt: 'p', carriedSeqs: [7879], started: null } }) },
+      start: (task: string) => { starts.push(task); return Promise.resolve({ ok: true as const, value: { via: 'official-member', label: '上下文批改 · abcd1234', prompt: 'p', carriedSeqs: [7879], started: null } }) },
     })
     await openDialog(m)
     const area = query<HTMLTextAreaElement>(m.container, '[data-redline-task]')
@@ -167,6 +167,10 @@ describe('第 5 张卡：确认框（宿主的五项 + 第一句话由人写）'
     await act(async () => { ok.click() })
     assert.deepEqual(starts, ['【探针】请只回答四个字：收到探针。'], '逐字把用户写的任务交给宿主')
     assert.ok(text(m.container).includes(DICT_EN['child.confirm.started'].replace('{label}', '上下文批改 · abcd1234')))
+    // M5-02 的界面半边：走的是哪条路必须如实标出来（官方成员 vs 裸子会话，可管理性完全不同）。
+    const via = query(m.container, '[data-redline-via]')
+    assert.equal(via.getAttribute('data-redline-via'), 'official-member')
+    assert.ok(text(via).includes(DICT_EN['child.via.official']))
     await m.unmount()
   })
 
@@ -342,5 +346,42 @@ describe('官方团队那块的回退：投影读不到时问宿主（M5-07 / M5
       assert.equal(queryAll(m.container, '[data-redline-task]').length, 0)
       await m.unmount()
     })
+  })
+})
+
+describe('M5-02 界面半边：走的是哪条路如实标出来', () => {
+  const runConfirm = async (via: string | undefined): Promise<Mounted> => {
+    const m = await open({
+      plan: () => Promise.resolve({ ok: true as const, value: PLAN }),
+      start: () => Promise.resolve({ ok: true as const, value: { via, label: '上下文批改 · abcd1234', prompt: 'p', carriedSeqs: [], started: null } }),
+    })
+    await openDialog(m)
+    const area = query<HTMLTextAreaElement>(m.container, '[data-redline-task]')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      setter?.call(area, '继续')
+      area.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => { await new Promise(r => setTimeout(r, 300)) })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-confirm-ok]').click() })
+    return m
+  }
+
+  test('兜底路径 → 明说「裸子会话：不在官方名单里，官方界面看不到它」', async () => {
+    const m = await runConfirm('bare-child')
+    const via = query(m.container, '[data-redline-via]')
+    assert.equal(via.getAttribute('data-redline-via'), 'bare-child')
+    const body = text(via)
+    assert.ok(body.includes(DICT_EN['child.via.bare']), body)
+    assert.ok(body.includes('invisible to the official UI'), '不能含糊：官方界面看不到它')
+    await m.unmount()
+  })
+
+  test('宿主没报路径 → 如实说没拿到，不猜', async () => {
+    const m = await runConfirm(undefined)
+    const via = query(m.container, '[data-redline-via]')
+    assert.equal(via.getAttribute('data-redline-via'), 'unknown')
+    assert.ok(text(via).includes(DICT_EN['child.via.unknown']))
+    await m.unmount()
   })
 })

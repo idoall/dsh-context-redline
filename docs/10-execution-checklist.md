@@ -360,7 +360,7 @@
 | ID | 子模块 / 子任务 | 状态 | 文件动作（范围冻结） |
 |---|---|---|---|
 | M5-01 | `child.fork`（op 名以 `docs/02` §5.2 为准）优先路径：`agentTeams.spawnTeammate(lead,{context:'fork',provider:forkProvider,…})` | DONE | `src/redline/orchestrate.ts`  → ✅ **优先路径落地（2026-10-07）**：`child.start` 现在**优先调官方** `agentTeams.spawnTeammate(caller, request)`（签名按安装树：`{name, description, prompt: ContentBlock[], context:'fork', provider, signal}`）—— 建的是**官方团队成员**，能被官方界面管理、也能收团队消息；返回里带 `via: 'official-member'` 让界面如实标注走的是哪条路。`description` 用的是**人写的第一句原话**（不替用户概括、不生成新内容）。**2 条门禁**：官方服务在 → 调 spawnTeammate 且**不许同时走兜底那条路**（`starts.length === 0`）、request 形状逐项校验；官方服务不在 → 走兜底并标 `bare-child`。 |
-| M5-02 | 兜底路径：`subagents.startContinuable({provider:'fork'})`，界面如实标注"裸子会话" | DOING | `src/redline/orchestrate.ts`、`src/client/**`  → ✅ 宿主路径已实现并锁住：**兜底路径 `subagents.startContinuable({provider:'fork', label, request:{parent, prompt}})`** 落在通道 op `child.start`（`src/host/redline-channel.ts`），纯逻辑在 `src/redline/orchestrate.ts`；`tests/channel/child.spec.ts` 6 条钉住（拒绝顺序 / 成功路径 / **会话零写入**）。⏳ 界面那句"裸子会话"的如实标注待客户端一起做  → ✅ 兜底路径本身早已实现并被 6 条门禁锁住（`subagents.startContinuable({provider:'fork', …})`），现在还会在返回里标 `via: 'bare-child'`；⏳ **界面那句「裸子会话」的如实标注还没做**（客户端读 `via` 显示在开启结果里）—— 做完这条才 DONE。 |
+| M5-02 | 兜底路径：`subagents.startContinuable({provider:'fork'})`，界面如实标注"裸子会话" | DONE | `src/redline/orchestrate.ts`、`src/client/**`  → ✅ 宿主路径已实现并锁住：**兜底路径 `subagents.startContinuable({provider:'fork', label, request:{parent, prompt}})`** 落在通道 op `child.start`（`src/host/redline-channel.ts`），纯逻辑在 `src/redline/orchestrate.ts`；`tests/channel/child.spec.ts` 6 条钉住（拒绝顺序 / 成功路径 / **会话零写入**）。⏳ 界面那句"裸子会话"的如实标注待客户端一起做  → ✅ 兜底路径本身早已实现并被 6 条门禁锁住（`subagents.startContinuable({provider:'fork', …})`），现在还会在返回里标 `via: 'bare-child'`；⏳ **界面那句「裸子会话」的如实标注还没做**（客户端读 `via` 显示在开启结果里）—— 做完这条才 DONE。  → ✅ **界面半边也做完了（2026-10-07）**：确认成功后卡里显示「走的是哪条路」（`via`）—— 走官方成员就写「（官方成员：能在官方团队视图里看到它）」，兜底就写「（裸子会话：不在官方名单里，官方界面看不到它）」，宿主没报就写「（这次没拿到走的是哪条路）」——**不猜、也不含糊**。3 条 client-ui 门禁钉住三种情形。 |
 | M5-03 | 可选注入 `agentTeams`：团队未启用时插件仍能加载、对接点全隐 | TODO | 插件入口 |
 | M5-04 | 首条任务必须人写（空则拒绝创建） | DONE | `src/redline/orchestrate.ts`  → `buildFirstTask` 空/纯空白即拒绝（`redline/empty-task`，并给出人话理由）；纯逻辑 + `child.start` 的拒绝顺序都在单测里（`tests/edit/orchestrate.spec.ts` 4 条 + `tests/channel/child.spec.ts`） |
 | M5-05 | 确认框五项内容生成 | DONE | `src/redline/orchestrate.ts`、`src/client/**`  → `forkConfirmItems()` 产出**恰好五项**（从哪儿开始 / 会带上的改动 / 第一句话由人写 / 会带什么不带什么 / 取消=什么都不发生），并有一条测试**禁止出现内部词**（provider·种子·切点·继承范围·fork）；`child.plan` 把它只读地报给界面 |
@@ -432,10 +432,10 @@
 | M3   右侧界面 | 36 | **35** | 1 | 0 | 0 |
 | M4   轮次联动 | 7 | **7** | 0 | 0 | 0 |
 | M4.5   平台能力验证 | 19 | **19** | 0 | 0 | 0 |
-| M5   快照 → 子会话 → 压缩 → 对接官方团队 | 28 | **13** | 2 | 12 | 1 |
+| M5   快照 → 子会话 → 压缩 → 对接官方团队 | 28 | **14** | 1 | 12 | 1 |
 | M6   入口与发布准备 | 12 | **11** | 0 | 1 | 0 |
 | M7+   本轮明确不做 | 4 | **0** | 0 | 4 | 0 |
-| **合计** | **291** | **261** | **7** | **19** | **4** |
+| **合计** | **291** | **262** | **6** | **19** | **4** |
 
 ### 剩下的 TODO **都在等什么**（2026-10-04 逐条核对；五种去处，没有第六种）
 

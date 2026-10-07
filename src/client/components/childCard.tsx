@@ -244,7 +244,11 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
           ),
           started !== null
             ? h('div', { className: 'redline-ok', 'data-redline-started': started.label },
-              t('child.confirm.started', { label: started.label }))
+              t('child.confirm.started', { label: started.label }),
+              h('span', { className: 'redline-cap', 'data-redline-via': started.via ?? 'unknown' },
+                started.via === 'official-member' ? t('child.via.official')
+                  : started.via === 'bare-child' ? t('child.via.bare')
+                    : t('child.via.unknown')))
             : plan === null
               ? h('div', { className: 'redline-cap' }, t('child.confirm.preparing'))
               : h('ul', { className: 'redline-confirm-list' },

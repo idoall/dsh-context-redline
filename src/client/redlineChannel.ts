@@ -162,6 +162,11 @@ export async function planChild(sessionId: string, humanTask: string): Promise<R
 
 /** 开子会话成功后的回执。 */
 export interface ChildStarted {
+  /**
+   * 走的是哪条路：`'official-member'`（官方团队成员）/ `'bare-child'`（裸子会话）。
+   * 界面必须如实标出来 —— 两者的可管理性完全不同（官方那份能在官方团队视图里看到）。
+   */
+  via?: string
   label: string
   prompt: string
   carriedSeqs: readonly number[]

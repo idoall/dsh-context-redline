@@ -726,8 +726,11 @@ const readTeam: RedlineOpHandler = ({ ctx, call }) => {
       tasks: teams.listTasks(caller) ?? null,
       membership: typeof teams.membership === 'function' ? (teams.membership(sessionId) ?? null) : null,
     }))
-  } catch {
-    // 官方拒绝（例如 caller 不是团队成员）也算「这份数据现在拿不到」——不假装成功，也不把异常抛给界面。
+  } catch (error) {
+    // 官方拒绝（例如 caller 不是团队成员）也算「这份数据现在拿不到」——**返回值保持 `null`**（M5-24 契约不变），
+    // 但**原因必须留下**：2026-10-07 真机上出现过"成员建好了、team.list 却是 null"，当时连原因都看不到。
+    ctx.logger.warn('dsh-context-redline: team.list 拿不到官方团队数据（' + messageOf(error) + '）')
+    // 也算「这份数据现在拿不到」——不假装成功，也不把异常抛给界面。
     return Promise.resolve(redlineOk(null))
   }
 }
