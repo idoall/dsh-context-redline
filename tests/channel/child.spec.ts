@@ -396,3 +396,39 @@ describe('草稿不进种子（M5-23）：它唯一的出口是新会话的第�
     assert.ok(request.prompt[0].text.includes(EDITED), '改后正文逐字跟在后面')
   })
 })
+
+describe('起点口径（M5-27 / A25 / A26）：传给平台的参数里**没有任何切点参数**', () => {
+  // 平台事实（docs/01 F38）：fork 的种子**恒为**"父会话当前最后一个 turn/end 及其之前"，
+  // startContinuable / spawnTeammate **没有任何参数**能指定更早的切点 ⟹ 界面不许承诺"选起点"，
+  // 传给平台的形状也不许夹带 seed / cutSeq / recordId（A25/A26 锁死"没夹带"）。
+  const BANNED = ['seed', 'cutSeq', 'recordId', 'atSeq', 'from', 'cut', 'startSeq', 'snapshotId']
+
+  test('官方路：request 的键就是那六个，一个切点参数都没有', async () => {
+    const ops = await boot({ withTeams: 'spawn' })
+    await saveEdit(ops, 1301, EDITED)
+    await call(ops, { op: 'child.start', sessionId: ops.sessionId, humanTask: '接着干' })
+    const keys = Object.keys(ops.spawnCalls[0].request)
+    assert.deepEqual([...keys].sort(), ['context', 'description', 'name', 'prompt', 'provider', 'signal'])
+    for (const banned of BANNED) assert.equal(keys.includes(banned), false, banned + ' 不许出现（平台没有这个参数）')
+  })
+
+  test('兜底路：外壳四个键、request 只有 parent / prompt', async () => {
+    const ops = await boot({ withTeams: 'off' })
+    await saveEdit(ops, 1301, EDITED)
+    await call(ops, { op: 'child.start', sessionId: ops.sessionId, humanTask: '接着干' })
+    const argument = ops.starts[0]
+    assert.deepEqual(Object.keys(argument).sort(), ['label', 'provider', 'request', 'signal'])
+    assert.deepEqual(Object.keys(argument.request as Record<string, unknown>).sort(), ['parent', 'prompt'])
+    for (const banned of BANNED) assert.equal(Object.keys(argument).includes(banned), false, banned)
+  })
+
+  test('确认框第一项说的是"平台算的起点"，不许提"你选的那条记录"', async () => {
+    const ops = await boot()
+    const plan = value(await call(ops, { op: 'child.plan', sessionId: ops.sessionId, humanTask: '接着干' })) as { items: { label: string, text: string }[] }
+    const first = plan.items[0]
+    assert.equal(first.label, '从哪儿开始')
+    assert.ok(first.text.includes('平台'), '必须说清是平台算的')
+    assert.ok(first.text.includes('最后聊完'), '必须说清从哪一轮开始')
+    for (const word of ['记录', '凭证', '冻结', '快照']) assert.equal(first.text.includes(word), false, word + ' 不许出现（冻结/记录整套已删，docs/11 D10）')
+  })
+})
