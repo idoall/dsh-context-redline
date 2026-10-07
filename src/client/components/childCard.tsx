@@ -24,11 +24,18 @@ import type { ChildRow } from '../childSessions'
 import type { ChildPlan, ChildStarted, RedlineResult } from '../redlineChannel'
 import type { PendingRow } from '../../shared/types'
 
+import type { TeamBoard } from '../../shared/redline-team'
+
 export interface ChildCardProps {
   /** The parent session the panel is showing. */
   readonly sessionId?: string
   /** The index, already probed (`childSessions.ts`). */
   readonly rows: readonly ChildRow[]
+  /**
+   * 官方 Agent Teams 那份数据（M5-07 读半边）：`null` = **这台运行时没有这份数据**，
+   * `undefined` = 还没读到。我们只显示它，**不改一个字段**（`src/shared/redline-team.ts` 归一化）。
+   */
+  readonly team?: TeamBoard | null
   /** The parent is live in this process (`turnState.known`). */
   readonly live: boolean
   /** The parent's turn has not closed yet. */
@@ -255,6 +262,42 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
           ),
         ))
         : null,
+      h('section', { className: 'redline-orch-block', 'data-redline-block': 'team' },
+        h('div', { className: 'redline-orch-head' }, t('team.head'),
+          h('span', { className: 'redline-orch-hint' }, t('team.hint'))),
+        props.team === undefined ? h('div', { className: 'redline-cap' }, t('team.loading'))
+          : props.team === null ? h('div', { className: 'redline-cap' }, t('team.none'))
+            : h('div', {},
+              props.team.failure === null
+                ? null
+                : h('div', { className: 'redline-editor-err', role: 'alert' }, t('team.failure', { why: props.team.failure })),
+              props.team.members.length === 0
+                ? h('div', { className: 'redline-cap' }, t('team.members.empty'))
+                : props.team.members.map(member => h('div', { className: 'redline-orch-row', key: member.id, 'data-redline-member': member.id },
+                  h('div', { className: 'redline-orch-id' },
+                    h('span', { className: 'redline-chip-soft' }, t('team.role.' + member.role)),
+                    h('span', { className: 'redline-badge-state' }, t('team.phase.' + member.phase)),
+                  ),
+                  h('div', { className: 'redline-orch-body' },
+                    h('div', { className: 'redline-orch-label' }, member.name),
+                    member.error === null ? null : h('div', { className: 'redline-cap' }, member.error),
+                  ),
+                )),
+              props.team.tasks.length === 0
+                ? h('div', { className: 'redline-cap' }, t('team.tasks.empty'))
+                : props.team.tasks.map(task => h('div', { className: 'redline-orch-row', key: task.id, 'data-redline-task': task.id },
+                  h('div', { className: 'redline-orch-id' },
+                    h('span', { className: 'redline-chip-soft' }, task.status),
+                    task.ready ? h('span', { className: 'redline-badge-state' }, t('team.task.ready')) : null,
+                  ),
+                  h('div', { className: 'redline-orch-body' },
+                    h('div', { className: 'redline-orch-label' }, task.subject),
+                    task.ownerName === null ? null : h('div', { className: 'redline-cap' }, t('team.task.owner', { name: task.ownerName })),
+                  ),
+                )),
+            ),
+      ),
+
     )
   }
 }

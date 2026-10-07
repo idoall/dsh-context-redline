@@ -62,7 +62,7 @@ describe('第 5 张卡：子会话索引（只读）', () => {
   test('两块都在：开子会话 + 子会话索引；索引按行列出 id/mode/状态，且**没有**跳转按钮', async () => {
     const m = await open()
     const blocks = queryAll(m.container, '[data-redline-block]').map(e => e.getAttribute('data-redline-block'))
-    assert.deepEqual(blocks, ['spawn', 'children'], '只有这两块（冻结/派活/压缩/任务板都是后续阶段）')
+    assert.deepEqual(blocks, ['spawn', 'children', 'team'], '三块：开子会话 + 子会话索引 + 官方团队（只读）；冻结/派活/压缩仍是后续阶段')
     const list = queryAll(m.container, '[data-redline-child]').map(e => e.getAttribute('data-redline-child'))
     assert.deepEqual(list, ['66da37b9-4bdb-4b9a-98a4-93c0c1747787', '92414bcf-396a-4272-9ca1-4486700c6805'], '最新的在前')
     const body = text(m.container)
@@ -265,6 +265,49 @@ describe('第 5 张卡：把通知标为已查看（写的是我们自己的表�
     const m = await open({ marksError: 'redline/seen-corrupt' })
     const alert = query(m.container, '[role="alert"]')
     assert.ok(text(alert).includes(DICT_EN['redline.err.seen-corrupt']), '人话原样显示')
+    await m.unmount()
+  })
+})
+
+describe('官方团队那块（M5-07 读半边）：只读、三件事都诚实', () => {
+  test('投影读不到（null）→ 如实写「这台运行时没有这份数据」，不显示一个空队伍骗人', async () => {
+    const m = await open({ team: null })
+    const block = query(m.container, '[data-redline-block="team"]')
+    assert.ok(text(block).includes(DICT_EN['team.none']))
+    assert.equal(queryAll(m.container, '[data-redline-member]').length, 0)
+    assert.equal(queryAll(m.container, '[data-redline-task]').length, 0)
+    await m.unmount()
+  })
+
+  test('官方给了数据 → 名单与任务按行显示（身份/状态/负责人都是官方那份，不改写）', async () => {
+    const m = await open({
+      team: {
+        members: [
+          { id: 's-lead', name: '我', role: 'lead', phase: 'active', error: null },
+          { id: 's-mate', name: '小王', role: 'teammate', phase: 'provisioning', error: '起不来' },
+        ],
+        tasks: [{ id: 't-1', revision: 2, subject: '把测试补上', status: 'pending', ownerName: '小王', ready: true }],
+        failure: null,
+      },
+    })
+    const block = query(m.container, '[data-redline-block="team"]')
+    const body = text(block)
+    assert.deepEqual(queryAll(m.container, '[data-redline-member]').map(e => e.getAttribute('data-redline-member')), ['s-lead', 's-mate'])
+    assert.deepEqual(queryAll(m.container, '[data-redline-task]').map(e => e.getAttribute('data-redline-task')), ['t-1'])
+    assert.ok(body.includes('我') && body.includes('小王'))
+    assert.ok(body.includes(DICT_EN['team.role.lead']) && body.includes(DICT_EN['team.role.teammate']))
+    assert.ok(body.includes(DICT_EN['team.phase.provisioning']))
+    assert.ok(body.includes('把测试补上') && body.includes(DICT_EN['team.task.ready']))
+    assert.ok(body.includes(DICT_EN['team.task.owner'].replace('{name}', '小王')), '负责人那句话原样来自官方')
+    assert.ok(body.includes('起不来'), '成员级的失败说明原样显示')
+    await m.unmount()
+  })
+
+  test('官方报的 failure 必须原样显示（空队伍也要显示它）', async () => {
+    const m = await open({ team: { members: [], tasks: [], failure: 'team/task 被拒：writeScopes 非法' } })
+    const body = text(query(m.container, '[data-redline-block="team"]'))
+    assert.ok(body.includes('team/task 被拒：writeScopes 非法'), '静默掉就是骗人')
+    assert.ok(body.includes(DICT_EN['team.members.empty']) && body.includes(DICT_EN['team.tasks.empty']))
     await m.unmount()
   })
 })
