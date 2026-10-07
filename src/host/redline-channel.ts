@@ -641,6 +641,10 @@ const startChild: RedlineOpHandler = async ({ ctx, call }) => {
     return fail(REDLINE_ERROR.noSubagents)
   }
   const label = '上下文批改 · ' + sessionId.slice(-8)
+  // ⚠️ **真机约束（2026-10-07）**：官方的 `spawnTeammate` 拒绝中文名 ——
+  // 「teammate name must be lower-kebab-case, at most 64 characters, and not "lead"」。
+  // 所以我们自己的显示名（label，中文）与官方成员名分开：成员名用包名 + 会话短 id 拼，天然 kebab、也短。
+  const memberName = 'context-redline-' + sessionId.replace(/[^a-zA-Z0-9]/g, '').slice(-8).toLowerCase()
   const prompt = [{ type: 'text', text: first.prompt }]
   const signal = new AbortController().signal
   // M5-01 优先 / M5-02 兜底：有官方团队服务就建**官方成员**（它能被官方界面管理、也能收团队消息）；
@@ -648,7 +652,7 @@ const startChild: RedlineOpHandler = async ({ ctx, call }) => {
   const teams = ctx.get('agentTeams') as AgentTeamsFace | undefined | null
   if (teams !== undefined && teams !== null && typeof teams.spawnTeammate === 'function') {
     const asMember = await teams.spawnTeammate(parent, {
-      name: label,
+      name: memberName,
       // description 用**人写的第一句话**本身（不替用户概括、不生成新内容）。
       description: first.prompt.split('\n', 1)[0].slice(0, 80),
       prompt,
@@ -656,7 +660,7 @@ const startChild: RedlineOpHandler = async ({ ctx, call }) => {
       provider: 'fork',
       signal,
     })
-    return redlineOk({ via: 'official-member', label, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: asMember === undefined ? null : asMember })
+    return redlineOk({ via: 'official-member', label, memberName, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: asMember === undefined ? null : asMember })
   }
   const started = await subagents.startContinuable({
     provider: 'fork',

@@ -308,6 +308,11 @@ describe('M5-01 优先路径：有官方团队服务就建官方成员（不行�
     assert.ok((request.prompt as { text: string }[])[0].text.includes(EDITED), '改后正文逐字进去')
     assert.ok(request.signal instanceof AbortSignal, 'signal 必填')
     assert.equal(request.description, '按改好的上下文继续', 'description 用的是人写的第一句话本身，不替用户概括')
+    // 真机约束：官方要求成员名 lower-kebab-case、≤64 字、不能是 lead。中文名会被拒（2026-10-07 实测）。
+    assert.match(String(request.name), /^[a-z0-9]+(-[a-z0-9]+)*$/, '成员名必须是 lower-kebab-case')
+    assert.ok(String(request.name).length <= 64)
+    assert.notEqual(request.name, 'lead')
+    assert.equal(value.memberName, request.name, '返回里带上同一个成员名，界面与台账能对上')
   })
 
   test('官方服务不在 → 走兜底，并如实标成 bare-child', async () => {

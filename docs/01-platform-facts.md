@@ -602,6 +602,12 @@ SpawnTeammateRequest = {
 （fork provider 是**把父会话日志当种子**的）。**② 草稿仍然过不去**（种子来自日志，本地草稿不在日志里）⟹ 
 "把改后正文逐字写进首句"**依旧是必需项**，只是理由从"子会话没有历史"改成"子会话有历史、但没有你的本地改动"。
 **③ 子会话在本进程里 `known:false`**（它是持久会话，但此刻没有活的 Agent）—— 与 F48 的语义一致。 | §F50（实测 2026-10-06） |
+| F57 | **官方成员名有硬格式要求（2026-10-07 真机）**：`agentTeams.spawnTeammate(caller, request)` 会**拒绝中文等非 kebab 名字**，
+原文 `teammate name must be lower-kebab-case, at most 64 characters, and not "lead"`。
+第一版我们把它当"显示名"传了「上下文批改 · <短id>」⟹ 直接报错；现在**显示名与成员名分开**：
+界面用中文 `label`，官方成员名用 `context-redline-<会话短id>`（天然 lower-kebab、够短、也不是 `lead`），
+并在 `child.start` 的返回里一并交出 `memberName` 让界面/台账对得上。**门禁**：`tests/channel/child.spec.ts` 断言名字匹配
+`/^[a-z0-9]+(-[a-z0-9]+)*$/`、≤64 字、≠ `lead`。 | §F57（实测 2026-10-07） |
 | F49 | **2026-10-05 第二轮真机只读探针 + 静态查证（新 pid 85196）**：**① `ctx` 的服务不可枚举** ——
 `Object.keys(ctx)` 只给出 `["fiber"]` ⟹ 找服务只能靠**按名字试探**或**读安装树的 `.d.ts`**（这条顺便解释了 F48 里
 "知道有服务但不知道键名"的困境）。**② 压缩服务要的是"agent 上下文"，不是会话 id** —— `@deepseek-ai/dsh-compaction` 的
