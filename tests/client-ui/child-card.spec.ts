@@ -272,3 +272,40 @@ describe('第 5 张卡：容量（M5-13，分母来自活服务、读不到就�
     await m.unmount()
   })
 })
+
+describe('第 5 张卡：来源徽章（M5-12，靠我们自己记的台账）', () => {
+  // 官方那本子会话目录里**没有来源字段**（只有 mode/label，docs/01 F59）⟹ 来源只能我们自己记。
+  // 四种态必须说四句不同的话：本项目发起（官方成员 / 裸子会话）/ 不是在这儿开的 / 来源未知。
+  const withVia = (via: 'official-member' | 'bare-child' | null) => [
+    { id: 'c1', short: 'c1', label: '', mode: 'continuable' as const, createdAt: 0, live: true, open: false, via },
+  ]
+  const badge = (m: Mounted): HTMLElement => query<HTMLElement>(m.container, '[data-redline-src]')
+
+  test('台账里记着（官方成员）⟹ "本项目发起 · 官方成员"', async () => {
+    const m = await open({ rows: withVia('official-member') })
+    assert.equal(badge(m).getAttribute('data-redline-src'), 'own')
+    assert.equal(text(badge(m)), DICT_EN['child.src.own.official'])
+    await m.unmount()
+  })
+
+  test('台账里记着（裸子会话）⟹ "本项目发起 · 裸子会话"', async () => {
+    const m = await open({ rows: withVia('bare-child') })
+    assert.equal(text(badge(m)), DICT_EN['child.src.own.bare'])
+    await m.unmount()
+  })
+
+  test('台账里没有这条 ⟹ "不是在这儿开的"（**不猜**是谁开的）', async () => {
+    const m = await open({ rows: withVia(null) })
+    assert.equal(badge(m).getAttribute('data-redline-src'), 'other')
+    assert.equal(text(badge(m)), DICT_EN['child.src.other'])
+    await m.unmount()
+  })
+
+  test('台账读不出来 ⟹ "来源未知"（**不许**说成"不是在这儿开的"）', async () => {
+    const m = await open({ rows: withVia(null), originsKnown: false })
+    assert.equal(badge(m).getAttribute('data-redline-src'), 'unknown')
+    assert.equal(text(badge(m)), DICT_EN['child.src.unknown'])
+    assert.notEqual(text(badge(m)), DICT_EN['child.src.other'], '没有证据就不许下结论')
+    await m.unmount()
+  })
+})

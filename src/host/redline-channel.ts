@@ -56,6 +56,7 @@ import { ability, type RowClass } from '../shared/redline-ability'
 import { turnStateOf, type TurnBoundaryEvent, type TurnState } from '../shared/redline-turn'
 import { buildFirstTask, forkConfirmItems } from '../redline/orchestrate'
 import { capacityFromService } from '../shared/redline-capacity'
+import { originsFileName, parseOrigins, putOrigin, serializeOrigins, type OriginVia } from '../shared/redline-origins'
 
 /** The host `connection` service, as far as this route consumes it. */
 interface ConnectionHostFace {
@@ -617,7 +618,9 @@ const startChild: RedlineOpHandler = async ({ ctx, call }) => {
       provider: 'fork',
       signal,
     })
-    return redlineOk({ via: 'official-member', label, memberName, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: asMember === undefined ? null : asMember })
+    const official = asMember === undefined ? null : asMember
+    await recordOrigin(ctx, sessionId, official, 'official-member')
+    return redlineOk({ via: 'official-member', label, memberName, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: official })
   }
   const started = await subagents.startContinuable({
     provider: 'fork',
@@ -625,7 +628,63 @@ const startChild: RedlineOpHandler = async ({ ctx, call }) => {
     request: { parent, prompt },
     signal,
   })
-  return redlineOk({ via: 'bare-child', label, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: started === undefined ? null : started })
+  const bare = started === undefined ? null : started
+  await recordOrigin(ctx, sessionId, bare, 'bare-child')
+  return redlineOk({ via: 'bare-child', label, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: bare })
+}
+
+/**
+ * 从两条路的返回里取出**新子会话的会话 id**（M5-12 的台账要按它记键）。
+ *
+ * 两个字段名都按安装树核对过：兜底路 `ContinuableStart.childSessionId`；
+ * 官方路 `SpawnTeammateResult.member.id`，它的类型就是 `SessionId`（团队成员的 id = 子会话 id）。
+ */
+function childIdOfStarted(started: unknown, via: OriginVia): string | null {
+  if (started === null || typeof started !== 'object') return null
+  const bag = started as { childSessionId?: unknown, member?: unknown }
+  const holder = via === 'official-member' ? bag.member : bag
+  if (holder === null || typeof holder !== 'object') return null
+  const raw = (holder as { id?: unknown, childSessionId?: unknown })[via === 'official-member' ? 'id' : 'childSessionId']
+  return typeof raw === 'string' && raw !== '' ? raw : null
+}
+
+/**
+ * 记一条来源台账（**只写我们自己的数据目录、绝不写会话**）。
+ *
+ * ⚠️ 写不进去**不影响**"子会话已经开了"这个事实（返回照旧），只记一条 warn ——
+ * 失败的副作用是界面之后把这条说成"不是在这儿开的"，所以这里不能假装成功。
+ */
+async function recordOrigin(ctx: Context, sessionId: string, started: unknown, via: OriginVia): Promise<void> {
+  const childId = childIdOfStarted(started, via)
+  if (childId === null) return
+  const dir = dataDirOf(ctx)
+  if (dir === null) return
+  try {
+    await withSessionLock(sessionId, async () => {
+      const target = join(dir, originsFileName(sessionId))
+      let raw: string | null = null
+      try {
+        raw = await readFile(target, 'utf8')
+      } catch (error) {
+        if ((error as { code?: string }).code !== 'ENOENT') throw error
+      }
+      const parsed = parseOrigins(raw, sessionId)
+      // 台账读不出来 ⟹ **重开一本**：刚开的这条必须留下（不然界面会把它说成"不是在这儿开的"，
+      // 那是假话）；读不出来的旧内容本来就已经不可用（读 op 那时答"来源未知"）。
+      const records = parsed.ok ? parsed.records : []
+      const temp = `${target}.tmp-${process.pid}-${Date.now().toString(36)}-${(writeTicket += 1).toString(36)}`
+      try {
+        await mkdir(dir, { recursive: true })
+        await writeFile(temp, serializeOrigins(sessionId, putOrigin(records, { childId, via, at: Date.now() })), 'utf8')
+        await rename(temp, target)
+      } catch (error) {
+        await rm(temp, { force: true }).catch(() => undefined)
+        throw error
+      }
+    })
+  } catch (error) {
+    ctx.logger.warn('dsh-context-redline: 来源台账写不进去（' + messageOf(error) + '）')
+  }
 }
 
 /**
@@ -639,6 +698,31 @@ const readCapacity: RedlineOpHandler = ({ ctx }) =>
   Promise.resolve(redlineOk(capacityFromService(ctx.get('agentTeams'))))
 
 /**
+ * 我们自己那本"来源台账"（M5-12）。**只读**，只碰我们自己的数据目录。
+ *
+ * 三种诚实态（`src/shared/redline-origins.ts` 的注释里有完整理由）：
+ * `{records: [...]}` = 台账可读 · `{records: []}` = 确实没在这条会话里开过 ·
+ * `{records: null, error: <码>}` = **台账读不出来**（界面必须说"来源未知"，不许说"没记录"）。
+ */
+const readOrigins: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const dir = dataDirOf(ctx)
+  if (dir === null) return fail(REDLINE_ERROR.internal, 'the harness home is not available')
+  let raw: string | null = null
+  try {
+    raw = await readFile(join(dir, originsFileName(sessionId)), 'utf8')
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'ENOENT') {
+      return fail(REDLINE_ERROR.internal, error instanceof Error ? error.message : String(error))
+    }
+  }
+  const parsed = parseOrigins(raw, sessionId)
+  if (!parsed.ok) return redlineOk({ records: null, error: parsed.code })
+  return redlineOk({ records: parsed.records })
+}
+
+/**
  * The op table. M2's entries; M3/M5 add theirs here and nowhere else.
  */
 const OPS = new Map<string, RedlineOpHandler>([
@@ -649,6 +733,7 @@ const OPS = new Map<string, RedlineOpHandler>([
   ['draft.update', updateDraft],
   ['draft.drop', dropDraft],
   ['child.capacity', readCapacity],
+  ['child.origins', readOrigins],
   ['child.plan', planChild],
   ['child.start', startChild],
 ])

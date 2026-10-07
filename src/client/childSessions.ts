@@ -21,7 +21,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { planChild, readCapacity, readTurnState, startChild, type ChildPlan, type ChildStarted, type RedlineResult } from './redlineChannel'
+import { planChild, readCapacity, readOrigins, readTurnState, startChild, type ChildPlan, type ChildStarted, type RedlineResult } from './redlineChannel'
+import { viaOf, type OriginRecord, type OriginVia } from '../shared/redline-origins'
 import { UNKNOWN_CAPACITY, capacityOf, type ChildCapacity } from '../shared/redline-capacity'
 
 /** One row of the index. */
@@ -77,6 +78,12 @@ export function childRowsOf(raw: unknown): ChildRow[] {
   return rows.reverse()
 }
 
+/** 索引行 + "在这儿开的吗"（台账）。 */
+export interface ChildIndexRow extends ChildRow {
+  /** 在这儿开的：走的是官方成员还是裸子会话；`null`/缺省 = 台账里没有这条（不猜是谁开的）。 */
+  readonly via?: OriginVia | null
+}
+
 export interface ChildController {
   /** The index rows; `live`/`open` fill in as the per-child probes answer. */
   readonly rows: readonly ChildRow[]
@@ -85,6 +92,11 @@ export interface ChildController {
    * （`known:false`）⟹ 界面那时只写 `活跃 N`，不编一个分母。
    */
   readonly capacity: ChildCapacity
+  /**
+   * 我们那本来源台账**读得出来吗**（M5-12）。`false` = 读不出来 ⟹ 界面必须说"来源未知"，
+   * **不许**说成"不是在这儿开的"（那是把一个我们没证据的结论说成事实）。
+   */
+  readonly originsKnown: boolean
   /** Open the confirm box: the five items the host builds for this exact task. */
   readonly plan: (humanTask: string) => Promise<RedlineResult<ChildPlan>>
   /** The only call in this whole panel that writes a session (`docs/11` D15). */
@@ -133,9 +145,25 @@ export function useChildSessions(
     })()
   }, [base])
 
+  // 来源台账：跟着会话取一次；`known:false` 的初值意味着"在回答到达之前不冒充知道"。
+  const [origins, setOrigins] = useState<{ known: boolean, records: readonly OriginRecord[] }>({ known: false, records: [] })
+  useEffect(() => {
+    if (sessionId === undefined || sessionId === '') return
+    let cancelled = false
+    void (async () => {
+      const answer = await readOrigins(sessionId)
+      if (cancelled) return
+      if (!answer.ok) { setOrigins({ known: false, records: [] }); return }
+      setOrigins(answer.value.records === null
+        ? { known: false, records: [] }
+        : { known: true, records: answer.value.records })
+    })()
+    return () => { cancelled = true }
+  }, [sessionId])
+
   const rows = useMemo(
-    () => base.map(row => ({ ...row, ...(states[row.id] ?? { live: null, open: null }) })),
-    [base, states],
+    () => base.map(row => ({ ...row, ...(states[row.id] ?? { live: null, open: null }), via: viaOf(origins.records, row.id) })),
+    [base, states, origins],
   )
 
   // 分母只问一次（与选哪个会话无关：它是这台机器的配置，不是某条日志的性质）。
@@ -170,7 +198,7 @@ export function useChildSessions(
   }, [sessionId])
 
   return useMemo(
-    () => ({ rows, capacity, plan, start }),
-    [rows, capacity, plan, start],
+    () => ({ rows, capacity, originsKnown: origins.known, plan, start }),
+    [rows, capacity, origins.known, plan, start],
   )
 }

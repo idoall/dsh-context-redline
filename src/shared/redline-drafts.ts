@@ -83,7 +83,7 @@ export function emptyDrafts(): DraftTable {
  * 所以先做一次稳定的短哈希（FNV-1a 32 位，纯函数、无 `node:*`：宿主半边与测试都能用），
  * 再把可读前缀拼上 —— 既不会串档，也绝不会超长。可读前缀只为排障时认得出是哪个会话。
  */
-function stableKeyOf(sessionId: string): string {
+export function stableKeyOf(sessionId: string): string {
   let hash = 0x811c9dc5
   for (let i = 0; i < sessionId.length; i += 1) {
     hash ^= sessionId.charCodeAt(i)

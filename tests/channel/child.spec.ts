@@ -8,7 +8,8 @@
 //   ④ 这台运行时没有子会话服务时，如实拒绝（`redline/no-subagents`），不装作能开。
 
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, test } from 'vitest'
@@ -20,6 +21,7 @@ import { REDLINE_ERROR } from '../../src/shared/redline-errors'
 import { REDLINE_CHANNEL_ROUTE } from '../../src/shared/redline-route'
 import { REDLINE_DATA_DIR_NAME } from '../../src/shared/redline-paths'
 import { draftFileName } from '../../src/shared/redline-drafts'
+import { originsFileName, parseOrigins, serializeOrigins } from '../../src/shared/redline-origins'
 
 type RouteFetch = (request: Request) => Promise<Response>
 interface CapturedRoute { path: string, methods: readonly string[], fetch: RouteFetch }
@@ -295,5 +297,64 @@ describe('child.capacity：这台机器允许几个成员（M5-13 的分母）',
       assert.deepEqual(await call(ops, { op: 'child.capacity' }), { ok: true, value: { known: false, max: null } }, 'maxMembers=' + String(bad))
       assert.equal(ops.sessionWrites.length, 0, '只读 op')
     }
+  })
+})
+
+describe('child.origins：我们自己那本"来源台账"（M5-12）', () => {
+  const ledgerPath = (ops: ChildOps): string => join(ops.home, REDLINE_DATA_DIR_NAME, originsFileName(ops.sessionId))
+
+  const startOnce = async (ops: ChildOps, humanTask: string): Promise<void> => {
+    const reply = await call(ops, { op: 'child.start', sessionId: ops.sessionId, humanTask })
+    assert.equal((reply as { ok: boolean }).ok, true)
+  }
+
+  test('官方路开了子会话 ⟹ 记下 member.id 与 via=official-member；读 op 能读回', async () => {
+    const ops = await boot({ withTeams: 'spawn' })
+    await startOnce(ops, '把测试补上')
+    const parsed = parseOrigins(readFileSync(ledgerPath(ops), 'utf8'), ops.sessionId)
+    assert.equal(parsed.ok, true)
+    if (parsed.ok) {
+      assert.equal(parsed.records.length, 1)
+      assert.equal(parsed.records[0].childId, 'member-1', '官方成员的 id 就是子会话 id（TeamMemberView.id 类型是 SessionId）')
+      assert.equal(parsed.records[0].via, 'official-member')
+    }
+    const read = await call(ops, { op: 'child.origins', sessionId: ops.sessionId })
+    assert.equal(read.ok, true)
+    assert.equal((read.value as { records: { childId: string }[] }).records[0].childId, 'member-1')
+    assert.equal(ops.sessionWrites.length, 0, '台账只写我们自己的目录，会话零写入')
+  })
+
+  test('兜底路开了子会话 ⟹ 记下 childSessionId 与 via=bare-child', async () => {
+    const ops = await boot({ withTeams: 'off' })
+    await startOnce(ops, '把测试补上')
+    const parsed = parseOrigins(readFileSync(ledgerPath(ops), 'utf8'), ops.sessionId)
+    assert.equal(parsed.ok, true)
+    if (parsed.ok) {
+      assert.equal(parsed.records[0].childId, 'child-session-1')
+      assert.equal(parsed.records[0].via, 'bare-child')
+    }
+    assert.equal(ops.sessionWrites.length, 0)
+  })
+
+  test('没在这条会话里开过 ⟹ 空台账（不是"读不出来"）', async () => {
+    const ops = await boot()
+    assert.deepEqual(await call(ops, { op: 'child.origins', sessionId: ops.sessionId }), { ok: true, value: { records: [] } })
+  })
+
+  test('台账读不出来 ⟹ records:null + 稳定错误码（**不许**说成"没记录"）', async () => {
+    const ops = await boot()
+    const file = ledgerPath(ops)
+    await mkdir(join(ops.home, REDLINE_DATA_DIR_NAME), { recursive: true })
+    await writeFile(file, '{ 这不是 JSON', 'utf8')
+    const reply = await call(ops, { op: 'child.origins', sessionId: ops.sessionId })
+    assert.deepEqual(reply, { ok: true, value: { records: null, error: REDLINE_ERROR.originCorrupt } })
+    // 串档（台账写着别的会话）也算读不出来
+    await writeFile(file, serializeOrigins('session-someone-else', []), 'utf8')
+    const crossed = await call(ops, { op: 'child.origins', sessionId: ops.sessionId })
+    assert.deepEqual(crossed, { ok: true, value: { records: null, error: REDLINE_ERROR.originCorrupt } })
+    // 版本不认识 ⟹ 另一个码（界面话术不同）
+    await writeFile(file, JSON.stringify({ schemaVersion: 99, sessionId: ops.sessionId, records: [] }), 'utf8')
+    const old = await call(ops, { op: 'child.origins', sessionId: ops.sessionId })
+    assert.deepEqual(old, { ok: true, value: { records: null, error: REDLINE_ERROR.originSchema } })
   })
 })

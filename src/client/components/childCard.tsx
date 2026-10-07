@@ -20,7 +20,7 @@
 
 import { createElement as h, useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react'
 import type { ViewKit } from '../viewkit'
-import type { ChildRow } from '../childSessions'
+import type { ChildIndexRow, ChildRow } from '../childSessions'
 import { UNKNOWN_CAPACITY, type ChildCapacity } from '../../shared/redline-capacity'
 import type { ChildPlan, ChildStarted, RedlineResult } from '../redlineChannel'
 
@@ -28,7 +28,9 @@ export interface ChildCardProps {
   /** The parent session the panel is showing. */
   readonly sessionId?: string
   /** The index, already probed (`childSessions.ts`). */
-  readonly rows: readonly ChildRow[]
+  readonly rows: readonly ChildIndexRow[]
+  /** 我们那本来源台账读得出来吗（缺省按"读得出来"处理，独立渲染时行为可预期）。 */
+  readonly originsKnown?: boolean
   /** 这台机器允许几个团队成员（M5-13 的分母）；缺省 = 不知道。 */
   readonly capacity?: ChildCapacity
   /** The parent is live in this process (`turnState.known`). */
@@ -166,6 +168,17 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
               h('div', { className: 'redline-orch-id' },
                 h('span', { className: 'redline-snapid' }, row.short),
                 h('span', { className: 'redline-chip-soft' }, t('child.mode.' + row.mode)),
+                // 来源（M5-12）：三态各自一句 —— 台账里有说是哪条路；没有说"不是在这儿开的"；
+                // 台账读不出来说"来源未知"。**不猜**（官方目录里没有来源字段，docs/01 F59）。
+                (() => {
+                  const known = props.originsKnown !== false
+                  const tone = !known ? 'unknown' : row.via == null ? 'other' : 'own'
+                  const key = !known
+                    ? 'child.src.unknown'
+                    : row.via === 'official-member' ? 'child.src.own.official'
+                      : row.via === 'bare-child' ? 'child.src.own.bare' : 'child.src.other'
+                  return h('span', { className: 'redline-src redline-src-' + tone, 'data-redline-src': tone, title: t('child.src.tip') }, t(key))
+                })(),
                 h('span', { className: 'redline-badge-state' },
                   h('i', { className: 'redline-mstat redline-mstat-' + state.tone }),
                   t(state.key)),

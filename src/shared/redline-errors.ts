@@ -46,6 +46,10 @@ export const REDLINE_ERROR = {
   draftCorrupt: 'redline/draft-corrupt',
   /** The draft file's `schemaVersion` is not one this build understands. */
   draftSchema: 'redline/draft-schema',
+  /** The origin ledger file is unreadable (deleted/corrupt/hand-edited). */
+  originCorrupt: 'redline/origin-corrupt',
+  /** The origin ledger's `schemaVersion` is not one this build understands. */
+  originSchema: 'redline/origin-schema',
   /** A range argument was half-given or reversed. */
   badRange: 'redline/bad-range',
   /** The full text of that version cannot be read back on this platform. */
@@ -81,6 +85,8 @@ export const REDLINE_ERROR_MESSAGE: Readonly<Record<RedlineErrorCode, string>> =
   [REDLINE_ERROR.notFound]: 'that seq is not in this session log',
   [REDLINE_ERROR.draftCorrupt]: 'the local draft file is not readable',
   [REDLINE_ERROR.draftSchema]: 'the local draft file has an unsupported schema version',
+  [REDLINE_ERROR.originCorrupt]: 'the local origin ledger is not readable',
+  [REDLINE_ERROR.originSchema]: 'the local origin ledger has an unsupported schema version',
   [REDLINE_ERROR.badRange]: 'bad void range',
   [REDLINE_ERROR.historyUnavailable]: 'the full text of that version is not readable',
   [REDLINE_ERROR.unsupportedType]: 'this event type has no rewrite path',

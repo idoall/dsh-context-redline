@@ -26,6 +26,13 @@
 .redline-mstat-gone { background: var(--dsw-alias-label-dimmed); }
 .redline-mstat-unknown { background: var(--dsw-alias-state-warn-primary, #f59e0b); }
 
+/* 来源徽章（M5-12）：本项目发起（官方成员/裸子会话都算"own"）· 不是在这儿开的 · 台账读不出来。
+   只改颜色与描边，形状沿用 .redline-snapid 同一套（圆角 + 细边），不用 emoji（docs/03 V5）。 */
+.redline-src { font-size: 11px; border-radius: 4px; padding: 0 5px; border: 1px solid var(--dsw-alias-border-l1); color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-1); }
+.redline-src-own { color: var(--dsw-alias-brand-primary, #4d6bfe); border-color: var(--dsw-alias-brand-primary, #4d6bfe); }
+.redline-src-other { color: var(--dsw-alias-label-dimmed); }
+.redline-src-unknown { color: var(--dsw-alias-state-warn-primary, #f59e0b); border-color: var(--dsw-alias-state-warn-primary, #f59e0b); }
+
 /* 确认框（沿用 `.redline-modal-*` 的遮罩/卡 chrome）：五项 + 「第一句话你来写」 + 两个按钮 */
 .redline-confirm-list { margin: 0 0 10px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; }
 .redline-confirm-list li { display: flex; flex-direction: column; gap: 1px; }

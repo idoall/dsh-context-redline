@@ -614,6 +614,14 @@ SpawnTeammateRequest = {
 **同一轮里 `spawnTeammate(parent, …)` 却成功了**（真建出成员 `268a957e…`、`status: running`）⟹
 **"建成员"不校验名单，"读任务"校验**。诊断经验：宿主日志（`dsh-web.log` / `~/.dsh/logs/*` / launchd plist）
 里**找不到**我们 `ctx.logger.warn` 的输出，所以当时的拒绝原文改为写进**我们自己的数据目录**（`redline-team-list-error-<会话>.log`；**该文件名与那段写盘代码已随 op 一起删除** —— `$DSH_HOME/dsh-context-redline/` 下若还留着那份诊断文件，是历史残留，可以直接删）。 | §F58（实测 2026-10-07） |
+| F59 | **子会话的"来源"平台答不出来（2026-10-07 安装树实测）**：官方 `subagentCatalog` 投影的条目类型
+（`@deepseek-ai/dsh-subagent/lib/types/catalog.d.ts` 的 `SubagentCatalogEvent` / `SubagentCatalogEntry`）只有
+**`childId` / `childCreatedAt` / `version` / `mode`(`one-shot`|`continuable`|`unknown`) / `label`** ——
+**没有任何来源字段**。所以 demo 索引行上那枚「本项目发起 / 来自 Agent Teams」**不可能从平台读出来**；
+M5-12 改为**我们自己的台账**：`child.start` 成功时按"新子会话的会话 id"记一条
+（官方路 = `SpawnTeammateResult.member.id`，其类型就是 `SessionId`；兜底路 = `ContinuableStart.childSessionId`），
+落 `$DSH_HOME/dsh-context-redline/redline-origins-<会话>.json`。三种诚实态：台账里有 = 本项目发起（并写明官方成员/裸子会话）·
+台账里没有 = **不是在这儿开的**（不猜是谁开的，**不读官方名册** —— 那块界面已按用户裁定撤下）· 台账读不出来 = **来源未知**。 | §F59（实测 2026-10-07） |
 | F49 | **2026-10-05 第二轮真机只读探针 + 静态查证（新 pid 85196）**：**① `ctx` 的服务不可枚举** ——
 `Object.keys(ctx)` 只给出 `["fiber"]` ⟹ 找服务只能靠**按名字试探**或**读安装树的 `.d.ts`**（这条顺便解释了 F48 里
 "知道有服务但不知道键名"的困境）。**② 压缩服务要的是"agent 上下文"，不是会话 id** —— `@deepseek-ai/dsh-compaction` 的

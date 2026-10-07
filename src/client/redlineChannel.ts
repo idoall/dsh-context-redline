@@ -22,6 +22,7 @@
 import { REDLINE_ERROR } from '../shared/redline-errors'
 import { REDLINE_CHANNEL_ROUTE, type RedlineEnvelope } from '../shared/redline-route'
 import type { ChildCapacity } from '../shared/redline-capacity'
+import type { OriginRecord } from '../shared/redline-origins'
 import type { DraftTable } from '../shared/redline-drafts'
 import type { TurnState } from '../shared/redline-turn'
 
@@ -167,6 +168,20 @@ export interface ChildStarted {
  */
 export async function startChild(sessionId: string, humanTask: string): Promise<RedlineResult<ChildStarted>> {
   return await call<ChildStarted>({ op: 'child.start', sessionId, humanTask })
+}
+
+/** `child.origins` 的回答：`records: null` = 我们那本台账**读不出来**（界面必须说"来源未知"）。 */
+export interface OriginAnswer {
+  readonly records: readonly OriginRecord[] | null
+  readonly error?: string
+}
+
+/**
+ * M5-12 的来源台账：问宿主"这些子会话里，哪些**是在这个面板里**开的"。
+ * 只读；`records: null` 表示**读不出来**（与"空台账"是两件事，界面话术不同）。
+ */
+export async function readOrigins(sessionId: string): Promise<RedlineResult<OriginAnswer>> {
+  return await call<OriginAnswer>({ op: 'child.origins', sessionId })
 }
 
 /**
