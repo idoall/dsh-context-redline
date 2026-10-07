@@ -107,6 +107,8 @@ async function boot(options: { withSubagents?: boolean, withTeams?: 'ok' | 'thro
     ctx.provide('agentTeams', {
       listTasks(caller: unknown) {
         teamCalls.push(caller)
+        // 真机纠正（F58）：官方**按 `sessionId`** 在名单里找人；运行时的 Agent 上它是 null。
+        if ((caller as { sessionId?: unknown }).sessionId !== readable) throw new Error('agent is not a member of an active Agent Team')
         if (withTeams === 'throws') throw new Error('caller is not a team member')
         return [{ id: 't-1', revision: 3, subject: '把测试补上', status: 'pending', ready: true, ownerName: '小王' }]
       },
@@ -281,7 +283,10 @@ describe('team.list：官方 Agent Teams 那份数据（M5-24 的契约：不提
     assert.equal((value.tasks as unknown[]).length, 1)
     assert.deepEqual(value.membership, { role: 'lead' })
     assert.equal(ops.teamCalls.length, 1, '官方被问了一次')
-    assert.equal(ops.teamCalls[0], ops.agent, 'caller 就是那个活 Agent')
+    // caller 必须是「身份就位」的那个：`sessionId` = 会话 id（真机纠正 F58），且仍继承原 Agent 的能力。
+    const got = ops.teamCalls[0] as { sessionId?: unknown }
+    assert.equal(got.sessionId, ops.sessionId, 'caller.sessionId 必须是会话 id')
+    assert.equal(Object.getPrototypeOf(got), ops.agent, '原型链没动，方法都还在')
   })
 
   test('官方抛错（例如 caller 不是成员）→ null，不把异常抛给界面；**但原因必须留在我们自己的诊断文件里**', async () => {

@@ -722,9 +722,16 @@ const readTeam: RedlineOpHandler = async ({ ctx, call }) => {
   const agents = ctx.get('agents') as { get?: (id: string) => unknown } | undefined | null
   const caller = typeof agents?.get === 'function' ? agents.get(sessionId) : undefined
   if (caller === undefined) return redlineOk(null)
+  // ⚠️ **真机纠正（2026-10-07，F58）**：运行时的 Agent 上 **`sessionId` 是 null**、身份在 `id` 上，
+  // 而官方的 `listTasks` 是**按 `sessionId` 在名单里找人**的 —— 直接把它给的 Agent 传过去，
+  // 官方会读到 `undefined` 并答 `agent "undefined" is not a member of an active Agent Team`。
+  // 这里给它一个**自己的 `sessionId` 就位、其余能力照旧继承**的 caller（原型链不动，方法都还在）。
+  const asMember = Object.create(caller, {
+    sessionId: { value: sessionId, enumerable: true, configurable: true, writable: false },
+  }) as unknown
   try {
     return redlineOk({
-      tasks: teams.listTasks(caller) ?? null,
+      tasks: teams.listTasks(asMember) ?? null,
       membership: typeof teams.membership === 'function' ? (teams.membership(sessionId) ?? null) : null,
     })
   } catch (error) {
