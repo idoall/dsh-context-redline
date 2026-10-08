@@ -56,4 +56,27 @@ describe('面板卡片清单 = demo（不是上游那张长清单）', () => {
     assert.ok(trend >= masonry && events > trend, '左列 = 趋势 → 上下文事件')
     assert.ok(browser >= masonry && child > browser, '右列 = 上下文浏览器 → 子会话')
   })
+
+  // 用户 2026-10-08 真机截图：统计卡留在顶部整宽横幅时，demo 的紧凑三格被拉成整宽三大行。
+  // 口径回到 demo —— 统计卡就是**左列第一张卡**，那条横幅不再存在。
+  test('统计卡是左列第一张卡（顶部整宽横幅已删除）', () => {
+    const masonry = SRC.indexOf('className="redline-masonry"')
+    const stats = SRC.indexOf('<StatsContext', masonry)
+    const trend = SRC.indexOf('{trendCard}', masonry)
+    assert.ok(stats > masonry, '统计卡必须落在 masonry 左列里')
+    assert.ok(stats < trend, '统计卡在左列的第一位（趋势卡之前）')
+    assert.equal(SRC.includes('redline-head'), false, '旧的顶部整宽横幅 .redline-head 必须已经删除')
+  })
+
+  // 2026-10-08 真机：统计卡三格用的 Tailwind 任意值类 `grid-cols-[repeat(auto-fit,minmax(108px,1fr))]`
+  // **没有被生成**（`grid-template-columns` 只剩一列）⟹ 三格竖着堆满整宽。布局改回我们自己的样式表，
+  // 并在这里钉住"不再押注扫描器会发出那个任意值"。
+  test('统计卡三格的网格由我们自己的样式表负责（不押 Tailwind 任意值）', () => {
+    const statsSrc = readFileSync(join(process.cwd(), 'src/client/components/statsContext.tsx'), 'utf8')
+    assert.equal(/grid-cols-\[/.test(statsSrc), false, 'TSX 里不许再用 grid-cols-[…] 任意值类做布局')
+    const css = readFileSync(join(process.cwd(), 'src/client/styles/stats.css'), 'utf8')
+    const rule = css.match(/\.redline-stats\s*\{[^}]*\}/)?.[0] ?? ''
+    assert.ok(/display:\s*grid/.test(rule), '.redline-stats 必须由我们的样式表声明为 grid')
+    assert.ok(/grid-template-columns/.test(rule), '.redline-stats 必须自己声明列定义')
+  })
 })

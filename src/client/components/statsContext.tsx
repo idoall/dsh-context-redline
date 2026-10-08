@@ -100,7 +100,7 @@ export function makeStatsContext(
     const shadowNote = ready && stats.shadowed > 0 ? t('stats.shadowedNote', { n: fmt(stats.shadowed) }) : ''
     const value = (n: number): string => (ready ? fmt(n) : '—')
     return (
-      <div className="redline-card redline-col-stats flex-[3] min-w-[min(360px,100%)]">
+      <div className="redline-card redline-col-stats">
         <div className="redline-card-title">
           <span className="redline-card-title-text">{t('stats.title')}</span>
           <span className="redline-stat-hint">
@@ -114,7 +114,7 @@ export function makeStatsContext(
             ? <span className="redline-stat-hint" data-redline-missing-tokens={String(stats.missingTokens)}>{t('stats.missing', { m: fmt(stats.missingTokens) })}</span>
             : null}
         </div>
-        <div className="redline-stats grid grid-cols-[repeat(auto-fit,minmax(108px,1fr))] gap-1.5">
+        <div className="redline-stats">
           {cell(t('stats.visibleItems') + shadowNote, value(stats.visible))}
           {cell(t('stats.userMsgs'), value(stats.user))}
           {cell(t('stats.injectItems'), value(stats.inject))}

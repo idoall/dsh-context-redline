@@ -149,10 +149,9 @@
  drops the context stats / plugin info row — see contextView.tsx); the same
  wrap then stacks the pair in the narrow pane.
  */
-/* The context card's cell grid stretches to the plugin card's height, so the row reads as one level band. */
-.redline-head > .redline-card:has(.redline-stats) { display: flex; flex-direction: column; }
-.redline-head .redline-stats { flex: 1; align-content: stretch; }
-.redline-head .redline-stat { justify-content: center; }
+/* 统计卡现在是**左列第一张卡**（`contextView.tsx` 的 masonry 左列）⟹ 原来那三条"把它在
+   顶部整宽横幅里拉伸到与别的卡同高"的 `.redline-head` 规则已随横幅布局一起删除：
+   整宽时它的三格会被 `auto-fit` 摊成一整行、卡本身却被拉得很高，与 demo 的紧凑三格不一致。 */
 .redline-empty { color: var(--dsw-alias-label-secondary); padding: 18px 0; text-align: center; }
 .redline-error { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 40px 16px; }
 .redline-error-msg { font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 12px; color: var(--dsw-alias-state-error-primary); background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l1); border-radius: 6px; padding: 4px 8px; max-width: 100%; overflow-wrap: anywhere; }

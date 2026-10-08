@@ -1339,3 +1339,35 @@ Review 发现 4 个会削弱「编辑 → 确认 → 子会话携带改写」可
 4. 全部有先红后绿的门禁；故意把 revision 判断反过来后 channel lane **18 条红**，还原后恢复绿。静态 demo `194/194`、自有 lane `262/262` 也已重跑。
 
 **因此 M5-25 的操作未变**，但验收应使用这次宿主重建后的版本：宿主半边有改动，仍需要你重启 `dsh web`；客户端 bundle 硬刷新不足以让新的 `child.start` 生效。重启后先在空闲会话按 D57 清单点验。
+
+## D60 · 一次**错误的归因**与它掩盖的两个真缺陷（2026-10-08）
+
+**我犯的错**：用户截图显示统计卡仍是"顶部整宽三行"，我据此断定「新 bundle 没被 GUI 载入」，
+让用户去做硬刷新、甚至重启。**这是错的**，而且我**没有先验证就下结论**。
+
+**真实验证（用户重启后，我自己用浏览器工具做的）**：
+1. 本机 `dsh web` 的 token 入口在 `/Users/lionm4/.dsh/logs/dsh-web-service.stdout.log`（**不是**
+   同名的 `dsh-web.log`，后者是 Oct 7 的旧日志）——取最后一条 `dsh web: http://127.0.0.1:3080/?token=…`
+   即可让 headless 浏览器进页面（`https://127.0.0.1:3081` 会因自签证书 `ERR_CERT_AUTHORITY_INVALID`）。
+2. 客户端 bundle 的 URL 是**组合式**的（`plugins/??…,dsh-context-redline/client.js&rev=…`），
+   单独取 `/plugins/dsh-context-redline/client.js` 是 **404**。对它 `fetch` 后统计字符串：
+   `redline-masonry` **7 次**、`redline-masonry-col` **4 次**、旧 `redline-cols-main` **0 次**、
+   `data-redline-confirm` **22 次** ⟹ **新 bundle 早就在跑**，用户看到的就是新布局。
+
+**它掩盖的两个真缺陷**（都已修）：
+
+| # | 缺陷 | 真机证据 | 修法 |
+|---|---|---|---|
+| 1 | **统计卡仍留在顶部整宽横幅**（demo 里它是左列第一张卡） | 实测卡高 191px、三格各 452px 宽（竖着堆满整宽） | 把 `<StatsContext>` 移进 masonry 左列第一位；删掉 `.redline-head` 三条拉伸规则 |
+| 2 | **Tailwind 任意值类没被生成** ⟹ 三格网格退化成单列 | `getComputedStyle(.redline-stats).gridTemplateColumns` = `451.5px`（一列）；页面 CSS 里搜不到 `auto-fit,minmax(108px` | 网格写进我们自己的 `stats.css`（`display:grid` + `grid-template-columns: repeat(auto-fit, minmax(min(108px,100%), 1fr))`），并加护栏禁止再用 `grid-cols-[…]` 做布局 |
+
+**修复后同一套真机读数**（1600×1000，认证浏览器）：左列 `上下文统计 → 上下文趋势 → 上下文事件`、
+右列 `上下文浏览器 → 子会话`；统计三格各 **147px**、**同一行**（`y` 全部 128）、卡高 **49px**；
+`.redline-head` **不存在**；`documentElement.scrollWidth > innerWidth` 为 **false**。
+截图存 [`docs/screenshots/09-panel-columns-live.png`](screenshots/09-panel-columns-live.png)。
+
+**教训（写给下一个会话）**：客户端 bundle 是"按需从磁盘读"的 ⟹ **先 fetch 组合 URL 证明服务端在下发什么**，
+再谈"要不要刷新/重启"。没有这一步，就会像这次一样把**自己的布局 bug** 说成"用户环境没刷新"。
+
+**⚠️ 仍未在真机上看到的一态**：新版**确认框**（成功后关框、纵向五段）。它要求父会话**轮次闭合**才点得开，
+而助手在跑时按钮是禁用的（本文件既有的"操作前提"）；用户下次空闲点开时按 D57 第 2/3 步核对。

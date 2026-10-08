@@ -8,7 +8,16 @@
  *    判据是「从插件入口出发可不可达」＋「有没有 TSX 引用」，两边都为空才删（见 `docs/11` D42/D43）。
  */
 .redline-stat { background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 6px 6px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-/* The 5-cell stats grid shares a half-width head-row card with a sibling, so its cells are moderate: tighter padding keeps the longest labels on one line. */
+/*
+ * ⚠️ **2026-10-08 真机修**：这一行原来是 Tailwind 任意值类
+ * `grid-cols-[repeat(auto-fit,minmax(108px,1fr))]`，而该候选**没有被生成**（真机实测：
+ * `.redline-stats` 的 `grid-template-columns` 只剩一列 451.5px）⟹ 三格竖着堆满整宽，
+ * 与 demo 的紧凑三格完全不同。布局不能押在"扫描器一定会发出这个任意值"上：
+ * 网格写在**我们自己的样式表**里（与 demo 的 `.stats` 同一份口径），并由
+ * `tests/client-ui/panel-cards.spec.ts` 钉住"TSX 里不再用 Tailwind 网格类"。
+ */
+.redline-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(108px, 100%), 1fr)); gap: 6px; }
+/* The 3-cell stats grid is a half-width column card, so its cells are moderate: tighter padding keeps the longest labels on one line. */
 .redline-stats .redline-stat { padding: 6px 3px; }
 .redline-stat-label { color: var(--dsw-alias-label-secondary); font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .redline-stat-value { color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }

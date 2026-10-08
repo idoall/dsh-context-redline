@@ -474,24 +474,16 @@ export function makeContextView(
       <div className="redline-root" ref={rootRef}>
         {probeOut === null ? null : <div id="redline-probe-out" data-probe={probeOut} style={{ display: 'none' }} />}
 
-        {/* The head band splits into two rows: the session's shape beside the
-            plugin card at a 3:1 split, then the two donut cards together. The
-            sidebar panel drops the first row (context stats / plugin info pay
-            off only on the full-width tab); the rows' own flex-wrap stacks the
-            pair in a narrow pane at the cards' min-width floors. */}
-        {inSidebar ? null : (
-          <div className="redline-cols redline-head">
-            <StatsContext stats={stepStats} turn={activeReq?.turn} step={activeReq?.step}
-              live={activeReq === null} ready={source.detailState === 'ready' || source.detailState === 'legacy'} />
-          </div>
-        )}
-        <div className="redline-cols redline-head">
-        </div>
-
         {/* 两列各自从顶部向下排：左边看趋势/发生了什么，右边看上下文/改完后开子会话。
-            不把另一列的高度带进定位，避免传统行式布局造成的顶部空洞；窄处自动成一列。 */}
+            不把另一列的高度带进定位，避免传统行式布局造成的顶部空洞；窄处自动成一列。
+            统计卡是**左列第一张卡**（demo 的顺序），不再是顶部整宽横幅 —— 整宽时它的三格
+            会被拉成三大行，既不像 demo 也浪费首屏。右侧栏面板（窄列）不放它（`docs/03` R5.1）。 */}
         <div className="redline-masonry">
           <div className="redline-masonry-col">
+            {inSidebar ? null : (
+              <StatsContext stats={stepStats} turn={activeReq?.turn} step={activeReq?.step}
+                live={activeReq === null} ready={source.detailState === 'ready' || source.detailState === 'legacy'} />
+            )}
             {trendCard}
             <div className="redline-card">
               <div className="redline-card-title">
