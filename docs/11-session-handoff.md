@@ -1502,3 +1502,21 @@ Review 发现 4 个会削弱「编辑 → 确认 → 子会话携带改写」可
 但**点下去现在还不行** —— 运行中的宿主答 `{"code":"redline/unknown-op","message":"unknown redline op: draft.exclude"}`
 （实测）。因为**宿主半边是开机加载的**（`docs/01` F46），新 op 必须**重启 `dsh web`** 才存在。
 重启后重跑：点一次标记 → 行上出现「已标为不要」、`$DSH_HOME/dsh-context-redline/redline-drafts-<会话>.json` 里出现 `"excluded": true`。
+
+### D65 补充 · 重启后的真机复验（2026-10-08 下午，用户重启后）
+
+| 检查 | 命令 / 动作 | 读数 |
+|---|---|---|
+| 新 op 存在 | `POST {op:'draft.exclude'}` | ✅ 不再是 `unknown-op`（重启前是）—— 返回的是真实业务码 |
+| 门禁：不在本进程 | 对 4 天前的空闲会话标记 | `redline/not-live` ✅（那条会话重启后没有被加载进新进程 —— 门禁正确，不是缺陷） |
+| 门禁：轮次未闭合 | 对本会话（`known:true, open:true`）标记 | `redline/turn-open` ✅ |
+| 界面：按钮 | 真机面板展开「注入内容」 | ✅ 每行都是 `#seq 编辑 标记为不要`（截图见下） |
+| **拒绝必须说出来**（本次修的那个缺陷） | 点一次「标记为不要」 | ✅ 那一行**就地**显示红色 `当前轮次还没结束 —— 改动只能在轮次边界提交`（`role="alert"`）—— 修复前这里是**静默失败** |
+
+截图：[`docs/screenshots/14-mark-refusal-live.png`](screenshots/14-mark-refusal-live.png)。
+
+**仍未取到的一态（写成功）**：需要一条**已加载进本进程且轮次闭合**的会话。两条路任一即可：
+① 在 GUI 里**打开任意一条旧会话**（打开即把它加载进进程），在它的行上点一次「标记为不要」；
+② 等本会话这一轮结束（轮次闭合）后在它上面点一次。
+之后应当看到：行上出现 `已标为不要`、动作变 `取消标记`，且
+`$DSH_HOME/dsh-context-redline/redline-drafts-<会话>.json` 里出现 `"excluded": true`。
