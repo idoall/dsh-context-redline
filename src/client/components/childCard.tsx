@@ -135,31 +135,41 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
     const atCap = capacity.known && capacity.max !== null && active >= capacity.max
     const errKey = errorCode === null ? null : `redline.err.${errorCode.replace('redline/', '')}`
 
-    return h('div', { className: 'redline-card' },
+    return h('div', { className: 'redline-card', 'data-redline-card': 'child' },
       h('div', { className: 'redline-card-title' },
-        h('span', { className: 'redline-card-title-text' }, t('child.title')),
-        h('span', { className: 'redline-card-scale' }, scale),
-      ),
-
-      h('section', { className: 'redline-orch-block', 'data-redline-block': 'spawn' },
-        h('div', { className: 'redline-orch-head' }, t('child.spawn.head'),
-          h('span', { className: 'redline-orch-hint' }, t('child.spawn.hint'))),
-        h('div', { className: 'redline-orch-toolbar' },
-          h('button', {
-            type: 'button',
-            className: 'redline-btn',
-            'data-redline-spawn': '1',
-            disabled: blockedKey !== null || atCap,
-            onClick: () => { setTask(''); setOpen(true) },
-          }, t('child.spawn.button')),
-          h('span', { className: 'redline-cap' }, t('child.spawn.note')),
+        h('div', { className: 'redline-orch-titles' },
+          h('div', { className: 'redline-orch-title-row' },
+            h('span', { className: 'redline-card-title-text' }, t('child.title')),
+          ),
         ),
-        blockedKey !== null ? h('div', { className: 'redline-cap' }, t(blockedKey)) : null,
+        h('div', { className: 'redline-orch-metrics' },
+          h('span', { className: 'redline-card-scale redline-orch-metric' }, scale),
+        ),
       ),
 
-      h('section', { className: 'redline-orch-block', 'data-redline-block': 'children' },
-        h('div', { className: 'redline-orch-head' }, t('child.list.head'),
-          h('span', { className: 'redline-orch-hint' }, t('child.list.hint'))),
+      h('section', { className: 'redline-orch-launch', 'data-redline-block': 'spawn' },
+        h('span', { className: 'redline-orch-symbol', 'aria-hidden': 'true' }, '＋'),
+        h('div', { className: 'redline-orch-copy' },
+          h('div', { className: 'redline-orch-launch-row' },
+            h('h3', { className: 'redline-orch-launch-title' }, t('child.spawn.head')),
+            h('span', { className: 'redline-orch-launch-hint' }, t('child.spawn.hint')),
+          ),
+          h('p', { className: 'redline-orch-launch-note' }, t('child.spawn.note')),
+          blockedKey !== null ? h('p', { className: 'redline-orch-launch-note' }, t(blockedKey)) : null,
+        ),
+        h('button', {
+          type: 'button',
+          className: 'redline-orch-open',
+          'data-redline-spawn': '1',
+          disabled: blockedKey !== null || atCap,
+          onClick: () => { setTask(''); setOpen(true) },
+        }, t('child.spawn.button')),
+      ),
+
+      h('section', { 'data-redline-block': 'children' },
+        h('div', { className: 'redline-orch-listhead' },
+          h('span', null, t('child.list.head')),
+          h('span', null, t('child.list.hint'))),
         atCap
           ? h('div', { className: 'redline-cap', 'data-redline-cap': '1' }, t('child.cap.reached', { max: capacity.max }))
           : null,
@@ -168,35 +178,41 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
           : h('div', { className: 'redline-cap', 'data-redline-origins-error': props.originsError },
             t('redline.err.' + props.originsError.replace('redline/', ''))),
         props.rows.length === 0
-          ? h('div', { className: 'redline-cap' }, t('child.empty'))
-          : props.rows.map((row) => {
+          ? h('div', { className: 'redline-orch-empty' }, t('child.empty'))
+          : h('div', { className: 'redline-orch-list' }, props.rows.map((row) => {
             const state = stateOf(row)
             const clock = clockOf(row.createdAt)
             return h('div', { className: 'redline-orch-row', key: row.id, 'data-redline-child': row.id },
-              h('div', { className: 'redline-orch-id' },
-                h('span', { className: 'redline-snapid' }, row.short),
-                h('span', { className: 'redline-chip-soft' }, t('child.mode.' + row.mode)),
-                // 来源（M5-12）：三态各自一句 —— 台账里有说是哪条路；没有说"不是在这儿开的"；
-                // 台账读不出来说"来源未知"。**不猜**（官方目录里没有来源字段，docs/01 F59）。
-                (() => {
-                  const known = props.originsKnown !== false
-                  const tone = !known ? 'unknown' : row.via == null ? 'other' : 'own'
-                  const key = !known
-                    ? 'child.src.unknown'
-                    : row.via === 'official-member' ? 'child.src.own.official'
-                      : row.via === 'bare-child' ? 'child.src.own.bare' : 'child.src.other'
-                  return h('span', { className: 'redline-src redline-src-' + tone, 'data-redline-src': tone, title: t('child.src.tip') }, t(key))
-                })(),
-                h('span', { className: 'redline-badge-state' },
-                  h('i', { className: 'redline-mstat redline-mstat-' + state.tone }),
-                  t(state.key)),
-                row.label === '' ? null : h('span', { className: 'redline-cap' }, row.label),
-                clock === null ? null : h('span', { className: 'redline-cap' }, clock),
+              h('div', { className: 'redline-orch-main' },
+                // 方形图标位（v0 的 `.sessionCardAvatar`）：纯装饰，不承载文案。
+                h('span', { className: 'redline-orch-avatar', 'aria-hidden': 'true' }, '↗'),
+                h('div', { className: 'redline-orch-content' },
+                  h('div', { className: 'redline-orch-id' },
+                    h('span', { className: 'redline-snapid' }, row.short),
+                    h('span', { className: 'redline-chip-soft' }, t('child.mode.' + row.mode)),
+                    // 来源（M5-12）：三态各自一句 —— 台账里有说是哪条路；没有说"不是在这儿开的"；
+                    // 台账读不出来说"来源未知"。**不猜**（官方目录里没有来源字段，docs/01 F59）。
+                    (() => {
+                      const known = props.originsKnown !== false
+                      const tone = !known ? 'unknown' : row.via == null ? 'other' : 'own'
+                      const key = !known
+                        ? 'child.src.unknown'
+                        : row.via === 'official-member' ? 'child.src.own.official'
+                          : row.via === 'bare-child' ? 'child.src.own.bare' : 'child.src.other'
+                      return h('span', { className: 'redline-src redline-src-' + tone, 'data-redline-src': tone, title: t('child.src.tip') }, t(key))
+                    })(),
+                    clock === null ? null : h('span', { className: 'redline-orch-clock' }, clock),
+                  ),
+                  row.label === '' ? null : h('p', { className: 'redline-orch-note' }, row.label),
+                  h('span', { className: 'redline-orch-subnote' }, t(state.hint)),
+                ),
               ),
-              h('div', { className: 'redline-orch-actions' },
-                h('span', { className: 'redline-cap' }, t(state.hint))),
+              // 状态胶囊靠右（v0 的 `.sessionStatus`）。
+              h('span', { className: 'redline-badge-state' + (state.tone === 'run' ? ' redline-badge-state-run' : '') },
+                h('i', { className: 'redline-mstat redline-mstat-' + state.tone }),
+                t(state.key)),
             )
-          }),
+          })),
       ),
 
       open

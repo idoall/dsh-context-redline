@@ -1154,18 +1154,21 @@ function renderOrch() {
 
     ${/* 用户 2026-10-02：「不要冻结，编辑/批注/钉住设置好之后，直接在下面放一个『开启子会话』按钮，是不是更简单？」
          → **冻结整套删除**（裁定 = `docs/11` D10）：不再"先冻一条记录"，就是一个常驻按钮。
-         区块仍是**四块**：开子会话 / 子会话索引 / 待处理的结果 / 官方团队 —— 宽窄屏排布规则不变。 */''}
+         两块仍是「开子会话 / 子会话索引」；视觉照抄用户确认的 v0 定稿（2026-10-08）。 */''}
     <div class="orchgrid">
 
     <section class="orchblock" data-block="spawnone">
     <div class="subhead blocktitle">开子会话 <span class="hint">常驻入口，直接点就行</span>
       <span class="bmeta">${S.children.length ? `已开 ${S.children.length} 个` : '还没开过'}</span></div>
 
-    <div class="orch-toolbar">
-      <button class="btn sm" data-act="spawn" data-explain="orch.spawn" ${!S.sw.live || atCapacity ? 'disabled' : ''}>开启子会话</button>
-      <span class="cap">${atCapacity
-        ? '活跃子会话已达上限 8：先在官方视图里结束或关掉一个，才能再开启。'
-        : '新会话从<b>最后聊完的那一轮</b>往下接着干（平台自己算的，没有更早的位置可选）；它会继承你已经改好的上下文。'}</span>
+    <div class="orch-launch">
+      <span class="orch-symbol" aria-hidden="true">＋</span>
+      <div class="orch-copy">
+        <p class="cap">${atCapacity
+          ? '活跃子会话已达上限 8：先在官方视图里结束或关掉一个，才能再开启。'
+          : '新会话从<b>最后聊完的那一轮</b>往下接着干（平台自己算的，没有更早的位置可选）；它会继承你已经改好的上下文。'}</p>
+      </div>
+      <button class="btn sm orch-open" data-act="spawn" data-explain="orch.spawn" ${!S.sw.live || atCapacity ? 'disabled' : ''}>开启子会话</button>
     </div>
 
     </section>
@@ -1173,24 +1176,28 @@ function renderOrch() {
     <section class="orchblock" data-block="children">
     <div class="subhead blocktitle">子会话 <span class="hint">你开出去的新会话 · 看状态与来源</span>
       <span class="bmeta">活跃 ${active} / 8 · 共 ${S.children.length} 个</span></div>
-    ${c.length === 0 ? '<div class="cap">（还没有子会话）</div>' : c.map((x, i) => {
+    ${c.length === 0 ? '<div class="cap">（还没有子会话）</div>' : `<div class="orch-list">${c.map((x, i) => {
       const [stCls, stText] = stateOf(x.state);
       return `
       <div class="orch-row">
-        <div class="orch-id">
-          <span class="snapid">${esc(x.id)}</span>
-          <span class="${x.src === 'own' ? 'badge-src-own' : 'badge-src-team'}">${x.src === 'own' ? '本项目发起' : '来自 Agent Teams'}</span>
-          <span class="badge-state"><i class="mstat ${stCls}"></i>${stText}</span>
-          <span class="cap orch-desc">${esc(x.label)}${x.from ? ' · 来源记录 ' + esc(x.from) : ''}${x.norms ? ` · <span class="chip-soft">带 ${x.norms} 条改动启动</span>` : ''}</span>
-          <span class="chev" title="打开它（去官方视图）">›</span>
+        <div class="orch-main">
+          <span class="orch-avatar" aria-hidden="true">↗</span>
+          <div class="orch-content">
+            <div class="orch-id">
+              <code class="snapid">${esc(x.id)}</code>
+              <span class="${x.src === 'own' ? 'badge-src-own' : 'badge-src-team'}">${x.src === 'own' ? '本项目发起' : '来自 Agent Teams'}</span>
+              <span class="cap orch-clock">${esc(x.label)}${x.from ? ' · 来源记录 ' + esc(x.from) : ''}</span>
+            </div>
+            ${x.norms ? `<p class="orch-note"><span class="chip-soft">带 ${x.norms} 条改动启动</span></p>` : ''}
+            <span class="orch-subnote">${x.state === 'running'
+              ? '运行中：轮次闭合前只能看，不能改（要改就先等它空闲）'
+              : '空闲：可以进它的上下文继续编辑'}</span>
+          </div>
         </div>
-        <div class="orch-actions">
-          <span class="cap">${x.state === 'running'
-            ? '运行中：轮次闭合前只能看，不能改（要改就先等它空闲）'
-            : '空闲：可以进它的上下文继续编辑'}</span>
-        </div>
+        <span class="badge-state ${stCls}"><i class="mstat ${stCls}"></i>${stText}</span>
+        <span class="chev" title="打开它（去官方视图）">›</span>
       </div>`;
-    }).join('')}
+    }).join('')}</div>`}
 
     </section>
 

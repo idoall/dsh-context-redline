@@ -396,16 +396,48 @@ body {
  * 用户 2026-10-01：「整块挤成一个大竖条、看着乱；宽屏应该横排，窄屏竖排但每块要明显区分」。
  * 宽屏（≥1040px）：冻结一列（跨两行）、子会话索引 + 待处理一列、官方团队跨两列。
  * 窄屏：单列堆叠，靠 .orchblock 的边框/底色/标题把四块分开（不许挤成一片）。 */
-.orchgrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+/* ---------- 「子会话」卡：视觉照抄用户确认的 v0 定稿（2026-10-08 读它的计算样式取得）----------
+ * 对照类名：v0 的 `sessionsPanel` / `sessionLaunch` / `sessionList` / `sessionCard` / `sessionStatus`。
+ * 我们只搬样式，**文案仍是自己的**。 */
+.orchgrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .orchblock {
-  min-width: 0; padding: 6px 8px 8px; border-radius: 8px;
+  min-width: 0; padding: 11px 12px; border-radius: 10px;
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-3);   /* 比卡片底再深一档：光靠边框区分不够"明显" */
+  background: var(--dsw-alias-bg-layer-1);
 }
 .orchblock > .blocktitle {
-  margin: 2px 0 4px; padding-bottom: 4px;
-  border-bottom: 1px dashed var(--dsw-alias-border-l1);   /* 标题下一道虚线，块身份一眼可见 */
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+  margin: 0 0 11px; padding-bottom: 11px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
 }
+/* 开子会话块（v0 的 `.sessionLaunch`）：浅底 + 圆角 + 左方形图标位 + 右侧主按钮。 */
+.orch-launch { display: flex; align-items: center; gap: 11px; padding: 10px 11px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 9px; background: var(--dsw-alias-interactive-bg-hover-solid); }
+.orch-symbol { display: grid; place-items: center; flex: 0 0 auto; width: 32px; height: 32px; font-size: 19px; line-height: 1; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
+.orch-copy { flex: 1 1 auto; min-width: 0; }
+.orch-copy .cap { margin: 0; font-size: 10px; line-height: 1.45; }
+/* 主按钮（v0 的 `.openDialogButton`）：`nowrap` 必须留 —— 我们的「开启子会话」比 v0 的更长。 */
+.orch-open { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-height: 33px; padding: 0 10px; font-size: 11px; font-weight: 600; white-space: nowrap; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l4); border-radius: 7px; }
+.orch-open:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); border-color: var(--dsw-alias-label-tertiary); }
+.orch-open:disabled { cursor: not-allowed; opacity: .56; }
+
+.orch-list { display: grid; gap: 7px; }
+.orch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; padding: 8px 10px; background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; transition: border-color .14s, box-shadow .14s; }
+.orch-row:hover { border-color: var(--dsw-alias-border-l3); box-shadow: 0 2px 8px var(--dsw-alias-interactive-bg-hover); }
+.orch-main { display: flex; flex: 1 1 auto; align-items: flex-start; gap: 9px; min-width: 0; }
+.orch-avatar { display: grid; place-items: center; flex: 0 0 auto; width: 28px; height: 28px; font-size: 15px; line-height: 1; color: var(--dsw-alias-label-tertiary); background: var(--dsw-alias-interactive-bg-hover-solid); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
+.orch-content { flex: 1 1 auto; min-width: 0; }
+.orch-id { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 7px; min-width: 0; }
+.orch-id .snapid { font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 10px; letter-spacing: .03em; color: var(--dsw-alias-label-primary); }
+.orch-note { margin: 4px 0 3px; font-size: 11px; line-height: 1.45; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.orch-subnote { font-size: 9px; line-height: 1.4; color: var(--dsw-alias-label-caption); }
+.orch-clock { font-size: 10px; color: var(--dsw-alias-label-caption); }
+/* 状态胶囊 / 徽章（v0 的 `.sessionStatus` / `.sessionModeBadge` / `.originBadge`）。 */
+.badge-state { display: inline-flex; align-items: center; flex: 0 0 auto; gap: 5px; min-height: 22px; padding: 2px 8px; font-size: 10px; line-height: 1.3; white-space: nowrap; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-interactive-bg-hover-solid); border: 1px solid var(--dsw-alias-border-l2); border-radius: 999px; }
+.badge-src-own, .badge-src-team { font-size: 9px; line-height: 1.3; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); }
+.badge-src-own { color: var(--dsw-alias-brand); border-color: var(--dsw-alias-brand); }
+/* 状态胶囊的色调（v0 的 .statusRunning/.statusIdle）：旧的 `.s-run` 只该给圆点着色，别把整颗胶囊染成琥珀。 */
+.badge-state.s-run { color: var(--ds-color-green); border-color: var(--ds-color-green); }
+.orch-block .blocktitle .bmeta { margin-left: auto; font-weight: 400; color: var(--dsw-alias-label-caption); font-size: 12px; }
 /* ---------- 借鉴 V0 的"小细节"（配色不动，只搬结构与边框语言） ----------
  * ① 块标题两端对齐：左块名 + 右读数；② 行间细虚线；③ 行右"状态 + ›"；④ 块底整宽次级按钮。
  * ⚠️ "焦点块加彩色标记"（无论整圈描边还是左侧竖条）已被用户否掉 —— 与整页风格不和谐，别再加回来。 */
@@ -419,21 +451,12 @@ body {
 .orchblock .orch-row + .orch-row,
 .orchblock .orch-row + .cap,
 .orchblock .task + .task { border-top: 1px dashed var(--dsw-alias-border-l1); }
-.orch-id .chev { margin-left: auto; color: var(--dsw-alias-label-caption); font-size: 14px; line-height: 1; padding-left: 6px; }
+.orch-row .chev { color: var(--dsw-alias-label-caption); font-size: 14px; line-height: 1; padding-left: 6px; }
 .btn.block { display: block; width: 100%; text-align: center; }
 .orchblock:has(.warn-text) { border-color: var(--ds-color-amber); }
 .orchblock > .subhead + .subhead { margin-top: 6px; }
-@media (min-width: 1040px) {
-  .orchgrid {
-    grid-template-columns: minmax(0, 1.02fr) minmax(0, 1fr);
-    grid-template-areas: "spawnone children" "spawnone pending" "team team";
-    align-items: start;
-  }
-  .orchblock[data-block="spawnone"] { grid-area: spawnone; }
-  .orchblock[data-block="children"] { grid-area: children; }
-  .orchblock[data-block="pending"] { grid-area: pending; }
-  .orchblock[data-block="team"] { grid-area: team; }
-}
+/* 宽屏也不再并排：v0 定稿里「开子会话」是列表上方的常驻块，两块纵向堆叠（窄屏同样单列）。
+   原来那套 `grid-template-areas: spawnone children / pending / team` 随 pending/team 两块删除已成死规则。 */
 
 .subhead { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; font-size: 12px; font-weight: 600; margin: 10px 0 4px; color: var(--dsw-alias-label-secondary); }
 .subhead .hint { font-weight: 400; color: var(--dsw-alias-label-caption); }

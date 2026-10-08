@@ -249,15 +249,16 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   }
 }
 
-/* 16) 「子会话」卡的排布契约：宽屏两列（第一列跨行、团队跨两列）、窄屏单列、块与块要能区分 */
+/* 16) 「子会话」卡的排布契约（**2026-10-08 按用户确认的 v0 定稿更新**）：
+ *     两块纵向堆叠（开子会话在上、记录在下）、块用**细边框 + 圆角**区分（v0 语言，不再靠更深的底色）、
+ *     每块标题独立样式、行右侧保留 ›。旧契约里的 pending/team 网格区随那两块删除已成死规则。 */
 {
-  if (!/\.orchgrid\s*\{/.test(css)) problems.push('缺少 .orchgrid（快照卡的分块网格）');
-  if (!/grid-template-areas:\s*"spawnone children"\s*"spawnone pending"\s*"team team"/.test(css)) {
-    problems.push('宽屏排布契约变了：应为 开子会话 一列跨两行、children+pending 一列、team 跨两列（冻结已删，spawnone 占原位置）');
+  if (!/\.orchgrid\s*\{/.test(css)) problems.push('缺少 .orchgrid（子会话卡的分块网格）');
+  if (!(/\.orchblock\s*\{[^}]*border:\s*1px solid var\(--dsw-alias-border-l2\)/.test(css) && /\.orchblock\s*\{[^}]*border-radius:\s*10px/.test(css))) {
+    problems.push('块的区分方式变了：v0 定稿是**细边框 + 10px 圆角**（不再用比卡片底更深的底色）');
   }
-  if (!/@media \(min-width: 1040px\)/.test(css)) problems.push('缺少宽屏断点（≥1040px 才两列，窄屏必须单列）');
-  if (!/\.orchblock\s*\{[^}]*bg-layer-3/.test(css)) problems.push('块底色必须比卡片底深一档（光靠边框不够"明显区分"）');
   if (!/\.orchblock > \.blocktitle/.test(css)) problems.push('每块标题必须有独立样式（块身份要一眼可见）');
+  if (!/\.orch-row \.chev/.test(css)) problems.push('子会话行右需要 › 标记（.orch-row .chev）');
 }
 
 /* 16.5) 全页统一语言（2026-10-01 一致性 pass）：卡片标题与块标题同一套（下细虚线 + 右读数） + 行间细虚线 */
@@ -276,7 +277,6 @@ if (/closest\('\[data-explain\]'\)/.test(js) && !/badge\.addEventListener/.test(
   if (/is-focus|orchblock\s*\{[^}]*box-shadow:\s*inset/.test(css)) {
     problems.push('快照卡的块不许再加重色焦点标记（整圈描边 / 左侧竖条都已否掉）：与整页风格不和谐');
   }
-  if (!/\.orch-id \.chev\s*\{/.test(css)) problems.push('子会话行右需要 › 标记（.orch-id .chev）');
   if (!/\.btn\.block\s*\{/.test(css)) problems.push('块底需要整宽次级按钮样式（.btn.block）');
 }
 

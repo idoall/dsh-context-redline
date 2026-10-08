@@ -1427,3 +1427,33 @@ Review 发现 4 个会削弱「编辑 → 确认 → 子会话携带改写」可
 ——底栏必须自带 `display:flex` + `flex-end` + 非零 `gap`；任务块不得使用那四个"浅色等于纯白"的令牌、
 输入框必须有 `border-l4`、placeholder 不得用 `label-dimmed`。**反向验证**：把 `display:flex` 删掉、把块底色换回
 `bg-layer-2` ⟹ **2 条立刻红**，还原即绿。证据截图 [`docs/screenshots/11-child-confirm-fixed.png`](screenshots/11-child-confirm-fixed.png)。
+
+## D63 · 子会话卡：照抄 v0 的右下角那一块（2026-10-08）
+
+用户要求「把 v0 右下角（开子会话 + 会话记录）的 UI 拿过来，**文字保持我们的，只复用样式**」。做法与 D61 同一条路：
+注入 cookie → 打开快照 → 点掉弹窗 → 用 `getComputedStyle` + `document.styleSheets` 把那一块**逐项量下来**。
+
+**v0 实测值（`sessionsPanel` / `sessionLaunch` / `sessionCard` / `sessionStatus`）**：
+- 面板：`padding: 11px 12px`、边框 1px、圆角 10px、`min-height: 280px`
+- 头部：`flex + space-between + align-items: flex-start + gap: 12px`，`padding-bottom: 11px` + 1px 下边框
+- 读数胶囊：`min-height: 25px`、`padding: 3px 8px`、`font-size: 10px`、圆角 999px
+- 开子会话块：`padding: 10px 11px`、`gap: 11px`、圆角 9px、1px 边框、浅底；左侧 32×32 图标位（圆角 8px）
+- 主按钮：`min-height: 33px`、`padding: 0 10px`、`font-size: 11px`、`font-weight: 600`、圆角 7px、白底细边
+- 列表：`display: grid; gap: 7px`
+- 每行：`flex + space-between + gap: 12px`、`padding: 8px 10px`、圆角 8px、1px 边框；悬停换描边 + 轻阴影
+- 行内：28×28 图标位、短 id 用等宽 10px、模式/来源徽章 `font-size: 9–10px` 圆角 999px、
+  说明 11px、副说明 9px；状态胶囊 `min-height: 22px; padding: 2px 8px; font-size: 10px`（运行中为绿色）
+
+**我们保留**：全部文案（`child.*` 的 i18n 一字未改）、三态来源徽章、只读状态语义、`data-redline-block` 两块、
+`data-redline-child` / `data-redline-spawn` / `data-redline-cap` / `data-redline-origins-error` 这些测试锚点。
+**新增**：`data-redline-card="child"` 用于把样式只作用在这一张卡上；行内新增装饰性图标位与 `＋`（`aria-hidden`）。
+
+**顺手抓到一个真问题**：v0 的按钮文案是「新建会话 →」（短），我们的「开启子会话」更长 ⟹ 按钮作为 flex 子项
+被压缩后**折成两行**。已加 `flex: 0 0 auto` + `white-space: nowrap`（真机截图确认单行 77×33）。
+
+**demo 侧同步 + 清死规则**：旧契约里还写着 `grid-template-areas: "spawnone children" "spawnone pending" "team team"`
+与「块底色必须比卡片底深一档」——`pending`/`team` 两块早已删除，这条网格是**死规则**。按 v0 定稿改为
+「两块纵向堆叠 + 细边框/10px 圆角区分」，`.orch-id .chev` 也随之改成 `.orch-row .chev`（结构变了）。
+
+证据：[`docs/screenshots/12-child-card-v0-plugin.png`](screenshots/12-child-card-v0-plugin.png)（真机面板）
+· [`12-child-card-v0-demo.png`](screenshots/12-child-card-v0-demo.png)（demo）· [`12-child-card-v0-reference.png`](screenshots/12-child-card-v0-reference.png)（v0 原图）。
