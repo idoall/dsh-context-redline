@@ -1162,7 +1162,6 @@ function renderOrch() {
       <span class="bmeta">${S.children.length ? `已开 ${S.children.length} 个` : '还没开过'}</span></div>
 
     <div class="orch-launch">
-      <span class="orch-symbol" aria-hidden="true">＋</span>
       <div class="orch-copy">
         <p class="cap">${atCapacity
           ? '活跃子会话已达上限 8：先在官方视图里结束或关掉一个，才能再开启。'

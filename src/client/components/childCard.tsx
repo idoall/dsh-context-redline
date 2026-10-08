@@ -15,7 +15,9 @@
  *   click fail.
  * · **The confirm box is the host's own five items** (`child.plan`), and the first message is
  *   written by the human only: the plugin never invents a word (`docs/11` D15, hard constraint).
- *   An empty task makes the plan itself refuse, and that refusal is shown instead of a dead button.
+ *   An empty task makes the plan itself refuse; the confirm button is then disabled. The refusal stays
+ *   observable (`data-redline-refusal` on the task block), but its sentence is NOT printed any more —
+ *   the user asked to drop it (2026-10-08).
  */
 
 import { createElement as h, useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react'
@@ -148,7 +150,6 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
       ),
 
       h('section', { className: 'redline-orch-launch', 'data-redline-block': 'spawn' },
-        h('span', { className: 'redline-orch-symbol', 'aria-hidden': 'true' }, '＋'),
         h('div', { className: 'redline-orch-copy' },
           h('div', { className: 'redline-orch-launch-row' },
             h('h3', { className: 'redline-orch-launch-title' }, t('child.spawn.head')),
@@ -246,20 +247,23 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
                       t('child.confirm.metrics.label')),
                     h('p', { 'data-redline-first-task': String(plan.metrics.bytes) },
                       t('child.confirm.metrics', { bytes: plan.metrics.bytes, edits: plan.metrics.edits })))),
-            plan !== null && plan.refusal !== null
-              ? h('div', { className: 'redline-editor-blocked', 'data-redline-refusal': plan.refusal.code }, plan.refusal.message)
-              : null,
+            // 空任务时宿主会拒绝（`redline/empty-task`）：按钮禁用即可，**不再把那句拒绝话术打在弹窗里**
+            // （用户 2026-10-08：「子会话的第一句话必须由你自己写……可以去掉」）。
+            // 拒绝这件事仍然可观测（`data-redline-refusal` 挂在任务块上），只是不再占版面。
+            h('label', {
+              className: 'redline-confirm-task',
+              ...(plan !== null && plan.refusal !== null ? { 'data-redline-refusal': plan.refusal.code } : {}),
+            },
+            h('span', { className: 'redline-confirm-task-label' }, t('child.confirm.taskLabel')),
+            h('span', { className: 'redline-confirm-task-hint' }, t('child.confirm.taskHint')),
+            h('textarea', {
+              rows: 3,
+              'data-redline-task': '1',
+              placeholder: t('child.confirm.taskPlaceholder'),
+              value: task,
+              onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setTask(event.target.value) },
+            })),
             errKey !== null ? h('div', { className: 'redline-editor-err', role: 'alert' }, t(errKey)) : null,
-            h('label', { className: 'redline-confirm-task' },
-              h('span', { className: 'redline-confirm-task-label' }, t('child.confirm.taskLabel')),
-              h('span', { className: 'redline-confirm-task-hint' }, t('child.confirm.taskHint')),
-              h('textarea', {
-                rows: 3,
-                'data-redline-task': '1',
-                placeholder: t('child.confirm.taskPlaceholder'),
-                value: task,
-                onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setTask(event.target.value) },
-              })),
             plan !== null && plan.carriedSeqs.length > 0
               ? h('div', { className: 'redline-cap' }, '#' + plan.carriedSeqs.join(' · #'))
               : null,

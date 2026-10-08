@@ -26,7 +26,6 @@
 
 /* 开子会话块（v0 的 `.sessionLaunch`）：浅底 + 圆角 + 左侧方形图标位。 */
 .redline-orch-launch { display: flex; align-items: center; gap: 11px; margin: 11px 0 12px; padding: 10px 11px; border: 1px solid var(--dsw-alias-border-l3); border-radius: 9px; background: var(--dsw-alias-interactive-bg-hover-solid); }
-.redline-orch-symbol { display: grid; place-items: center; flex: 0 0 auto; width: 32px; height: 32px; font-size: 19px; line-height: 1; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
 .redline-orch-copy { flex: 1 1 auto; min-width: 0; }
 .redline-orch-launch-row { display: flex; align-items: center; gap: 4px 8px; }
 .redline-orch-launch-title { margin: 0; font-size: 12px; font-weight: 650; line-height: 1.4; color: var(--dsw-alias-label-primary); }

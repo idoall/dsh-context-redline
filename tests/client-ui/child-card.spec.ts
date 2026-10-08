@@ -150,13 +150,16 @@ describe('第 5 张卡：确认框（宿主的五项 + 第一句话由人写）'
     await m.unmount()
   })
 
-  test('空任务：宿主拒绝 → 确认按钮禁用 + 显示那句拒绝（不是死按钮）', async () => {
+  // 用户 2026-10-08：「子会话的第一句话必须由你自己写 —— 这是它在做的事，不能替你决定。」可以去掉。
+  // 口径改为：**按钮禁用**（拒绝仍生效、仍可观测），但**不再把那句话打在弹窗里**。
+  test('空任务：宿主拒绝 → 确认按钮禁用、拒绝状态可观测，但不再显示那句话', async () => {
     const refusal = { code: 'redline/empty-task', message: '第一句话必须你自己写' }
     const m = await open({ plan: () => Promise.resolve({ ok: true as const, value: { ...PLAN, prompt: null, refusal } }) })
     await openDialog(m)
     const box = query(m.container, '[data-redline-confirm]')
-    assert.ok(text(box).includes(refusal.message), '拒绝原因原样显示')
-    assert.equal(query(m.container, '[data-redline-confirm-ok]').hasAttribute('disabled'), true)
+    assert.equal(query(m.container, '[data-redline-confirm-ok]').hasAttribute('disabled'), true, '拒绝时按钮禁用')
+    assert.equal(query(box, '[data-redline-refusal]').getAttribute('data-redline-refusal'), refusal.code, '拒绝状态仍在（挂在任务块上）')
+    assert.equal(text(box).includes(refusal.message), false, '那句拒绝话术不再显示')
     await m.unmount()
   })
 

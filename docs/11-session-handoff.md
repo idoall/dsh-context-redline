@@ -1457,3 +1457,16 @@ Review 发现 4 个会削弱「编辑 → 确认 → 子会话携带改写」可
 
 证据：[`docs/screenshots/12-child-card-v0-plugin.png`](screenshots/12-child-card-v0-plugin.png)（真机面板）
 · [`12-child-card-v0-demo.png`](screenshots/12-child-card-v0-demo.png)（demo）· [`12-child-card-v0-reference.png`](screenshots/12-child-card-v0-reference.png)（v0 原图）。
+
+## D64 · 两处减法：弹窗里那句拒绝话术 + 开子会话块里的 `＋`（2026-10-08，用户要求）
+
+1. **弹窗里的拒绝话术不再显示**。原口径（`docs/10` M3-16）是"空任务 → 按钮禁用 **+ 把那句拒绝原样显示**"；
+   用户 2026-10-08 明确要求去掉那句「子会话的第一句话必须由你自己写 —— 这是它在做的事，不能替你决定。」。
+   现在：**按钮照旧禁用**（拒绝仍生效），拒绝这件事仍可观测（`data-redline-refusal` 挂在任务块上），
+   只是不再占版面。`childCard.tsx` 的头部注释与 `docs/10` M3-16 证据行同步改写。
+   护栏：`tests/client-ui/child-card.spec.ts` 改成断言「按钮禁用 + `data-redline-refusal` 在 + **那句话不出现**」；
+   **反向验证**：把那句加回去 ⟹ 该条立刻红（`AssertionError: 那句拒绝话术不再显示`），还原即绿。
+2. **开子会话块里的 `＋` 图标位去掉**（用户红框指出）。同时删掉 `.redline-orch-symbol` / `.orch-symbol`
+   两条样式（不留死样式），demo 与插件同步。行内的 `↗` 图标位暂时保留。
+
+证据：[`docs/screenshots/13-child-card-final.png`](screenshots/13-child-card-final.png)（真机面板，`hasSymbol: false`、块的子节点只剩 `copy` + 按钮）。
