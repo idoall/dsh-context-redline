@@ -181,12 +181,14 @@ tests/
 |---|---|---|---|---|
 | `draft.update` | `{sessionId, seq, edit:{text, reasoning?, isError?}}` | 新的草稿表 | 插件数据目录（`redline-drafts-*.json`） | ✅ 可 `draft.drop` |
 | `draft.drop` | `{sessionId, seq}` | 新的草稿表 | 同上 | ✅ |
+| `draft.exclude` | `{sessionId, seq, excluded}` | 新的草稿表 | 同上 | ✅ 再调一次 `excluded:false` 即取消 |
+| \| ↑ 说明 \| 「标记为不要」（`docs/11` D65，2026-10-08 用户选 A）：只写本地；与 `draft.update` **互斥**（同一个 seq 一份记录）。平台**没有 delete**、fork 也排除不掉历史（`docs/01` F38）⟹ 它的唯一出口是开子会话时在首条任务里**逐字声明作废**。界面文案**不许**出现"删除"（`docs/00` N1） \| \| \| \| \|
 
 **写入（会话侧 —— 全插件唯一的会话写入点）**
 
 | op | 请求 | 响应 | 写哪里 | 可逆？ |
 |---|---|---|---|---|
-| `child.start` | `{sessionId, humanTask}` | `{childId, label, carriedSeqs}` | **新开一个子会话**，把「人写的首条任务 + 逐字带入的改后正文」作为它的第一句话 | 子会话可归档；父会话**一个字都没写** |
+| `child.start` | `{sessionId, humanTask, draftRevision}` | `{via, label, prompt, carriedSeqs, excludedSeqs, started}` | **新开一个子会话**，把「人写的首条任务 + 逐字带入的改后正文」作为它的第一句话 | 子会话可归档；父会话**一个字都没写** |
 
 > **硬约束的落点**（`AGENTS.md` §1 / `docs/11` D15）：`draft.*` 只写本地；**`child.start` 是唯一的会话写入点**。
 > 因此旧表里的 `apply`（往会话日志追加 replace 事件）**不再存在** —— 见下方 C 段。
