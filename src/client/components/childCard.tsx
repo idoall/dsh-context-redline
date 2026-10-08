@@ -73,7 +73,6 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
     const [plan, setPlan] = useState<ChildPlan | null>(null)
     const [busy, setBusy] = useState(false)
     const [errorCode, setErrorCode] = useState<string | null>(null)
-    const [started, setStarted] = useState<ChildStarted | null>(null)
     // A late plan answer for an older task must not overwrite the newer one.
     const generation = useRef(0)
 
@@ -85,7 +84,6 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
       setOpen(false)
       setPlan(null)
       setErrorCode(null)
-      setStarted(null)
     }, [])
 
     // The confirm box's five items come from the host and depend on the task text
@@ -116,10 +114,11 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
         const answer = await props.start(task, plan.draftRevision)
         setBusy(false)
         if (!answer.ok) { setErrorCode(answer.code); return }
-        setStarted(answer.value)
-        setPlan(null)
+        // The child is visible in the card's live index; do not replace the
+        // confirmation with a second success screen that hides that outcome.
+        close()
       })()
-    }, [busy, plan, refused, props.start, task])
+    }, [busy, close, plan, refused, props.start, task])
 
     // ⚠️ 口径跟 demo（`renderOrch()` 的 `state === 'running' || state === 'idle'`）：
     // 「活跃」= **在场的子会话**（运行中 + 空闲），**不是**"只有正在跑的" ——
@@ -148,7 +147,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
             className: 'redline-btn',
             'data-redline-spawn': '1',
             disabled: blockedKey !== null || atCap,
-            onClick: () => { setTask(''); setStarted(null); setOpen(true) },
+            onClick: () => { setTask(''); setOpen(true) },
           }, t('child.spawn.button')),
           h('span', { className: 'redline-cap' }, t('child.spawn.note')),
         ),
@@ -208,38 +207,29 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
             h('span', { className: 'redline-modal-title' }, t('child.confirm.title')),
             h('button', { type: 'button', className: 'redline-modal-close', onClick: close }, '×'),
           ),
-          started !== null
-            ? h('div', { className: 'redline-ok', 'data-redline-started': started.label },
-              t('child.confirm.started', { label: started.label }),
-              h('span', { className: 'redline-cap', 'data-redline-via': started.via ?? 'unknown' },
-                started.via === 'official-member' ? t('child.via.official')
-                  : started.via === 'bare-child' ? t('child.via.bare')
-                    : t('child.via.unknown')))
-            : plan === null
-              ? h('div', { className: 'redline-cap' }, t('child.confirm.preparing'))
-              : h('ul', { className: 'redline-confirm-list' },
-                plan.metrics === null || typeof plan.metrics.bytes !== 'number'
-                  ? null
-                  : h('li', { key: 'metrics' },
-                    h('span', { className: 'redline-confirm-label' }, t('child.confirm.metrics.label')),
-                    h('span', { className: 'redline-confirm-text', 'data-redline-first-task': String(plan.metrics.bytes) },
-                      t('child.confirm.metrics', { bytes: plan.metrics.bytes, edits: plan.metrics.edits }))),
-                plan.items.map(item => h('li', { key: item.label },
-                  h('b', null, item.label),
-                  h('span', null, item.text)))),
+          plan === null
+            ? h('div', { className: 'redline-cap' }, t('child.confirm.preparing'))
+            : h('ul', { className: 'redline-confirm-list' },
+              plan.metrics === null || typeof plan.metrics.bytes !== 'number'
+                ? null
+                : h('li', { key: 'metrics' },
+                  h('span', { className: 'redline-confirm-label' }, t('child.confirm.metrics.label')),
+                  h('span', { className: 'redline-confirm-text', 'data-redline-first-task': String(plan.metrics.bytes) },
+                    t('child.confirm.metrics', { bytes: plan.metrics.bytes, edits: plan.metrics.edits }))),
+              plan.items.map(item => h('li', { key: item.label },
+                h('b', null, item.label),
+                h('span', null, item.text)))),
           errKey !== null ? h('div', { className: 'redline-editor-err', role: 'alert' }, t(errKey)) : null,
-          started === null
-            ? h('label', { className: 'redline-confirm-field' },
-              h('span', null, t('child.confirm.taskLabel')),
-              h('textarea', {
-                className: 'redline-editor-text',
-                rows: 3,
-                'data-redline-task': '1',
-                placeholder: t('child.confirm.taskPlaceholder'),
-                value: task,
-                onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setTask(event.target.value) },
-              }))
-            : null,
+          h('label', { className: 'redline-confirm-field' },
+            h('span', null, t('child.confirm.taskLabel')),
+            h('textarea', {
+              className: 'redline-editor-text',
+              rows: 3,
+              'data-redline-task': '1',
+              placeholder: t('child.confirm.taskPlaceholder'),
+              value: task,
+              onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setTask(event.target.value) },
+            })),
           plan !== null && plan.refusal !== null
             ? h('div', { className: 'redline-editor-blocked', 'data-redline-refusal': plan.refusal.code }, plan.refusal.message)
             : null,
@@ -251,7 +241,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
               type: 'button',
               className: 'redline-btn',
               'data-redline-confirm-ok': '1',
-              disabled: busy || plan === null || refused || started !== null,
+              disabled: busy || plan === null || refused,
               onClick: confirm,
             }, t('child.confirm.ok')),
             h('button', { type: 'button', className: 'redline-btn redline-btn-quiet', onClick: close }, t('child.confirm.cancel')),

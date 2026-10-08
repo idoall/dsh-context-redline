@@ -314,7 +314,7 @@ function closeDrawer() {
 function confirmModal(o) {
   $('modalTitle').textContent = o.title;
   $('modalWarn').textContent = o.warn;
-  $('modalList').innerHTML = '<ul class="list">' + o.rows.map((r) => `<li><b>${esc(r[0])}</b>${esc(r[1])}</li>`).join('') + '</ul>';
+  $('modalList').innerHTML = '<ul class="list">' + o.rows.map((r) => `<li><b>${esc(r[0])}</b><span>${esc(r[1])}</span></li>`).join('') + '</ul>';
   $('modalReasonWrap').hidden = !o.needReason;
   /* ⚠️ 用户 2026-10-02 问：「弹出窗里的备注，是仅给人看的，还是会进 agent 下一次会话的内容？」
    * 答：**两种都有，取决于哪个框** —— 所以**每个框必须自己写明去向**，不许所有框共用一句

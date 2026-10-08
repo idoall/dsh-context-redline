@@ -125,8 +125,12 @@
 .redline-cols { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
 .redline-cols > .redline-card { margin-bottom: 0; }
 .redline-col > .redline-card:last-child { margin-bottom: 0; }
-.redline-col-browser { display: flex; flex-direction: column; }
-.redline-col-browser > .redline-card { flex: 1; }
+/* 主工作区是两条独立的瀑布式列：不做“同一行的卡同高”这个假前提。
+   每列按自己的内容从顶部向下填充；可用空间不足两列时，grid 自动只剩一列。 */
+.redline-masonry { display: grid; grid-template-columns: repeat(2, minmax(min(360px, 100%), 1fr)); gap: 14px; align-items: start; margin-bottom: 14px; }
+.redline-masonry-col { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.redline-masonry-col > .redline-card { margin-bottom: 0; }
+@media (max-width: 719px) { .redline-masonry { grid-template-columns: minmax(0, 1fr); } }
 /*
  Head band: TWO rows — the session's shape at a 3:1 split beside the plugin
  card (context / plugin), then the two donut cards together (token /

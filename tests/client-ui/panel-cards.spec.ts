@@ -45,4 +45,15 @@ describe('面板卡片清单 = demo（不是上游那张长清单）', () => {
       assert.ok(SRC.includes('<' + tag), `demo 的第 N 张卡【${label}】必须在（<${tag}>）`)
     }
   })
+
+  test('主工作区按 demo 分成独立两列：左边趋势→事件，右边浏览器→子会话', () => {
+    const masonry = SRC.indexOf('className="redline-masonry"')
+    const trend = SRC.indexOf('{trendCard}', masonry)
+    const events = SRC.indexOf('<EventList', masonry)
+    const browser = SRC.indexOf('{browserCard}', masonry)
+    const child = SRC.indexOf('<ChildCard', masonry)
+    assert.ok(masonry >= 0, '主工作区必须是独立两列，而不是按行强制对齐')
+    assert.ok(trend >= masonry && events > trend, '左列 = 趋势 → 上下文事件')
+    assert.ok(browser >= masonry && child > browser, '右列 = 上下文浏览器 → 子会话')
+  })
 })

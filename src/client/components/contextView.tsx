@@ -488,48 +488,39 @@ export function makeContextView(
         <div className="redline-cols redline-head">
         </div>
 
-        {/* One arrangement for every host: composition over trend in the left
-            column, the browser beside them and stretched to the pair's height.
-            All columns share the 360px floor (`min-w-[min(360px,100%)]`): the
-            rows wrap at it, and a sub-360px pane narrows the column instead
-            of overflowing. */}
-        <div className="redline-cols redline-cols-main">
-          <div className="redline-col flex-1 min-w-[min(360px,100%)]">{trendCard}</div>
-          {/* `redline-col-browser` stretches the browser card to the left column's
-              height; the /redline modal, which draws its own stack, must stay
-              content-sized. */}
-          <div className="redline-col redline-col-browser flex-1 min-w-[min(360px,100%)]">{browserCard}</div>
-        </div>
-
-        <div className="redline-cols">
-          <div className="redline-card redline-col flex-1 min-w-[min(360px,100%)]">
-            <div className="redline-card-title">
-              <span className="redline-card-title-text">{t('events.title')}</span>
-              <div className="redline-kinds @max-[380px]/redline-card:flex-wrap">
-                {EVENT_KINDS.map((k) => {
-                  const n = kindCounts[k]
-                  return (
-                    <button
-                      key={k}
-                      data-redline-kind={k}
-                      className={'redline-gran-btn' + (pickedKinds.includes(k) ? ' redline-gran-on redline-kind-' + k : '')}
-                      onClick={() => { toggleKind(k) }}
-                    >
-                      {t('kind.' + k)}
-                      {n !== undefined ? <span className="redline-kind-n">{kit.fmt(n)}</span> : null}
-                    </button>
-                  )
-                })}
+        {/* 两列各自从顶部向下排：左边看趋势/发生了什么，右边看上下文/改完后开子会话。
+            不把另一列的高度带进定位，避免传统行式布局造成的顶部空洞；窄处自动成一列。 */}
+        <div className="redline-masonry">
+          <div className="redline-masonry-col">
+            {trendCard}
+            <div className="redline-card">
+              <div className="redline-card-title">
+                <span className="redline-card-title-text">{t('events.title')}</span>
+                <div className="redline-kinds @max-[380px]/redline-card:flex-wrap">
+                  {EVENT_KINDS.map((k) => {
+                    const n = kindCounts[k]
+                    return (
+                      <button
+                        key={k}
+                        data-redline-kind={k}
+                        className={'redline-gran-btn' + (pickedKinds.includes(k) ? ' redline-gran-on redline-kind-' + k : '')}
+                        onClick={() => { toggleKind(k) }}
+                      >
+                        {t('kind.' + k)}
+                        {n !== undefined ? <span className="redline-kind-n">{kit.fmt(n)}</span> : null}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
+              <EventList events={shownEvents} state={source.detailState} onRetry={source.retryDetail} />
             </div>
-            <EventList events={shownEvents} state={source.detailState} onRetry={source.retryDetail} />
           </div>
-        </div>
 
-        {/* 第 5 张卡（`docs/10` M3-16/17，随 M5 落地）：子会话索引 + 开子会话。
-            它是**本面板唯一会写会话的入口**，所以按钮的门禁与 `保存` 完全一致（`live` / `turnOpen`）。 */}
-        <div className="redline-cols">
-          <div className="redline-col flex-1 min-w-[min(360px,100%)]">
+          <div className="redline-masonry-col">
+            {browserCard}
+            {/* 第 5 张卡（`docs/10` M3-16/17，随 M5 落地）：子会话索引 + 开子会话。
+                它是**本面板唯一会写会话的入口**，所以按钮的门禁与 `保存` 完全一致（`live` / `turnOpen`）。 */}
             <ChildCard
               sessionId={sessionId}
               rows={children.rows}

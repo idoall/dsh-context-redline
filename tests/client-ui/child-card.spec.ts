@@ -151,7 +151,7 @@ describe('第 5 张卡：确认框（宿主的五项 + 第一句话由人写）'
     await m.unmount()
   })
 
-  test('写一句话后按钮可用；确认只调一次 child.start，带上已审阅的草稿版本并显示回执', async () => {
+  test('写一句话后按钮可用；确认只调一次 child.start，带上已审阅的草稿版本并关闭确认框回到子会话索引', async () => {
     const starts: { task: string, revision: string }[] = []
     const m = await open({
       plan: () => Promise.resolve({ ok: true as const, value: PLAN }),
@@ -169,11 +169,8 @@ describe('第 5 张卡：确认框（宿主的五项 + 第一句话由人写）'
     assert.equal(ok.disabled, false)
     await act(async () => { ok.click() })
     assert.deepEqual(starts, [{ task: '【探针】请只回答四个字：收到探针。', revision: 'd1-test-plan' }], '逐字交任务，同时只允许创建已审阅过的草稿版本')
-    assert.ok(text(m.container).includes(DICT_EN['child.confirm.started'].replace('{label}', '上下文批改 · abcd1234')))
-    // M5-02 的界面半边：走的是哪条路必须如实标出来（官方成员 vs 裸子会话，可管理性完全不同）。
-    const via = query(m.container, '[data-redline-via]')
-    assert.equal(via.getAttribute('data-redline-via'), 'official-member')
-    assert.ok(text(via).includes(DICT_EN['child.via.official']))
+    assert.equal(queryAll(m.container, '[data-redline-confirm]').length, 0, '成功后不保留第二张成功回执页；回到卡片索引等待投影刷新')
+    assert.equal(queryAll(m.container, '[data-redline-started]').length, 0, '不在确认框内重复呈现创建结果')
     await m.unmount()
   })
 
@@ -220,11 +217,12 @@ describe('第 5 张卡：确认框报出「首条任务有多大」（M2-20）',
   })
 })
 
-describe('M5-02 界面半边：走的是哪条路如实标出来', () => {
-  const runConfirm = async (via: string | undefined): Promise<Mounted> => {
+describe('确认成功后的结果呈现', () => {
+  test('创建结果由子会话索引承接：确认框不会再复制一张「已开启」页面', async () => {
     const m = await open({
+      rows: [{ id: 'new-child', short: 'new-child', label: '上下文批改 · 新建', mode: 'continuable', createdAt: 0, live: true, open: true, via: 'official-member' }],
       plan: () => Promise.resolve({ ok: true as const, value: PLAN }),
-      start: () => Promise.resolve({ ok: true as const, value: { via, label: '上下文批改 · abcd1234', prompt: 'p', carriedSeqs: [], started: null } }),
+      start: () => Promise.resolve({ ok: true as const, value: { via: 'official-member', label: '上下文批改 · 新建', prompt: 'p', carriedSeqs: [], started: null } }),
     })
     await openDialog(m)
     const area = query<HTMLTextAreaElement>(m.container, '[data-redline-task]')
@@ -235,24 +233,9 @@ describe('M5-02 界面半边：走的是哪条路如实标出来', () => {
     })
     await act(async () => { await new Promise(r => setTimeout(r, 300)) })
     await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-confirm-ok]').click() })
-    return m
-  }
-
-  test('兜底路径 → 明说「裸子会话：不在官方名单里，官方界面看不到它」', async () => {
-    const m = await runConfirm('bare-child')
-    const via = query(m.container, '[data-redline-via]')
-    assert.equal(via.getAttribute('data-redline-via'), 'bare-child')
-    const body = text(via)
-    assert.ok(body.includes(DICT_EN['child.via.bare']), body)
-    assert.ok(body.includes('invisible to the official UI'), '不能含糊：官方界面看不到它')
-    await m.unmount()
-  })
-
-  test('宿主没报路径 → 如实说没拿到，不猜', async () => {
-    const m = await runConfirm(undefined)
-    const via = query(m.container, '[data-redline-via]')
-    assert.equal(via.getAttribute('data-redline-via'), 'unknown')
-    assert.ok(text(via).includes(DICT_EN['child.via.unknown']))
+    assert.equal(queryAll(m.container, '[data-redline-confirm]').length, 0)
+    const row = query(m.container, '[data-redline-child="new-child"]')
+    assert.ok(text(row).includes(DICT_EN['child.src.own.official']), '来源在索引中如实呈现')
     await m.unmount()
   })
 })

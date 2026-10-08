@@ -204,16 +204,18 @@ describe('ContextView — the sidebar host', () => {
     await panel.unmount()
   })
 
-  test('both hosts arrange the main row as trend beside the browser', async () => {
+  test('both hosts arrange independent columns: trend→events beside browser→children', async () => {
     const View = makeView(new TestClientCtx())
     const projections = projectionsFor(richTimeline())
 
     for (const props of [{ useProjection: projections }, { host: 'sidebar' as const, useProjection: projections }]) {
       const m = await mount(h(View, props))
-      const cols = queryAll(m.container, '.redline-cols-main > .redline-col')
-      assert.equal(cols.length, 2, 'one two-column split')
-            assert.ok(cols[0].querySelector('.redline-trend-ctl') !== null, 'the trend follows in the same column')
-      assert.ok(cols[1].querySelector('.redline-br-dna-ctl') !== null, 'the browser owns the right column')
+      const cols = queryAll(m.container, '.redline-masonry > .redline-masonry-col')
+      assert.equal(cols.length, 2, 'two independent columns, not a same-height row')
+      assert.ok(cols[0].querySelector('.redline-trend-ctl') !== null, 'left column begins with the trend')
+      assert.ok(text(cols[0]).includes(DICT_EN['events.title']), 'events continue below the trend')
+      assert.ok(cols[1].querySelector('.redline-br-dna-ctl') !== null, 'right column begins with the browser')
+      assert.ok(text(cols[1]).includes(DICT_EN['child.title']), 'children continue below the browser')
       await m.unmount()
     }
   })

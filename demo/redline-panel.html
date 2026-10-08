@@ -26,18 +26,16 @@
 <!-- 常驻状态说明条（docs/03 R4.4） -->
 <div class="noticebar" id="noticeBar" hidden></div>
 
-<main class="cols">
-  <section class="col col-left">
+<!-- 两列各自独立向下堆叠：不做“每一行同高”的网格，左/右都从顶部立即填起。 -->
+<main class="masonry">
+  <section class="masonry-col">
     <div class="card" id="cardStats"></div>
     <div class="card" id="cardTrend"></div>
     <div class="card" id="cardEvents"></div>
   </section>
-
-  <section class="col col-right">
-    <!-- 吸顶：还有 N 条未生效（docs/03 R4.1） -->
+  <section class="masonry-col">
     <div class="sticky-drafts" id="stickyDrafts" hidden></div>
     <div class="card" id="cardBrowser"></div>
-    <!-- 固定块（不变量）：注入内容专用的"钉住 + 漂移检查"面板（docs/03 R2.4） -->
     <div class="card" id="cardOrch"></div>
   </section>
 </main>
