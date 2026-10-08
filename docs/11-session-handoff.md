@@ -1470,3 +1470,35 @@ Review 发现 4 个会削弱「编辑 → 确认 → 子会话携带改写」可
    两条样式（不留死样式），demo 与插件同步。行内的 `↗` 图标位暂时保留。
 
 证据：[`docs/screenshots/13-child-card-final.png`](screenshots/13-child-card-final.png)（真机面板，`hasSymbol: false`、块的子节点只剩 `copy` + 按钮）。
+
+## D65 · 「标记为不要」：本地作废标记（2026-10-08，用户选 A）
+
+**问题**：用户问「上下文浏览器里除了编辑，某些内容应该也能删除吧？」。核完事实后**必须先说清平台边界**：
+`SurfaceOp` 只有 `append` 与 `replace`（`docs/01` §3）—— **没有 delete**；fork 的种子恒为父会话已完成轮次的**全部日志**，
+调用方没有任何参数能排除某一条（F38）。⟹ 「删除」只能表达成**遮蔽（replace）**，而那会**往当前会话写**，
+与用户 2026-10-02 立的硬约束（所有保存都是临时保存）方向相反，也正是 `docs/11` D19 撤掉 apply 的那条路。
+
+**用户选了 A：本地「标记为不要」** —— 不写当前会话，只在开启子会话时**由首条任务逐字声明作废**。
+
+**语义（三条，都有门禁）**：
+1. **只写我们的草稿文件**；当前会话零写入（通道测试断言 `sessionWrites` 空、日志 offset 不动）。
+2. **与「编辑」互斥**：标了就清掉该行的本地改动；一旦编辑该行，标记自动消失（一个 seq 只有一份记录，
+   `editOf()` 把带标记的记录**当作没有编辑**，否则 `effectiveText` 会给出空串、行渲染成空白 —— 这个坑在写测试时就踩到了）。
+3. **助手消息也给这个动作**：它改不了，`标记为不要`是它唯一的处置手段。宿主保护的两类 / 已被接替 / 被压缩埋掉：不给。
+
+**落点**：
+- 纯逻辑：`src/shared/redline-drafts.ts`（`LocalEdit.excluded`、`putExcluded`、`excludedSeqsOf`、`isExcluded`）、
+  `src/redline/orchestrate.ts`（`EXCLUDED_HEADING` + `buildFirstTask`/`forkConfirmItems` 的作废段）、
+  `src/shared/redline-ability.ts`（`canExclude`、`RowAction` 增 `exclude`/`unexclude`）。
+- 宿主：新 op **`draft.exclude`**（`docs/02` §5.2 A 段由 10 条变 11 条）；`child.plan`/`child.start` 都带 `excludedSeqs`。
+- 界面：行上 `标记为不要` / `取消标记` + `已标为不要` 标记；工具结果那类的标记与「编辑」一起**收在高级开关后**。
+- **文案不许写"已删除"**（`docs/00` N1）：一律说「作废 / 不要采用」，并在 tip 里写明**历史原文仍会被带过去**。
+
+**顺手修掉一个真缺陷（真机发现）**：`标记为不要` 没有编辑器可依附，而 `rowError` 原来只在**编辑器里**渲染
+⟹ 被拒时界面**什么都不显示**（静默失败，违反 `docs/03` R3.5）。现在动作条自己也能报
+（`.redline-act-err`，`role="alert"`），并有一条 client-ui 门禁钉住。
+
+**⚠️ 真机现状（必须重启才生效）**：界面已经上了（硬刷新即可看到 76 行都有 `编辑 + 标记为不要`），
+但**点下去现在还不行** —— 运行中的宿主答 `{"code":"redline/unknown-op","message":"unknown redline op: draft.exclude"}`
+（实测）。因为**宿主半边是开机加载的**（`docs/01` F46），新 op 必须**重启 `dsh web`** 才存在。
+重启后重跑：点一次标记 → 行上出现「已标为不要」、`$DSH_HOME/dsh-context-redline/redline-drafts-<会话>.json` 里出现 `"excluded": true`。

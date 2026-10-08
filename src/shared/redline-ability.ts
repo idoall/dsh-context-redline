@@ -67,21 +67,39 @@ export interface Ability {
   readonly inert: boolean
   readonly shadowed: boolean
   readonly isReplacement: boolean
+  /** 被压缩埋掉（够不到，既不能编辑也不能作废）。 */
+  readonly compacted: boolean
   /** The "advanced" class: `Edit` is hidden behind the advanced switch (`docs/03` R2.5). */
   readonly advancedOnly: boolean
+  /**
+   * 能不能把这一条标为「不要」（`docs/11` D65，用户 2026-10-08 选 A）。
+   * 判据与"能不能编辑"**不同**：助手消息**改不了但可以作废** —— 那正是它唯一的处置手段。
+   * 宿主保护的两类、已被接替的、被压缩埋掉的：不给（与"不能编辑"同一批）。
+   */
+  readonly canExclude: boolean
   /** Present exactly when `canRewrite` is false — including inert rows, which still need a reason line. */
   readonly blockReason?: BlockReason
 }
 
-/** One row's actions. `drop` appears only when a local edit exists. */
-export type RowAction = 'edit' | 'drop'
+/**
+ * One row's actions.
+ *   · `drop`      —— 丢弃这一条的本地改动（有改动时才出现）；
+ *   · `exclude`   —— 标为「不要」（作废，开启子会话时逐字声明）；
+ *   · `unexclude` —— 取消作废标记。
+ * `exclude` 与 `edit` **互斥**（同一条记录只有一份，标了就清掉改动）。
+ */
+export type RowAction = 'edit' | 'drop' | 'exclude' | 'unexclude'
 
 export function ability(row: SurfaceRow): Ability {
   const inert = row.cat === 'system' || row.cat === 'tools'
   const canRewrite = !inert && !row.shadowed && row.type !== 'assistant/message' && !row.compacted
+  // 比 canRewrite 宽一档：**助手消息可以标为不要**（它只是不能改写）。
+  const canExclude = !inert && !row.shadowed && !row.compacted
   return {
     canRewrite,
+    canExclude,
     inert,
+    compacted: row.compacted,
     shadowed: row.shadowed,
     isReplacement: row.isReplacement,
     advancedOnly: row.cat === 'tool',
@@ -138,8 +156,16 @@ export function durableTypeOf(cat: RowClass): string {
   return TYPES_BY_BUCKET[cat][0] ?? 'user/message'
 }
 
-/** The actions a row offers, given whether it carries a local edit. */
-export function rowActions(a: Ability, hasLocalEdit: boolean): readonly RowAction[] {
-  if (!a.canRewrite) return []
-  return hasLocalEdit ? ['edit', 'drop'] : ['edit']
+/** The actions a row offers: its local edit (if any) and its 「不要」 mark (if any) are mutually exclusive. */
+export function rowActions(a: Ability, hasLocalEdit: boolean, excluded = false): readonly RowAction[] {
+  if (a.inert) return []
+  // 已标为「不要」：只剩"取消标记"（此时不给编辑 —— 两者互斥）。
+  if (excluded) return ['unexclude']
+  if (a.shadowed || a.compacted) return []
+  const actions: RowAction[] = []
+  if (a.canRewrite) actions.push('edit')
+  if (a.canExclude) actions.push('exclude')
+  // 「丢弃这条改动」只属于**可编辑**的行（不能编辑的行根本不该有本地改动；这里有防守意义）。
+  if (a.canRewrite && hasLocalEdit) actions.push('drop')
+  return actions
 }

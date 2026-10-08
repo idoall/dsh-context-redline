@@ -91,6 +91,7 @@ function stubRedline(over: Partial<RedlineDraftController> = {}): RedlineDraftCo
     }),
     save: () => Promise.resolve(true),
     drop: () => Promise.resolve(true),
+    exclude: () => Promise.resolve(true),
     clearError: () => {},
     ...over,
   }

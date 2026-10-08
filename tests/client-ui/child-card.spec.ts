@@ -36,6 +36,7 @@ const PLAN = {
     { label: '取消', text: '取消就是什么都不发生。' },
   ],
   carriedSeqs: [7879],
+  excludedSeqs: [],
   draftRevision: 'd1-test-plan',
   prompt: '【探针】\n\n以下是我在「上下文批改」里改好的上下文……',
   // M2-20：确认框要显示「首条任务有多大」 ⟹ 桩里也得有这份读数。

@@ -67,6 +67,7 @@ function controller(over: Partial<RedlineDraftController> = {}): RedlineDraftCon
     }),
     save: () => Promise.resolve(true),
     drop: () => Promise.resolve(true),
+    exclude: () => Promise.resolve(true),
     clearError: () => {},
     ...over,
   }
@@ -201,7 +202,7 @@ describe('① the only row action is 编辑', () => {
     const bar = actionsIn(m, 11)
     assert.ok(bar !== null, 'the row carries an action bar')
     const buttons = queryAll(bar, 'button').map(b => b.textContent)
-    assert.deepEqual(buttons, [DICT_EN['redline.edit']])
+    assert.deepEqual(buttons, [DICT_EN['redline.edit'], DICT_EN['redline.exclude']], '编辑 + 标记为不要（后者 2026-10-08 新增）')
     assert.equal(text(bar).includes(DICT_EN['redline.local']), false, 'no marker before a save')
     await m.unmount()
   })
@@ -213,13 +214,16 @@ describe('① the only row action is 编辑', () => {
   // `makeRedlineActions` returns null for them). Reaching them here would mean
   // standing up a header-epoch fetch for no extra signal.
 
-  test('an assistant message states WHY and offers no button', async () => {
+  // 2026-10-08（用户选 A）：助手消息**改不了，但可以「标记为不要」** —— 那是它唯一的处置手段。
+  test('an assistant message states WHY, offers no edit, and offers 「标记为不要」', async () => {
     const m = await mountBrowser(step([node({ seq: 21, cat: 'assistant', text: 'reply' })]), controller())
     await openCategory(m, 5) // CATS order: system, tools, user, inject, skill, assistant, tool
     const bar = actionsIn(m, 21)
     assert.ok(bar !== null)
-    assert.equal(queryAll(bar, 'button').length, 0, 'no action on an assistant message')
-    assert.ok(text(bar).includes(DICT_EN['redline.reason.assistant']))
+    const buttons = queryAll(bar, 'button')
+    assert.equal(buttons.length, 1, '助手消息只给一个动作')
+    assert.equal(text(buttons[0]), DICT_EN['redline.exclude'], '而且只能是「标记为不要」')
+    assert.ok(text(bar).includes(DICT_EN['redline.reason.assistant']), '为什么没有「编辑」仍要说清')
     await m.unmount()
   })
 
@@ -248,7 +252,7 @@ describe('② a local edit shows ONE marker plus the discard action', () => {
     const label = DICT_EN['redline.local']
     const occurrences = text(m.container).split(label).length - 1
     assert.equal(occurrences, 1, 'exactly one marker for one row')
-    assert.deepEqual(queryAll(bar, 'button').map(b => b.textContent), [DICT_EN['redline.edit'], DICT_EN['redline.drop']])
+    assert.deepEqual(queryAll(bar, 'button').map(b => b.textContent), [DICT_EN['redline.edit'], DICT_EN['redline.exclude'], DICT_EN['redline.drop']])
     await m.unmount()
   })
 
@@ -261,7 +265,7 @@ describe('② a local edit shows ONE marker plus the discard action', () => {
     // leaving the discarded text in an open editor looked like "it did nothing".
     await act(async () => { (queryAll(actionsIn(m, 11)!, 'button')[0] as HTMLElement).click() })
     assert.equal(queryAll(m.container, '.redline-editor').length, 1, 'editor open before the discard')
-    await act(async () => { (queryAll(actionsIn(m, 11)!, 'button')[1] as HTMLElement).click() })
+    await act(async () => { (queryAll(actionsIn(m, 11)!, 'button')[2] as HTMLElement).click() })
     assert.equal(dropped, 11)
     assert.equal(queryAll(m.container, '.redline-editor').length, 0, 'the editor collapsed with the discard')
     await m.unmount()
@@ -396,7 +400,50 @@ describe('④ the tool-result action hides behind the advanced switch', () => {
     assert.ok(toggle !== undefined, 'the switch is in the card head')
     await act(async () => { toggle.click() })
     const bar = actionsIn(m, 41)
-    assert.deepEqual(queryAll(bar!, 'button').map(b => b.textContent), [DICT_EN['redline.edit']])
+    assert.deepEqual(queryAll(bar!, 'button').map(b => b.textContent), [DICT_EN['redline.edit'], DICT_EN['redline.exclude']], '开关打开后两个动作一起出现')
+    await m.unmount()
+  })
+})
+
+// ── 「标记为不要」的界面态（`docs/11` D65，用户 2026-10-08 选 A）─────────────────
+describe('⑤ 标记为不要：标记态、取消、以及与编辑互斥', () => {
+  test('标了之后：行上是「已标为不要」，动作只剩「取消标记」（没有编辑）', async () => {
+    const table = { 11: { seq: 11, text: '', reasoning: '', isError: false, updatedAt: '', excluded: true } }
+    const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'hello' })]), controller({ table }))
+    await openCategory(m, 2)
+    const bar = actionsIn(m, 11)
+    assert.ok(bar !== null, 'the row carries an action bar')
+    assert.ok(text(bar).includes(DICT_EN['redline.excluded']), '行上写明已作废')
+    assert.deepEqual(queryAll(bar, 'button').map(b => b.textContent), [DICT_EN['redline.unexclude']], '只剩取消标记')
+    assert.equal(text(bar).includes(DICT_EN['redline.local']), false, '标记不是「已改（本地）」')
+    await m.unmount()
+  })
+
+  test('点「标记为不要」调一次宿主 op（seq 与 on 都要对）', async () => {
+    const calls: [number, boolean][] = []
+    const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'x' })]),
+      controller({ exclude: (seq, on) => { calls.push([seq, on]); return Promise.resolve(true) } }))
+    await openCategory(m, 2)
+    const bar = actionsIn(m, 11)
+    assert.ok(bar !== null, 'the row carries an action bar')
+    const excludeBtn = queryAll(bar, 'button').find(b => (b.textContent ?? '') === DICT_EN['redline.exclude'])
+    assert.ok(excludeBtn !== undefined)
+    await act(async () => { excludeBtn.click() })
+    assert.deepEqual(calls, [[11, true]], '标为不要 = exclude(11, true)')
+    await m.unmount()
+  })
+})
+
+// ── 拒绝必须说出来（docs/03 R3.5）─────────────────────────────────────────────
+// 真机踩到：`标记为不要` 在没有编辑器打开时被宿主拒绝（例如运行中的宿主还不认识这个新 op
+// ⟹ redline/unknown-op），界面**什么都不显示** —— 那就是静默失败。
+describe('⑥ 行内动作被拒时要说话（没有编辑器也要说）', () => {
+  test('exclude 被拒：那一行上出现拒绝原因（不吞掉）', async () => {
+    const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'x' })]),
+      controller({ rowError: { seq: 11, code: 'redline/unknown-op' } }))
+    await openCategory(m, 2)
+    const alert = query<HTMLElement>(m.container, '[data-rowactions="11"] [role="alert"]')
+    assert.equal(text(alert), DICT_EN['redline.err.unknown-op'], '拒绝原因必须出现在这一行上')
     await m.unmount()
   })
 })

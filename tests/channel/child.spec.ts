@@ -540,3 +540,58 @@ describe('首条任务的计数契约（M2-20）：plan 报的字节数 = 真正
     assert.ok(plan.refusal !== null, '同时给了拒绝原因')
   })
 })
+
+// ── 「标记为不要」的通道口径（`docs/11` D65，用户 2026-10-08 选 A）──────────────
+// 铁律不变：**它只写我们自己的草稿文件**；当前会话一个字都不写（`docs/11` D15）。
+// 它**不是删除**：fork 的种子照样带全部历史（`docs/01` F38）⟹ 唯一的出口是首条任务里的声明。
+describe('draft.exclude：本地「不要」标记，以及它怎么进子会话', () => {
+  test('标记后：plan 的 carriedSeqs 不含它、excludedSeqs 含它，首条任务里声明作废', async () => {
+    const ops = await boot()
+    await saveEdit(ops, 1301, EDITED)
+    const marked = await call(ops, { op: 'draft.exclude', sessionId: ops.sessionId, seq: 1301, excluded: true })
+    assert.equal(marked.ok, true, JSON.stringify(marked))
+    const plan = value(await call(ops, { op: 'child.plan', sessionId: ops.sessionId, humanTask: '继续' })) as {
+      carriedSeqs: number[], excludedSeqs: number[], prompt: string,
+    }
+    assert.deepEqual(plan.carriedSeqs, [], '标为不要的那条不再作为"改好的正文"带过去')
+    assert.deepEqual(plan.excludedSeqs, [1301], '它出现在作废清单里')
+    assert.ok(plan.prompt.includes('不要采用'), '首条任务里要有"不要采用"这句话')
+    assert.ok(plan.prompt.includes('#1301'), '并且指名道姓')
+    assert.equal(/【#1301】\n[^【]/.test(plan.prompt), false, '作废条目后面**不许**跟正文（我们手里没有它的原文）')
+  })
+
+  test('取消标记 → 又回到"没有改动、也没有作废"', async () => {
+    const ops = await boot()
+    await call(ops, { op: 'draft.exclude', sessionId: ops.sessionId, seq: 1301, excluded: true })
+    await call(ops, { op: 'draft.exclude', sessionId: ops.sessionId, seq: 1301, excluded: false })
+    const plan = value(await call(ops, { op: 'child.plan', sessionId: ops.sessionId, humanTask: '继续' })) as { excludedSeqs: number[] }
+    assert.deepEqual(plan.excludedSeqs, [])
+  })
+
+  test('标记与编辑互斥：先标记再保存 ⟹ 标记没了；先保存再标记 ⟹ 改动没了', async () => {
+    const ops = await boot()
+    await call(ops, { op: 'draft.exclude', sessionId: ops.sessionId, seq: 1301, excluded: true })
+    await saveEdit(ops, 1301, EDITED)
+    let plan = value(await call(ops, { op: 'child.plan', sessionId: ops.sessionId, humanTask: '继续' })) as { carriedSeqs: number[], excludedSeqs: number[] }
+    assert.deepEqual(plan.excludedSeqs, [], '编辑把标记清掉了')
+    assert.deepEqual(plan.carriedSeqs, [1301], '改动生效')
+
+    await call(ops, { op: 'draft.exclude', sessionId: ops.sessionId, seq: 1301, excluded: true })
+    plan = value(await call(ops, { op: 'child.plan', sessionId: ops.sessionId, humanTask: '继续' })) as { carriedSeqs: number[], excludedSeqs: number[] }
+    assert.deepEqual(plan.carriedSeqs, [], '标记把改动清掉了')
+    assert.deepEqual(plan.excludedSeqs, [1301])
+  })
+
+  test('标记也要走同一道门：会话零写入 + 轮次未闭合拒绝', async () => {
+    const ops = await boot()
+    const before = ops.logOffset()
+    await call(ops, { op: 'draft.exclude', sessionId: ops.sessionId, seq: 1301, excluded: true })
+    assert.deepEqual(ops.sessionWrites, [], '标记只写本地，不碰会话')
+    assert.equal(ops.logOffset(), before, '日志 offset 不动')
+
+    ops.setLog([{ type: 'turn/start' }])
+    const refused = await call(ops, { op: 'draft.exclude', sessionId: ops.sessionId, seq: 1301, excluded: true })
+    assert.equal(code(refused), REDLINE_ERROR.turnOpen, '轮次未闭合时拒绝')
+    ops.setLog([{ type: 'turn/start' }, { type: 'turn/end' }])
+  })
+})

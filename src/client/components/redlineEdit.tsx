@@ -50,32 +50,63 @@ export function makeRedlineActions(kit: ViewKit): (props: {
   seq: number
   ability: Ability
   hasLocalEdit: boolean
+  /** 这一条是否已被标为「不要」（`docs/11` D65）。与 `hasLocalEdit` 互斥。 */
+  excluded: boolean
   /** The advanced switch, only meaningful for `advancedOnly` rows (`R2.5`). */
   advanced: boolean
   busy: boolean
   onEdit: () => void
   onDrop: () => void
+  /** 标为「不要」/ 取消标记。 */
+  onExclude: () => void
+  onUnexclude: () => void
+  /**
+   * 这一行**最近一次动作被拒**的稳定码（`redline/*`）。
+   * ⚠️ 真机踩到：`标记为不要` 没有编辑器可依附，若只把错误丢给编辑器，拒绝就被吞掉了
+   * （`docs/03` R3.5 要求"拒绝必须说出来"）。所以动作条自己也要能报。
+   */
+  errorCode: string | null
 }) => ReactElement | null {
   const { t } = kit
   return function RedlineActions(props): ReactElement | null {
     const { ability } = props
     if (ability.inert) return null
-    const actions = rowActions(ability, props.hasLocalEdit)
-    const hiddenAsAdvanced = ability.advancedOnly && !props.advanced && actions.includes('edit')
+    const actions = rowActions(ability, props.hasLocalEdit, props.excluded)
+    const hiddenAsAdvanced = ability.advancedOnly && !props.advanced && (actions.includes('edit') || actions.includes('exclude'))
+    /**
+     * 改不了时的"为什么"徽章：助手消息要它（说明为什么没有「编辑」），
+     * 但**已标为「不要」的行不要**（那时行上已经有「已标为不要」了，再来一句原因就是噪音）。
+     */
+    const reasonKey = REASON_KEY[ability.blockReason ?? ''] ?? 'redline.reason.other'
+    const reasonChip = actions.includes('unexclude')
+      ? null
+      : <span className="redline-chip-soft" title={t(reasonKey)}>{t(reasonKey)}</span>
     return (
       <div className="redline-act" data-rowactions={props.seq}>
         <span className="redline-act-seq">{'#' + String(props.seq)}</span>
         {props.hasLocalEdit
           ? <span className="redline-chip-local" title={t('redline.local.tip')}>{t('redline.local')}</span>
           : null}
+        {props.excluded
+          ? <span className="redline-chip-excluded" title={t('redline.excluded.tip')}>{t('redline.excluded')}</span>
+          : null}
         {hiddenAsAdvanced
           ? <span className="redline-chip-soft" title={t('redline.advanced.tip')}>{t('redline.advanced')}</span>
           : actions.includes('edit')
             ? <button type="button" className="redline-btn" disabled={props.busy} onClick={props.onEdit}>{t('redline.edit')}</button>
-            : <span className="redline-chip-soft" title={t(REASON_KEY[ability.blockReason ?? ''] ?? 'redline.reason.other')}>{t(REASON_KEY[ability.blockReason ?? ''] ?? 'redline.reason.other')}</span>}
+            : reasonChip}
+        {actions.includes('exclude') && !hiddenAsAdvanced
+          ? <button type="button" className="redline-btn redline-btn-quiet" title={t('redline.exclude.tip')} disabled={props.busy} onClick={props.onExclude}>{t('redline.exclude')}</button>
+          : null}
+        {actions.includes('unexclude') && !hiddenAsAdvanced
+          ? <button type="button" className="redline-btn redline-btn-quiet" title={t('redline.unexclude.tip')} disabled={props.busy} onClick={props.onUnexclude}>{t('redline.unexclude')}</button>
+          : null}
         {actions.includes('drop')
           ? <button type="button" className="redline-btn redline-btn-quiet" disabled={props.busy} onClick={props.onDrop}>{t('redline.drop')}</button>
           : null}
+        {props.errorCode === null
+          ? null
+          : <span className="redline-act-err" role="alert">{t('redline.err.' + props.errorCode.replace('redline/', ''))}</span>}
       </div>
     )
   }

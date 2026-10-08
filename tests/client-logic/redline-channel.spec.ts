@@ -132,6 +132,7 @@ describe('open a child session (the ONLY write point)', () => {
     stubFetch(() => envelope({
       items: [{ label: '从哪儿开始', text: '…' }, { label: '取消', text: '什么都不发生' }],
       carriedSeqs: [3358],
+      excludedSeqs: [],
       draftRevision: 'd1-plan',
       prompt: '继续\n\n改好的正文',
       refusal: null,

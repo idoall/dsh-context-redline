@@ -21,6 +21,8 @@ import {
   dropEdit,
   draftFileName,
   draftRevisionOf,
+  excludedSeqsOf,
+  putExcluded,
   editOf,
   effectiveIsError,
   effectiveReasoning,
@@ -222,5 +224,42 @@ describe('the "no substantive change" rule (mirrors the demo)', () => {
     assert.equal(empty.ok, false)
     if (noChange.ok || empty.ok) return
     assert.notEqual(noChange.code, empty.code)
+  })
+})
+
+// ── 「标记为不要」（本地，2026-10-08 用户选 A）────────────────────────────────
+// 平台只有 append/replace，**没有 delete**；fork 的种子也排除不掉某一跳（docs/01 F38）
+// ⟹ 「删除」在本地口径里 = 把这一条标成作废、开启子会话时逐字声明不使用它。
+// 铁律不变：只写我们自己的草稿文件，当前会话一个字都不写（docs/11 D15）。
+describe('标记为不要（本地，不写当前会话）', () => {
+  test('标记后进草稿文件、可读回；且与「编辑」互斥', () => {
+    const r = row(9, '原文')
+    // 先编辑，再标记 ⟹ 那条编辑被清掉（互斥）
+    const edited = putEdit(emptyDrafts(), edit(9, '我改过的正文'))
+    assert.equal(effectiveText(r, edited), '我改过的正文')
+    const marked = putExcluded(edited, 9, '2026-10-08T00:00:00.000Z')
+    assert.deepEqual(excludedSeqsOf(marked), [9], '标记生效')
+    assert.equal(effectiveText(r, marked), '原文', '标记把该行的本地改动清掉了（互斥）')
+    // 再编辑 ⟹ 标记被清掉
+    const reEdited = putEdit(marked, edit(9, '又改了一次'))
+    assert.deepEqual(excludedSeqsOf(reEdited), [], '编辑把标记清掉了（互斥）')
+    // 落盘再读回
+    const parsed = parseDrafts(serializeDrafts('s1', marked))
+    assert.equal(parsed.ok, true)
+    if (parsed.ok) assert.deepEqual(excludedSeqsOf(parsed.table), [9], '经过一次落盘/读回仍在')
+  })
+
+  test('版本号覆盖标记：标记一变，revision 就变（确认框绑定的就是它）', () => {
+    const base = putEdit(emptyDrafts(), edit(1, 'a'))
+    const marked = putExcluded(base, 2, '2026-10-08T00:00:00.000Z')
+    assert.notEqual(draftRevisionOf('s1', base), draftRevisionOf('s1', marked), '标记必须改变版本号')
+    // 取消标记 ⟹ 又变回去（dropEdit 清整条记录）
+    assert.equal(draftRevisionOf('s1', dropEdit(marked, 2)), draftRevisionOf('s1', base))
+  })
+
+  test('坏文件里的 excluded 不是布尔 ⟹ 大声拒绝，不静默当没标', () => {
+    const raw = JSON.stringify({ schemaVersion: REDLINE_DRAFT_SCHEMA_VERSION, sessionId: 's1', edits: [{ seq: 1, text: '', reasoning: '', isError: false, updatedAt: '', excluded: 'yes' }] })
+    const parsed = parseDrafts(raw, 's1')
+    assert.equal(parsed.ok, false, 'excluded 必须是布尔')
   })
 })

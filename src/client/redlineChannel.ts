@@ -125,6 +125,14 @@ export async function saveDraft(sessionId: string, seq: number, edit: DraftEdit)
 }
 
 /** Forget one row's local edit (the row goes back to its original). */
+/**
+ * 标为「不要」（`excluded: true`）或取消标记（`false`）。**只写插件本地** ——
+ * 当前会话一个字都不写；开启子会话时由首条任务逐字声明这几条作废（`docs/11` D65）。
+ */
+export async function excludeDraft(sessionId: string, seq: number, excluded: boolean): Promise<RedlineResult<DraftTable>> {
+  return await call<DraftTable>({ op: 'draft.exclude', sessionId, seq, excluded })
+}
+
 export async function dropDraft(sessionId: string, seq: number): Promise<RedlineResult<DraftTable>> {
   return await call<DraftTable>({ op: 'draft.drop', sessionId, seq })
 }
@@ -135,6 +143,8 @@ export interface ChildPlan {
   items: readonly { label: string; text: string }[]
   /** 会逐字带过去的本地改动（按 seq）。 */
   carriedSeqs: readonly number[]
+  /** 被标为「不要」、会在首条任务里声明作废的 seq（`docs/11` D65）。 */
+  excludedSeqs: readonly number[]
   /** Exact local-draft set reviewed by this plan; required by `child.start`. */
   draftRevision: string
   /** 组装好的首条任务；被拒绝时为 `null`。 */

@@ -312,7 +312,9 @@ body {
 .chip-soft { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px dashed var(--dsw-alias-border-l2); color: var(--dsw-alias-label-caption); }
 .chip-draft { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--ds-color-amber); color: var(--ds-color-amber); }
 .chip-shadow { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-caption); }
-/* 输入去向标记（`docs/03` R3.3.3）：**只有两种**，界面上凡"让你写字"的地方都必须带一个。
+
+/* 「标记为不要」的标记（docs/11 D65）：与改过区分开 —— 它是**作废**，不是改过。 */
+.chip-excluded { font-size: 11px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-interactive-bg-hover-solid); border: 1px dashed var(--dsw-alias-border-l2); border-radius: 4px; padding: 0 6px; }/* 输入去向标记（`docs/03` R3.3.3）：**只有两种**，界面上凡"让你写字"的地方都必须带一个。
  *   `.dest-local` = 只写本地（灰虚线，与「尚无固定块」同一套语言）
  *   `.dest-model` = 会进模型上下文（琥珀实线：提醒"模型会读到这段话，写清楚 —— 别写给自己看的备忘"）
  * 字段标签里的标记要跟文字同排（`.field span` 默认是 block）→ 单独给 inline-block。 */

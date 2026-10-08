@@ -320,7 +320,9 @@ body {
 .chip-soft { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px dashed var(--dsw-alias-border-l2); color: var(--dsw-alias-label-caption); }
 .chip-draft { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--ds-color-amber); color: var(--ds-color-amber); }
 .chip-shadow { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-caption); }
-/* 输入去向标记（`docs/03` R3.3.3）：**只有两种**，界面上凡"让你写字"的地方都必须带一个。
+
+/* 「标记为不要」的标记（docs/11 D65）：与改过区分开 —— 它是**作废**，不是改过。 */
+.chip-excluded { font-size: 11px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-interactive-bg-hover-solid); border: 1px dashed var(--dsw-alias-border-l2); border-radius: 4px; padding: 0 6px; }/* 输入去向标记（`docs/03` R3.3.3）：**只有两种**，界面上凡"让你写字"的地方都必须带一个。
  *   `.dest-local` = 只写本地（灰虚线，与「尚无固定块」同一套语言）
  *   `.dest-model` = 会进模型上下文（琥珀实线：提醒"模型会读到这段话，写清楚 —— 别写给自己看的备忘"）
  * 字段标签里的标记要跟文字同排（`.field span` 默认是 block）→ 单独给 inline-block。 */
@@ -717,7 +719,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 2136ef2</span>
+    <b>上下文批改</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 fd94e5e</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -826,6 +828,11 @@ const EXPLAIN = {
   'cat.toggle': { t: '展开 / 收起分类', what: '展开某类（系统提示词 / 工具定义 / 用户消息 / 注入内容 / 技能注入 / 助手消息 / 工具结果）。', effect: '列出该类里的每一条（带 #seq、时间、token）。**点类名左侧的色块 = 聚焦到趋势图**。', rev: '再点一次收起', confirm: '不需要', refs: ['docs/03 §2'] },
   'row.toggle': { t: '展开这一条', what: '看这一条的正文。', effect: '就地展开全文（不跳页）。', rev: '再点一次收起', confirm: '不需要', refs: ['docs/03 R2.2'] },
 
+  'act.exclude': { t: '标记为不要', what: '把这一条标为**作废**：它不会被采用。',
+    effect: '只记在**插件本地**（当前会话一个字都不写）；点「开启子会话」时，首条任务里会逐字声明"不要采用这几条"。'
+      + '⚠️ 平台**没有删除**，fork 也会把全部历史带过去 —— 所以这是"声明作废"，**不是**把原文删掉。',
+    rev: '可以「取消标记」恢复；标记与「编辑」**互斥**（标了就清掉该行的本地改动）',
+    confirm: '不需要（本地保存）', refs: ['docs/11 D65', 'docs/00 N1', 'docs/01 F38'] },
   'act.edit': { t: '编辑', what: '改写这一条的内容。', effect: '**只写插件本地**（当前会话的模型看不到，会话日志也不动）；点「开启子会话」时，改后的正文逐字写进新会话的第一句话。', rev: '可反复改（预填上次保存的版本）；`丢弃这条改动` 回到原文', confirm: '不需要（本地保存）', refs: ['docs/03 R3.3', 'docs/11 D15'] },
 
   'orch.spawn': {
@@ -987,7 +994,7 @@ const initial = () => ({
   selTurn: RICH_TURN, selSeq: REQUESTS[REQUESTS.length - 1].seq,
   openCat: 'user', openElem: null,
   editor: null, editorError: null, editorOk: null, focusTurn: null, trendEnter: true, deltaBase: 'turn',
-  drafts: {}, applied: [], extraNodes: [], children: [], pendingSeen: false
+  drafts: {}, excluded: {}, applied: [], extraNodes: [], children: [], pendingSeen: false
 });
 
 let S = initial();
@@ -1046,6 +1053,8 @@ const surfaceOf = () => nodesOfReq(reqOf(), false);
 const visibleOf = () => nodesOfReq(reqOf(), true);
 const metricOf = (req, cat) => nodesOfReq(req, true).filter((n) => !cat || n.cat === cat).reduce((s, n) => s + n.tokens, 0);
 const draftOf = (seq) => S.drafts[seq];
+/** 「标记为不要」（docs/11 D65）：只记在本地；与本地改动**互斥**。 */
+const excludedOf = (seq) => S.excluded[seq] === true;
 /* ⚠️ 用户 2026-10-02：「保存后，还应该可以**继续编辑**」（填错了 / review 之后要完善）。
  * ⟹ 保存过的本地改动就是"当前生效的正文"：**编辑器预填它、行上显示它、再次保存覆盖它**。
  * 注意：这只影响面板里看到/编辑的内容 —— 会话日志与模型可见内容始终不变（硬约束）。 */
@@ -1750,17 +1759,31 @@ function rowHtml(node) {
        * 旧模型的残留（`版本历史` / `从这一版恢复` / `去改现在这条` / `写一句更正`）全部删除。
        * 改不了的行只留一句**说明**（为什么没有「编辑」），不给任何其他动作。 */
       const acts = [];
-      if (a.canRewrite) {
+      const excluded = excludedOf(node.seq);
+      /* 2026-10-08（用户选 A）：除「编辑」外再给一个「标记为不要」——平台没有删除，
+       * fork 也排除不掉历史（docs/01 F38），所以它只是**本地作废标记**，开启子会话时逐字声明。
+       * 助手消息改不了，但**可以作废** —— 那是它唯一的处置手段。 */
+      const canExclude = !node.compacted && !a.shadowed;
+      const excludeBtn = !canExclude || (a.advancedOnly && !S.sw.advanced) ? ''
+        : excluded
+          ? `<button class="btn sm ghost" data-act="unexclude" data-seq="${node.seq}" data-explain="act.exclude">取消标记</button>`
+          : `<button class="btn sm ghost" data-act="exclude" data-seq="${node.seq}" data-explain="act.exclude">标记为不要</button>`;
+      if (excluded) {
+        acts.push('<span class="chip-excluded" title="这一条已作废：开启子会话时首条任务会声明不要采用它（当前会话不受影响）">已标为不要</span>');
+        acts.push(excludeBtn);
+      } else if (a.canRewrite) {
         acts.push(a.advancedOnly && !S.sw.advanced
           ? '<span class="chip-soft" title="工具结果的「编辑」属于高级编辑：打开顶部「高级编辑」开关即可看到（避免几十条工具结果把常用动作淹掉）">高级编辑</span>'
           : `<button class="btn sm" data-act="edit" data-seq="${node.seq}" data-explain="act.edit">编辑</button>`);
+        if (excludeBtn) acts.push(excludeBtn);
       } else if (node.type === 'assistant/message') {
         acts.push(`<span class="badge-asst" title="${esc(a.blockReason)}">助手消息改不了</span>`);
+        if (excludeBtn) acts.push(excludeBtn);
       } else if (!a.shadowed) {
         /* 被遮蔽的行：上面的 `tail` 已经写了「已被 #K 接替」——**不重复第二个标记**。 */
         acts.push(`<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 16))}…</span>`);
       }
-      if (draftOf(node.seq)) {
+      if (!excluded && draftOf(node.seq)) {
         /* ⚠️ 用户 2026-10-02：`已改（本地）` 与 `已保存（本地）` **说的是同一件事** ⟹ 只留 `#seq` 旁边那一个
          *（rowHtml 顶部已经渲染），这里只放动作本身。 */
         acts.push(`<button class="btn sm ghost" data-act="dropDraft" data-seq="${node.seq}" data-explain="act.edit">丢弃这条改动</button>`);
@@ -2015,6 +2038,21 @@ function rowAct(btn) {
     }; render();
     toast(d ? `打开 #${seq} 的编辑器（预填的是你上次保存的版本，可继续改）` : `打开 #${seq} 的内联编辑器（预填的是全文，不是 80 字预览）`);
   }
+  if (act === 'exclude' || act === 'unexclude') {
+    /* 2026-10-08（用户选 A）：「标记为不要」只写本地；**不碰会话**。
+     * 与「编辑」互斥：标了就清掉该行的本地改动，改了就把标记清掉。 */
+    const on = act === 'exclude';
+    if (!on) { delete S.excluded[seq]; }
+    else {
+      delete S.drafts[seq];
+      delete S.drafts['note-' + seq];
+      if (S.editor && S.editor.seq === seq) S.editor = null;
+      S.excluded[seq] = true;
+    }
+    toast(on ? '已标为不要：开启子会话时会在这条的首条任务里声明不使用它' : '已取消标记，这一条恢复原样');
+    render();
+    return;
+  }
   if (act === 'dropDraft') {
     /* 本地保存的反悔口：只清本地，不碰会话（硬约束下没有任何"写进当前会话"的路径）。 */
     confirmModal({ title: '丢弃这条本地改动', warn: '只清插件本地的改动，不影响会话与模型可见内容。',
@@ -2080,9 +2118,14 @@ function orchAct(b) {
      * 所以在这一刻把本地改动**逐字拼进子会话的第一句话**（这就是"开子会话时才写进去"）。 */
     const edits = Object.values(S.drafts);
     const carryLines = [];
+    const excludedSeqs = Object.keys(S.excluded).map(Number).sort((a, b) => a - b);
     for (const d of edits) carryLines.push(`【改过 · ${d.cat || ''}${d.name ? ' · ' + d.name : ''} · #${d.seq}】\n${d.text}`);
-    const carry = carryLines.length
-      ? '[redline] 以下是本次改动（以此为准；与此冲突的此前理解一律作废）\n' + carryLines.join('\n\n') + '\n---\n'
+    const excludedBlock = excludedSeqs.length
+      ? ('\n[redline] 另外，以下条目我已经作废 —— 请不要采用它们的内容（历史里仍带着原文，不作为依据）：\n'
+         + excludedSeqs.map((s) => '【#' + String(s) + '】').join('\n') + '\n')
+      : '';
+    const carry = (carryLines.length || excludedSeqs.length)
+      ? '[redline] 以下是本次改动（以此为准；与此冲突的此前理解一律作废）\n' + carryLines.join('\n\n') + '\n---\n' + excludedBlock
       : '';
     confirmModal({
       title: '开启子会话',
@@ -2093,6 +2136,10 @@ function orchAct(b) {
                : '（你还没保存过任何改动 —— 保存只存本地，开子会话时才写进去）'],
              /* R4.3「本次清单」：把**逐字要写进去的内容**列出来（否则用户只能看到条数、看不到写的是什么）。 */
              ...edits.map((d) => [`· 改写 #${d.seq}`, (d.text || '').slice(0, 120)]),
+             ...(excludedSeqs.length
+               ? [['· 被标为不要', excludedSeqs.map((seq) => '#' + String(seq)).join('、')
+                   + ' —— 历史原文仍会被带过去，但首条任务会声明不要采用它们']]
+               : []),
              ['③ 首条任务', '（写在下面那一栏 —— 必须你写；插件不生成任何内容）'],
              ['④ 不会带上', '这个会话的工具授权；本会话此后新聊的内容。'],
              ['⑤ 取消', '取消 = 什么都不发生（不建会话）']],

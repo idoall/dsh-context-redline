@@ -711,9 +711,9 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
       }
     }
   }
-  const ALLOWED = new Set(['编辑', '丢弃这条改动']);
+  const ALLOWED = new Set(['编辑', '标记为不要', '取消标记', '丢弃这条改动']);
   const extra = [...labels].filter((l) => !ALLOWED.has(l));
-  check('行内动作白名单：只允许「编辑」与「丢弃这条改动」（没有版本历史 / 去改现在这条 / 写一句更正 / 批注 / 应用到会话）',
+  check('行内动作白名单：只允许「编辑」「标记为不要」「取消标记」「丢弃这条改动」（没有版本历史 / 去改现在这条 / 写一句更正 / 批注 / 应用到会话）',
     extra.length === 0, `出现白名单外的动作：${extra.join('、') || '（无）'}｜实际动作=${[...acts].join(',')}`);
   S.openCat = null; api.render();
 }
@@ -1183,5 +1183,32 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
 /* ---------------- 汇报 ---------------- */
 const bad = results.filter((r) => !r.ok);
 for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);
+
+/* ---------------- 「标记为不要」：本地作废标记（docs/11 D65，用户 2026-10-08 选 A） ----------------
+ * 平台**没有删除**，fork 也排除不掉历史（docs/01 F38）⟹ 这条能力只能表达成"标为作废 + 首条任务声明"。
+ * 这里锁住三件事：① 行上出现「已标为不要」；② 动作换成「取消标记」（与「编辑」互斥）；
+ * ③ 开启子会话的确认框把它算进"会写进去的改动"，并明确写出「历史原文仍会被带过去」。 */
+{
+  const S = api.S();
+  S.drafts = {}; S.excluded = {}; S.applied = []; S.extraNodes = []; S.editor = null;
+  S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.openCat = 'user'; api.render();
+  const node = api.nodesOfReq(api.lastOfTurn(api.TOTAL_TURNS), true).find((n) => n.cat === 'user' && n.type === 'user/message');
+  api.rowAct({ dataset: { act: 'exclude', seq: String(node.seq) } });
+  const html = registry.get('cardBrowser').innerHTML;
+  check('标记为不要：行上写明「已标为不要」', html.includes('已标为不要'));
+  check('标记为不要：动作换成「取消标记」，不再给「编辑」',
+    new RegExp('data-act="unexclude" data-seq="' + node.seq + '"').test(html)
+    && !new RegExp('data-act="edit" data-seq="' + node.seq + '"').test(html));
+  check('标记为不要：只写本地 —— 不产生任何本地改动', !S.drafts[node.seq]);
+  api.orchAct({ dataset: { act: 'spawn' } });
+  const rows = registry.get('modalList').innerHTML;
+  check('标记为不要：确认框里也说出来（含"历史原文仍会被带过去"这句实话）',
+    rows.includes('被标为不要') && rows.includes('#' + node.seq) && rows.includes('历史原文仍会被带过去'));
+  document.getElementById('modalWrap').hidden = true;
+  api.rowAct({ dataset: { act: 'unexclude', seq: String(node.seq) } });
+  check('取消标记：行上恢复原样（「已标为不要」没了）', !registry.get('cardBrowser').innerHTML.includes('已标为不要'));
+  S.excluded = {}; S.drafts = {}; api.render();
+}
+
 console.log(`\n共 ${results.length} 项，失败 ${bad.length} 项`);
 if (bad.length) process.exitCode = 1;

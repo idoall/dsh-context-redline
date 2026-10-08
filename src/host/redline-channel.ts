@@ -45,7 +45,9 @@ import {
   draftRevisionOf,
   draftFileName,
   dropEdit,
+  excludedSeqsOf,
   parseDrafts,
+  putExcluded,
   putEdit,
   serializeDrafts,
   type DraftTable,
@@ -550,6 +552,34 @@ const dropDraft: RedlineOpHandler = async ({ ctx, call }) => {
 }
 
 /**
+ * 把某一行标为「不要」或取消这个标记（`docs/11` D65）。**只写我们自己的草稿文件。**
+ *
+ * ⚠️ 这不是"删除"：平台只有 append/replace（`docs/01`），fork 的种子也排除不掉某一条（F38）。
+ * 它只是把"这一条作废"记在本地，开启子会话时由首条任务**逐字声明**。
+ */
+const excludeDraft: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  const seq = seqArgOf(call.seq)
+  if (sessionId === null || seq === null) return fail(REDLINE_ERROR.badRequest)
+  const state = await turnStateOfSession(ctx, sessionId)
+  if (!state.known) return fail(REDLINE_ERROR.notLive)
+  if (state.open) return fail(REDLINE_ERROR.turnOpen)
+  const on = call.excluded !== false
+  return await withSessionLock(sessionId, async () => {
+    const current = await readTable(ctx, sessionId)
+    if (!current.ok) return current
+    const existing = Object.values(current.value).find(candidate => candidate.seq === seq)
+    const alreadyMarked = existing !== undefined && existing.excluded === true
+    // 幂等：状态没变就**不落盘**（与 draft.drop 同一套口径：没有变化就不产生副作用）。
+    if (on === alreadyMarked) return redlineOk(current.value)
+    const next = on
+      ? putExcluded(current.value, seq, new Date().toISOString())
+      : dropEdit(current.value, seq)
+    return await writeTable(ctx, sessionId, next)
+  })
+}
+
+/**
  * 开子会话**之前**能问的全部事实（**只读**）：确认框五项 + 组装好的首条任务。
  * 起点恒为"最后聊完的那一轮"（`docs/01` F38：平台没有更早的起点可用）。
  */
@@ -558,14 +588,20 @@ const planChild: RedlineOpHandler = async ({ ctx, call }) => {
   if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
   const drafts = await readTable(ctx, sessionId)
   if (!drafts.ok) return drafts
-  // `DraftTable` 是按 seq 键控的 Record（不是数组）⟹ 取值再按 seq 排序，顺序才稳定
-  const edits = Object.values(drafts.value).sort((a, b) => a.seq - b.seq).map(edit => ({ seq: edit.seq, text: edit.text }))
+  // `DraftTable` 是按 seq 键控的 Record（不是数组）⟹ 取值再按 seq 排序，顺序才稳定。
+  // 标为「不要」的记录**不是编辑**（`editOf` 会把它们过滤掉），这里按同一个口径拆开。
+  const carried = Object.values(drafts.value)
+    .filter(entry => entry.excluded !== true)
+    .sort((a, b) => a.seq - b.seq)
+  const edits = carried.map(entry => ({ seq: entry.seq, text: entry.text }))
+  const excluded = excludedSeqsOf(drafts.value)
   const humanTask = typeof call.humanTask === 'string' ? call.humanTask : ''
-  const first = buildFirstTask({ humanTask, edits })
+  const first = buildFirstTask({ humanTask, edits, excluded })
   const position = '从最后聊完的那一轮开始'
   return redlineOk({
-    items: forkConfirmItems({ position, humanTask, edits }),
+    items: forkConfirmItems({ position, humanTask, edits, excluded }),
     carriedSeqs: edits.map(e => e.seq),
+    excludedSeqs: excluded,
     /** The exact local-draft set this confirmation reviewed; `child.start` rechecks it. */
     draftRevision: draftRevisionOf(sessionId, drafts.value),
     prompt: first.ok ? first.prompt : null,
@@ -600,8 +636,12 @@ const startChild: RedlineOpHandler = async ({ ctx, call }) => {
     if (!drafts.ok) return drafts
     if (draftRevisionOf(sessionId, drafts.value) !== expectedDraftRevision) return fail(REDLINE_ERROR.draftsChanged)
     // `DraftTable` 是按 seq 键控的 Record（不是数组）⟹ 取值再按 seq 排序，顺序才稳定
-    const edits = Object.values(drafts.value).sort((a, b) => a.seq - b.seq).map(edit => ({ seq: edit.seq, text: edit.text }))
-    const first = buildFirstTask({ humanTask, edits })
+    const carried = Object.values(drafts.value)
+      .filter(entry => entry.excluded !== true)
+      .sort((a, b) => a.seq - b.seq)
+    const edits = carried.map(entry => ({ seq: entry.seq, text: entry.text }))
+    const excluded = excludedSeqsOf(drafts.value)
+    const first = buildFirstTask({ humanTask, edits, excluded })
     if (!first.ok) return redlineFailure(REDLINE_ERROR.emptyTask, first.message)
     // 活 Agent：真机的 request.parent 要的是它（agents.get 只对「本进程加载过的会话」有值 —— docs/01 F48）。
     const agents = ctx.get('agents') as { get?: (id: string) => unknown } | undefined | null
@@ -750,6 +790,7 @@ const OPS = new Map<string, RedlineOpHandler>([
   ['draft.list', listDrafts],
   ['draft.update', updateDraft],
   ['draft.drop', dropDraft],
+  ['draft.exclude', excludeDraft],
   ['child.capacity', readCapacity],
   ['child.origins', readOrigins],
   ['child.plan', planChild],

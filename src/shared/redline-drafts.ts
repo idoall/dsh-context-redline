@@ -48,6 +48,13 @@ export interface LocalEdit {
   /** Display context: the row's category and tool/file name, when known. */
   readonly cat?: string
   readonly name?: string
+  /**
+   * 「标记为不要」：这条**作废**，开启子会话时在首条任务里逐字声明不使用它。
+   * 与「编辑」**互斥**（同一条记录只有一份，标了就清掉改动，改了就把标记清掉）。
+   * ⚠️ 平台只有 append/replace，**没有 delete**；fork 的种子也排除不掉某一条
+   * （`docs/01` F38）⟹ 这是"删除"在本产品里唯一诚实的表达（用户 2026-10-08 选 A）。
+   */
+  readonly excluded?: boolean
 }
 
 /** All local edits of one session, keyed by `String(seq)`. */
@@ -66,6 +73,22 @@ export interface SurfaceRowText {
  * rather than re-spelled here: a second spelling of a wire code is how the client
  * ends up with a case it cannot map.
  */
+/**
+ * 把某一行标为「不要」。**整条覆盖**该行的本地记录 ⟹ 与该行的本地改动天然互斥。
+ * 只写我们自己这份表；当前会话一个字都不写（硬约束，`docs/11` D15）。
+ */
+export function putExcluded(table: DraftTable, seq: number, updatedAt: string): DraftTable {
+  return {
+    ...table,
+    [String(seq)]: { seq, text: '', reasoning: '', isError: false, updatedAt, excluded: true },
+  }
+}
+
+/** 被标为「不要」的 seq，升序（带入首条任务时按这个顺序列）。 */
+export function excludedSeqsOf(table: DraftTable): number[] {
+  return Object.values(table).filter(entry => entry.excluded === true).map(entry => entry.seq).sort((a, b) => a - b)
+}
+
 export type ChangeRefusal = typeof REDLINE_ERROR.emptyContent | typeof REDLINE_ERROR.noChange
 
 export type ChangeVerdict = { readonly ok: true } | { readonly ok: false; readonly code: ChangeRefusal }
@@ -104,7 +127,16 @@ export { REDLINE_DATA_DIR_NAME }
 
 /** The edit for a row, if any. */
 export function editOf(table: DraftTable, seq: number): LocalEdit | undefined {
-  return table[String(seq)]
+  const entry = Object.values(table).find(candidate => candidate.seq === seq)
+  // ⚠️ 标为「不要」的那条**不是编辑**：它没有改后的正文，只有一个作废标记。
+  // 若把它当编辑返回，`effectiveText` 会给出空串 —— 行会渲染成空白（真机必现）。
+  // 互斥语义也因此只在一个方向需要额外处理：putEdit 整条覆盖，标记自动消失。
+  return entry === undefined || entry.excluded ? undefined : entry
+}
+
+/** Whether a row is marked 「不要」(a tombstone, not an edit). */
+export function isExcluded(table: DraftTable, seq: number): boolean {
+  return table[String(seq)]?.excluded === true
 }
 
 /** Whether a row carries a local edit. */
@@ -248,6 +280,9 @@ export function parseDrafts(raw: string | null | undefined, expectedSessionId?: 
     if (typeof edit.text !== 'string' || typeof edit.reasoning !== 'string' || typeof edit.isError !== 'boolean') {
       return { ok: false, code: REDLINE_ERROR.draftCorrupt, message: `draft #${edit.seq} has ill-typed fields` }
     }
+    if (edit.excluded !== undefined && typeof edit.excluded !== 'boolean') {
+      return { ok: false, code: REDLINE_ERROR.draftCorrupt, message: `draft #${edit.seq} has a non-boolean excluded` }
+    }
     table[String(edit.seq)] = {
       seq: edit.seq,
       text: edit.text,
@@ -256,6 +291,8 @@ export function parseDrafts(raw: string | null | undefined, expectedSessionId?: 
       updatedAt: typeof edit.updatedAt === 'string' ? edit.updatedAt : '',
       ...(typeof edit.cat === 'string' ? { cat: edit.cat } : {}),
       ...(typeof edit.name === 'string' ? { name: edit.name } : {}),
+      // 上面已经校验过类型 ⟹ 这里只做取值。
+      ...(edit.excluded ? { excluded: true } : {}),
     }
   }
   return { ok: true, table }

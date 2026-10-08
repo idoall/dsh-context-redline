@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DraftTable } from '../shared/redline-drafts'
-import { dropDraft, listDrafts, readRow, readTurnState, saveDraft, type DraftEdit, type RedlineResult, type RedlineRow } from './redlineChannel'
+import { dropDraft, excludeDraft, listDrafts, readRow, readTurnState, saveDraft, type DraftEdit, type RedlineResult, type RedlineRow } from './redlineChannel'
 import type { TurnState } from '../shared/redline-turn'
 
 /** The per-row failure the editor shows, keyed by the row it belongs to. */
@@ -50,6 +50,8 @@ export interface RedlineDraftController {
   save(seq: number, edit: DraftEdit): Promise<boolean>
   /** Resolves true only when the discard was accepted. */
   drop(seq: number): Promise<boolean>
+  /** 标为「不要」/ 取消标记（`docs/11` D65）。解析为 true 表示宿主接受了。 */
+  exclude(seq: number, on: boolean): Promise<boolean>
   /** Forget a row's error (the next open starts clean). */
   clearError(): void
 }
@@ -100,6 +102,17 @@ export function useRedlineDrafts(sessionId: string | undefined): RedlineDraftCon
     return true
   }, [sessionId])
 
+  const exclude = useCallback(async (seq: number, on: boolean): Promise<boolean> => {
+    if (sessionId === undefined || sessionId === '') return false
+    setBusySeq(seq)
+    setRowError(null)
+    const result = await excludeDraft(sessionId, seq, on)
+    setBusySeq(current => (current === seq ? null : current))
+    if (!result.ok) { setRowError({ seq, code: result.code }); return false }
+    setTable(result.value)
+    return true
+  }, [sessionId])
+
   const drop = useCallback(async (seq: number): Promise<boolean> => {
     if (sessionId === undefined || sessionId === '') return false
     setBusySeq(seq)
@@ -121,7 +134,7 @@ export function useRedlineDrafts(sessionId: string | undefined): RedlineDraftCon
   const clearError = useCallback(() => { setRowError(null) }, [])
 
   return useMemo(
-    () => ({ table, turn, ready, busySeq, rowError, loadRow, save, drop, clearError }),
-    [table, turn, ready, busySeq, rowError, loadRow, save, drop, clearError],
+    () => ({ table, turn, ready, busySeq, rowError, loadRow, save, drop, exclude, clearError }),
+    [table, turn, ready, busySeq, rowError, loadRow, save, drop, exclude, clearError],
   )
 }

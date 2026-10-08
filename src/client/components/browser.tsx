@@ -13,7 +13,7 @@ import type { DetailState } from '../timelineSource'
 import { makeDetailNote } from './detailNote'
 import { makeRedlineActions, makeRedlineEditor, type RedlineSubmit } from './redlineEdit'
 import { ability, durableTypeOf, type Ability } from '../../shared/redline-ability'
-import { effectiveIsError, effectiveReasoning, effectiveText, hasLocalEdit } from '../../shared/redline-drafts'
+import { effectiveIsError, effectiveReasoning, effectiveText, hasLocalEdit, isExcluded } from '../../shared/redline-drafts'
 import type { RedlineRow } from '../redlineChannel'
 import type { RedlineDraftController } from '../redlineDrafts'
 import { makeNodeText } from './nodes'
@@ -965,9 +965,13 @@ export function makeContextBrowser(
           seq={n.seq}
           ability={a}
           hasLocalEdit={hasLocalEdit(props.redline.table, n.seq)}
+          excluded={isExcluded(props.redline.table, n.seq)}
           advanced={advanced}
           busy={props.redline.busySeq === n.seq}
           onEdit={() => { openEditor(n.seq) }}
+          errorCode={props.redline.rowError?.seq === n.seq ? props.redline.rowError.code : null}
+          onExclude={() => { void props.redline.exclude(n.seq, true) }}
+          onUnexclude={() => { void props.redline.exclude(n.seq, false) }}
           onDrop={() => {
             void (async () => {
               const ok = await props.redline.drop(n.seq)

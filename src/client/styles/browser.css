@@ -81,6 +81,10 @@
 .redline-act { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 2px 8px 6px 24px; }
 .redline-act-seq { flex: none; color: var(--dsw-alias-label-dimmed); font-size: 11px; font-variant-numeric: tabular-nums; }
 /* 「已改（本地）」：只出现一次，就在 #seq 旁边（docs/11 D20） */
+/* 「标为不要」的标记（docs/11 D65）：与「已改（本地）」同一族，但用弱化色，避免与"改过"混淆。 */
+.redline-chip-excluded { flex: none; font-size: 11px; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-interactive-bg-hover-solid); border: 1px dashed var(--dsw-alias-border-l2); border-radius: 4px; padding: 0 6px; }
+/* 行内动作被拒的原因（没有编辑器可依附时就在这里说，docs/03 R3.5）。 */
+.redline-act-err { flex: 1 1 100%; margin-top: 2px; font-size: 11px; line-height: 1.45; color: var(--dsw-alias-state-error-primary, #d92d20); }
 .redline-chip-local { flex: none; font-size: 11px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 4px; padding: 0 6px; }
 /* 信息型标记（`高级编辑` / `助手消息改不了` / `已被 #K 接替`）：**只用虚线框与 `title` 说明，
    不给「?」光标**。用户 2026-10-06：「高级编辑处也有问号，鼠标移上去有问号，但点不了」——

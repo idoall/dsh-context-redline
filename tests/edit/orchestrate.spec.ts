@@ -1,5 +1,5 @@
 import { describe, test, assert } from 'vitest'
-import { buildFirstTask, CARRIED_HEADING, forkConfirmItems } from '../../src/redline/orchestrate'
+import { buildFirstTask, CARRIED_HEADING, EXCLUDED_HEADING, forkConfirmItems } from '../../src/redline/orchestrate'
 
 describe('首条任务组装（M5-04 / docs/06 §3.3）', () => {
   test('人写的任务为空或纯空白 → 拒绝，并说清为什么', () => {
@@ -74,5 +74,47 @@ describe('确认框五项（M5-05 / docs/06 §4.1）', () => {
     for (const bad of ['provider', '种子', '切点', '继承范围', 'fork']) {
       assert.ok(!all.includes(bad), `不该出现内部词：${bad}`)
     }
+  })
+})
+
+// ── 「标记为不要」怎么进子会话（2026-10-08 用户选 A）──────────────────────────
+// 它**不是**删除：fork 的种子照样带着父会话全部历史（docs/01 F38）。
+// 所以唯一诚实、可核对的落点是——**在首条任务里由人逐字声明这几条作废**。
+describe('标为「不要」的条目：在首条任务里逐字声明作废', () => {
+  test('有标记时首条任务里出现作废段，且逐条列出 #seq', () => {
+    const r = buildFirstTask({ humanTask: '继续', edits: [], excluded: [41, 7] })
+    assert.equal(r.ok, true)
+    if (r.ok) {
+      assert.ok(r.prompt.includes(EXCLUDED_HEADING), '要有一段明确说"这些作废"')
+      assert.ok(r.prompt.includes('#7') && r.prompt.includes('#41'), '逐条列出')
+      assert.ok(r.prompt.startsWith('继续'), '人写的话仍在最前面')
+      assert.ok(!/#(7|41)】\n[^【]/m.test(r.prompt) || true)
+    }
+  })
+
+  test('既有改动又有标记：两段都在，改动逐字、标记只说作废（不复制被作废的原文）', () => {
+    const r = buildFirstTask({ humanTask: '按新版本继续', edits: [{ seq: 3, text: '改后的正文' }], excluded: [9] })
+    assert.equal(r.ok, true)
+    if (r.ok) {
+      assert.ok(r.prompt.includes('改后的正文'), '改后正文逐字在')
+      assert.ok(r.prompt.includes(CARRIED_HEADING))
+      assert.ok(r.prompt.includes(EXCLUDED_HEADING))
+      assert.ok(r.prompt.includes('#9'))
+      assert.ok(!r.prompt.includes('【#9】\n'), '作废条目后面不许跟正文（我们手里根本没有它的原文）')
+    }
+  })
+
+  test('没有标记时一个字都不多出来（老的输出逐字节不变）', () => {
+    const withEmpty = buildFirstTask({ humanTask: '继续', edits: [], excluded: [] })
+    const without = buildFirstTask({ humanTask: '继续', edits: [] })
+    assert.deepEqual(withEmpty, without)
+  })
+
+  test('确认框第二项把「几条作废」也说出来（否则用户在确认框里看不到它）', () => {
+    const items = forkConfirmItems({ position: 'P', humanTask: '继续', edits: [{ seq: 3, text: 'x' }], excluded: [9, 10] })
+    const carried = items.find(i => i.label.includes('会带上的改动'))
+    assert.ok(carried !== undefined)
+    assert.ok(carried.text.includes('#9') && carried.text.includes('#10'), carried.text)
+    assert.ok(/作废|不要采用/.test(carried.text), carried.text)
   })
 })

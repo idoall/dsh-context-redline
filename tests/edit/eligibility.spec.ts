@@ -45,7 +45,7 @@ describe('A17 · one button set per underlying event type', () => {
     for (const [cat, type] of cases) {
       const a = ability(surface({ type, cat }))
       assert.equal(a.canRewrite, true, `${cat}/${type}`)
-      assert.deepEqual(rowActions(a, false), ['edit'], `${cat}/${type}`)
+      assert.deepEqual(rowActions(a, false), ['edit', 'exclude'], `${cat}/${type}`)
     }
   })
 
@@ -54,7 +54,9 @@ describe('A17 · one button set per underlying event type', () => {
     assert.equal(a.canRewrite, false)
     assert.equal(a.inert, false, 'not inert: the UI still explains why there is no action')
     assert.equal(a.blockReason, 'assistant-immutable')
-    assert.deepEqual(rowActions(a, false), [])
+    // 2026-10-08：助手消息**改不了但能作废** —— 「标记为不要」是它唯一的处置手段。
+    assert.equal(a.canExclude, true)
+    assert.deepEqual(rowActions(a, false), ['exclude'])
   })
 
   test('a shadowed ORIGINAL cannot be edited; the replacement that superseded it can', () => {
@@ -65,7 +67,7 @@ describe('A17 · one button set per underlying event type', () => {
 
     const body = ability(surface({ seq: 1301, type: 'user/message', cat: 'user', isReplacement: true }))
     assert.equal(body.canRewrite, true, 'the replacement body is a CURRENT surface node → editable')
-    assert.deepEqual(rowActions(body, false), ['edit'])
+    assert.deepEqual(rowActions(body, false), ['edit', 'exclude'])
   })
 
   test('a compacted-away row is out of reach', () => {
@@ -73,6 +75,27 @@ describe('A17 · one button set per underlying event type', () => {
     assert.equal(a.canRewrite, false)
     assert.equal(a.blockReason, 'compacted')
     assert.deepEqual(rowActions(a, false), [])
+  })
+
+  test('已标为「不要」的行只剩「取消标记」（与编辑互斥）', () => {
+    const a = ability(surface({ type: 'user/message', cat: 'user' }))
+    assert.deepEqual(rowActions(a, false, true), ['unexclude'])
+    assert.deepEqual(rowActions(a, true, true), ['unexclude'], '即使本地有改动，标记状态优先')
+    const assistant = ability(surface({ type: 'assistant/message', cat: 'assistant' }))
+    assert.deepEqual(rowActions(assistant, false, true), ['unexclude'])
+  })
+
+  test('宿主保护的两类与"够不到"的行，既不能编辑也不能作废', () => {
+    for (const row of [
+      surface({ type: 'system/message', cat: 'system' }),
+      surface({ type: 'request/header', cat: 'tools' }),
+      surface({ type: 'user/message', cat: 'user', shadowed: true }),
+      surface({ type: 'user/message', cat: 'user', compacted: true }),
+    ]) {
+      const a = ability(row)
+      assert.equal(a.canExclude, false, JSON.stringify(row))
+      assert.deepEqual(rowActions(a, false), [], JSON.stringify(row))
+    }
   })
 
   test('the reason keys are exactly the four the UI knows how to explain', () => {
@@ -103,11 +126,21 @@ describe('tool results are the "advanced" class only', () => {
 describe('row actions follow the local-edit state, not the class alone', () => {
   test('an editable row with a local edit offers edit + drop', () => {
     const a = ability(surface({ type: 'user/message', cat: 'user' }))
-    assert.deepEqual(rowActions(a, true), ['edit', 'drop'])
+    assert.deepEqual(rowActions(a, true), ['edit', 'exclude', 'drop'])
   })
 
-  test('a row that cannot be edited never offers a drop, even with a local edit', () => {
-    const a = ability(surface({ type: 'assistant/message', cat: 'assistant' }))
-    assert.deepEqual(rowActions(a, true), [])
+  test('不能编辑的行不许出现「丢弃这条改动」', () => {
+    // 助手消息**可以作废**，但"丢弃改动"只属于"有过改动"的行 —— 它没有。
+    const assistant = ability(surface({ type: 'assistant/message', cat: 'assistant' }))
+    assert.deepEqual(rowActions(assistant, true), ['exclude'])
+    assert.equal(rowActions(assistant, true).includes('drop'), false)
+    // 真正什么都给不了的行（已被接替 / 被压缩埋掉 / 宿主保护）：连 exclude 都不给。
+    for (const row of [
+      surface({ type: 'user/message', cat: 'user', shadowed: true }),
+      surface({ type: 'user/message', cat: 'user', compacted: true }),
+      surface({ type: 'system/message', cat: 'system' }),
+    ]) {
+      assert.deepEqual(rowActions(ability(row), true), [], JSON.stringify(row))
+    }
   })
 })
