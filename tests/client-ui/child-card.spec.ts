@@ -178,7 +178,7 @@ describe('第 5 张卡：确认框（宿主的五项 + 第一句话由人写）'
     let started = 0
     const m = await open({ start: () => { started += 1; return Promise.resolve({ ok: true as const, value: { label: 'x', prompt: 'p', carriedSeqs: [], started: null } }) } })
     await openDialog(m)
-    await act(async () => { (queryAll(m.container, '[data-redline-confirm] button')[2] as HTMLElement).click() })
+    await act(async () => { (query(m.container, '[data-redline-confirm] .redline-confirm-btn-cancel') as HTMLElement).click() })
     assert.equal(started, 0)
     assert.equal(queryAll(m.container, '[data-redline-confirm]').length, 0, '确认框收起')
     await m.unmount()

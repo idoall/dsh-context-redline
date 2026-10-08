@@ -475,31 +475,27 @@ body { transition: padding-right .18s ease-out; }
 .kv b { display: block; font-size: 12px; color: var(--dsw-alias-label-caption); font-weight: 500; }
 .kv div { font-size: 13px; overflow-wrap: anywhere; }
 .modal-wrap { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; padding: 20px; }
-/* 参照定稿图：宽屏是舒展的确认面板，正文不挤在窄卡里；仍限制高度，长内容只在主体内滚动。 */
-.modal { width: min(960px, 100%); max-height: min(88vh, 88dvh); background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: calc(var(--ds-radius) + 2px); box-shadow: var(--ds-shadow); display: flex; flex-direction: column; }
-.modal-head { padding: 18px 32px; border-bottom: 1px solid var(--dsw-alias-border-l1); font-size: 17px; }
-.modal-body { padding: 26px 32px 28px; overflow: auto; -webkit-overflow-scrolling: touch; }
-.modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 32px calc(16px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--dsw-alias-border-l1); flex-wrap: wrap; }
-.warn { margin: 0 0 24px; color: var(--dsw-alias-label-secondary); font-size: 14px; line-height: 1.6; }
-/* 一项一块：编号+标题在第一行，说明完整落在下一行；不把手机压成左右表格。 */
-.list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; border: 1px solid var(--dsw-alias-border-l1); border-radius: 12px; overflow: hidden; }
-.list li { display: flex; flex-direction: column; gap: 8px; padding: 18px 22px; border-top: 1px dashed var(--dsw-alias-border-l1); font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
-.list li:first-child { border-top: 0; }
-.list b { color: var(--dsw-alias-label-primary); font-size: 16px; font-weight: 600; }
-.list li span { color: var(--dsw-alias-label-secondary); }
-.modal-reason { display: block; margin-top: 22px; padding: 18px 22px 20px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); }
-.modal-reason span { display: block; font-size: 15px; color: var(--dsw-alias-label-primary); margin-bottom: 7px; font-weight: 600; }
-.modal-reason input { width: 100%; box-sizing: border-box; min-height: 44px; font-size: 14px; }
+/* 确认框尺寸照抄 v0 定稿（2026-10-08 读它的计算样式得到）：固定标题栏 + 只有中间可滚 + 固定底栏。 */
+.modal { width: min(620px, calc(100vw - 28px)); max-height: min(740px, calc(100dvh - 28px)); background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; box-shadow: var(--ds-shadow); display: flex; flex-direction: column; overflow: hidden; font-size: 13px; line-height: 1.55; }
+.modal-head { flex: 0 0 auto; padding: 14px 17px 13px; border-bottom: 1px solid var(--dsw-alias-border-l1); font-size: 15px; font-weight: 650; line-height: 1.4; }
+.modal-body { flex: 1 1 auto; min-height: 0; padding: 12px 16px 14px; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.modal-foot { flex: 0 0 auto; display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 10px 16px calc(11px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--dsw-alias-border-l1); flex-wrap: wrap; }
+.warn { margin: 0 0 11px; color: var(--dsw-alias-label-secondary); font-size: 12.5px; line-height: 1.6; overflow-wrap: anywhere; }
+/* 一项一块：第一行「编号 + 标题」，第二行完整说明；项间 1px 虚线。 */
+.list { margin: 0; padding: 0; list-style: none; border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; overflow: hidden; }
+.list li { padding: 8px 11px 9px; }
+.list li + li { border-top: 1px dashed var(--dsw-alias-border-l1); }
+.list .ci-title { display: flex; align-items: baseline; gap: 5px; margin: 0; font-size: 12.5px; font-weight: 650; line-height: 1.45; color: var(--dsw-alias-label-primary); }
+.list .ci-num { flex: 0 0 auto; font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-secondary); }
+.list li p { margin: 3px 0 0; font-size: 12px; line-height: 1.55; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.modal-reason { display: block; margin: 11px 0 0; padding: 10px 11px 11px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); }
+.modal-reason > span { display: block; font-size: 12px; font-weight: 650; line-height: 1.45; color: var(--dsw-alias-label-primary); }
+.modal-reason .rhint { margin: 3px 0 8px; font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--dsw-alias-label-secondary); }
+.modal-reason input, .modal-reason textarea { width: 100%; box-sizing: border-box; min-height: 38px; padding: 7px 9px; font: inherit; font-size: 12.5px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
+.modal-foot .btn { min-height: 35px; padding: 0 12px; font-size: 12px; border-radius: 7px; }
 @media (max-width: 520px) {
-  .modal-wrap { align-items: flex-start; overflow-y: auto; padding: 14px; }
-  .modal { margin: 10px 0; max-height: none; }
-  .modal-head { padding: 16px 18px; font-size: 16px; }
-  .modal-body { padding: 24px 18px; }
-  .modal-foot { padding: 14px 18px calc(14px + env(safe-area-inset-bottom, 0px)); }
-  .warn { margin-bottom: 20px; font-size: 14px; }
-  .list li { gap: 7px; padding: 16px 18px; font-size: 14px; }
-  .list b { font-size: 16px; }
-  .modal-reason { margin-top: 18px; padding: 16px 18px; }
+  .modal-wrap { align-items: center; padding: 14px; }
+  .modal { max-height: calc(100dvh - 28px); }
 }
 
 .toast-wrap { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 80; display: flex; flex-direction: column; gap: 6px; align-items: center; width: min(92vw, 560px); }

@@ -47,6 +47,9 @@ export interface ChildCardProps {
   readonly start: (humanTask: string, draftRevision: string) => Promise<RedlineResult<ChildStarted>>
 }
 
+/** 确认项的排版编号（纯展示，与宿主五项一一对应；不参与任何文案生成）。 */
+const ORDINALS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩']
+
 /** The state dot + word a row shows, from the probed `turnState`. */
 function stateOf(row: ChildRow): { tone: string; key: string; hint: string } {
   if (row.live === null) return { tone: 'unknown', key: 'child.state.unknown', hint: 'child.hint.unknown' }
@@ -203,49 +206,57 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
             if (event.target === event.currentTarget) close()
           },
         }, h('div', { className: 'redline-modal-card', role: 'dialog', 'aria-modal': 'true', 'data-redline-confirm': '1' },
+          // 结构照抄 v0 定稿：固定标题栏 → 只有中间可滚 → 固定底栏。
           h('div', { className: 'redline-modal-head' },
-            h('span', { className: 'redline-modal-title' }, t('child.confirm.title')),
+            h('h2', { className: 'redline-modal-title' }, t('child.confirm.title')),
             h('button', { type: 'button', className: 'redline-modal-close', onClick: close }, '×'),
           ),
-          plan === null
-            ? h('div', { className: 'redline-cap' }, t('child.confirm.preparing'))
-            : h('ul', { className: 'redline-confirm-list' },
-              plan.metrics === null || typeof plan.metrics.bytes !== 'number'
-                ? null
-                : h('li', { key: 'metrics' },
-                  h('span', { className: 'redline-confirm-label' }, t('child.confirm.metrics.label')),
-                  h('span', { className: 'redline-confirm-text', 'data-redline-first-task': String(plan.metrics.bytes) },
-                    t('child.confirm.metrics', { bytes: plan.metrics.bytes, edits: plan.metrics.edits }))),
-              plan.items.map(item => h('li', { key: item.label },
-                h('b', null, item.label),
-                h('span', null, item.text)))),
-          errKey !== null ? h('div', { className: 'redline-editor-err', role: 'alert' }, t(errKey)) : null,
-          h('label', { className: 'redline-confirm-field' },
-            h('span', null, t('child.confirm.taskLabel')),
-            h('textarea', {
-              className: 'redline-editor-text',
-              rows: 3,
-              'data-redline-task': '1',
-              placeholder: t('child.confirm.taskPlaceholder'),
-              value: task,
-              onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setTask(event.target.value) },
-            })),
-          plan !== null && plan.refusal !== null
-            ? h('div', { className: 'redline-editor-blocked', 'data-redline-refusal': plan.refusal.code }, plan.refusal.message)
-            : null,
-          plan !== null && plan.carriedSeqs.length > 0
-            ? h('div', { className: 'redline-cap' }, '#' + plan.carriedSeqs.join(' · #'))
-            : null,
+          h('div', { className: 'redline-confirm-body' },
+            h('p', { className: 'redline-confirm-intro' }, t('child.confirm.intro')),
+            plan === null
+              ? h('div', { className: 'redline-cap' }, t('child.confirm.preparing'))
+              : h('ol', { className: 'redline-confirm-list' },
+                // 编号是**纯排版**（①…⑤），与宿主给的五项一对一，不替代也不改写宿主的文案。
+                plan.items.map((item, index) => h('li', { key: item.label },
+                  h('h3', { className: 'redline-confirm-item-title' },
+                    h('span', { className: 'redline-confirm-num' }, ORDINALS[index] ?? String(index + 1)),
+                    item.label),
+                  h('p', null, item.text))),
+                plan.metrics === null || typeof plan.metrics.bytes !== 'number'
+                  ? null
+                  : h('li', { key: 'metrics' },
+                    h('h3', { className: 'redline-confirm-item-title' },
+                      h('span', { className: 'redline-confirm-num' }, '·'),
+                      t('child.confirm.metrics.label')),
+                    h('p', { 'data-redline-first-task': String(plan.metrics.bytes) },
+                      t('child.confirm.metrics', { bytes: plan.metrics.bytes, edits: plan.metrics.edits })))),
+            plan !== null && plan.refusal !== null
+              ? h('div', { className: 'redline-editor-blocked', 'data-redline-refusal': plan.refusal.code }, plan.refusal.message)
+              : null,
+            errKey !== null ? h('div', { className: 'redline-editor-err', role: 'alert' }, t(errKey)) : null,
+            h('label', { className: 'redline-confirm-task' },
+              h('span', { className: 'redline-confirm-task-label' }, t('child.confirm.taskLabel')),
+              h('span', { className: 'redline-confirm-task-hint' }, t('child.confirm.taskHint')),
+              h('textarea', {
+                rows: 3,
+                'data-redline-task': '1',
+                placeholder: t('child.confirm.taskPlaceholder'),
+                value: task,
+                onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setTask(event.target.value) },
+              })),
+            plan !== null && plan.carriedSeqs.length > 0
+              ? h('div', { className: 'redline-cap' }, '#' + plan.carriedSeqs.join(' · #'))
+              : null,
+          ),
           h('div', { className: 'redline-modal-foot' },
+            h('button', { type: 'button', className: 'redline-confirm-btn redline-confirm-btn-cancel', onClick: close }, t('child.confirm.cancel')),
             h('button', {
               type: 'button',
-              className: 'redline-btn',
+              className: 'redline-confirm-btn redline-confirm-btn-ok',
               'data-redline-confirm-ok': '1',
               disabled: busy || plan === null || refused,
               onClick: confirm,
             }, t('child.confirm.ok')),
-            h('button', { type: 'button', className: 'redline-btn redline-btn-quiet', onClick: close }, t('child.confirm.cancel')),
-            h('span', { className: 'redline-cap' }, t('child.confirm.note')),
           ),
         ))
         : null,

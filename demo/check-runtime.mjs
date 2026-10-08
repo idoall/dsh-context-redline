@@ -842,7 +842,7 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   api.orchAct({ dataset: { act: 'spawn' } });
   const rows = registry.get('modalList').innerHTML;
   check('开子会话：确认框 ① 只给"从哪儿开始"（平台算的），不出现"这条记录/切点/种子"这套词',
-    /① 从哪儿开始/.test(rows) && /平台自己算的，改不了/.test(rows)
+    /①<\/span>从哪儿开始/.test(rows) && /平台自己算的，改不了/.test(rows)
     && !/这条记录（留档用）/.test(rows) && !/切点/.test(rows) && !/种子/.test(rows), rows.slice(0, 160));
   check('开子会话：确认框照实说起点由平台算（最后聊完的那一轮，没有更早的位置）',
     /最后聊完的那一轮/.test(registry.get('modalList').innerHTML) && /平台自己算的/.test(registry.get('modalList').innerHTML));
@@ -892,6 +892,7 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
 {
   const S = api.S();
   const labelOf = () => String(registry.get('modalReasonLabel').textContent || '');
+  const hintOf = () => String(registry.get('modalReasonHint').textContent || '');
   const seen = {};
   S.children = [{ id: '004c0001', src: 'own', state: 'idle', label: 't' }];
   S.invariants = [{ id: 'inv-test', label: 'AGENTS.md', version: 1, text: 'x', retired: false, scope: 'workspace' }];
@@ -899,6 +900,7 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   seen['重注入'] = labelOf();
   api.orchAct({ dataset: { act: 'spawn', i: 0 } });
   seen['开子会话'] = labelOf();
+  seen['开子会话Hint'] = hintOf();
   api.orchAct({ dataset: { act: 'cprompt', i: 0 } });
   seen['发消息'] = labelOf();
   api.orchAct({ dataset: { act: 'csend', i: 0 } });
@@ -907,8 +909,10 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
 
   check('确认框去向①（冻结已删，这一档不再存在）：界面里没有"冻结备注"这种输入栏',
     !Object.keys(seen).some((k) => /冻结/.test(k)), Object.keys(seen).join(','));
+  /* 去向写在**标题 + 提示行**两处（v0 定稿把长标题拆成「首条任务」+ 一行说明）⟹ 两处合起来判。 */
+  const dest = seen['开子会话'] + ' ' + seen['开子会话Hint'];
   check('确认框去向③：开子会话写明「成为子会话的第一句话、它的模型看得到」',
-    /子会话/.test(seen['开子会话']) && /第一句话/.test(seen['开子会话']) && /看得到/.test(seen['开子会话']), seen['开子会话']);
+    /子会话/.test(dest) && /第一句话/.test(dest) && /看得到|可见/.test(dest), dest);
   const vals = Object.values(seen);
   S.children = []; S.invariants = []; api.render();
 }

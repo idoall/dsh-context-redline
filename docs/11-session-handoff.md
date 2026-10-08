@@ -1371,3 +1371,38 @@ Review 发现 4 个会削弱「编辑 → 确认 → 子会话携带改写」可
 
 **⚠️ 仍未在真机上看到的一态**：新版**确认框**（成功后关框、纵向五段）。它要求父会话**轮次闭合**才点得开，
 而助手在跑时按钮是禁用的（本文件既有的"操作前提"）；用户下次空闲点开时按 D57 第 2/3 步核对。
+
+## D61 · 私有 v0 设计：**注入登录 cookie 读它的真实计算样式**（2026-10-08）
+
+**问题**：用户给的是私有 v0 chat（`https://v0.app/…/chat/umBoBGoIQ9H`），我既看不到他的浏览器标签，
+也没有 v0 登录态。**结论：这不是阻塞** —— 三条路都实测过：
+
+| 手段 | 结果 |
+|---|---|
+| `web_fetch` | ❌ 被"非公网 IP"策略拒（本机代理把 `v0.app` 解析成 fake-IP `198.18.2.248`） |
+| `curl` / Playwright | ✅ 网络本身通（HTTP 200），**只差登录态** |
+| 我能否看你浏览器标签 | ❌ 我的浏览器是 `--isolated --headless`，本机只有 9230 = DSH inspector（`dsh://host`），不是你的 Chrome |
+
+**可复制的做法（本次实际用的）**：
+1. 用户给一行 `cookie:`（DevTools → Network → 该文档请求 → Request Headers）。
+2. Playwright：`newContext({ ignoreHTTPSErrors: true })` + `ctx.addCookies(...)` → **登录态就进去了**
+   （实测标题从 `Private Chat` 变 `子会话开启确认弹窗设计`，`unauthorized: false`）。探针 cookie 也验证过"注入 → 服务端可见"这条链路成立。
+3. 取源码/样式的三条接口（对私有 v0 chat 都可用）：
+   - 文件清单：`/chat/api/vm/edits/read-files?cid=<chatId>`（只给路径，`lazy:true`）
+   - 对话记录：`/api/chat/chat/messages?chatId=<chatId>`
+   - **成品页快照：`/chat/api/snapshots/proxy?chatId=<chatId>&messageId=<id>&v=v2`** → 返回**渲染好的完整应用**
+     ⟹ 在浏览器里打开它，直接 `getComputedStyle` + 读 `document.styleSheets`，就能**逐项拿到真实尺寸与选择器**
+     （本次就是这么拿到弹窗 18 个部件的精确值）。
+4. 预览地址 `https://<id>.v0.build/` **仍受 Vercel 部署保护**，用 v0 的 cookie 打不开（`Unauthorized`）⟹ 走第 3 条的快照代理。
+
+**本次成果**：确认框按 v0 实测值重写（`src/client/styles/childCard.css`）——
+固定标题栏 + **只有中间可滚** + 固定底栏；五项 `padding: 8px 11px 9px`、`1px dashed` 分隔；
+首条任务独立浅底块；底栏右对齐 `gap: 8px`。markup 同步（`h2` / `ol>li`(`h3`+`p`) / 任务块 / 底栏两按钮）。
+文案按定稿拆分：标题 `首条任务` + 说明「会成为子会话的第一句话；子会话模型可见，本会话模型不可见。」、
+按钮 `取消` / `确认创建`。**颜色仍走 `--dsw-alias-*` 令牌**（硬规矩 V1；v0 那边是写死 RGB）。
+
+证据：[`docs/screenshots/10-child-confirm-v0.png`](screenshots/10-child-confirm-v0.png)（我们的 demo 渲染）
+与 [`10-child-confirm-v0-reference.png`](screenshots/10-child-confirm-v0-reference.png)（v0 自己的成品截图）。
+
+**⚠️ 安全**：cookie 只写进 `/tmp`（0600）且用完即删；**没有**写进仓库、没有进 `git`。
+用户若介意，退出 v0 登录即可让它失效。

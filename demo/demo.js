@@ -314,7 +314,17 @@ function closeDrawer() {
 function confirmModal(o) {
   $('modalTitle').textContent = o.title;
   $('modalWarn').textContent = o.warn;
-  $('modalList').innerHTML = '<ul class="list">' + o.rows.map((r) => `<li><b>${esc(r[0])}</b><span>${esc(r[1])}</span></li>`).join('') + '</ul>';
+  /* 结构与 v0 定稿一致：每项第一行「编号 + 标题」，第二行完整说明。
+     行文案里已经带序号（①②…）的，用它的，不重复再加一个。 */
+  const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩'];
+  $('modalList').innerHTML = '<ol class="list">' + o.rows.map((r, i) => {
+    const raw = String(r[0]);
+    const m = raw.match(/^\s*([①-⑩])\s*(.*)$/);
+    // 行首自带序号的用它的；演示里那些补充明细行（以「·」开头）保留「·」，不占用编号。
+    const num = m ? m[1] : (raw.trimStart().startsWith('·') ? '·' : (CIRCLED[i] || String(i + 1)));
+    const label = m ? m[2] : raw;
+    return `<li><h3 class="ci-title"><span class="ci-num">${esc(num)}</span>${esc(label)}</h3><p>${esc(r[1])}</p></li>`;
+  }).join('') + '</ol>';
   $('modalReasonWrap').hidden = !o.needReason;
   /* ⚠️ 用户 2026-10-02 问：「弹出窗里的备注，是仅给人看的，还是会进 agent 下一次会话的内容？」
    * 答：**两种都有，取决于哪个框** —— 所以**每个框必须自己写明去向**，不许所有框共用一句
@@ -324,6 +334,8 @@ function confirmModal(o) {
    *   ③ 成为子会话的第一句话 / 新轮次（子会话的模型看得到）  ④ 写进官方成员的收件箱（那位 agent 看得到） */
   const rl = $('modalReasonLabel');
   if (rl) rl.textContent = o.reasonLabel || '理由（去向见上面清单）';
+  const rh = $('modalReasonHint');
+  if (rh) { rh.textContent = o.reasonHint || ''; rh.hidden = !o.reasonHint; }
   $('modalReason').placeholder = o.reasonPlaceholder || '一句话说明为什么这样改';
   $('modalReason').value = '';
   $('modalOk').textContent = o.okText || '确认';
@@ -1292,8 +1304,9 @@ function orchAct(b) {
              ['④ 不会带上', '这个会话的工具授权；本会话此后新聊的内容。'],
              ['⑤ 取消', '取消 = 什么都不发生（不建会话）']],
       needReason: true, okText: '确认创建',
-      reasonLabel: '首条任务（会成为子会话的第一句话 —— 它的模型看得到；本会话的模型看不到）',
-      reasonPlaceholder: '一句话说清这次要它干什么',
+      reasonLabel: '首条任务',
+      reasonHint: '会成为子会话的第一句话；子会话模型可见，本会话模型不可见。',
+      reasonPlaceholder: '一句话说清这次要它干什么。',
       onOk: (reason) => {
         const id = '00' + (49000 + S.children.length * 771).toString(16).slice(0, 6);
         S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), prime: carry + reason, norms: edits.length });
