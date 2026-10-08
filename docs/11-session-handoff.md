@@ -1406,3 +1406,24 @@ Review 发现 4 个会削弱「编辑 → 确认 → 子会话携带改写」可
 
 **⚠️ 安全**：cookie 只写进 `/tmp`（0600）且用完即删；**没有**写进仓库、没有进 `git`。
 用户若介意，退出 v0 登录即可让它失效。
+
+## D62 · 两条真机回归 + 一条主题事实（2026-10-08）
+
+用户实测报了两处，**都是我的错**，都已修并加了护栏：
+
+| # | 现象 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | 底栏两个按钮**左对齐、贴在一起** | 我按 v0 重写时删掉了原来提供 `display:flex` 的基础规则；剩下的那条只有 `justify-content:flex-end` / `gap:8px`，**没有 display** ⟹ 两者全部失效（block 布局）。demo 里 `display:flex` 还在，**所以我看 demo 图是好的、没发现插件坏了** | 底栏那条规则自己带上 `display:flex` |
+| 2 | 「首条任务」块与输入框**看不出是输入区**（太浅） | 浅色主题实测 `--dsw-alias-bg-base` / `bg-layer-1` / `bg-layer-2` / `bg-layer-3` **全部是 `#fff`** ⟹ 块与输入框都是纯白；且我把 `--dsw-alias-label-dimmed`（浅色 `#e1e5ee`）当 placeholder 色，几乎不可见 | 块改用 `--dsw-alias-interactive-bg-hover-solid`（浅 `#f1f3f5` / 深 `#353638`）；输入框用 `bg-layer-1` + `border-l4` 边框；placeholder 用 `--dsw-alias-label-caption` |
+
+**新增平台/主题事实（写进代码注释与本节）**：
+- **浅色主题下 `bg-base` 与 `bg-layer-1..3` 同为 `#fff`**，深色下分别是 `#151517 / #232324 / #2c2c2e / #353638`。
+  要"有色的面"就用 `--dsw-alias-interactive-bg-hover-solid`（浅 `#f1f3f5` / 深 `#353638`）。
+- **`--dsw-alias-label-dimmed` 不是文字色**（浅 `#e1e5ee` / 深 `#43454a`）——它太浅，只能当极弱的分隔/背景；
+  文字级灰阶用 `label-caption`（浅 `#adb2b8`）或 `label-tertiary`（浅 `#81858c`）。
+- 对比度实测：块 `#f1f3f5` vs 卡片 `#fff` vs 输入框 `#fff` + 边框 `rgba(0,0,0,.16)`；placeholder `#adb2b8`。
+
+**护栏（先红后绿 + 反向验证）**：`tests/client-ui/child-card.spec.ts` 新增 2 条，直接读 `childCard.css` 原文断言
+——底栏必须自带 `display:flex` + `flex-end` + 非零 `gap`；任务块不得使用那四个"浅色等于纯白"的令牌、
+输入框必须有 `border-l4`、placeholder 不得用 `label-dimmed`。**反向验证**：把 `display:flex` 删掉、把块底色换回
+`bg-layer-2` ⟹ **2 条立刻红**，还原即绿。证据截图 [`docs/screenshots/11-child-confirm-fixed.png`](screenshots/11-child-confirm-fixed.png)。

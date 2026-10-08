@@ -8,12 +8,21 @@
 //      确认只调一次 `child.start`，取消什么都不发生。
 
 import { act, createElement as h } from 'react'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
 import { makeChildCard, type ChildCardProps } from '../../src/client/components/childCard'
 import { childRowsOf, type ChildRow } from '../../src/client/childSessions'
 import { DICT_EN } from '../../src/client/i18n'
 import { makeKit, mount, query, queryAll, text, type Mounted } from '../client/helpers/kit'
+
+/** 确认框样式表原文：下面两条真机回归就是拿它判的。 */
+const CONFIRM_CSS = readFileSync(join(process.cwd(), 'src/client/styles/childCard.css'), 'utf8')
+const ruleOf = (selector: string): string => {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(escaped + '\\s*\\{([^}]*)\\}').exec(CONFIRM_CSS)?.[1] ?? ''
+}
 
 const kit = makeKit()
 const Card = makeChildCard(kit)
@@ -325,5 +334,32 @@ describe('第 5 张卡：来源徽章（M5-12，靠我们自己记的台账）',
     assert.equal(text(line), DICT_EN['redline.err.origin-corrupt'], '原料是错误码，界面给的是人话')
     assert.equal(text(line).includes('origin-corrupt'), false, '不许把码直接丢给人看')
     await m.unmount()
+  })
+})
+
+// ── 两条**真机回归**（2026-10-08 用户实测报的），用样式表原文钉死，避免再犯 ──────────
+// ① 底栏原来靠另一条通用规则提供 `display:flex`；重写时删掉后，`justify-content:flex-end`
+//    与 `gap` 全部失效 ⟹ 按钮左对齐且贴在一起。
+// ② 浅色主题下 `--dsw-alias-bg-base` / `bg-layer-1..3` 实测**全是 `#fff`** ⟹ 首条任务块与
+//    输入框不能再用它们，否则纯白叠纯白、看不出是输入区；`label-dimmed`（浅色 #e1e5ee）
+//    也不能当 placeholder 色，几乎不可见。
+describe('确认框样式的两条真机回归', () => {
+  test('底栏自己声明 display:flex（否则右对齐与间距全失效）', () => {
+    const foot = ruleOf('.redline-modal-card[data-redline-confirm] .redline-modal-foot')
+    assert.ok(/display:\s*flex/.test(foot), '底栏必须自己声明 display:flex，不能依赖别处的通用规则')
+    assert.ok(/justify-content:\s*flex-end/.test(foot), '两个按钮要靠右')
+    assert.ok(/gap:\s*[1-9]/.test(foot), '两个按钮之间必须有间距')
+  })
+
+  test('首条任务块与输入框不许用"浅色下等于纯白"的令牌，placeholder 不许用 label-dimmed', () => {
+    const task = ruleOf('.redline-confirm-task')
+    assert.ok(!/bg-layer-2|bg-layer-3|bg-base/.test(task), '整块底色若取后者，浅色主题下等于 #fff，与卡片无差别')
+    assert.ok(/interactive-bg-hover-solid/.test(task), '整块底色用 interactive-bg-hover-solid（浅 #f1f3f5 / 深 #353638）')
+    const area = ruleOf('.redline-confirm-task textarea')
+    assert.ok(!/bg-layer-2|bg-layer-3/.test(area), '输入框底色不要用与块相同的令牌')
+    assert.ok(/border-l4/.test(area), '输入框需要看得见的边框')
+    const ph = /\.redline-confirm-task textarea::placeholder\s*\{([^}]*)\}/.exec(CONFIRM_CSS)?.[1] ?? ''
+    assert.ok(/label-caption/.test(ph), 'placeholder 用 label-caption')
+    assert.ok(!/label-dimmed/.test(ph), 'label-dimmed 在浅色下是 #e1e5ee，当文字色几乎看不见')
   })
 })
