@@ -630,6 +630,21 @@ M5-12 改为**我们自己的台账**：`child.start` 成功时按"新子会话�
 本机也**没有** `zstd` CLI ⟹ "直接读日志文件量事件"这条路**走不通**。
 **正确读路径 = 平台自己的读 API**（`ctx.sessionQuery` / 我们自己的 `POST /api/dsh-context-redline/detail`，
 见 `src/host/detail.ts`）：`M5-21` 的读数工具 `scripts/cycle-metrics.mjs` 就是走它。 | §F60（实测 2026-10-07） |
+| F61 | **主题令牌："四个面"在浅色下是同一个 `#fff`（2026-10-08 真机 `getComputedStyle(document.body)` 实测）**：
+浅色主题下 `--dsw-alias-bg-base` / `bg-layer-1` / `bg-layer-2` / `bg-layer-3` **全部是 `#fff`**（深色下分别是
+`#151517 / #232324 / #2c2c2e / #353638`）。**后果**：想做"比卡片再深一档的面"（输入框底、浅色块），
+**不能**用 layer-2/3 —— 那在浅色下等于没有。要用**真的有反差**的令牌：
+`--dsw-alias-interactive-bg-hover-solid`（浅 `#f1f3f5` / 深 `#353638`）或 `--dsw-alias-bg-multi-select`（浅 `#f5f6f7`）。
+另外 **`--dsw-alias-label-dimmed` 不是文字色**（浅 `#e1e5ee` / 深 `#43454a`）—— 它太浅，只能当极弱的分隔/背景；
+文字级灰阶用 `label-caption`（浅 `#adb2b8` / 深 `#81858c`）或 `label-tertiary`（浅 `#81858c` / 深 `#adb2b8`）。
+**令牌挂在 `document.body` 上**，不是 `:root`（在 `documentElement` 上读会得到空串 —— 别据此以为令牌不存在）。
+（真机踩到：确认框里"首条任务"块与输入框都取了 layer 令牌 ⟹ 白叠白，用户报"太浅了"。） | §F61（实测 2026-10-08） |
+| F62 | **客户端 bundle 是"组合 URL"下发的 ⟹ 单独取一个包的路径会 404（2026-10-08 真机实测）**：
+浏览器拿到的是形如 `plugins/??<包A>/client.js,<包B>/client.js…&rev=<hash>` 的**合并请求**
+（`@deepseek-ai/dsh-client-modules` 组装），单独去取 `/plugins/dsh-context-redline/client.js` **是 404**。
+**要核实"服务端到底在下发哪一版"**，正确做法是在**已登录的页面里**取 `<link href>` 里那条组合 URL 再 `fetch` 它，
+然后对返回文本做字符串检查（本次就是这么确认 `redline-masonry` 已在跑、而 `redline-cols-main` 已为 0）。
+**教训**：没做这一步，就会把**自己的布局 bug** 说成"用户环境没刷新"（`docs/11` D60 的真实事故）。 | §F62（实测 2026-10-08） |
 | F49 | **2026-10-05 第二轮真机只读探针 + 静态查证（新 pid 85196）**：**① `ctx` 的服务不可枚举** ——
 `Object.keys(ctx)` 只给出 `["fiber"]` ⟹ 找服务只能靠**按名字试探**或**读安装树的 `.d.ts`**（这条顺便解释了 F48 里
 "知道有服务但不知道键名"的困境）。**② 压缩服务要的是"agent 上下文"，不是会话 id** —— `@deepseek-ai/dsh-compaction` 的
