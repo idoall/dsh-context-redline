@@ -118,3 +118,19 @@ describe('标为「不要」的条目：在首条任务里逐字声明作废', (
     assert.ok(/作废|不要采用/.test(carried.text), carried.text)
   })
 })
+
+// ── 文案里不许出现 markdown 星号（2026-10-08 真机发现）──────────────────────────
+// 确认框那一行是 `h('p', null, item.text)` —— **纯文本渲染**，不解析 markdown。
+// 所以文案里写 `**逐字**` 的真实效果是用户看到光秃秃的星号（真机实测确实如此）。
+describe('确认框文案：不许出现 markdown 星号（界面不解析 markdown）', () => {
+  test('五项里没有 **', () => {
+    const items = forkConfirmItems({ position: '从最后聊完的那一轮开始', humanTask: '继续', edits: [{ seq: 3, text: 'x' }], excluded: [9] })
+    for (const it of items) assert.equal(it.text.includes('**'), false, `${it.label}: ${it.text}`)
+  })
+
+  test('首条任务里也没有 **（它会被逐字写进子会话）', () => {
+    const r = buildFirstTask({ humanTask: '继续', edits: [{ seq: 3, text: 'x' }], excluded: [9] })
+    assert.equal(r.ok, true)
+    if (r.ok) assert.equal(r.prompt.includes('**'), false)
+  })
+})

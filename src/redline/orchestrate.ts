@@ -98,13 +98,13 @@ export function forkConfirmItems(input: ConfirmInput): ConfirmItem[] {
   const carriedParts: string[] = []
   carriedParts.push(count === 0
     ? '这一次没有本地改动要带过去。'
-    : `你改好的 ${count} 条正文会**逐字**出现在新会话的第一句话里：${input.edits.map(e => `#${e.seq}`).join('、')}。`)
+    : `你改好的 ${count} 条正文会「逐字」出现在新会话的第一句话里：${input.edits.map(e => `#${e.seq}`).join('、')}。`)
   if (excluded.length > 0) {
-    carriedParts.push(`另有 ${excluded.length} 条被标为\`不要\`（#${excluded.join('、#')}）：历史原文仍会被带过去，但首条任务会声明**不要采用**它们。`)
+    carriedParts.push(`另有 ${excluded.length} 条被标为\`不要\`（#${excluded.join('、#')}）：历史原文仍会被带过去，但首条任务会声明「不要采用」它们。`)
   }
   const carried = carriedParts.join('')
   return [
-    { label: '从哪儿开始', text: `${input.position}。平台会把**最后聊完那一轮之前的全部日志**带过去 —— 比你想的更晚应用的改动也会一起进去。` },
+    { label: '从哪儿开始', text: `${input.position}。平台会把「最后聊完那一轮之前的全部日志」带过去 —— 比你想的更晚应用的改动也会一起进去。` },
     { label: '会带上的改动', text: carried },
     { label: '第一句话（你来写）', text: input.humanTask.trim() === '' ? '（还没写 —— 空着不能开）' : input.humanTask.trim() },
     { label: '会带什么 / 不带什么', text: '带：已经聊完的历史，加上上面那几条改动。不带：这边的工具授权与权限、这边之后的新轮次；新会话的工具输出与思考也不会自动回到这边 —— 它要用「发消息」主动回传。' },
