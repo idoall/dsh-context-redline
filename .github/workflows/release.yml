@@ -96,7 +96,10 @@ jobs:
             exit 0
           fi
           # Trusted publishing (OIDC): NODE_AUTH_TOKEN is intentionally unset.
-          npm publish "$package" --access public
+          # Provenance is generated here (GitHub Actions is a supported provider);
+          # it is deliberately NOT forced in publishConfig, which would break a
+          # local `npm publish`.
+          npm publish "$package" --access public --provenance
 
   github-release:
     name: GitHub release

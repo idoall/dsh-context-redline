@@ -12,8 +12,7 @@
   },
   "homepage": "https://github.com/idoall/dsh-context-redline#readme",
   "publishConfig": {
-    "access": "public",
-    "provenance": true
+    "access": "public"
   },
   "type": "module",
   "engines": {
