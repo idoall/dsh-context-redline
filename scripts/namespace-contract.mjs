@@ -27,10 +27,10 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PKG_NAME = 'dsh-context-redline'
 const API_PREFIX = '/api/dsh-context-redline'
 const DATA_DIR = 'dsh-context-redline'
-const DSH_ENGINES = '>=0.2.0-rc.2 <0.3.0'
-const BASELINE = '0.2.0-rc.2'
+const DSH_ENGINES = '>=0.2.1-alpha.2 <0.3.0'
+const BASELINE = '0.2.1-alpha.2'
 
-/** 上游的旧值（`docs/01` F1–F4 + `UPSTREAM.md` §3.1）。 */
+/** Upstream identities that must not leak into this fork. */
 const UPSTREAM_PREFIX = /\/api\/dsh-context\/(?!redline)/
 const UPSTREAM_NS = /dsh-context(?!-redline)/
 const UPSTREAM_PROJECTION_KEYS = ['contextTimeline', 'contextHeaders', 'contextActivity']

@@ -1,9 +1,9 @@
 /**
  * The stable error-code table shared by BOTH halves — the plugin's outward
- * contract (`docs/11-session-handoff.md` 实施共识 §5, `docs/02` §7).
+ * contract.
  *
  * Why a frozen table instead of ad-hoc strings: the client maps a code to the
- * human wording of `docs/03` R4.7, and the tests assert the code (never the
+ * localized human wording, and the tests assert the code (never the
  * message). A code that changes shape silently turns "这一条改不了，因为…" into
  * a raw provider error, which is exactly the failure this project exists to
  * avoid.

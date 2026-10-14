@@ -1,167 +1,137 @@
-# dsh-context-redline（上下文批改）
+<h1 align="center">上下文批改 · Context Redline</h1>
 
-> **DeepSeek Harness 插件**：把「上下文」从**只读的仪表盘**变成**人能批改的工作台** ——
-> 看清模型即将收到什么 → **改其中一条** → 保存**只写插件本地** → 开启子会话时，把这些改动**逐字写进
-> 那个新会话的第一句话**。
+<p align="center">查看、批改并迁移 DeepSeek Harness 会话上下文，再把任务结果原样送回来源会话。</p>
 
-**当前状态：M1（骨架与身份）在仓库内已落地，尚未装进 profile。** 界面外壳从上游
-[`dsh-context`](https://github.com/bowenliang123/dsh-context) 的 git tag **`v0.59.2`** 复制并整体改名成我们自己的命名空间；
-编辑层（M2）与界面接线（M3）是下一步。**界面的准绳是 [`demo/`](https://github.com/idoall/dsh-context-redline/blob/main/demo/README.md)** —— 文档与它冲突时以它为准。
+<p align="center">
+  <a href="https://www.npmjs.com/package/dsh-context-redline"><img src="https://img.shields.io/npm/v/dsh-context-redline?label=npm&color=CB3837" alt="npm 版本"></a>
+  <a href="https://github.com/idoall/dsh-context-redline/actions/workflows/ci.yml"><img src="https://github.com/idoall/dsh-context-redline/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/idoall/dsh-context-redline/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT%20AND%20Apache--2.0-0F172A" alt="许可证"></a>
+</p>
 
----
+<p align="center"><a href="https://github.com/idoall/dsh-context-redline/blob/main/README.md">English</a> | 中文</p>
 
-## 它要解决什么
+<p align="center">
+  <a href="#能做什么">能做什么</a> ·
+  <a href="#安装">安装</a> ·
+  <a href="#使用">使用</a> ·
+  <a href="#边界">边界</a> ·
+  <a href="https://github.com/idoall/dsh-context-redline/blob/main/CHANGELOG.md">更新记录</a>
+</p>
 
-| 问题 | 现象 | 本插件的答案 |
-|---|---|---|
-| **上下文膨胀** | 每次请求把全部历史重发，会话越跑越大 | **开子会话**：它继承「已经聊完的历史」（真正变短靠**显式压缩**，那一步在官方视图里做） |
-| **一条写错的内容一直带着模型跑偏** | 上一轮话说得不清楚，后面全歪了 | **改那一条** → 保存（只存本地）→ **用它开子会话**：改动逐字进新会话第一句话 |
-| **改不动** | 上游的上下文浏览器只能看，不能改 | **右侧直接编辑**：改哪一条、改了什么、改动去哪了，行上都写着 |
+> DeepSeek Harness 社区插件。它不修改 DSH 源码，也不改写来源会话日志。
+>
+> **支持 DSH `>=0.2.1-alpha.2 <0.3.0`。** 首版针对 `0.2.1-alpha.2` 验证。
 
-**一句话**：看上下文 → 改一条 → 保存（只在本地）→ **用改好的它开子会话**。
+本地编辑只写插件目录；确认后，插件在当前工作区创建一个零历史普通会话，逐字发送你确认的最终全文。任务完成后，绑定结果自动回到来源会话。
 
-## 它长什么样
-![界面（交互 demo，当前界面准绳）](https://raw.githubusercontent.com/idoall/dsh-context-redline/main/demo/screenshots/01-dark.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/idoall/dsh-context-redline/main/assets/overview.png" width="100%" alt="上下文批改桌面总览：统计、趋势、事件、七类上下文浏览器与承载会话">
+</p>
 
-> ⚠️ 这张图来自仓库里的**交互 demo**（`demo/`，深色主题）—— 它是**当前界面的准绳**：
-> 插件的界面按它实现。**把 demo 截图当成"插件截图"是唯一容易误读的地方**，所以这里明写；
-> 插件自己的真机截图从**下面第二张**开始（2026-10-04 与 2026-10-06 两次真机采集，都在 `dsh web` 里）。
+<p align="center"><sub>当前交互 demo 的桌面总览：左侧看规模与事件，右侧查看、编辑或删除迁移材料。</sub></p>
 
-五张卡，两列（以 [`demo/`](https://github.com/idoall/dsh-context-redline/blob/main/demo/README.md) 为准）：
+## 能做什么
 
-- **左列**：上下文统计 · 上下文趋势（按轮次/按步骤、总计/增量、自适应刻度）· 上下文事件。
-- **右列**：上下文浏览器（7 类，每类带条数 / ≈token / 占比 / 非零 δ）· 子会话。
-- **行上**：`#seq` + 类别 + 预览，动作**只有 `编辑`**。平台改不了的行（助手消息、被压缩埋掉的、被遮蔽的原文）
-  只给**一句原因、不给任何动作**。
-- **编辑器**在**那一行下面内联展开**（不弹窗），预填的是**完整正文** —— 绝不是列表里那 80 字预览
-  （早期那次尝试就是把它当正文，点一下把整条消息截成 80 字；见 [`docs/01`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md) F35）。
-- **所有保存都是临时保存**（硬约束）：只写插件本地，**当前会话的模型看不到**。有本地改动的行显示
-  `已改（本地）` + `丢弃这条改动`；再点 `编辑` 预填的是**你上次保存的正文**，保存**覆盖同一条**（不叠加）。
-- **唯一写入点是 `开启子会话`**：确认框列出本地改动，确认后逐字写进**新会话第一句话**。
-  新会话**永远从"最后聊完的那一轮"开始**，**没有任何参数**能挑更早的位置
-  （[`docs/01`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md) F38）。
+- **全文查看。** 编辑器读取 durable 全文，不使用列表里的短预览。
+- **本地批改。** 编辑用户消息、注入 / 技能材料、助手迁移副本和已配对工具结果。
+- **可逆删除。** 删除表示“不迁移这条”，来源日志保持 append-only。
+- **最终全文。** 确认框中的文本就是新会话收到的完整第一条用户消息，可直接删段、改字、重排。
+- **会话级模型。** 一行浮动选择器配置新会话模型和推理等级，不修改来源会话或全局默认。
+- **普通新会话。** 在当前工作区创建零历史 root session，不继承 fork 历史。
+- **自动回程。** 只取与固定 prompt request ID 绑定的结果，原样送回来源会话。
+- **可恢复。** 固定 ID、持久台账、精确正文匹配、flush、冷读和三态恢复共同防止重复或猜测。
 
-![运行中的「上下文批改」（真实面板截图，2026-10-04）](https://raw.githubusercontent.com/idoall/dsh-context-redline/main/docs/screenshots/01-panel-live.png)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/idoall/dsh-context-redline/main/assets/carrier-confirm.png" width="100%" alt="开启普通新会话确认框：任务、模型和推理等级、最终发送全文">
+</p>
 
-> ⚠️ 这张是**插件自己的真机截图**（`dsh web` 里的「上下文批改」页签，2026-10-04，会话 25 轮 / 591 步）：
-> 页签读作 `对话 | 轨迹 | 上下文 | 上下文批改`（上游仍叫「上下文」，我们不再重名）；面板里能看到
-> `高级编辑`、`比前步 / 比前轮`（默认**比前轮**按下）、两级选择器 `第 25 轮（共 10 步）`，以及分类行上的
-> δ（`注入内容 +3` / `助手消息 +11` / `工具结果 +9`）。**界面准绳仍是交互 demo**（`demo/`）：
-> 上一张说明"应该长什么样"，这一张说明"现在长这样"。
+<p align="center"><sub>桌面确认框：任务、模型 / 推理等级和最终发送全文在一次明确授权中冻结。</sub></p>
 
-**2026-10-06 的真机采集（同一台机器、同一个面板）**
+<p align="center">
+  <img src="https://raw.githubusercontent.com/idoall/dsh-context-redline/main/assets/mobile-confirm.png" width="430" alt="移动端普通新会话确认框">
+</p>
 
-![行下内联编辑器（真机）：动作区只有「保存 / 取消（Esc）」，保存上没有「?」角标](https://raw.githubusercontent.com/idoall/dsh-context-redline/main/docs/screenshots/02-editor-live-noquestion.png)
+<p align="center"><sub>移动端确认框：选择器保持一行，长内容只在最终全文框内滚动。</sub></p>
 
-> 点某一行的 `编辑` 之后：编辑器在**那一行下面**展开，`保存 / 取消（Esc）` 旁边**没有任何「?」角标**
-> （说明挂在按钮自己的 `title` 上，鼠标停上去就有），字段标签带 `只写本地 · 开子会话时才带进去`。
+> 截图来自仓库当前版本的交互 demo，用于说明布局与关键流程，不冒充生产会话数据。
 
-![打开顶部「高级编辑」开关后，工具结果行上出现「编辑」（真机）](https://raw.githubusercontent.com/idoall/dsh-context-redline/main/docs/screenshots/03-advanced-switch-live.png)
+## 安装
 
-> 工具结果的「编辑」默认收在顶部 `高级编辑` 开关后：关着时行上显示「高级编辑」小标记，打开后
-> **「编辑」按钮出现**（实测 6 个）、标记消失。**不可点的标记不给「?」光标** —— 用户 2026-10-06 的两次指正
-> （[`docs/11`](https://github.com/idoall/dsh-context-redline/blob/main/docs/11-session-handoff.md) D40/D41）。
+需要 DeepSeek Harness `0.2.1-alpha.2` 或更新的 `0.2.x`，以及 Node.js `22.19+` 或 `24+`。
 
-同一次采集量到的两个读数（原始读数在 [`docs/11`](https://github.com/idoall/dsh-context-redline/blob/main/docs/11-session-handoff.md) D44/D48）：
+npm 发布后：
 
-- 面板 = **4 张卡**（上下文统计 / 上下文趋势 / 上下文事件 / 上下文浏览器）；统计卡就是 demo 的 **3 格**
-  （模型可见条目 / 用户消息 / 注入内容），趋势卡标题写着当前粒度（如 `按轮次（共 59 轮）`）。**第 5 张【子会话】随 M5 落地**。
-- **两个插件同开一个会话互不污染**：上游「上下文」页签 = **211 个不同的 `lc-` 类名 / 0 个 `redline-`**；
-  我们的「上下文批改」页签 = **112 个 `redline-` 类名 / 0 个 `lc-`** ⟹ **两边类名交集为 0**。
-
-## 四条必须让人一眼明白的规则
-
-1. **只有 surface 上的内容才进模型**。
-2. **保存 ≠ 生效**：保存不碰会话日志，当前模型看到的东西不变；唯一写入点是**开启子会话**。
-3. **哪些能改，由平台能力决定**（实测）：
-   - 可改：**用户消息、注入内容、技能注入、工具结果**；
-   - **改不了：助手消息**（平台两条规则互斥）与**系统提示词**；**被遮蔽的原文**与**被压缩埋掉的**也改不了；
-   - 这些行一律给**一句原因、不给动作**，绝不出现"点了必然报错"的按钮。
-4. 本界面**没有**版本历史、回滚、批注、固定块、漂移检查、重注入、压缩、派活或团队操作；
-   编辑是**唯一的动作**，而且是**一步**（只存本地）。
-
-## 明确不做
-
-- ❌ 不做"删除历史"（DSH 的会话日志是 append-only；能做的只有**遮蔽**与**压缩**，后者不可逆）
-- ❌ 不自动开子会话 / 不自动压缩 / 不自动提交本地改动
-- ❌ 不产生任何 **AI 生成内容**（这是本项目存在的理由：进模型的每个字都必须来自人）
-- ❌ 本轮不做"上下文装配/模板/组装"那一套（那是另一个数据模型，见 [`docs/00`](https://github.com/idoall/dsh-context-redline/blob/main/docs/00-scope.md) §4）
-
----
-
-## 文档索引
-
-| 文件 | 内容 |
-|---|---|
-| [`docs/00-scope.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/00-scope.md) | 目标 / 非目标 / 用户故事 / **可验收的成功标准** / 术语 |
-| [`docs/01-platform-facts.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md) | **平台事实清单**（每条带出处、标注"实测/推断"）+ 待验证项 |
-| [`docs/02-architecture.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/02-architecture.md) | 五层架构、两条数据流、模块布局、RPC/命令/服务接口、存储 |
-| [`docs/03-ui-spec.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/03-ui-spec.md) | **界面规格**（逐条编号，含文案、验收清单、明确不做的界面） |
-| [`docs/04-roadmap.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/04-roadmap.md) | M0–M7 阶段表（产物 / 测试 / **谁能验收** / **授权点**） |
-| [`docs/05-test-plan.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/05-test-plan.md) | 测试 lane、真实路由级测试模式、人工门禁清单、失败模式用例 |
-| [`docs/06-orchestration.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/06-orchestration.md) | 子会话 / 压缩的语义、授权清单、失败码、明确不做 |
-| [`docs/08-open-questions.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/08-open-questions.md) | **问题与裁定**（含推荐、理由与最终结论）+ **外部模型评审记录**（逐条采纳/不采纳） |
-| [`docs/09-requirements-traceability.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/09-requirements-traceability.md) | **需求追溯矩阵**：你的原话与图 2/3/4 每一项 → 落在哪条目标 → 做/不做/降级 |
-| [`demo/`](https://github.com/idoall/dsh-context-redline/blob/main/demo/README.md) | **可点击的交互原型**（M0.5 交互门禁）：假数据 + 真交互 + 「这个按钮是做什么的」讲解模式 |
-| [`docs/12-user-guide.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/12-user-guide.md) | **用户向总体帮助**：这是什么 / 五分钟上手 / 七类能不能改 / 何时不能改 / 术语表 / 常见问题 |
-| [`docs/11-session-handoff.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/11-session-handoff.md) | **换会话时的交接文本**：一段可复制粘贴的话 + 每次收尾要更新的字段（新会话先读它） |
-| [`docs/10-execution-checklist.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/10-execution-checklist.md) | **长任务执行清单（唯一状态源）**：细粒度任务表 —— `ID / 子任务 / 状态 / 文件动作（范围冻结）`，共 291 项，需要你的那几步标 `WAIT🙋` |
-| [`AGENTS.md`](https://github.com/idoall/dsh-context-redline/blob/main/AGENTS.md) | 工作约定（唯一必读入口）：硬约束、平台坑、测试纪律 |
-| [`UPSTREAM.md`](https://github.com/idoall/dsh-context-redline/blob/main/UPSTREAM.md) / [`NOTICE`](https://github.com/idoall/dsh-context-redline/blob/main/NOTICE) | 上游来源、许可合规、我们的修改清单 |
-
-> **编号说明**：`docs/07` 曾是"早期那次尝试"的审计文档，已于 2026-09-30 按用户要求**已删除**；**该编号不复用**，以免与历史引用混淆。
-
-## 怎么读（给评审者）
-
-1. 先读 [`docs/00-scope.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/00-scope.md) §2（非目标）与 §3（成功标准）——**判断"要建的东西对不对"**。
-2. 再读 [`docs/01-platform-facts.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md)——**判断"依据真不真"**（含 §6 明确的待验证项）。
-3. 然后 [`docs/03-ui-spec.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/03-ui-spec.md) 与 [`docs/06-orchestration.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/06-orchestration.md)——**判断"人和不可逆动作的关系讲清楚了没有"**。
-4. 最后 [`docs/08-open-questions.md`](https://github.com/idoall/dsh-context-redline/blob/main/docs/08-open-questions.md)——**直接对某条下结论**（每条都有编号）。
-
-## 安装与使用
-
-**还没有可安装的发布版**（下面的命令都是开发/自验循环）。两条硬规矩：
-**把本仓库装进 `web` profile 需要你单独授权**；**重启 `dsh web` 一律由你本人执行**。
-
-```bash
-pnpm install                                   # 唯一的安装步骤 —— 不建符号链接（docs/01 F42）
-./node_modules/.bin/tsc --noEmit               # 类型检查（含 tests/**）
-./node_modules/.bin/tsdown                     # 构建 lib/（客户端半边 + 宿主半边）
-node scripts/namespace-contract.mjs            # 11 个面 / 28 项：我们的命名空间 vs 上游的
-./node_modules/.bin/oxlint                     # 风格与类型感知规则（必须 0 error）
-./node_modules/.bin/vitest run --project edit --project channel --project client-logic --project client-ui
-node scripts/progress.mjs                      # 只读：看到哪些已完成、哪些没完成（--all 全列）
-node demo/check-static.mjs && node demo/check-runtime.mjs   # 交互 demo 的两条自检
-node scripts/release-check.mjs                  # 一条命令跑完整套门禁并逐项打印判定行（13 步）
+```sh
+dsh plugin --profile web add dsh-context-redline@latest
 ```
 
-**装进一个 profile（测试期，需授权）**：
+本地开发：
 
-```bash
-dsh plugin --profile web add /绝对路径/dsh-context-redline   # 本地目录
-# 发布到 npm 之后：dsh plugin --profile web add dsh-context-redline
+```sh
+pnpm install
+pnpm run build
+dsh plugin --profile web add "link:$(pwd)"
 ```
 
-装完**必须由你重启 `dsh web`**（本机这一步承载着你正在用的会话）。
-**客户端改动只需硬刷新**，不必重启（[`docs/01`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md) F16）。
+安装或宿主代码更新后，由用户本人重启 `dsh web`。仅客户端改动构建后通常只需硬刷新。
 
-卸掉（装得上也要卸得掉）：`dsh plugin --profile web remove dsh-context-redline`，然后同样由你重启。
+卸载：
 
-装好之后的两处落点：**设置**在该插件的「插件设置」页里（入口位置 / 趋势图默认粒度与展示方式 /
-工具定义排序 / 文件活动排序等，都是 Config 的 `volatile` 字段，改完即生效、不用重启）；
-**本地的临时改动**写在 `$DSH_HOME/dsh-context-redline/redline-drafts-<会话>.json`（会话日志里没有它们）。
+```sh
+dsh plugin --profile web remove dsh-context-redline
+```
 
-**这条链的限制**（都是产品定义，不是待办）：
-- **保存只写插件本地**，当前会话的模型看不到；只有**开启子会话**时才逐字带进新会话的第一句话。
-- **助手消息 / 系统提示词 / 工具定义改不了**（平台硬限制与宿主保护，界面会写明原因）。
-- 界面**不提供版本历史 / 回滚**（与"保存只到本地"冲突，见 [`docs/11`](https://github.com/idoall/dsh-context-redline/blob/main/docs/11-session-handoff.md) D19）。
+卸载插件不会自动删除 `$DSH_HOME/dsh-context-redline/` 中的本地草稿和操作台账。
+
+## 使用
+
+1. 打开已有消息的会话，进入「上下文批改」。
+2. 可选：逐条编辑或删除；保存只写本地。
+3. 点击「开启普通新会话」。
+4. 填写任务，并在「最终发送全文」中完成最后修改。
+5. 选择模型；推理等级可保持「使用模型默认值」。
+6. 确认创建；在左侧打开新会话。
+7. 新会话结束后，结果会自动回到来源会话。
+
+详见[用户指南](https://github.com/idoall/dsh-context-redline/blob/main/docs/12-user-guide.md)。
+
+## 图片和附件
+
+- 混合文字 / 图片消息迁移全部文字，并显示「图片 N 个未迁移」。
+- 纯图片消息不生成空白段，但计入遗漏数。
+- 图片引用仍参与来源指纹，图片变化会使旧确认失效。
+- 图片二进制、文件、file-ref 和通用附件当前不迁移；未知媒体明确拒绝，不会静默消失。
+
+## 边界
+
+- 不改写或删除来源会话历史。
+- 系统提示词和工具定义由目标预设生成；迁移文字不冒充系统层。
+- 工具结果必须匹配原工具调用。
+- 不提供历史版本、回滚、压缩、团队任务板或会话删除 UI。
+- 插件保证自身锁内幂等与可恢复，不宣称平台天然 exactly-once。
+
+## 开发
+
+```sh
+pnpm install
+pnpm run typecheck
+pnpm run lint
+pnpm run test
+./node_modules/.bin/vitest run
+node scripts/release-check.mjs
+pnpm pack --dry-run
+```
+
+推送 `v*` tag 后，GitHub Actions 会校验版本和双语发布说明、测试、打包，并通过 npm Trusted Publishing（OIDC，无 `NPM_TOKEN`）发布，再创建 GitHub Release。
+
+## 文档
+
+- [用户指南](https://github.com/idoall/dsh-context-redline/blob/main/docs/12-user-guide.md)
+- [上下文迁移合同](https://github.com/idoall/dsh-context-redline/blob/main/docs/13-context-migration.md)
+- [系统提示词与注入边界](https://github.com/idoall/dsh-context-redline/blob/main/docs/14-system-prompt-and-injection.md)
+- [承载会话生命周期](https://github.com/idoall/dsh-context-redline/blob/main/docs/15-carrier-lifecycle.md)
+- [上游来源与修改记录](https://github.com/idoall/dsh-context-redline/blob/main/UPSTREAM.md)
+
 ## 许可
 
-本项目自身为 **MIT**（[`LICENSE`](https://github.com/idoall/dsh-context-redline/blob/main/LICENSE)）；其中复制自上游 `dsh-context` 的部分为 **Apache-2.0**
-（原文见 [`LICENSE-Apache-2.0`](https://github.com/idoall/dsh-context-redline/blob/main/LICENSE-Apache-2.0)，来源与修改清单见 [`UPSTREAM.md`](https://github.com/idoall/dsh-context-redline/blob/main/UPSTREAM.md)）。
-本插件是独立 fork，**与上游作者无隶属关系**，也不代表其背书。
-
-## 关于早期那次尝试
-
-本仓库曾有一条基于上游 `v0.59.0` 的实现线（2026-09 期间），**其目录与 git 历史已丢失**，审计文档也已按用户要求删除。
-本线以 tag `v0.59.2` 为基线重新复制；**只保留"别重犯"的结论**，写在 [`docs/01`](https://github.com/idoall/dsh-context-redline/blob/main/docs/01-platform-facts.md) 与 [`AGENTS.md`](https://github.com/idoall/dsh-context-redline/blob/main/AGENTS.md) §2。
+原创部分采用 MIT；复制自 `dsh-context` 的部分保留 Apache-2.0。详见 [LICENSE](https://github.com/idoall/dsh-context-redline/blob/main/LICENSE)、[LICENSE-Apache-2.0](https://github.com/idoall/dsh-context-redline/blob/main/LICENSE-Apache-2.0)、[NOTICE](https://github.com/idoall/dsh-context-redline/blob/main/NOTICE) 和 [UPSTREAM.md](https://github.com/idoall/dsh-context-redline/blob/main/UPSTREAM.md)。本插件是独立 fork，不代表上游作者背书。

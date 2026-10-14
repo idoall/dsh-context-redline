@@ -53,16 +53,14 @@ describe('the action set is invariant across a bucket\'s types', () => {
     }
   })
 
-  test('exactly three buckets offer no action at all, and they are the host-protected/immutable ones', () => {
+  test('only platform-owned system/tools buckets offer no action; assistant text migrates as editable text', () => {
     const inert = BUCKETS.filter(cat => !ability(row(cat, durableTypeOf(cat))).canRewrite)
-    assert.deepEqual([...inert].sort(), ['assistant', 'system', 'tools'])
-    // …and the other four are editable, which is what the panel must show.
+    assert.deepEqual([...inert].sort(), ['system', 'tools'])
     const editable = BUCKETS.filter(cat => ability(row(cat, durableTypeOf(cat))).canRewrite)
-    assert.deepEqual([...editable].sort(), ['inject', 'skill', 'tool', 'user'])
+    assert.deepEqual([...editable].sort(), ['assistant', 'inject', 'skill', 'tool', 'user'])
   })
 
   test('the reason a non-editable bucket gives is stable per bucket', () => {
-    assert.equal(ability(row('assistant', 'assistant/message')).blockReason, 'assistant-immutable')
     assert.equal(ability(row('system', 'system/message')).blockReason, 'system-head')
     assert.equal(ability(row('tools', 'request/header')).blockReason, 'system-head')
   })

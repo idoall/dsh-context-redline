@@ -50,8 +50,8 @@ export function makeRedlineActions(kit: ViewKit): (props: {
   seq: number
   ability: Ability
   hasLocalEdit: boolean
-  /** 这一条是否已被标为「不要」（`docs/11` D65）。与 `hasLocalEdit` 互斥。 */
-  excluded: boolean
+  /** 这一条是否已被删除（`docs/03` R4.8）。与 `hasLocalEdit` **不**互斥：删除后仍可带改稿。 */
+  deleted: boolean
   /** The advanced switch, only meaningful for `advancedOnly` rows (`R2.5`). */
   advanced: boolean
   busy: boolean
@@ -62,7 +62,7 @@ export function makeRedlineActions(kit: ViewKit): (props: {
   onUnexclude: () => void
   /**
    * 这一行**最近一次动作被拒**的稳定码（`redline/*`）。
-   * ⚠️ 真机踩到：`标记为不要` 没有编辑器可依附，若只把错误丢给编辑器，拒绝就被吞掉了
+   * ⚠️ 真机踩到：`删除` 没有编辑器可依附，若只把错误丢给编辑器，拒绝就被吞掉了
    * （`docs/03` R3.5 要求"拒绝必须说出来"）。所以动作条自己也要能报。
    */
   errorCode: string | null
@@ -71,7 +71,7 @@ export function makeRedlineActions(kit: ViewKit): (props: {
   return function RedlineActions(props): ReactElement | null {
     const { ability } = props
     if (ability.inert) return null
-    const actions = rowActions(ability, props.hasLocalEdit, props.excluded)
+    const actions = rowActions(ability, props.hasLocalEdit, props.deleted)
     const hiddenAsAdvanced = ability.advancedOnly && !props.advanced && (actions.includes('edit') || actions.includes('exclude'))
     /**
      * 改不了时的"为什么"徽章：助手消息要它（说明为什么没有「编辑」），
@@ -87,7 +87,7 @@ export function makeRedlineActions(kit: ViewKit): (props: {
         {props.hasLocalEdit
           ? <span className="redline-chip-local" title={t('redline.local.tip')}>{t('redline.local')}</span>
           : null}
-        {props.excluded
+        {props.deleted
           ? <span className="redline-chip-excluded" title={t('redline.excluded.tip')}>{t('redline.excluded')}</span>
           : null}
         {hiddenAsAdvanced

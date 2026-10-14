@@ -39,11 +39,11 @@ const EXPLAIN = {
   'cat.toggle': { t: '展开 / 收起分类', what: '展开某类（系统提示词 / 工具定义 / 用户消息 / 注入内容 / 技能注入 / 助手消息 / 工具结果）。', effect: '列出该类里的每一条（带 #seq、时间、token）。**点类名左侧的色块 = 聚焦到趋势图**。', rev: '再点一次收起', confirm: '不需要', refs: ['docs/03 §2'] },
   'row.toggle': { t: '展开这一条', what: '看这一条的正文。', effect: '就地展开全文（不跳页）。', rev: '再点一次收起', confirm: '不需要', refs: ['docs/03 R2.2'] },
 
-  'act.exclude': { t: '标记为不要', what: '把这一条标为**作废**：它不会被采用。',
-    effect: '只记在**插件本地**（当前会话一个字都不写）；点「开启子会话」时，首条任务里会逐字声明"不要采用这几条"。'
-      + '⚠️ 平台**没有删除**，fork 也会把全部历史带过去 —— 所以这是"声明作废"，**不是**把原文删掉。',
-    rev: '可以「取消标记」恢复；标记与「编辑」**互斥**（标了就清掉该行的本地改动）',
-    confirm: '不需要（本地保存）', refs: ['docs/11 D65', 'docs/00 N1', 'docs/01 F38'] },
+  'act.exclude': { t: '删除', what: '把这一条**删掉**：它不会被写进新会话。',
+    effect: '只记在**插件本地**（当前会话一个字都不写）；开启新会话时，被删的条目**不会出现在**新会话里。'
+      + '⚠️ 你之前对它的修改会**原样留着** —— 取消删除就一起回来（旧版会顺手把改稿清掉，那是缺陷）。',
+    rev: '可以「取消删除」恢复（有改稿时连改稿一起回来）；删除与「编辑」**互不干扰**',
+    confirm: '不需要（本地保存）', refs: ['docs/03 R4.8', 'docs/13 §7'] },
   'act.edit': { t: '编辑', what: '改写这一条的内容。', effect: '**只写插件本地**（当前会话的模型看不到，会话日志也不动）；点「开启子会话」时，改后的正文逐字写进新会话的第一句话。', rev: '可反复改（预填上次保存的版本）；`丢弃这条改动` 回到原文', confirm: '不需要（本地保存）', refs: ['docs/03 R3.3', 'docs/11 D15'] },
 
   'orch.spawn': {
@@ -345,6 +345,45 @@ function confirmModal(o) {
   if (rh) { rh.textContent = o.reasonHint || ''; rh.hidden = !o.reasonHint; }
   $('modalReason').placeholder = o.reasonPlaceholder || '一句话说明为什么这样改';
   $('modalReason').value = '';
+  const carrier = $('modalCarrierOptions');
+  carrier.hidden = !o.carrier;
+  let finalDirty = false;
+  let selectedModel = 'openai/gpt-5.6-sol';
+  let selectedEffort = '';
+  const modelOptions = [
+    { id: 'openai/gpt-5.6-sol', label: 'gpt-5.6-sol', group: 'OpenAI' },
+    { id: 'deepseek/deepseek-v4', label: 'deepseek-v4', group: 'DeepSeek' },
+  ];
+  const effortOptions = [{ id: '', label: '模型默认值' }, { id: 'low', label: '低' }, { id: 'high', label: '高' }, { id: 'max', label: '最高' }];
+  const closePicker = () => { $('modalPickerMenu').hidden = true; };
+  const openPicker = (kind, trigger) => {
+    const items = kind === 'model' ? modelOptions : effortOptions;
+    const active = kind === 'model' ? selectedModel : selectedEffort;
+    $('modalPickerMenu').innerHTML = items.map((item) => `<button type="button" data-picker-value="${esc(item.id)}"><span>${esc(item.label)}</span><b>${item.id === active ? '✓' : ''}</b></button>`).join('');
+    const rect = trigger.getBoundingClientRect();
+    Object.assign($('modalPickerMenu').style, { left: `${Math.max(16, rect.left)}px`, bottom: `${innerHeight - rect.top + 6}px` });
+    $('modalPickerMenu').hidden = false;
+    $('modalPickerMenu').querySelectorAll('button').forEach((button) => {
+      button.onclick = () => {
+        const value = button.dataset.pickerValue || '';
+        if (kind === 'model') { selectedModel = value; selectedEffort = ''; $('modalModel').childNodes[0].textContent = items.find((item) => item.id === value).label + ' '; $('modalEffort').childNodes[0].textContent = '模型默认值 '; }
+        else { selectedEffort = value; $('modalEffort').childNodes[0].textContent = items.find((item) => item.id === value).label + ' '; }
+        closePicker();
+      };
+    });
+  };
+  if (o.carrier) {
+    $('modalModel').onclick = () => { openPicker('model', $('modalModel')); };
+    $('modalEffort').onclick = () => { openPicker('effort', $('modalEffort')); };
+    $('modalFinal').value = o.composeFinal ? o.composeFinal('') : '';
+    $('modalFinal').oninput = () => { finalDirty = true; };
+    $('modalReason').oninput = () => {
+      if (!finalDirty && o.composeFinal) $('modalFinal').value = o.composeFinal($('modalReason').value);
+    };
+  } else {
+    closePicker();
+    $('modalReason').oninput = null;
+  }
   $('modalOk').textContent = o.okText || '确认';
   // 动态弹出的按钮在讲解模式下拿不到稳定编号 → 按用户建议给一个「?」（点它看说明）
   const okQ = $('modalOkHelp');
@@ -353,8 +392,12 @@ function confirmModal(o) {
   $('modalOk').onclick = () => {
     const reason = o.needReason ? $('modalReason').value.trim() : '';
     if (o.needReason && reason === '') { toast('这一栏不能空着', 'err'); return; }
+    if (o.carrier && !finalDirty && o.composeFinal) $('modalFinal').value = o.composeFinal(reason);
+    if (o.carrier && $('modalFinal').value.trim() === '') { toast('最终发送全文不能为空', 'err'); return; }
     $('modalWrap').hidden = true;
-    o.onOk(reason);
+    o.onOk(o.carrier
+      ? { reason, finalText: $('modalFinal').value, model: selectedModel, effort: selectedEffort }
+      : reason);
   };
 }
 /** 选中某个请求（按轮/按步共用入口） */
@@ -900,23 +943,19 @@ function ability(node) {
   const repl = isReplacement(node.seq);
   const shadowed = gone[node.seq] !== undefined && !repl;
   const type = node.type;
-  /* ⚠️ 三类"不能改"要分清（docs/03 R2.1 / R4.6）：
-   *   · inert（系统提示词 / 工具定义）：**一个动作都不给**，也不渲染空动作区（宿主保护 node 0 的 system）；
-   *   · assistant/message / 被压缩埋掉 / 被遮蔽的原文：**都改不了** → **不给任何动作**，只给一句说明（为什么没有「编辑」）。
-   * 「存为不变量」给的是**每轮会被宿主重新注入**的那两类：注入内容 + 技能注入（R2.1 表里的两个 ✅）。 */
+  /* 迁移能力（docs/03 R2.1 / R4.6）：
+   *   · inert（系统提示词 / 工具定义）：真正内容由目标预设生成，不把普通文本冒充系统层；
+   *   · assistant/message：可编辑迁移副本，旧会话日志不改；
+   *   · 被压缩埋掉 / 被遮蔽的原文：已经够不到。 */
   const inert = node.cat === 'system' || node.cat === 'tools';
-  const canRewrite = !inert && !shadowed && type !== 'assistant/message' && !node.compacted;
+  const canRewrite = !inert && !shadowed && !node.compacted;
   return {
     canRewrite, shadowed, isReplacement: repl, inert,
-    /* 「高级编辑」：**模型/工具回了什么**那一类（工具结果）。
-     * 判据不是"会不会漂移"（只有每轮被重新注入的注入内容/技能注入才漂），而是"用户需要动手的概率"：
-     * 工具结果一轮几十条、要改的概率低 —— 默认把「编辑」收起来，避免干扰；
-     * 助手消息根本没有编辑按钮（平台互斥）。 */
+    /* 「高级编辑」只收工具结果：一轮几十条、要改的概率低；助手消息属于普通迁移编辑。 */
     advancedOnly: node.cat === 'tool',
     isToolResult: type === 'tool/result',
-    blockReason: inert ? '系统提示词 / 工具定义由宿主保护：改不了'
+    blockReason: inert ? '系统提示词 / 工具定义由目标预设生成：不能直接改'
       : shadowed ? `这一条已被 #${gone[node.seq]} 接替，已不在模型可见内容里`
-      : type === 'assistant/message' ? '助手消息在平台上无法改写（两条规则互斥）：改不了。要纠正它，就在开启子会话时写在首条任务里。'
       : node.compacted ? '这一条被压缩埋掉了：改写够不到它'
       : type === 'system/message' ? '系统提示词不可改' : ''
   };
@@ -956,7 +995,7 @@ function rowHtml(node) {
   const tail = isNew ? '<span class="chain">（这是替换后的新条目）</span>'
     : (gone[node.seq] !== undefined ? `<span class="chip-shadow">已被 #${gone[node.seq]} 接替</span>` : '');
   const chainChip = (a.shadowed || !chain.length) ? '' : '<span class="chain">（这里被改过）</span>';
-  return `<div class="row${a.shadowed ? ' shadowed' : ''}">
+  return `<div class="row${a.shadowed ? ' shadowed' : ''}${excludedOf(node.seq) ? ' deleted' : ''}">
     <button class="row-main" data-elem="${node.seq}" data-explain="row.toggle">
       <i class="catsq" style="background:${catColor(node.cat)}" title="点色块 = 趋势图聚焦这一类" data-focus="${node.cat}"></i>
       <span class="tagchip">${catLabel(node.cat)}</span>${node.name ? `<span class="tagchip">${esc(node.name)}</span>` : ''}
@@ -970,31 +1009,33 @@ function rowHtml(node) {
        * 旧模型的残留（`版本历史` / `从这一版恢复` / `去改现在这条` / `写一句更正`）全部删除。
        * 改不了的行只留一句**说明**（为什么没有「编辑」），不给任何其他动作。 */
       const acts = [];
-      const excluded = excludedOf(node.seq);
-      /* 2026-10-08（用户选 A）：除「编辑」外再给一个「标记为不要」——平台没有删除，
-       * fork 也排除不掉历史（docs/01 F38），所以它只是**本地作废标记**，开启子会话时逐字声明。
-       * 助手消息改不了，但**可以作废** —— 那是它唯一的处置手段。 */
-      const canExclude = !node.compacted && !a.shadowed;
-      const excludeBtn = !canExclude || (a.advancedOnly && !S.sw.advanced) ? ''
-        : excluded
-          ? `<button class="btn sm ghost" data-act="unexclude" data-seq="${node.seq}" data-explain="act.exclude">取消标记</button>`
-          : `<button class="btn sm ghost" data-act="exclude" data-seq="${node.seq}" data-explain="act.exclude">标记为不要</button>`;
-      if (excluded) {
-        acts.push('<span class="chip-excluded" title="这一条已作废：开启子会话时首条任务会声明不要采用它（当前会话不受影响）">已标为不要</span>');
-        acts.push(excludeBtn);
+      const deleted = excludedOf(node.seq);
+      /* 2026-10-09（`docs/03` R4.8）：`删除` = 这一条不写进新会话。它与「编辑」**互不干扰**
+       *（旧口径"标了就清掉改动 / 改了就把标记清掉"作废）⟹ 删除后改稿原样留着，取消删除就回来。
+       * 助手消息改不了，但仍可以删除 —— 那是它唯一的处置手段。 */
+      const canDelete = !node.compacted && !a.shadowed;
+      const deleteBtn = !canDelete || (a.advancedOnly && !S.sw.advanced) ? ''
+        : deleted
+          ? `<button class="btn sm ghost" data-act="unexclude" data-seq="${node.seq}" data-explain="act.exclude">取消删除</button>`
+          : `<button class="btn sm ghost" data-act="exclude" data-seq="${node.seq}" data-explain="act.exclude">删除</button>`;
+      if (deleted) {
+        acts.push('<span class="chip-excluded" title="这一条不会写进新会话；取消删除可原样恢复（含你改过的正文）">已删除</span>');
+        acts.push(deleteBtn);
       } else if (a.canRewrite) {
         acts.push(a.advancedOnly && !S.sw.advanced
           ? '<span class="chip-soft" title="工具结果的「编辑」属于高级编辑：打开顶部「高级编辑」开关即可看到（避免几十条工具结果把常用动作淹掉）">高级编辑</span>'
           : `<button class="btn sm" data-act="edit" data-seq="${node.seq}" data-explain="act.edit">编辑</button>`);
-        if (excludeBtn) acts.push(excludeBtn);
+        if (deleteBtn) acts.push(deleteBtn);
       } else if (node.type === 'assistant/message') {
         acts.push(`<span class="badge-asst" title="${esc(a.blockReason)}">助手消息改不了</span>`);
-        if (excludeBtn) acts.push(excludeBtn);
+        if (deleteBtn) acts.push(deleteBtn);
       } else if (!a.shadowed) {
         /* 被遮蔽的行：上面的 `tail` 已经写了「已被 #K 接替」——**不重复第二个标记**。 */
         acts.push(`<span class="chip-soft" title="${esc(a.blockReason)}">${esc(a.blockReason.slice(0, 16))}…</span>`);
       }
-      if (!excluded && draftOf(node.seq)) {
+      /* 「丢弃这条改动」：只要这一行有本地改稿就给 —— **删除态下也给**（那就是 R4.8 的
+       *「已删除编辑稿 ──丢弃这条改动──▶ 已删除原文」，只清正文、保持删除态）。 */
+      if (draftOf(node.seq)) {
         /* ⚠️ 用户 2026-10-02：`已改（本地）` 与 `已保存（本地）` **说的是同一件事** ⟹ 只留 `#seq` 旁边那一个
          *（rowHtml 顶部已经渲染），这里只放动作本身。 */
         acts.push(`<button class="btn sm ghost" data-act="dropDraft" data-seq="${node.seq}" data-explain="act.edit">丢弃这条改动</button>`);
@@ -1250,17 +1291,17 @@ function rowAct(btn) {
     toast(d ? `打开 #${seq} 的编辑器（预填的是你上次保存的版本，可继续改）` : `打开 #${seq} 的内联编辑器（预填的是全文，不是 80 字预览）`);
   }
   if (act === 'exclude' || act === 'unexclude') {
-    /* 2026-10-08（用户选 A）：「标记为不要」只写本地；**不碰会话**。
-     * 与「编辑」互斥：标了就清掉该行的本地改动，改了就把标记清掉。 */
+    /* 2026-10-09（`docs/03` R4.8）：`删除` 只写本地、**不碰会话**，也**不清空你的改稿**。
+     * 两张表本来就分开存（`S.drafts` / `S.excluded`）⟹ 取消删除能原样回到"已编辑"。
+     * 旧口径"标了就清掉该行改动"（互斥）已作废；这里曾经 `delete S.drafts[seq]`，那正是丢改稿的原因。 */
     const on = act === 'exclude';
-    if (!on) { delete S.excluded[seq]; }
+    if (!on) delete S.excluded[seq];
     else {
-      delete S.drafts[seq];
-      delete S.drafts['note-' + seq];
-      if (S.editor && S.editor.seq === seq) S.editor = null;
       S.excluded[seq] = true;
+      // 删除后不再提供「编辑」（R4.8 的动作列），所以把正在编辑这一条的编辑器收起来；改稿仍留着。
+      if (S.editor && S.editor.seq === seq) S.editor = null;
     }
-    toast(on ? '已标为不要：开启子会话时会在这条的首条任务里声明不使用它' : '已取消标记，这一条恢复原样');
+    toast(on ? '已删除：这一条不会写进新会话；取消删除可原样恢复（含改稿）' : '已取消删除：这一条重新参与投递');
     render();
     return;
   }
@@ -1327,40 +1368,43 @@ function orchAct(b) {
     /* ⚠️ **硬约束的落地**（用户 2026-10-02）：「所有的保存都是临时性保存，只有开启子会话的时候才会写进去。」
      * 保存只写本地 ⟹ 改动**不在父会话日志里** ⟹ 子会话继承的日志里没有它们。
      * 所以在这一刻把本地改动**逐字拼进子会话的第一句话**（这就是"开子会话时才写进去"）。 */
-    const edits = Object.values(S.drafts);
+    /* 2026-10-09（`docs/03` R4.8 / `docs/13` §7）：**被删的条目不带进去**。
+     * 这里曾经把 `S.drafts` 全部拼进去（含被删的），还要在首条任务里写一段"请不要采用"的声明 ——
+     * 那是**旧载体**（fork 会把历史原文带过去）才需要的补丁。新会话是**零历史**，不带的条目就是不在，
+     * 所以声明段整段作废（`docs/13` §7 的 `EXCLUDED_HEADING` 一并删掉）。 */
+    const deletedSeqs = Object.keys(S.excluded).map(Number).sort((a, b) => a - b);
+    const isDeletedSeq = (seq) => S.excluded[seq] === true;
+    const edits = Object.values(S.drafts).filter((d) => !isDeletedSeq(d.seq));
     const carryLines = [];
-    const excludedSeqs = Object.keys(S.excluded).map(Number).sort((a, b) => a - b);
     for (const d of edits) carryLines.push(`【改过 · ${d.cat || ''}${d.name ? ' · ' + d.name : ''} · #${d.seq}】\n${d.text}`);
-    const excludedBlock = excludedSeqs.length
-      ? ('\n[redline] 另外，以下条目我已经作废 —— 请不要采用它们的内容（历史里仍带着原文，不作为依据）：\n'
-         + excludedSeqs.map((s) => '【#' + String(s) + '】').join('\n') + '\n')
-      : '';
-    const carry = (carryLines.length || excludedSeqs.length)
-      ? '[redline] 以下是本次改动（以此为准；与此冲突的此前理解一律作废）\n' + carryLines.join('\n\n') + '\n---\n' + excludedBlock
+    const carry = carryLines.length
+      ? '[redline] 以下是本次改动（以此为准；与此冲突的此前理解一律作废）\n' + carryLines.join('\n\n') + '\n---\n'
       : '';
     confirmModal({
-      title: '开启子会话',
-      warn: '会新建一个会话，把这个会话「已经聊完的内容」当作它的开头；你保存的改动会逐字写进它的第一句话。之后本会话的新轮次不会进去。',
+      title: '开启普通新会话',
+      warn: '会在当前工作区新建一个零历史普通会话。下面的「最终发送全文」就是它实际收到的完整第一句话，你可以直接删段、改字或重排。',
       rows: [['① 从哪儿开始', `本会话「最后聊完的那一轮」为止（第 ${last.turn} 轮末）—— 平台自己算的，改不了；没有"从更早的位置开始"这个选项`],
              ['② 会写进去的改动', carryLines.length
                ? `${edits.length} 条改写 —— 逐字拼在它的第一句话前面（当前会话看不到，只有那个新会话的模型读到）`
                : '（你还没保存过任何改动 —— 保存只存本地，开子会话时才写进去）'],
              /* R4.3「本次清单」：把**逐字要写进去的内容**列出来（否则用户只能看到条数、看不到写的是什么）。 */
              ...edits.map((d) => [`· 改写 #${d.seq}`, (d.text || '').slice(0, 120)]),
-             ...(excludedSeqs.length
-               ? [['· 被标为不要', excludedSeqs.map((seq) => '#' + String(seq)).join('、')
-                   + ' —— 历史原文仍会被带过去，但首条任务会声明不要采用它们']]
+             ...(deletedSeqs.length
+               ? [['· 已删除，不会带过去', deletedSeqs.map((seq) => '#' + String(seq)).join('、')
+                   + ' —— 新会话是零历史，这些条目根本不在里面（旧版会在这里写一段「请不要采用」的声明）']]
                : []),
              ['③ 首条任务', '（写在下面那一栏 —— 必须你写；插件不生成任何内容）'],
              ['④ 不会带上', '这个会话的工具授权；本会话此后新聊的内容。'],
              ['⑤ 取消', '取消 = 什么都不发生（不建会话）']],
       needReason: true, okText: '确认创建',
       reasonLabel: '首条任务',
-      reasonHint: '会成为子会话的第一句话；子会话模型可见，本会话模型不可见。',
+      reasonHint: '先写任务；下面会自动拼出完整第一句话。这就是实际写入新会话的完整第一句话，可直接删段或改字。',
       reasonPlaceholder: '一句话说清这次要它干什么。',
-      onOk: (reason) => {
+      carrier: true,
+      composeFinal: (reason) => `${reason}${reason && carry ? '\n\n' : ''}${carry}`,
+      onOk: ({ reason, finalText, model, effort }) => {
         const id = '00' + (49000 + S.children.length * 771).toString(16).slice(0, 6);
-        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), prime: carry + reason, norms: edits.length });
+        S.children.push({ id, src: 'own', state: 'running', label: reason.slice(0, 24), prime: finalText, model, effort, norms: edits.length });
         render();
         toast(carryLines.length
           ? `已创建 ${id}：${edits.length} 条改写已逐字写进它的第一句话`
@@ -1379,7 +1423,7 @@ function renderSelfcheck() {
     ['原始节点（当前可见）', '编辑'],
     ['替换体（当前可见）', '仍有「编辑」（可连续改）'],
     ['旧替换体 / 已被遮蔽的原文', '无任何动作，只给一句原因（已被 #K 接替）'],
-    ['助手消息', '无任何动作，只给徽章「助手消息改不了」'],
+    ['助手消息', '编辑迁移副本（旧会话日志不改）'],
     ['工具结果', '「编辑」（只改内容文本/错误标记）'],
     ['注入内容', '编辑'],
     ['被压缩埋掉', '无任何动作（改写够不到）'],

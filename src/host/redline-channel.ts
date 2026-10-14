@@ -28,6 +28,7 @@
  */
 
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { REDLINE_ERROR, REDLINE_ERROR_MESSAGE, isRedlineErrorCode } from '../shared/redline-errors'
@@ -45,11 +46,13 @@ import {
   draftRevisionOf,
   draftFileName,
   dropEdit,
-  excludedSeqsOf,
+  deletedSeqsOf,
+  isDeleted,
   parseDrafts,
-  putExcluded,
+  putDeleted,
   putEdit,
   serializeDrafts,
+  unmarkDeleted,
   type DraftTable,
   type LocalEdit,
   type SurfaceRowText,
@@ -60,7 +63,21 @@ import { turnStateOf, type TurnBoundaryEvent, type TurnState } from '../shared/r
 import { buildFirstTask, forkConfirmItems } from '../redline/orchestrate'
 import { firstTaskMetricsOf } from '../redline/metrics'
 import { capacityFromService } from '../shared/redline-capacity'
-import { originsFileName, parseOrigins, putOrigin, serializeOrigins, type OriginVia } from '../shared/redline-origins'
+import { originsFileName, parseOrigins } from '../shared/redline-origins'
+import { captureEventSourceSnapshot, eventSourceKeyOf, type CapturedEventSource, type SurfaceSnapshotEvent } from '../shared/redline-source'
+import { buildManifest, serializeManifestDelivery, stableFingerprint, type ManifestCandidate } from '../redline/manifest'
+import {
+  authorizeCarrier,
+  createCarrierPreview,
+  setTitleStatus,
+  transitionCarrierTask,
+  type CarrierConfirmedConfig,
+  type CarrierExecutionInput,
+  type CarrierOperation,
+} from '../shared/redline-carrier'
+import { createRedlineCarrierStore } from './redline-carrier-store'
+import { redlineSessionControlFor, type CarrierSessionRequest } from './redline-session-control'
+import { runCarrierToReturn } from './redline-carrier-runner'
 
 /** The host `connection` service, as far as this route consumes it. */
 interface ConnectionHostFace {
@@ -81,41 +98,8 @@ type HomePathFace = (...segments: string[]) => string
 interface SessionQueryFace {
   readEvent?(request: { sessionId: string; seq: number }): Promise<unknown>
   readSurface?(sessionId: string): Promise<unknown>
+  readSession?(sessionId: string): Promise<{ readonly events: readonly unknown[] }>
   listEvents?(sessionId: string): Promise<readonly TurnBoundaryEvent[]>
-}
-
-/**
- * `ctx.agentTeams` 里我们真正要用的那一小块（签名按安装树 `@deepseek-ai/dsh-experimental-agent-team`）。
- */
-interface AgentTeamsFace {
-  /**
-   * 建一个**官方团队成员**（M5-01 的优先路径）。签名按安装树：
-   * `spawnTeammate(caller, { name, description, prompt: ContentBlock[], context, provider, signal })`。
-   */
-  spawnTeammate?(caller: unknown, request: {
-    name: string
-    description: string
-    prompt: readonly { type: string; text: string }[]
-    context: 'fresh' | 'fork'
-    provider: string
-    signal: AbortSignal
-  }): Promise<unknown>
-}
-
-/** `ctx.subagents` 里我们真正要用的那一小块（签名按 `docs/06` §3.1.1 的实测）。 */
-interface SubagentsFace {
-  startContinuable?(spec: {
-    provider: string
-    label: string
-    /**
-     * ⚠️ **真机纠正（2026-10-06）**：安装树里 `ContinuableStartSpec` 的 `request.parent` 要的是**活的 parent Agent
-     * 对象**（不是会话 id 字符串）、`request.prompt` 要的是 `ContentBlock[]`（不是字符串），而 `signal` 是**必填**且在外层。
-     * 第一版按 docs/06 §3.1.1 那句「parent/prompt 在 request 里」照传字符串 ⟹ 真机报
-     * `Cannot read properties of undefined (reading 'header')`（它去读 Agent 的 header，读到 undefined）。
-     */
-    request: { parent: unknown; prompt: readonly { type: string; text: string }[] }
-    signal: AbortSignal
-  }): Promise<unknown>
 }
 
 /** The host session store, as far as liveness is concerned. */
@@ -340,101 +324,8 @@ function rowOf(seq: number, event: unknown): Record<string, unknown> {
  * Whether the panel may edit this session at all, and if not, why in machine terms.
  * The client shows the demo's sentence and disables `保存` BEFORE any round trip.
  */
-/**
- * 真机探针（M4.5 包 A 的**只读**半边；2026-10-05 用户授予"授权包②"后加）：
- * 把宿主**实际**提供的服务、以及它们的方法名外形报出来 —— 只回答"在不在 / 叫什么"，
- * **不读任何会话内容、不写任何东西**。用途：把 `docs/01` §6 里 V1–V6/V10/V12/V13 那些
- * "静态能读、真机未知"的条目落成实测。用完整名 `probe.services` 以免被误当业务能力。
- */
-/** 把 catch 到的任何东西变成一句话（不要 `as Error` + 可选链堆在一起）。 */
+/** 把 catch 到的任何东西变成一句话。 */
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error))
-
-const probeServices: RedlineOpHandler = async ({ ctx, call }) => {
-  const sessionId = sessionIdOf(call) ?? ''
-  const keys = ['subagents', 'agents', 'agentTeams', 'compaction', 'sessionQuery', 'sessions', 'projection', 'slots', 'settings', 'tools', 'commands']
-  const present: Record<string, string[]> = {}
-  for (const key of keys) {
-    // 运行期拿到的可能是任何东西（含 null）：类型里如实带上 null，别让 lint 以为那个判断多余
-    const svc = ctx.get(key) as Record<string, unknown> | undefined | null
-    if (svc === undefined || svc === null) continue
-    const proto = Object.getPrototypeOf(svc) as Record<string, unknown> | null
-    const names = [...Object.getOwnPropertyNames(proto ?? {}), ...Object.keys(svc)]
-    present[key] = [...new Set(names)].filter(n => n !== 'constructor').slice(0, 40)
-  }
-  const subagents = ctx.get('subagents') as { getProvider?: (n: string) => unknown } | undefined
-  const agents = ctx.get('agents') as { get?: (id: string) => unknown } | undefined
-  const providers: string[] = []
-  for (const name of ['fork', 'spawn', 'fork-in-process', 'spawn-in-process']) {
-    if (typeof subagents?.getProvider === 'function' && subagents.getProvider(name) !== undefined) providers.push(name)
-  }
-  // 顺带把"这个会话的日志读不读得到"也报出来 —— 这正是 V3/V6 想知道的（只读，读不到就如实说读不到）
-  let logReadable: boolean | string = 'no-listEvents'
-  let eventCount: number | null = null
-  const query = ctx.get('sessionQuery') as SessionQueryFace | undefined | null
-  if (typeof query?.listEvents === 'function' && sessionId !== '') {
-    try {
-      const events = await query.listEvents(sessionId)
-      logReadable = true
-      eventCount = Array.isArray(events) ? events.length : null
-    } catch {
-      logReadable = false
-    }
-  }
-  // ── V2/V10 的路径探索：ctx 上到底挂了哪些服务（Cordis 的注册表通常可由 Object.keys 枚举）──
-  let ctxKeys: string[] | string = 'not-enumerable'
-  try {
-    const keys = Object.keys(ctx as unknown as Record<string, unknown>)
-    if (keys.length > 0) ctxKeys = keys.sort()
-  } catch { /* 枚举不到就如实说枚举不到 */ }
-  // ── V8：日志里"被遮蔽的原文"读不读得回来（回滚要用它；只读）──
-  const shadow: Record<string, unknown> = { replaceish: 0, readback: 'no-log' }
-  if (typeof query?.listEvents === 'function' && sessionId !== '') {
-    try {
-      const events = await query.listEvents(sessionId) as readonly Record<string, unknown>[]
-      const carriers = events.filter(e => Array.isArray((e as { sourceEventSeqs?: unknown }).sourceEventSeqs))
-      shadow.replaceish = carriers.length
-      // `.at(0)`：类型上真的可能 undefined（下标写法被当成非空，判断会被 lint 判成多余）
-      const first = carriers.at(0)
-      if (first !== undefined && typeof query.readEvent === 'function') {
-        const seqs = (first as { sourceEventSeqs?: number[] }).sourceEventSeqs ?? []
-        const target = seqs.at(0)
-        if (target === undefined) { shadow.readback = 'carrier-has-no-seq' } else {
-          const back = await query.readEvent({ sessionId, seq: target }) as { text?: unknown; target?: unknown } | null | undefined
-          const text = typeof back?.text === 'string' ? back.text : null
-          // ⚠️ 只报**三态**（ok / empty / no-text-field），**不回传原文片段**：
-          // 这是"服务在不在、字段叫什么"的结构探针，不该把会话正文带出去
-          // （Code Review P1-5；`originalPrefix` / `targetShape` 已按此删除）。
-          shadow.readback = text === null ? 'no-text-field' : (text === '' ? 'empty' : 'ok')
-        }
-      }
-    } catch (error) {
-      shadow.readback = 'threw: ' + messageOf(error).slice(0, 60)
-    }
-  }
-  // ── V13：官方团队的 Lead 判定（只读试探）──
-  let membership: unknown = 'no-agentTeams'
-  const teams = ctx.get('agentTeams') as { tryMembership?: (id: string) => unknown; membership?: (id: string) => unknown } | undefined | null
-  if (teams !== undefined && teams !== null && sessionId !== '') {
-    try {
-      if (typeof teams.tryMembership === 'function') membership = { via: 'tryMembership', value: teams.tryMembership(sessionId) }
-      else if (typeof teams.membership === 'function') membership = { via: 'membership', value: teams.membership(sessionId) }
-      else membership = 'no-method'
-    } catch (error) {
-      membership = { threw: messageOf(error).slice(0, 60) }
-    }
-  }
-  return redlineOk({
-    present,
-    ctxKeys,
-    shadow,
-    membership,
-    logReadable,
-    eventCount,
-    subagentsProviders: providers,
-    subagentsHasStartContinuable: typeof (subagents as { startContinuable?: unknown } | undefined)?.startContinuable === 'function',
-    agentForSession: typeof agents?.get === 'function' ? (sessionId !== '' && agents.get(sessionId) !== undefined) : 'no-agents.get',
-  })
-}
 
 const readTurnState: RedlineOpHandler = async ({ ctx, call }) => {
   const sessionId = sessionIdOf(call)
@@ -568,20 +459,242 @@ const excludeDraft: RedlineOpHandler = async ({ ctx, call }) => {
   return await withSessionLock(sessionId, async () => {
     const current = await readTable(ctx, sessionId)
     if (!current.ok) return current
-    const existing = Object.values(current.value).find(candidate => candidate.seq === seq)
-    const alreadyMarked = existing !== undefined && existing.excluded === true
+    const alreadyMarked = isDeleted(current.value, seq)
     // 幂等：状态没变就**不落盘**（与 draft.drop 同一套口径：没有变化就不产生副作用）。
     if (on === alreadyMarked) return redlineOk(current.value)
+    // ⚠️ 取消删除必须走 `unmarkDeleted`（`docs/03` R4.8）：它只去掉删除标记、**保留编辑正文**，
+    // 所以"改了一条 → 删除 → 取消删除"能回到改后的正文。`dropEdit` 的新语义是
+    // 「已删除编辑稿 → 已删除原文」（清正文、留删除态），用在这里会变成"取消删除没生效"。
     const next = on
-      ? putExcluded(current.value, seq, new Date().toISOString())
-      : dropEdit(current.value, seq)
+      ? putDeleted(current.value, seq, new Date().toISOString())
+      : unmarkDeleted(current.value, seq)
     return await writeTable(ctx, sessionId, next)
   })
 }
 
+interface CarrierSourceAgentFace {
+  readonly options?: { readonly provider?: string; readonly model?: string; readonly reasoningEffort?: string; readonly maxTokens?: number }
+  readonly session?: { readonly header?: { readonly cwd?: string; readonly agentPreset?: string } }
+  readonly ctx?: Context
+}
+
+interface CarrierWorkspaceRegistryFace {
+  resolveByPath?(path: string): Promise<{ readonly id: string; readonly path: string } | undefined>
+}
+
+interface CarrierPlanValue {
+  readonly operationId: string
+  readonly draftRevision: string
+  readonly surfaceFingerprint: string
+  readonly manifestFingerprint: string
+  readonly items: readonly { readonly label: string; readonly text: string }[]
+  readonly carriedSeqs: readonly number[]
+  readonly excludedSeqs: readonly number[]
+  readonly prompt: string | null
+  readonly metrics: { readonly bytes: number; readonly lines: number; readonly edits: number } | null
+  readonly refusal: { readonly code: string; readonly message: string } | null
+}
+
+function manifestCategory(candidate: CapturedEventSource): RowClass {
+  return candidate.sourceRole === 'system' ? 'system' : candidate.sourceRole
+}
+
+interface CarrierConfirmationToken {
+  readonly operationId: string
+  readonly draftRevision: string
+  readonly surfaceFingerprint: string
+  readonly manifestFingerprint: string
+  readonly taskFingerprint: string
+}
+
+function encodeCarrierConfirmation(value: CarrierConfirmationToken): string {
+  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url')
+}
+
+function decodeCarrierConfirmation(raw: unknown): CarrierConfirmationToken | null {
+  if (typeof raw !== 'string' || raw === '') return null
+  try {
+    const value = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as Partial<CarrierConfirmationToken>
+    return typeof value.operationId === 'string' && typeof value.draftRevision === 'string'
+      && typeof value.surfaceFingerprint === 'string' && typeof value.manifestFingerprint === 'string'
+      && typeof value.taskFingerprint === 'string'
+      ? value as CarrierConfirmationToken : null
+  } catch { return null }
+}
+
+function fixedCarrierIds(operationId: string) {
+  const suffix = stableFingerprint(operationId)
+  return {
+    carrierId: `session-redline-${suffix.slice(0, 24)}`,
+    promptRequestId: `redline-prompt-${suffix.slice(0, 24)}`,
+    returnRequestId: `redline-return-${suffix.slice(24, 48)}`,
+  }
+}
+
+function confirmedConfigOf(ctx: Context, agent: CarrierSourceAgentFace): CarrierConfirmedConfig | null {
+  const provider = agent.options?.provider
+  const model = agent.options?.model
+  const presets = ctx.get('agentPresets') as { composedPreset?(agentCtx: Context): string | undefined } | undefined
+  const preset = agent.session?.header?.agentPreset ?? (agent.ctx === undefined ? undefined : presets?.composedPreset?.(agent.ctx))
+  if (provider === undefined || model === undefined || preset === undefined) return null
+  return {
+    agentPreset: preset,
+    provider,
+    model,
+    reasoningEffort: agent.options?.reasoningEffort ?? 'not-specified',
+    inheritedFrom: 'source-session-explicit-config',
+  }
+}
+
+async function prepareCarrierPlan(
+  ctx: Context,
+  sessionId: string,
+  humanTask: string,
+  operationId = `redline-op-${randomUUID()}`,
+): Promise<RedlineEnvelope<CarrierPlanValue & { readonly preview?: CarrierOperation }>> {
+  const drafts = await readTable(ctx, sessionId)
+  if (!drafts.ok) return drafts
+  const query = ctx.get('sessionQuery') as SessionQueryFace | undefined
+  if (typeof query?.readSurface !== 'function') return fail(REDLINE_ERROR.notLive)
+  let rawSurface: unknown
+  try { rawSurface = await query.readSurface(sessionId) } catch (error) {
+    return fail(REDLINE_ERROR.internal, `source surface read failed: ${messageOf(error)}`)
+  }
+  if (rawSurface === null || typeof rawSurface !== 'object') return fail(REDLINE_ERROR.internal, 'source surface is invalid')
+  const surfaceBag = rawSurface as { session?: unknown; capturedThroughSeq?: unknown; events?: unknown }
+  const sourceHeader = surfaceBag.session
+  const sourceHeaderId = sourceHeader !== null && typeof sourceHeader === 'object' && typeof (sourceHeader as { id?: unknown }).id === 'string'
+    ? (sourceHeader as { id: string }).id : sessionId
+  if ((surfaceBag.capturedThroughSeq !== null
+    && (!Number.isSafeInteger(surfaceBag.capturedThroughSeq) || (surfaceBag.capturedThroughSeq as number) < 0))
+    || !Array.isArray(surfaceBag.events)) {
+    return fail(REDLINE_ERROR.internal, 'source surface has no stable capture version')
+  }
+  const capturedThroughSeq = surfaceBag.capturedThroughSeq as number | null
+  const surfaceEvents: unknown[] = surfaceBag.events
+  let pairingEvents: readonly unknown[] = []
+  const needsToolPairing = surfaceEvents.some(event => (
+    event !== null && typeof event === 'object' && (event as { type?: unknown }).type === 'tool/result'
+  ))
+  if (needsToolPairing && typeof query.readSession === 'function') {
+    try {
+      const snapshot = await query.readSession(sessionId)
+      pairingEvents = snapshot.events.filter(event => (
+        event !== null && typeof event === 'object' && (event as { type?: unknown }).type === 'tool/call'
+      ))
+    } catch (error) {
+      return fail(REDLINE_ERROR.internal, `source log read failed: ${messageOf(error)}`)
+    }
+  }
+  let capture
+  try {
+    capture = captureEventSourceSnapshot(sessionId, {
+      sessionId: sourceHeaderId,
+      capturedThroughSeq,
+      events: [...pairingEvents, ...surfaceEvents] as SurfaceSnapshotEvent[],
+    })
+  } catch (error) {
+    return fail(REDLINE_ERROR.internal, `source capture refused: ${messageOf(error)}`)
+  }
+  const candidates: ManifestCandidate[] = capture.candidates.map(candidate => ({
+    sourceKey: candidate.sourceKey,
+    cat: manifestCategory(candidate),
+    sourceRole: candidate.sourceRole,
+    order: candidate.order,
+    text: candidate.text,
+    ...(candidate.reasoning === undefined ? {} : { reasoning: candidate.reasoning }),
+    ...(candidate.isError === undefined ? {} : { isError: candidate.isError }),
+    ...(candidate.toolLink === undefined ? {} : { toolLink: candidate.toolLink }),
+  }))
+  const typeBySeq = new Map(capture.candidates.map(candidate => [candidate.sourceKey.seq, candidate.sourceKey.type]))
+  const deletions = deletedSeqsOf(drafts.value).flatMap((seq) => {
+    const type = typeBySeq.get(seq)
+    return type === undefined ? [] : [eventSourceKeyOf({ kind: 'event', sourceSessionId: sessionId, seq, type })]
+  })
+  const manifest = buildManifest({
+    sourceSessionId: sessionId,
+    surfaceAsOfSeq: capture.capturedThroughSeq,
+    surfaceFingerprint: capture.surfaceFingerprint,
+    candidates,
+    edits: drafts.value,
+    deletions,
+  })
+  let prompt: string
+  try { prompt = serializeManifestDelivery(humanTask, manifest.delivery) } catch {
+    return redlineOk({
+      operationId, draftRevision: draftRevisionOf(sessionId, drafts.value),
+      surfaceFingerprint: capture.surfaceFingerprint, manifestFingerprint: manifest.manifestFingerprint,
+      items: [], carriedSeqs: [], excludedSeqs: deletedSeqsOf(drafts.value), prompt: null, metrics: null,
+      refusal: { code: REDLINE_ERROR.emptyTask, message: REDLINE_ERROR_MESSAGE[REDLINE_ERROR.emptyTask] },
+    })
+  }
+  const agents = ctx.get('agents') as { get?: (id: string) => CarrierSourceAgentFace | undefined } | undefined
+  const sourceAgent = agents?.get?.(sessionId)
+  if (sourceAgent === undefined) return fail(REDLINE_ERROR.notLive)
+  const config = confirmedConfigOf(ctx, sourceAgent)
+  const cwd = sourceAgent.session?.header?.cwd
+  if (config === null || cwd === undefined) return fail(REDLINE_ERROR.internal, 'source session configuration is incomplete')
+  const registry = ctx.get('workspaceRegistry') as CarrierWorkspaceRegistryFace | undefined
+  if (typeof registry?.resolveByPath !== 'function') return fail(REDLINE_ERROR.internal, 'workspace registry is unavailable')
+  const workspace = await registry.resolveByPath(cwd)
+  if (workspace === undefined) return fail(REDLINE_ERROR.internal, 'source workspace is unavailable')
+  const ids = fixedCarrierIds(operationId)
+  const executionInput: CarrierExecutionInput = {
+    deliveryContent: prompt,
+    contentFingerprint: stableFingerprint(prompt),
+    workspaceId: workspace.id,
+    cwd,
+    confirmedConfig: config,
+    returnConfig: config,
+    returnConfigFingerprint: stableFingerprint(JSON.stringify(config)),
+    attachments: [],
+  }
+  const task = humanTask.trim()
+  const titleTask = task.replace(/\s+/g, ' ').slice(0, 48)
+  const preview = createCarrierPreview({
+    opId: operationId,
+    carrierId: ids.carrierId,
+    mainSessionId: sessionId,
+    plannedTitle: `↳ ${sessionId.slice(-8)} · ${titleTask}`,
+    surfaceAsOfSeq: capture.capturedThroughSeq,
+    surfaceFingerprint: capture.surfaceFingerprint,
+    manifestFingerprint: manifest.manifestFingerprint,
+    promptRequestId: ids.promptRequestId,
+    returnRequestId: ids.returnRequestId,
+    previewExecutionInput: executionInput,
+    previewDraftRevision: draftRevisionOf(sessionId, drafts.value),
+  })
+  const deleted = deletedSeqsOf(drafts.value)
+  const items = [
+    { label: '来源', text: `当前会话 ${sessionId}，捕获到 seq ${String(capture.capturedThroughSeq)}；确认前来源或草稿变化会要求重看。` },
+    { label: '会带上的内容', text: `带 ${String(manifest.counts.carried)} 条；删除 ${String(manifest.counts.deleted)} 条；图片 ${String(capture.omittedImages)} 个未迁移。删除项和图片不会写进零历史新会话。` },
+    { label: '第一句话（你来写）', text: task },
+    { label: '新会话配置与回程', text: `工作区 ${workspace.id}；预设 ${config.agentPreset}；模型 ${config.provider}/${config.model}；任务结束后原样回到当前会话。` },
+    { label: '取消', text: '取消就是什么都不发生：不建会话、不写任何会话日志。' },
+  ]
+  return redlineOk({
+    operationId,
+    draftRevision: preview.previewDraftRevision ?? '',
+    surfaceFingerprint: capture.surfaceFingerprint,
+    manifestFingerprint: manifest.manifestFingerprint,
+    items,
+    carriedSeqs: manifest.delivery.flatMap(entry => entry.sourceKey.kind === 'event' ? [entry.sourceKey.seq] : []),
+    excludedSeqs: deleted,
+    prompt,
+    config: {
+      agentPreset: config.agentPreset,
+      provider: config.provider,
+      model: config.model,
+      ...(config.reasoningEffort.startsWith('not-') ? {} : { reasoningEffort: config.reasoningEffort }),
+    },
+    metrics: firstTaskMetricsOf(prompt, manifest.counts.carried),
+    refusal: null,
+    preview,
+  })
+}
+
 /**
- * 开子会话**之前**能问的全部事实（**只读**）：确认框五项 + 组装好的首条任务。
- * 起点恒为"最后聊完的那一轮"（`docs/01` F38：平台没有更早的起点可用）。
+ * Legacy read-only plan kept for clients that have not refreshed yet.
  */
 const planChild: RedlineOpHandler = async ({ ctx, call }) => {
   const sessionId = sessionIdOf(call)
@@ -589,12 +702,13 @@ const planChild: RedlineOpHandler = async ({ ctx, call }) => {
   const drafts = await readTable(ctx, sessionId)
   if (!drafts.ok) return drafts
   // `DraftTable` 是按 seq 键控的 Record（不是数组）⟹ 取值再按 seq 排序，顺序才稳定。
-  // 标为「不要」的记录**不是编辑**（`editOf` 会把它们过滤掉），这里按同一个口径拆开。
+  // 带删除标记的记录**不投递**（`docs/03` R4.8：已编辑 + 已删除 ⟹ 正文仍保存、但不参与投递）；
+  // 判据用 `isDeleted`（认 `deleted` 与旧镜像 `excluded`），不直接读裸字段。
   const carried = Object.values(drafts.value)
-    .filter(entry => entry.excluded !== true)
+    .filter(entry => !isDeleted(drafts.value, entry.seq))
     .sort((a, b) => a.seq - b.seq)
   const edits = carried.map(entry => ({ seq: entry.seq, text: entry.text }))
-  const excluded = excludedSeqsOf(drafts.value)
+  const excluded = deletedSeqsOf(drafts.value)
   const humanTask = typeof call.humanTask === 'string' ? call.humanTask : ''
   const first = buildFirstTask({ humanTask, edits, excluded })
   const position = '从最后聊完的那一轮开始'
@@ -611,138 +725,179 @@ const planChild: RedlineOpHandler = async ({ ctx, call }) => {
   })
 }
 
-/**
- * **开子会话**：全插件唯一的写入点（`AGENTS.md` §1 的"所有保存都是临时保存"）。
- *
- * 它只做三件事：组装首条任务（人写的话 + 逐字带入的改后正文）→ 调 `subagents.startContinuable`
- * → 把实际写进去的内容回报给调用方记台账。除此之外**不写任何会话**（`session.append` 一次都不调）。
- *
- * 拒绝顺序（先说的先算）：会话不在本进程 → 轮次未闭合 → 首条任务为空 → 运行时没有子会话服务。
- */
-const startChild: RedlineOpHandler = async ({ ctx, call }) => {
+/** Legacy fork write entry: stale clients must refresh and use `carrier.start`. */
+const startChild: RedlineOpHandler = () => Promise.resolve(
+  fail(REDLINE_ERROR.unknownOp, 'legacy child.start is retired; refresh and use carrier.start'),
+)
+
+function carrierControl(ctx: Context) {
+  return redlineSessionControlFor(ctx)
+}
+
+/** Read-only ordinary-carrier preview. No session or ledger write occurs here. */
+const planCarrier: RedlineOpHandler = async ({ ctx, call }) => {
   const sessionId = sessionIdOf(call)
-  const expectedDraftRevision = typeof call.draftRevision === 'string' ? call.draftRevision : null
-  if (sessionId === null || expectedDraftRevision === null || expectedDraftRevision === '') return fail(REDLINE_ERROR.badRequest)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
   const turn = await turnStateOfSession(ctx, sessionId)
   if (!turn.known) return fail(REDLINE_ERROR.notLive)
   if (turn.open) return fail(REDLINE_ERROR.turnOpen)
   const humanTask = typeof call.humanTask === 'string' ? call.humanTask : ''
-
-  // The confirmation dialog is a promise about an EXACT local draft set. Put its
-  // read, comparison, and provider call behind the same lock as draft mutations:
-  // no tab can save/drop an edit between the final check and the child request.
-  return await withSessionLock(sessionId, async () => {
-    const drafts = await readTable(ctx, sessionId)
-    if (!drafts.ok) return drafts
-    if (draftRevisionOf(sessionId, drafts.value) !== expectedDraftRevision) return fail(REDLINE_ERROR.draftsChanged)
-    // `DraftTable` 是按 seq 键控的 Record（不是数组）⟹ 取值再按 seq 排序，顺序才稳定
-    const carried = Object.values(drafts.value)
-      .filter(entry => entry.excluded !== true)
-      .sort((a, b) => a.seq - b.seq)
-    const edits = carried.map(entry => ({ seq: entry.seq, text: entry.text }))
-    const excluded = excludedSeqsOf(drafts.value)
-    const first = buildFirstTask({ humanTask, edits, excluded })
-    if (!first.ok) return redlineFailure(REDLINE_ERROR.emptyTask, first.message)
-    // 活 Agent：真机的 request.parent 要的是它（agents.get 只对「本进程加载过的会话」有值 —— docs/01 F48）。
-    const agents = ctx.get('agents') as { get?: (id: string) => unknown } | undefined | null
-    const parent = typeof agents?.get === 'function' ? agents.get(sessionId) : undefined
-    if (parent === undefined) return fail(REDLINE_ERROR.notLive)
-    const subagents = ctx.get('subagents') as SubagentsFace | undefined | null
-    if (subagents === undefined || subagents === null || typeof subagents.startContinuable !== 'function') {
-      return fail(REDLINE_ERROR.noSubagents)
-    }
-    const label = '上下文批改 · ' + sessionId.slice(-8)
-    const memberName = 'context-redline-' + sessionId.replace(/[^a-zA-Z0-9]/g, '').slice(-8).toLowerCase()
-    const prompt = [{ type: 'text', text: first.prompt }]
-    const signal = new AbortController().signal
-    const teams = ctx.get('agentTeams') as AgentTeamsFace | undefined | null
-    if (teams !== undefined && teams !== null && typeof teams.spawnTeammate === 'function') {
-      try {
-        const official = await teams.spawnTeammate(parent, {
-          name: memberName,
-          // description 用**人写的第一句话**本身（不替用户概括、不生成新内容）。
-          description: first.prompt.split('\n', 1)[0].slice(0, 80),
-          prompt,
-          context: 'fork',
-          provider: 'fork',
-          signal,
-        })
-        if (childIdOfStarted(official, 'official-member') !== null) {
-          await recordOrigin(ctx, sessionId, official, 'official-member', true)
-          return redlineOk({ via: 'official-member', label, memberName, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: official })
-        }
-      } catch (error) {
-        ctx.logger.warn('dsh-context-redline: 官方成员创建失败，尝试裸子会话兜底（' + messageOf(error) + '）')
-      }
-    }
-    try {
-      const bare = await subagents.startContinuable({
-        provider: 'fork', label, request: { parent, prompt }, signal,
-      })
-      if (childIdOfStarted(bare, 'bare-child') === null) return fail(REDLINE_ERROR.childStartUnconfirmed)
-      await recordOrigin(ctx, sessionId, bare, 'bare-child', true)
-      return redlineOk({ via: 'bare-child', label, prompt: first.prompt, carriedSeqs: edits.map(e => e.seq), started: bare })
-    } catch (error) {
-      ctx.logger.warn('dsh-context-redline: 裸子会话创建失败（' + messageOf(error) + '）')
-      return fail(REDLINE_ERROR.childStartFailed)
-    }
+  const operationId = `redline-op-${randomUUID()}`
+  const prepared = await prepareCarrierPlan(ctx, sessionId, humanTask, operationId)
+  if (!prepared.ok) return prepared
+  const { preview: _preview, ...wire } = prepared.value
+  return redlineOk({
+    ...wire,
+    draftRevision: encodeCarrierConfirmation({
+      operationId: wire.operationId,
+      draftRevision: wire.draftRevision,
+      surfaceFingerprint: wire.surfaceFingerprint,
+      manifestFingerprint: wire.manifestFingerprint,
+      taskFingerprint: stableFingerprint(typeof call.humanTask === 'string' ? call.humanTask.trim() : ''),
+    }),
   })
 }
 
-/**
- * 从两条路的返回里取出**新子会话的会话 id**（M5-12 的台账要按它记键）。
- *
- * 两个字段名都按安装树核对过：兜底路 `ContinuableStart.childSessionId`；
- * 官方路 `SpawnTeammateResult.member.id`，它的类型就是 `SessionId`（团队成员的 id = 子会话 id）。
- */
-function childIdOfStarted(started: unknown, via: OriginVia): string | null {
-  if (started === null || typeof started !== 'object') return null
-  const bag = started as { childSessionId?: unknown; member?: unknown }
-  const holder = via === 'official-member' ? bag.member : bag
-  if (holder === null || typeof holder !== 'object') return null
-  const raw = (holder as { id?: unknown; childSessionId?: unknown })[via === 'official-member' ? 'id' : 'childSessionId']
-  return typeof raw === 'string' && raw !== '' ? raw : null
+async function advanceCarrierStore(
+  store: ReturnType<typeof createRedlineCarrierStore>,
+  opId: string,
+  target: 'creating' | 'created' | 'prompted' | 'running',
+): Promise<CarrierOperation> {
+  return await store.mutate(opId, current => current.taskState === target ? current : transitionCarrierTask(current, target))
 }
 
-/**
- * 记一条来源台账（**只写我们自己的数据目录、绝不写会话**）。
- *
- * ⚠️ 写不进去**不影响**"子会话已经开了"这个事实（返回照旧），只记一条 warn ——
- * 失败的副作用是界面之后把这条说成"不是在这儿开的"，所以这里不能假装成功。
- */
-async function recordOrigin(ctx: Context, sessionId: string, started: unknown, via: OriginVia, lockHeld = false): Promise<void> {
-  const childId = childIdOfStarted(started, via)
-  if (childId === null) return
-  const dir = dataDirOf(ctx)
-  if (dir === null) return
-  const writeOrigin = async (): Promise<void> => {
-    const target = join(dir, originsFileName(sessionId))
-    let raw: string | null = null
-    try {
-      raw = await readFile(target, 'utf8')
-    } catch (error) {
-      if ((error as { code?: string }).code !== 'ENOENT') throw error
+/** Confirm and execute the exact preview as one ordinary root session. */
+const startCarrier: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  const confirmation = decodeCarrierConfirmation(call.confirmationToken)
+  const humanTask = typeof call.humanTask === 'string' ? call.humanTask : ''
+  if (sessionId === null || confirmation === null) return fail(REDLINE_ERROR.badRequest)
+  const {
+    operationId,
+    draftRevision: expectedDraft,
+    surfaceFingerprint: expectedSurface,
+    manifestFingerprint: expectedManifest,
+    taskFingerprint: expectedTask,
+  } = confirmation
+  if (humanTask.trim() === '') return fail(REDLINE_ERROR.emptyTask)
+  if (stableFingerprint(humanTask.trim()) !== expectedTask) return fail(REDLINE_ERROR.draftsChanged)
+  const turn = await turnStateOfSession(ctx, sessionId)
+  if (!turn.known) return fail(REDLINE_ERROR.notLive)
+  if (turn.open) return fail(REDLINE_ERROR.turnOpen)
+  return await withSessionLock(sessionId, async () => {
+    const store = createRedlineCarrierStore(ctx)
+    const existing = await store.read(operationId)
+    let operation: CarrierOperation
+    let carriedSeqs: readonly number[] = []
+    if (existing.ok && existing.operation.taskState !== 'previewed') {
+      // Confirmation has crossed the atomic authorization boundary. Recovery/retry must replay those frozen bytes,
+      // never re-read current drafts or demand that the source still matches.
+      operation = existing.operation
+      if (operation.mainSessionId !== sessionId || operation.manifestFingerprint !== expectedManifest) {
+        return fail(REDLINE_ERROR.internal, 'carrier operation identity mismatch')
+      }
+    } else {
+      const prepared = await prepareCarrierPlan(ctx, sessionId, humanTask, operationId)
+      if (!prepared.ok) return prepared
+      const freshPreview = prepared.value.preview
+      if (freshPreview === undefined || freshPreview.previewExecutionInput === undefined) {
+        return fail(REDLINE_ERROR.internal, 'carrier preview is incomplete')
+      }
+      if (prepared.value.draftRevision !== expectedDraft || prepared.value.surfaceFingerprint !== expectedSurface
+        || prepared.value.manifestFingerprint !== expectedManifest) return fail(REDLINE_ERROR.draftsChanged)
+      carriedSeqs = prepared.value.carriedSeqs
+      const preview = existing.ok ? existing.operation : freshPreview
+      if (!existing.ok) {
+        if (existing.code !== 'missing') return fail(REDLINE_ERROR.internal, existing.message)
+        await store.write(preview)
+      }
+      if (preview.previewExecutionInput === undefined) return fail(REDLINE_ERROR.internal, 'carrier preview input is missing')
+      const requestedText = typeof call.finalText === 'string' ? call.finalText : preview.previewExecutionInput.deliveryContent
+      if (requestedText.trim() === '') return fail(REDLINE_ERROR.emptyTask)
+      const requestedConfig = call.config !== null && typeof call.config === 'object'
+        ? call.config as Record<string, unknown>
+        : null
+      let confirmedConfig = preview.previewExecutionInput.confirmedConfig
+      if (requestedConfig !== null) {
+        const provider = typeof requestedConfig.provider === 'string' ? requestedConfig.provider.trim() : ''
+        const model = typeof requestedConfig.model === 'string' ? requestedConfig.model.trim() : ''
+        const reasoningEffort = typeof requestedConfig.reasoningEffort === 'string' ? requestedConfig.reasoningEffort.trim() : undefined
+        if (provider === '' || model === '') return fail(REDLINE_ERROR.badRequest)
+        const llm = ctx.get('llm') as CarrierLlmDirectoryFace | undefined
+        if (llm === undefined) return fail(REDLINE_ERROR.internal, 'model directory is unavailable')
+        let info: Awaited<ReturnType<CarrierLlmDirectoryFace['resolveModelInfo']>>
+        try { info = await llm.resolveModelInfo(provider, model) } catch { return fail(REDLINE_ERROR.badRequest, 'selected model is unavailable') }
+        if (reasoningEffort !== undefined && !info.reasoning?.efforts.some(level => level.id === reasoningEffort)) {
+          return fail(REDLINE_ERROR.badRequest, 'selected reasoning effort is unavailable')
+        }
+        confirmedConfig = {
+          ...confirmedConfig,
+          provider,
+          model,
+          // “模型默认值” is resolved once and frozen, so post-create config verification compares exact values.
+          reasoningEffort: reasoningEffort ?? info.reasoning?.defaultEffort ?? 'not-specified',
+          inheritedFrom: 'confirmation-selection',
+        }
+      }
+      const executionInput: CarrierExecutionInput = {
+        ...preview.previewExecutionInput,
+        deliveryContent: requestedText,
+        contentFingerprint: stableFingerprint(requestedText),
+        confirmedConfig,
+      }
+      operation = authorizeCarrier(preview, {
+        userConfirmedAt: new Date().toISOString(),
+        manifestFingerprint: preview.manifestFingerprint,
+        configFingerprint: stableFingerprint(JSON.stringify(confirmedConfig)),
+        sourceSessionId: sessionId,
+        returnSessionId: sessionId,
+      }, executionInput)
+      await store.write(operation)
     }
-    const parsed = parseOrigins(raw, sessionId)
-    // 台账读不出来 ⟹ **重开一本**：刚开的这条必须留下（不然界面会把它说成"不是在这儿开的"，
-    // 那是假话）；读不出来的旧内容本来就已经不可用（读 op 那时答"来源未知"）。
-    const records = parsed.ok ? parsed.records : []
-    const temp = `${target}.tmp-${process.pid}-${Date.now().toString(36)}-${(writeTicket += 1).toString(36)}`
-    try {
-      await mkdir(dir, { recursive: true })
-      await writeFile(temp, serializeOrigins(sessionId, putOrigin(records, { childId, via, at: Date.now() })), 'utf8')
-      await rename(temp, target)
-    } catch (error) {
-      await rm(temp, { force: true }).catch(() => undefined)
-      throw error
+
+    const input = operation.executionInput
+    if (input === undefined) return fail(REDLINE_ERROR.internal, 'carrier execution input is missing')
+    if (operation.taskState === 'authorized') operation = await advanceCarrierStore(store, operationId, 'creating')
+    const request: CarrierSessionRequest = {
+      carrierId: operation.carrierId,
+      workspaceId: input.workspaceId,
+      cwd: input.cwd ?? '',
+      title: operation.plannedTitle,
+      agentPreset: input.confirmedConfig.agentPreset,
+      agentOptions: {
+        provider: input.confirmedConfig.provider,
+        model: input.confirmedConfig.model,
+        ...(input.confirmedConfig.reasoningEffort.startsWith('not-') ? {} : { reasoningEffort: input.confirmedConfig.reasoningEffort }),
+      },
+      promptRequestId: operation.promptRequestId,
+      promptText: input.deliveryContent,
     }
-  }
-  try {
-    if (lockHeld) await writeOrigin()
-    else await withSessionLock(sessionId, writeOrigin)
-  } catch (error) {
-    ctx.logger.warn('dsh-context-redline: 来源台账写不进去（' + messageOf(error) + '）')
-  }
+    if (request.cwd === '') return fail(REDLINE_ERROR.internal, 'carrier cwd is missing')
+    const control = carrierControl(ctx)
+    const result = await control.start(request)
+    if (!result.ok) return fail(REDLINE_ERROR.internal, `carrier start held: ${result.cause}`)
+    if (operation.titleStatus === 'pending') {
+      operation = await store.mutate(operationId, current => setTitleStatus(current, result.titleStatus))
+    }
+    if (operation.taskState === 'creating') operation = await advanceCarrierStore(store, operationId, 'created')
+    if (operation.taskState === 'created') operation = await advanceCarrierStore(store, operationId, 'prompted')
+    if (operation.taskState === 'prompted') operation = await advanceCarrierStore(store, operationId, 'running')
+    const owned = control.handles.get(operation.carrierId)?.agent
+      ?? (ctx.get('agents') as { get?: (id: string) => { whenIdle?(): Promise<void> } | undefined } | undefined)?.get?.(operation.carrierId)
+    if (owned !== undefined) {
+      void runCarrierToReturn(ctx, operationId, owned, store, control)
+        .catch((error: unknown) => { ctx.logger.warn('dsh-context-redline: carrier return failed (' + messageOf(error) + ')') })
+    }
+    return redlineOk({
+      operationId,
+      carrierId: operation.carrierId,
+      label: operation.plannedTitle,
+      prompt: input.deliveryContent,
+      carriedSeqs,
+      started: { sessionId: operation.carrierId, mode: result.mode, messageId: result.messageId },
+      via: 'ordinary-session',
+    })
+  })
 }
 
 /**
@@ -754,6 +909,65 @@ async function recordOrigin(ctx: Context, sessionId: string, started: unknown, v
  */
 const readCapacity: RedlineOpHandler = ({ ctx }) =>
   Promise.resolve(redlineOk(capacityFromService(ctx.get('agentTeams'))))
+
+interface CarrierLlmDirectoryFace {
+  listProviders(): readonly { readonly id: string; readonly name: string }[]
+  listModels(provider: string): Promise<readonly { readonly id: string; readonly name: string }[]>
+  resolveModelInfo(provider: string, model: string): Promise<{
+    readonly reasoning?: {
+      readonly efforts: readonly { readonly id: string; readonly name: string }[]
+      readonly defaultEffort?: string
+    }
+  }>
+}
+
+/** Read the live model catalog without changing any session or global default. */
+const readCarrierModels: RedlineOpHandler = async ({ ctx }) => {
+  const llm = ctx.get('llm') as CarrierLlmDirectoryFace | undefined
+  if (llm === undefined) return fail(REDLINE_ERROR.internal, 'model directory is unavailable')
+  const groups = await Promise.all(llm.listProviders().map(async (provider) => {
+    let listed: readonly { readonly id: string; readonly name: string }[]
+    try { listed = await llm.listModels(provider.id) } catch { return [] }
+    return await Promise.all(listed.map(async (model) => {
+      let reasoning: Awaited<ReturnType<CarrierLlmDirectoryFace['resolveModelInfo']>>['reasoning']
+      try { reasoning = (await llm.resolveModelInfo(provider.id, model.id)).reasoning } catch { reasoning = undefined }
+      return {
+        provider: provider.id,
+        providerName: provider.name,
+        model: model.id,
+        modelName: model.name,
+        efforts: reasoning?.efforts ?? [],
+        ...(reasoning?.defaultEffort === undefined ? {} : { defaultEffort: reasoning.defaultEffort }),
+      }
+    }))
+  }))
+  return redlineOk({ models: groups.flat() })
+}
+
+/** Ordinary carrier sessions opened from one source session, from our strict operation ledger. */
+const readCarriers: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const store = createRedlineCarrierStore(ctx)
+  const rows: { id: string; label: string; mode: 'continuable'; createdAt: number; via: 'ordinary-session' }[] = []
+  for (const opId of await store.listOperationIds()) {
+    const read = await store.read(opId)
+    if (!read.ok || read.operation.mainSessionId !== sessionId
+      || read.operation.taskState === 'previewed' || read.operation.taskState === 'authorized'
+      || read.operation.taskState === 'creating') continue
+    rows.push({
+      id: read.operation.carrierId,
+      label: read.operation.titleStatus === 'failed'
+        ? `${read.operation.plannedTitle}（命名失败；左侧可能显示默认标题）`
+        : read.operation.plannedTitle,
+      mode: 'continuable',
+      createdAt: Date.parse(read.operation.authorization?.userConfirmedAt ?? '') || 0,
+      via: 'ordinary-session',
+    })
+  }
+  rows.sort((left, right) => right.createdAt - left.createdAt || left.id.localeCompare(right.id))
+  return redlineOk({ rows })
+}
 
 /**
  * 我们自己那本"来源台账"（M5-12）。**只读**，只碰我们自己的数据目录。
@@ -786,7 +1000,6 @@ const readOrigins: RedlineOpHandler = async ({ ctx, call }) => {
 const OPS = new Map<string, RedlineOpHandler>([
   ['node.read', readRow],
   ['turnState', readTurnState],
-  ['probe.services', probeServices],
   ['draft.list', listDrafts],
   ['draft.update', updateDraft],
   ['draft.drop', dropDraft],
@@ -795,6 +1008,10 @@ const OPS = new Map<string, RedlineOpHandler>([
   ['child.origins', readOrigins],
   ['child.plan', planChild],
   ['child.start', startChild],
+  ['carrier.plan', planCarrier],
+  ['carrier.start', startCarrier],
+  ['carrier.list', readCarriers],
+  ['carrier.models', readCarrierModels],
 ])
 
 /** One JSON reply on the channel. `no-store` matches every other plugin route. */

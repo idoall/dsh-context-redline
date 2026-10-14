@@ -1,38 +1,13 @@
 # NOTICE
 
 This product includes software developed by **bowenliang123** as part of
-[`dsh-context`](https://github.com/bowenliang123/dsh-context), licensed under the
+`dsh-context` (https://github.com/bowenliang123/dsh-context), licensed under the
 Apache License, Version 2.0.
 
-- Upstream project: `dsh-context`
-- Upstream revision copied into this repository: tag `v0.59.2`
-  (commit `fc44fff9548d404da3c4935525d01b5e4fb62517`)
-- Upstream license text, kept verbatim: [`LICENSE-Apache-2.0`](LICENSE-Apache-2.0)
-- Exact provenance, the namespacing changes applied, and the list of files we
-  modify: [`UPSTREAM.md`](UPSTREAM.md)
+- Copied baseline: tag `v0.59.2`, commit `fc44fff9548d404da3c4935525d01b5e4fb62517`
+- Upstream license: `LICENSE-Apache-2.0`
+- Provenance and material modifications: `UPSTREAM.md`
+- Original additions in this repository: MIT, see `LICENSE`
 
-We claim no authorship of the upstream portions. Our own additions (the editing
-layer, the orchestration layer, and the namespacing pass) are described in
-`UPSTREAM.md` and in [`docs/02-architecture.md`](docs/02-architecture.md).
-
-The plugin also contains code derived from a **prior, archived fork** of the same
-upstream project kept in this repository's git history (branch
-`v2-upstream-base`, tag `v2-archive-20260928`). That archived line additionally
-carried MIT-licensed code from `dsh-context-console` by **anweat**; the new line
-described here does **not** reuse that code, so no MIT notice from it is carried
-forward. See [`docs/07-v2-archive.md`](docs/07-v2-archive.md) for the audit of
-what was and was not reused.
-
----
-
-> ⚠️ **Correction (2026-10-04, verified):** the paragraph above is **no longer accurate** and is kept only as history.
-> This repository has **no** `v2-upstream-base` branch and **no** `v2-archive-20260928` tag (`git branch -a` → `main` only;
-> `git tag` → empty), and `docs/07-v2-archive.md` **does not exist** (it was deleted at the user's request, and its number
-> is not reused). The earlier line's directory and git history are gone, so there is no archived code here for that
-> paragraph to describe. What this repository actually contains:
->
-> 1. files copied from upstream `dsh-context` at tag `v0.59.2` (Apache-2.0, see [`LICENSE-Apache-2.0`](LICENSE-Apache-2.0)),
->    renamed into our own namespaces — the exact list is [`UPSTREAM.md`](UPSTREAM.md) §3.1/§3.2;
-> 2. our own code (MIT, see [`LICENSE`](LICENSE)) — [`UPSTREAM.md`](UPSTREAM.md) §3.3.
->
-> No `dsh-context-console` (anweat / MIT) code is present.
+No `dsh-context-console` code is included. This is an independent fork and is
+not affiliated with or endorsed by the upstream author.

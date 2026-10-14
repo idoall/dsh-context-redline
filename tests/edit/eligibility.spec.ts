@@ -35,11 +35,12 @@ describe('A17 · one button set per underlying event type', () => {
     }
   })
 
-  test('user message / injected content / skill injection / tool result are editable', () => {
+  test('user / inject / skill / assistant / tool material are editable for zero-history migration', () => {
     const cases: [RowClass, string][] = [
       ['user', 'user/message'],
       ['inject', 'user/message'],
       ['skill', 'user/message'],
+      ['assistant', 'assistant/message'],
       ['tool', 'tool/result'],
     ]
     for (const [cat, type] of cases) {
@@ -49,15 +50,6 @@ describe('A17 · one button set per underlying event type', () => {
     }
   })
 
-  test('assistant messages cannot be rewritten, with the stable reason key', () => {
-    const a = ability(surface({ type: 'assistant/message', cat: 'assistant' }))
-    assert.equal(a.canRewrite, false)
-    assert.equal(a.inert, false, 'not inert: the UI still explains why there is no action')
-    assert.equal(a.blockReason, 'assistant-immutable')
-    // 2026-10-08：助手消息**改不了但能作废** —— 「标记为不要」是它唯一的处置手段。
-    assert.equal(a.canExclude, true)
-    assert.deepEqual(rowActions(a, false), ['exclude'])
-  })
 
   test('a shadowed ORIGINAL cannot be edited; the replacement that superseded it can', () => {
     const original = ability(surface({ seq: 1287, type: 'user/message', cat: 'user', shadowed: true }))
@@ -77,12 +69,18 @@ describe('A17 · one button set per underlying event type', () => {
     assert.deepEqual(rowActions(a, false), [])
   })
 
-  test('已标为「不要」的行只剩「取消标记」（与编辑互斥）', () => {
+  // ⚠️ 2026-10-09 按 `docs/03` R4.8 重写：旧断言是"已标为不要 ⟹ 只剩取消标记（与编辑互斥）"，
+  // 而互斥已被 R4.8 硬要求 3 作废。新合同：删除态给「取消删除」；**有改稿时再给「丢弃这条改动」**
+  // （那是「已删除编辑稿 ──丢弃这条改动──▶ 已删除原文」，只清正文、保持删除态）。
+  test('已删除的行给「取消删除」；有改稿时再给「丢弃这条改动」（互斥已作废）', () => {
     const a = ability(surface({ type: 'user/message', cat: 'user' }))
-    assert.deepEqual(rowActions(a, false, true), ['unexclude'])
-    assert.deepEqual(rowActions(a, true, true), ['unexclude'], '即使本地有改动，标记状态优先')
+    assert.deepEqual(rowActions(a, false, true), ['unexclude'], '没有改稿 ⟹ 只有取消删除')
+    assert.deepEqual(rowActions(a, true, true), ['unexclude', 'drop'], '有改稿 ⟹ 还能丢弃改动')
+    assert.deepEqual(rowActions(a, false, false), ['edit', 'exclude'], '没删除的行照旧')
+    assert.deepEqual(rowActions(a, true, false), ['edit', 'exclude', 'drop'], '没删除且已改 ⟹ 三个动作都在')
     const assistant = ability(surface({ type: 'assistant/message', cat: 'assistant' }))
     assert.deepEqual(rowActions(assistant, false, true), ['unexclude'])
+    assert.deepEqual(rowActions(assistant, true, true), ['unexclude', 'drop'], '助手改稿与删除标记独立')
   })
 
   test('宿主保护的两类与"够不到"的行，既不能编辑也不能作废', () => {
@@ -98,19 +96,17 @@ describe('A17 · one button set per underlying event type', () => {
     }
   })
 
-  test('the reason keys are exactly the four the UI knows how to explain', () => {
+  test('the reason keys are exactly the three the UI still needs', () => {
     const keys = new Set<string | undefined>()
     keys.add(ability(surface({ type: 'system/message', cat: 'system' })).blockReason)
-    keys.add(ability(surface({ type: 'assistant/message', cat: 'assistant' })).blockReason)
     keys.add(ability(surface({ type: 'user/message', cat: 'user', shadowed: true })).blockReason)
     keys.add(ability(surface({ type: 'user/message', cat: 'user', compacted: true })).blockReason)
-    assert.deepEqual([...keys].sort(), ['assistant-immutable', 'compacted', 'shadowed', 'system-head'])
+    assert.deepEqual([...keys].sort(), ['compacted', 'shadowed', 'system-head'])
   })
 
-  test('the assistant rule wins when a row is shadowed AND an assistant message', () => {
-    // docs/11 实施共识 §6: both reasons apply → assistant wins; only the wording differs.
+  test('a shadowed assistant row is unreachable for the ordinary shadowed reason', () => {
     const a = ability(surface({ type: 'assistant/message', cat: 'assistant', shadowed: true }))
-    assert.equal(a.blockReason, 'assistant-immutable')
+    assert.equal(a.blockReason, 'shadowed')
   })
 })
 
@@ -129,12 +125,8 @@ describe('row actions follow the local-edit state, not the class alone', () => {
     assert.deepEqual(rowActions(a, true), ['edit', 'exclude', 'drop'])
   })
 
-  test('不能编辑的行不许出现「丢弃这条改动」', () => {
-    // 助手消息**可以作废**，但"丢弃改动"只属于"有过改动"的行 —— 它没有。
-    const assistant = ability(surface({ type: 'assistant/message', cat: 'assistant' }))
-    assert.deepEqual(rowActions(assistant, true), ['exclude'])
-    assert.equal(rowActions(assistant, true).includes('drop'), false)
-    // 真正什么都给不了的行（已被接替 / 被压缩埋掉 / 宿主保护）：连 exclude 都不给。
+  test('真正不能编辑的行不许出现「丢弃这条改动」', () => {
+    // 已被接替 / 被压缩埋掉 / 宿主保护：连 exclude 都不给。
     for (const row of [
       surface({ type: 'user/message', cat: 'user', shadowed: true }),
       surface({ type: 'user/message', cat: 'user', compacted: true }),

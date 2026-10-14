@@ -13,7 +13,7 @@ import type { DetailState } from '../timelineSource'
 import { makeDetailNote } from './detailNote'
 import { makeRedlineActions, makeRedlineEditor, type RedlineSubmit } from './redlineEdit'
 import { ability, durableTypeOf, type Ability } from '../../shared/redline-ability'
-import { effectiveIsError, effectiveReasoning, effectiveText, hasLocalEdit, isExcluded } from '../../shared/redline-drafts'
+import { effectiveIsError, effectiveReasoning, effectiveText, hasLocalEdit, isDeleted } from '../../shared/redline-drafts'
 import type { RedlineRow } from '../redlineChannel'
 import type { RedlineDraftController } from '../redlineDrafts'
 import { makeNodeText } from './nodes'
@@ -885,10 +885,11 @@ export function makeContextBrowser(
       key: string, tag: ReactNode | null, preview: string,
       tokens: number, time: number | undefined, body: ReactNode,
       err = false, trailing: ReactNode = null, actions: ReactNode = null, editor: ReactNode = null,
+      deleted = false,
     ) => {
       const open = openElem === key
       return (
-        <div key={key} className={'redline-br-elem' + (open ? ' redline-br-elem-on' : '')}>
+        <div key={key} className={'redline-br-elem' + (open ? ' redline-br-elem-on' : '') + (deleted ? ' redline-br-elem-deleted' : '')}>
           <button type="button" className="redline-br-elem-row hover:bg-(--dsw-alias-interactive-bg-hover)" onClick={() => { toggleElem(key) }}>
             <span className={'redline-br-chev' + (open ? ' redline-br-chev-on' : '')} />
             {err ? <span className="redline-br-err-dot" title={t('node.failed')} /> : null}
@@ -965,7 +966,7 @@ export function makeContextBrowser(
           seq={n.seq}
           ability={a}
           hasLocalEdit={hasLocalEdit(props.redline.table, n.seq)}
-          excluded={isExcluded(props.redline.table, n.seq)}
+          deleted={isDeleted(props.redline.table, n.seq)}
           advanced={advanced}
           busy={props.redline.busySeq === n.seq}
           onEdit={() => { openEditor(n.seq) }}
@@ -1243,7 +1244,7 @@ export function makeContextBrowser(
               // static hint.
               hint={conv === undefined ? missNote : t('browser.noContent')}
             />,
-            rowErr, null, rowActionsFor(n), rowEditorFor(n)))}
+            rowErr, null, rowActionsFor(n), rowEditorFor(n), isDeleted(props.redline.table, n.seq)))}
         </div>
       )
     }

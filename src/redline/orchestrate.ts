@@ -24,9 +24,11 @@ export interface FirstTaskInput {
   /** 要逐字带进去的本地改动（可以为空：没改也能开，只是不带任何东西）。 */
   edits: readonly CarriedEdit[]
   /**
-   * 被标为「不要」的行（`docs/11` D65，用户 2026-10-08 选 A）。
-   * ⚠️ 这**不是删除**：fork 的种子照样带父会话全部历史（`docs/01` F38），
-   * 我们手里也没有那些行的原文 ⟹ 只能由人在首条任务里**声明作废**，并如实这么写。
+   * 被**删除**的行（`docs/03` R4.8 / `docs/13` §7）。
+   *
+   * ⚠️ 它**不参与首条任务的组装** —— 新会话是零历史，"不带"就等于"不在"，不需要任何声明。
+   * 保留这个字段是因为调用方（宿主）在源清单里就用它来**排除**这些行，确认框也要按它说
+   * "删了几条、不会带过去"。别再把它拼回 prompt 里（那正是 `EXCLUDED_HEADING` 被删掉的原因）。
    */
   excluded?: readonly number[]
 }
@@ -40,13 +42,12 @@ export type FirstTaskResult =
 export const CARRIED_HEADING = '以下是我在「上下文批改」里改好的上下文，后面的工作请按这个版本来（逐字，未作任何删改）：'
 
 /**
- * 作废段的标题。措辞刻意**不说"已删除"**（平台没有删除，历史仍在种子里），
- * 只说"我作废了、请勿采用" —— 这是这条能力真实能做到的事（`docs/00` N1）。
- */
-export const EXCLUDED_HEADING = '另外，以下条目我已经作废 —— 请不要采用它们的内容（历史里仍带着原文，不作为依据）：'
-
-/**
  * 组装子会话的首条任务：**人写的任务** + **逐字带入的改后正文**。
+ *
+ * ⚠️ 2026-10-09（`docs/03` R4.8 / `docs/13` §7）：**被删除的条目不进首条任务，也不需要任何声明**。
+ * 旧实现有一段「另外，以下条目我已经作废 —— 请不要采用它们的内容（历史里仍带着原文…）」——
+ * 那是**旧载体**（fork 会把父会话全部历史带过去）才需要的补丁。新的承载方式是**零历史的新会话**，
+ * 不带的条目就是不在 ⟹ 声明段整段作废（`EXCLUDED_HEADING` 已删）。
  *
  * 顺序固定（人写的在前，改后的在后），且改后正文**原样**出现 —— 不改字、不摘要、不加解释。
  */
@@ -59,18 +60,10 @@ export function buildFirstTask(input: FirstTaskInput): FirstTaskResult {
       message: '子会话的第一句话必须由你自己写 —— 这是它在做的事，不能替你决定。',
     }
   }
-  const excluded = input.excluded ?? []
-  if (input.edits.length === 0 && excluded.length === 0) return { ok: true, prompt: human }
-  const sections = [human]
-  if (input.edits.length > 0) {
-    const blocks = input.edits.map(edit => `【#${edit.seq}】\n${edit.text}`).join('\n\n')
-    sections.push(CARRIED_HEADING, blocks)
-  }
-  if (excluded.length > 0) {
-    // 只列 seq —— 我们**没有**这些行的原文（它们是"不要"，不是"改成"），不许编一段出来。
-    sections.push(EXCLUDED_HEADING, excluded.map(seq => `【#${seq}】`).join('\n'))
-  }
-  return { ok: true, prompt: sections.join('\n\n') }
+  // 被删除的条目由调用方在**源清单**里就排除了（宿主按删除标记过滤）；这里再没有任何"声明"要做。
+  if (input.edits.length === 0) return { ok: true, prompt: human }
+  const blocks = input.edits.map(edit => `【#${edit.seq}】\n${edit.text}`).join('\n\n')
+  return { ok: true, prompt: [human, CARRIED_HEADING, blocks].join('\n\n') }
 }
 
 /** 确认框里的一条：标题 + 逐字内容（界面直接照着显示，不用再加工）。 */
@@ -100,7 +93,8 @@ export function forkConfirmItems(input: ConfirmInput): ConfirmItem[] {
     ? '这一次没有本地改动要带过去。'
     : `你改好的 ${count} 条正文会「逐字」出现在新会话的第一句话里：${input.edits.map(e => `#${e.seq}`).join('、')}。`)
   if (excluded.length > 0) {
-    carriedParts.push(`另有 ${excluded.length} 条被标为\`不要\`（#${excluded.join('、#')}）：历史原文仍会被带过去，但首条任务会声明「不要采用」它们。`)
+    // ⚠️ 纯文本渲染：这里**不许**出现 markdown 星号（真机踩过，见本文件末尾的守卫用例）。
+    carriedParts.push(`另有 ${excluded.length} 条已经被你删除（#${excluded.join('、#')}）：它们不会被带过去 —— 新会话是零历史，这些条目根本不在里面。`)
   }
   const carried = carriedParts.join('')
   return [

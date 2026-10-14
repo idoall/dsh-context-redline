@@ -6,7 +6,17 @@
 
 import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
-import { childRowsOf } from '../../src/client/childSessions'
+import { carrierModelsOf, childRowsOf } from '../../src/client/childSessions'
+
+describe('模型目录的运行时校验', () => {
+  test('只保留可证明的模型与推理档，不让坏 RPC 数据炸掉确认框', () => {
+    assert.deepEqual(carrierModelsOf([
+      { provider: 'p', providerName: 'P', model: 'm', modelName: 'M', efforts: [{ id: 'high', name: 'High' }, { id: 1, name: 'bad' }], defaultEffort: 'high' },
+      null,
+      { provider: '', providerName: 'bad', model: 'x', modelName: 'X', efforts: [] },
+    ]), [{ provider: 'p', providerName: 'P', model: 'm', modelName: 'M', efforts: [{ id: 'high', name: 'High' }], defaultEffort: 'high' }])
+  })
+})
 
 describe('子会话索引的解析（childRowsOf）', () => {
   test('正常形状：id / label / mode / createdAt 都取到，新的排在前面', () => {

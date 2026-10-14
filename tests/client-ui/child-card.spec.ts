@@ -151,6 +151,14 @@ describe('第 5 张卡：确认框（宿主的五项 + 第一句话由人写）'
     await m.unmount()
   })
 
+  test('宿主内部错误会保留具体原因，而不是笼统说保存失败', async () => {
+    const m = await open({ plan: () => Promise.resolve({ ok: false as const, code: 'redline/internal', message: 'source workspace is unavailable' }) })
+    await openDialog(m)
+    const error = query(m.container, '[role="alert"]')
+    assert.ok(text(error).includes('source workspace is unavailable'))
+    await m.unmount()
+  })
+
   // 用户 2026-10-08：「子会话的第一句话必须由你自己写 —— 这是它在做的事，不能替你决定。」可以去掉。
   // 口径改为：**按钮禁用**（拒绝仍生效、仍可观测），但**不再把那句话打在弹窗里**。
   test('空任务：宿主拒绝 → 确认按钮禁用、拒绝状态可观测，但不再显示那句话', async () => {
@@ -187,6 +195,58 @@ describe('第 5 张卡：确认框（宿主的五项 + 第一句话由人写）'
     await m.unmount()
   })
 
+  test('可直接改最终发送全文并为新会话选择其他模型与推理档', async () => {
+    const starts: unknown[][] = []
+    const modernPlan = { ...PLAN, config: { agentPreset: 'standard', provider: 'provider-a', model: 'model-a', reasoningEffort: 'low' } }
+    const models = [
+      { provider: 'provider-a', providerName: 'Provider A', model: 'model-a', modelName: 'Model A', efforts: [{ id: 'low', name: 'Low' }] },
+      { provider: 'provider-b', providerName: 'Provider B', model: 'model-b', modelName: 'Model B', efforts: [{ id: 'high', name: 'High' }], defaultEffort: 'high' },
+    ]
+    const m = await open({
+      models,
+      plan: () => Promise.resolve({ ok: true as const, value: modernPlan }),
+      start: (...args: unknown[]) => { starts.push(args); return Promise.resolve({ ok: true as const, value: { label: 'x', prompt: 'p', carriedSeqs: [], started: null } }) },
+    })
+    await openDialog(m)
+    const initialEffort = query<HTMLButtonElement>(m.container, '[data-redline-effort]')
+    assert.ok(text(initialEffort).includes(DICT_EN['child.confirm.effortDefault']), '即使来源显式为 low，也统一从模型默认值开始')
+    const final = query<HTMLTextAreaElement>(m.container, '[data-redline-final]')
+    assert.equal(final.value, PLAN.prompt, '默认就是宿主拼好的实际发送全文')
+    assert.equal(final.rows, 6, '默认只显示六行，长文本在文本框自身滚动')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      setter?.call(final, '我直接改好的最终全文')
+      final.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const model = query<HTMLButtonElement>(m.container, '[data-redline-model]')
+    assert.equal(model.tagName, 'BUTTON', '跟输入框一样使用紧凑按钮，不再渲染原生 select')
+    assert.equal(queryAll(m.container, '.redline-picker-bar select').length, 0)
+    assert.equal(queryAll(m.container, '[data-redline-picker]').length, 1, '模型与推理等级只占一行')
+    await act(async () => { model.click() })
+    let modelMenu = query<HTMLElement>(document.body, '[data-redline-picker-menu="model"]')
+    assert.ok(modelMenu.scrollHeight >= modelMenu.clientHeight, '模型列表允许滚动')
+    await act(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
+    assert.equal(queryAll(document.body, '[data-redline-picker-menu]').length, 0, 'Esc 关闭浮层')
+    await act(async () => { model.click() })
+    await act(async () => { document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })) })
+    assert.equal(queryAll(document.body, '[data-redline-picker-menu]').length, 0, '点击外部关闭浮层')
+    await act(async () => { model.click() })
+    modelMenu = query<HTMLElement>(document.body, '[data-redline-picker-menu="model"]')
+    const modelB = queryAll<HTMLButtonElement>(modelMenu, '[role="menuitemradio"]').find(button => text(button).includes('Model B'))
+    assert.ok(modelB !== undefined)
+    await act(async () => { modelB.click() })
+    const effort = query<HTMLButtonElement>(m.container, '[data-redline-effort]')
+    assert.ok(text(effort).includes(DICT_EN['child.confirm.effortDefault']), '换模型后统一回到模型默认推理档')
+    await act(async () => { effort.click() })
+    const effortMenu = query<HTMLElement>(document.body, '[data-redline-picker-menu="effort"]')
+    const high = queryAll<HTMLButtonElement>(effortMenu, '[role="menuitemradio"]').find(button => text(button).includes('High'))
+    assert.ok(high !== undefined)
+    await act(async () => { high.click() })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-confirm-ok]').click() })
+    assert.deepEqual(starts[0], ['', 'd1-test-plan', '我直接改好的最终全文', { provider: 'provider-b', model: 'model-b', reasoningEffort: 'high' }])
+    await m.unmount()
+  })
+
   test('取消：什么都不发生（一次 start 都不发）', async () => {
     let started = 0
     const m = await open({ start: () => { started += 1; return Promise.resolve({ ok: true as const, value: { label: 'x', prompt: 'p', carriedSeqs: [], started: null } }) } })
@@ -213,12 +273,13 @@ describe('按 demo 撤下的两块（2026-10-02 用户裁定 + 2026-10-07 复核
 })
 
 describe('第 5 张卡：确认框报出「首条任务有多大」（M2-20）', () => {
-  test('确认框里有一行读数：字节数原样来自宿主的 metrics', async () => {
+  test('确认框读数跟随最终发送全文，而不是停在宿主最初拼好的旧字节数', async () => {
     const m = await open()
     await openDialog(m)
     const line = query(m.container, '[data-redline-first-task]')
-    assert.equal(line.getAttribute('data-redline-first-task'), '120', '字节数就是宿主给的那个')
-    assert.equal(text(line), DICT_EN['child.confirm.metrics'].replace('{bytes}', '120').replace('{edits}', '1'))
+    const bytes = String(new TextEncoder().encode(PLAN.prompt).byteLength)
+    assert.equal(line.getAttribute('data-redline-first-task'), bytes)
+    assert.equal(text(line), DICT_EN['child.confirm.metrics'].replace('{bytes}', bytes).replace('{edits}', '1'))
     await m.unmount()
   })
 
@@ -253,8 +314,7 @@ describe('确认成功后的结果呈现', () => {
   })
 })
 
-describe('第 5 张卡：容量（M5-13，分母来自活服务、读不到就不写）', () => {
-  // demo 的 `活跃 N / 8`：N = **运行中 + 空闲**（= 在场），不是"只有正在跑的"。
+describe('承载会话不受 Agent Team 成员上限限制', () => {
   const three = [
     { id: 'a', short: 'a', label: '', mode: 'continuable' as const, createdAt: 0, live: true, open: true },
     { id: 'b', short: 'b', label: '', mode: 'continuable' as const, createdAt: 0, live: true, open: false },
@@ -262,35 +322,11 @@ describe('第 5 张卡：容量（M5-13，分母来自活服务、读不到就�
   ]
   const scale = (m: Mounted): string => text(query(m.container, '.redline-card-scale'))
 
-  test('知道上限 → 标题写「活跃 2 / 8 · 共 3 个」，且活跃 = 在场（运行中 + 空闲）', async () => {
-    const m = await open({ rows: three, capacity: { known: true, max: 8 } })
-    assert.equal(scale(m), DICT_EN['child.bmeta.cap'].replace('{a}', '2').replace('{max}', '8').replace('{n}', '3'))
-    assert.equal(queryAll(m.container, '[data-redline-cap]').length, 0, '没触顶就不出现那句话')
-    await m.unmount()
-  })
-
-  test('不知道上限 → 只写「活跃 2 · 共 3 个」，**不写分母**也不写那句话', async () => {
-    const m = await open({ rows: three })
+  test('即使旧团队服务报触顶，普通承载会话入口仍可用且不显示团队分母', async () => {
+    const m = await open({ rows: three, capacity: { known: true, max: 2 } })
     assert.equal(scale(m), DICT_EN['child.bmeta'].replace('{a}', '2').replace('{n}', '3'))
-    assert.equal(scale(m).includes('/'), false, '不知道就不许编分母')
     assert.equal(queryAll(m.container, '[data-redline-cap]').length, 0)
-    await m.unmount()
-  })
-
-  test('触顶 → 给人话（说清是什么上限、下一步做什么），并禁用开启按钮，零计划请求', async () => {
-    let planned = 0
-    const m = await open({
-      rows: three.slice(0, 2),
-      capacity: { known: true, max: 2 },
-      plan: () => { planned += 1; return Promise.resolve({ ok: true as const, value: PLAN }) },
-    })
-    const cap = query(m.container, '[data-redline-cap]')
-    const body = text(cap)
-    assert.equal(body, DICT_EN['child.cap.reached'].replace('{max}', '2'))
-    assert.equal(/稍后重试|later/i.test(body), false, '不含糊、不说稍后重试')
-    assert.equal(spawnButton(m).disabled, true, '已知触顶时不该诱导一次必然失败的创建')
-    await act(async () => { spawnButton(m).click() })
-    assert.equal(planned, 0, '禁用状态不许请求 child.plan')
+    assert.equal(spawnButton(m).disabled, false)
     await m.unmount()
   })
 })

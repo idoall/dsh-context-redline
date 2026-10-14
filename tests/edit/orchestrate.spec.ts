@@ -1,5 +1,5 @@
 import { describe, test, assert } from 'vitest'
-import { buildFirstTask, CARRIED_HEADING, EXCLUDED_HEADING, forkConfirmItems } from '../../src/redline/orchestrate'
+import { buildFirstTask, CARRIED_HEADING, forkConfirmItems } from '../../src/redline/orchestrate'
 
 describe('首条任务组装（M5-04 / docs/06 §3.3）', () => {
   test('人写的任务为空或纯空白 → 拒绝，并说清为什么', () => {
@@ -77,45 +77,35 @@ describe('确认框五项（M5-05 / docs/06 §4.1）', () => {
   })
 })
 
-// ── 「标记为不要」怎么进子会话（2026-10-08 用户选 A）──────────────────────────
-// 它**不是**删除：fork 的种子照样带着父会话全部历史（docs/01 F38）。
-// 所以唯一诚实、可核对的落点是——**在首条任务里由人逐字声明这几条作废**。
-describe('标为「不要」的条目：在首条任务里逐字声明作废', () => {
-  test('有标记时首条任务里出现作废段，且逐条列出 #seq', () => {
-    const r = buildFirstTask({ humanTask: '继续', edits: [], excluded: [41, 7] })
-    assert.equal(r.ok, true)
-    if (r.ok) {
-      assert.ok(r.prompt.includes(EXCLUDED_HEADING), '要有一段明确说"这些作废"')
-      assert.ok(r.prompt.includes('#7') && r.prompt.includes('#41'), '逐条列出')
-      assert.ok(r.prompt.startsWith('继续'), '人写的话仍在最前面')
-      assert.ok(!/#(7|41)】\n[^【]/m.test(r.prompt) || true)
-    }
+// ── 「删除」怎么进新会话（`docs/03` R4.8 / `docs/13` §7，2026-10-09）──────────────
+// 删除 = 这一条**不写进新会话**。新会话是**零历史** ⟹ 不带的条目就是不在 ——
+// 旧载体那句"历史里仍带着原文，请不要采用"的声明**整段作废**（`docs/13` §7 的 `EXCLUDED_HEADING`）。
+describe('被删除的条目：不进首条任务（零历史，不需要声明）', () => {
+  test('只有删除、没有改动时，首条任务就是人写那句话（不再出现声明段）', () => {
+    assert.deepEqual(buildFirstTask({ humanTask: '继续', edits: [], excluded: [41, 7] }), { ok: true, prompt: '继续' })
   })
 
-  test('既有改动又有标记：两段都在，改动逐字、标记只说作废（不复制被作废的原文）', () => {
+  test('被删的条目连编号都不出现，也不出现任何"作废/不要采用"的话', () => {
     const r = buildFirstTask({ humanTask: '按新版本继续', edits: [{ seq: 3, text: '改后的正文' }], excluded: [9] })
     assert.equal(r.ok, true)
     if (r.ok) {
       assert.ok(r.prompt.includes('改后的正文'), '改后正文逐字在')
       assert.ok(r.prompt.includes(CARRIED_HEADING))
-      assert.ok(r.prompt.includes(EXCLUDED_HEADING))
-      assert.ok(r.prompt.includes('#9'))
-      assert.ok(!r.prompt.includes('【#9】\n'), '作废条目后面不许跟正文（我们手里根本没有它的原文）')
+      assert.ok(!r.prompt.includes('#9'), '被删的条目连编号都不该出现')
+      assert.ok(!/不要采用|作废/.test(r.prompt), '作废声明整段作废')
     }
   })
 
-  test('没有标记时一个字都不多出来（老的输出逐字节不变）', () => {
-    const withEmpty = buildFirstTask({ humanTask: '继续', edits: [], excluded: [] })
-    const without = buildFirstTask({ humanTask: '继续', edits: [] })
-    assert.deepEqual(withEmpty, without)
+  test('没有删除、没有改动时输出逐字节不变', () => {
+    assert.deepEqual(buildFirstTask({ humanTask: '继续', edits: [], excluded: [] }), buildFirstTask({ humanTask: '继续', edits: [] }))
   })
 
-  test('确认框第二项把「几条作废」也说出来（否则用户在确认框里看不到它）', () => {
+  test('确认框第二项仍要说出"删了几条、不会带过去"（用户在确认框里必须看得到）', () => {
     const items = forkConfirmItems({ position: 'P', humanTask: '继续', edits: [{ seq: 3, text: 'x' }], excluded: [9, 10] })
     const carried = items.find(i => i.label.includes('会带上的改动'))
     assert.ok(carried !== undefined)
     assert.ok(carried.text.includes('#9') && carried.text.includes('#10'), carried.text)
-    assert.ok(/作废|不要采用/.test(carried.text), carried.text)
+    assert.ok(carried.text.includes('已经被你删除') && carried.text.includes('不会被带过去'), carried.text)
   })
 })
 

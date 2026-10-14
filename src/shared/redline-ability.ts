@@ -92,8 +92,8 @@ export type RowAction = 'edit' | 'drop' | 'exclude' | 'unexclude'
 
 export function ability(row: SurfaceRow): Ability {
   const inert = row.cat === 'system' || row.cat === 'tools'
-  const canRewrite = !inert && !row.shadowed && row.type !== 'assistant/message' && !row.compacted
-  // 比 canRewrite 宽一档：**助手消息可以标为不要**（它只是不能改写）。
+  // New carriers are zero-history sessions: editing assistant text changes only the migration copy, never the old log.
+  const canRewrite = !inert && !row.shadowed && !row.compacted
   const canExclude = !inert && !row.shadowed && !row.compacted
   return {
     canRewrite,
@@ -110,11 +110,7 @@ export function ability(row: SurfaceRow): Ability {
     ...(canRewrite
       ? {}
       : {
-        blockReason: inert
-          ? 'system-head'
-          : row.type === 'assistant/message'
-            ? 'assistant-immutable'
-            : row.shadowed ? 'shadowed' : 'compacted',
+        blockReason: inert ? 'system-head' : row.shadowed ? 'shadowed' : 'compacted',
       }),
   }
 }
@@ -156,11 +152,21 @@ export function durableTypeOf(cat: RowClass): string {
   return TYPES_BY_BUCKET[cat][0] ?? 'user/message'
 }
 
-/** The actions a row offers: its local edit (if any) and its 「不要」 mark (if any) are mutually exclusive. */
-export function rowActions(a: Ability, hasLocalEdit: boolean, excluded = false): readonly RowAction[] {
+/**
+ * The actions a row offers.
+ *
+ * ⚠️ 2026-10-09（`docs/03` R4.8）：**删除与编辑不再互斥** —— 旧口径"标了就清掉改动 /
+ * 改了就把标记清掉"已作废，删除标记与编辑正文是两个独立字段。
+ * 删除态仍给「丢弃这条改动」：那对应「已删除编辑稿 ──丢弃这条改动──▶ 已删除原文」
+ * （只清正文、保持删除态），所以它只属于**可编辑且有改稿**的行。
+ */
+export function rowActions(a: Ability, hasLocalEdit: boolean, deleted = false): readonly RowAction[] {
   if (a.inert) return []
-  // 已标为「不要」：只剩"取消标记"（此时不给编辑 —— 两者互斥）。
-  if (excluded) return ['unexclude']
+  if (deleted) {
+    const kept: RowAction[] = ['unexclude']
+    if (a.canRewrite && hasLocalEdit) kept.push('drop')
+    return kept
+  }
   if (a.shadowed || a.compacted) return []
   const actions: RowAction[] = []
   if (a.canRewrite) actions.push('edit')

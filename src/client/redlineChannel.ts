@@ -143,12 +143,14 @@ export interface ChildPlan {
   items: readonly { label: string; text: string }[]
   /** 会逐字带过去的本地改动（按 seq）。 */
   carriedSeqs: readonly number[]
-  /** 被标为「不要」、会在首条任务里声明作废的 seq（`docs/11` D65）。 */
+  /** 已删除、不会写进普通新会话的 seq。 */
   excludedSeqs: readonly number[]
-  /** Exact local-draft set reviewed by this plan; required by `child.start`. */
+  /** Opaque confirmation token: exact operation + draft + source + manifest versions. */
   draftRevision: string
-  /** 组装好的首条任务；被拒绝时为 `null`。 */
+  /** 组装好的最终发送全文；被拒绝时为 `null`。用户可在确认框直接编辑。 */
   prompt: string | null
+  /** 默认冻结配置；修改只作用于即将创建的普通新会话。 */
+  config?: { agentPreset: string; provider: string; model: string; reasoningEffort?: string }
   /** 首条任务的读数（M2-20）：UTF-8 字节 / 行 / 带了几条改动；被拒绝时为 `null`。 */
   metrics: { bytes: number; lines: number; edits: number } | null
   /** 被拒绝时给一句人话（例如"第一句话必须你自己写"）。 */
@@ -157,7 +159,20 @@ export interface ChildPlan {
 
 /** 开子会话之前问事实（只读，绝不写任何东西）。 */
 export async function planChild(sessionId: string, humanTask: string): Promise<RedlineResult<ChildPlan>> {
-  return await call<ChildPlan>({ op: 'child.plan', sessionId, humanTask })
+  return await call<ChildPlan>({ op: 'carrier.plan', sessionId, humanTask })
+}
+
+export interface CarrierModelOption {
+  readonly provider: string
+  readonly providerName: string
+  readonly model: string
+  readonly modelName: string
+  readonly efforts: readonly { readonly id: string; readonly name: string }[]
+  readonly defaultEffort?: string
+}
+
+export async function readCarrierModels(): Promise<RedlineResult<{ models: readonly CarrierModelOption[] }>> {
+  return await call<{ models: readonly CarrierModelOption[] }>({ op: 'carrier.models' })
 }
 
 /** 开子会话成功后的回执。 */
@@ -180,8 +195,26 @@ export interface ChildStarted {
  * 只在人**明确点了确认**之后调用；`humanTask` 是人写的第一句话（空着会被宿主拒绝）。
  * 拒绝一律以稳定的 code + 一句人话回来（transport 从不抛），界面照它显示就行。
  */
-export async function startChild(sessionId: string, humanTask: string, draftRevision: string): Promise<RedlineResult<ChildStarted>> {
-  return await call<ChildStarted>({ op: 'child.start', sessionId, humanTask, draftRevision })
+export async function startChild(
+  sessionId: string,
+  humanTask: string,
+  confirmationToken: string,
+  finalText?: string,
+  config?: { provider: string; model: string; reasoningEffort?: string },
+): Promise<RedlineResult<ChildStarted>> {
+  return await call<ChildStarted>({ op: 'carrier.start', sessionId, humanTask, confirmationToken, finalText, config })
+}
+
+export interface CarrierListRow {
+  readonly id: string
+  readonly label: string
+  readonly mode: 'continuable'
+  readonly createdAt: number
+  readonly via: 'ordinary-session'
+}
+
+export async function readCarriers(sessionId: string): Promise<RedlineResult<{ rows: readonly CarrierListRow[] }>> {
+  return await call<{ rows: readonly CarrierListRow[] }>({ op: 'carrier.list', sessionId })
 }
 
 /** `child.origins` 的回答：`records: null` = 我们那本台账**读不出来**（界面必须说"来源未知"）。 */

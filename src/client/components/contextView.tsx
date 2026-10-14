@@ -74,23 +74,8 @@ export function makeContextView(
     // no longer mirrors it. Absent → derived fallback.
     // Official token-meter `contextBreakdown` projection — the exact rows the chat ring's click-open panel shows, so the overview legend
     // reads identically by construction; absent → the fold's own same-estimator sums inside headlineOf.
-    // ⚠️ 临时只读探针（V10，2026-10-05）：宿主到底有没有注册 `subagentCatalog` / `subagentTiming` 两个投影。
-    // 钩子**无条件调用、顺序稳定**（见 projectionOf 的约定），只在 `?redline-probe=1` 时把摘要写进 DOM；
-    // 键名取自安装树 `@deepseek-ai/dsh-subagent` 的投影类型（真实只有这两个，不是三个）。
-    const probeShape = (raw: unknown): string => {
-      if (raw === undefined) return 'undefined'
-      if (raw === null) return 'null'
-      if (Array.isArray(raw)) return 'array:' + String(raw.length)
-      if (typeof raw === 'object') return 'object:' + Object.keys(raw).slice(0, 6).join(',')
-      return typeof raw
-    }
-    // 子会话卡的数据源（`docs/03` R5.1）：父会话自己的 `subagentCatalog` 投影（不重画会话树）。
+    // Legacy fork rows remain readable from the platform catalog; ordinary carrier rows come from `carrier.list`.
     const childCatalog = projectionOf(props, 'subagentCatalog', raw => (Array.isArray(raw) ? raw : null))
-    const probeCatalog = projectionOf(props, 'subagentCatalog', raw => probeShape(raw))
-    const probeTiming = projectionOf(props, 'subagentTiming', raw => probeShape(raw))
-    const probeOut = typeof location !== 'undefined' && location.search.includes('redline-probe=1')
-      ? JSON.stringify({ catalog: probeCatalog, timing: probeTiming })
-      : null
     // `redlineHeaders` companion projection (full system prompt + tool schemas) for the Context browser; absent key = older Host half →
     // those sections degrade to tokens-only with a note.
     const headers = projectionOf(props, 'redlineHeaders', headersOf)
@@ -314,6 +299,13 @@ export function makeContextView(
       setNodeFocus({ step, seq: node.seq, cat: node.cat })
     }, [activeReq, activeIdx, displayRequests])
 
+    // Hooks must remain above the loading return: one mounted view may move from undefined projection to ready data.
+    const redline = useRedlineDrafts(typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined)
+    const children = useChildSessions(
+      typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined,
+      childCatalog,
+    )
+
     if (!data) {
       return <div className="redline-root" ref={rootRef}><div className="redline-empty">{t('loading')}</div></div>
     }
@@ -441,11 +433,6 @@ export function makeContextView(
           )}
       </div>
     )
-    const redline = useRedlineDrafts(typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined)
-    const children = useChildSessions(
-      typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined,
-      childCatalog,
-    )
     const browserCard = (
       <ContextBrowser
         redline={redline}
@@ -472,7 +459,6 @@ export function makeContextView(
     const stepStats = stepStatsOf(assemble(data, headers, activeReq !== null ? activeReq.seq : null))
     return (
       <div className="redline-root" ref={rootRef}>
-        {probeOut === null ? null : <div id="redline-probe-out" data-probe={probeOut} style={{ display: 'none' }} />}
 
         {/* 两列各自从顶部向下排：左边看趋势/发生了什么，右边看上下文/改完后开子会话。
             不把另一列的高度带进定位，避免传统行式布局造成的顶部空洞；窄处自动成一列。
@@ -519,6 +505,7 @@ export function makeContextView(
               capacity={children.capacity}
               originsKnown={children.originsKnown}
               originsError={children.originsError}
+              models={children.models}
               live={redline.turn.known}
               turnOpen={redline.turn.open}
               carriedCount={Object.keys(redline.table).length}

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * 发布前自检（M6-10 的可离线半边）—— 一条命令跑完全部门禁，并**逐项打印判定行原文**。
+ * 发布前自检——一条命令跑完全部门禁，并逐项打印判定行原文。
  *
- * 为什么要有它：`docs/11` **D36** 那次事故的根因不是"没跑 lint"，而是**读了错的那一行**
+ * 每一步同时检查退出码和判定行，避免错误输出被截断或误报为成功。
  * （`tail -1` 拿到 `Finished in …`，于是"23 个 error"被写成"0 error"）。所以每一步都必须
  * 声明它**期望看到的那一行**，不看那一行就不算通过。
  *
@@ -29,7 +29,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
  * 所以这份清单本身也被用例断言（`tests/edit/release-check.spec.ts`）。
  */
 export const REQUIRED_GATES = [
-  { gate: 'check-docs', why: '文档一致性（版本 / 目录 / 命名 / 计数 / 表格 / 重复标题 / A17）' },
+  { gate: 'check-docs', why: '当前文档完整、本地链接有效、历史设计档案清零' },
   { gate: 'namespace-contract', why: '命名空间契约 11 个面（与参考插件并存的机械保障）' },
   { gate: 'tsc', why: '类型检查（exit 0 是底线，含 tests/**）' },
   { gate: 'oxlint', why: '风格与类型感知规则（必须 0 error）' },
@@ -40,7 +40,6 @@ export const REQUIRED_GATES = [
   { gate: 'i18n-orphans', why: 'i18n 里没有孤儿键（删卡/删功能留下的死文案，用户 2026-10-06 三轮清掉 145 个）' },
   { gate: 'demo-static', why: '交互 demo 的静态契约（id/class/讲解词）' },
   { gate: 'demo-runtime', why: '交互 demo 的最小 DOM 桩真渲染' },
-  { gate: 'progress', why: '进度汇报器与 docs/10 §11 一致（两个实现互为对照）' },
   { gate: 'release-ready', why: '发布就绪：临时探针已清零 + npm 发布前提齐备（探针还在时**就该红**）' },
 ]
 
@@ -51,7 +50,7 @@ export const REQUIRED_GATES = [
  */
 export function planSteps(opts = {}) {
   const steps = [
-    { label: 'docs 一致性', gate: 'check-docs', command: 'node scripts/check-docs.mjs', expect: '文档一致性检查通过' },
+    { label: '当前文档完整性', gate: 'check-docs', command: 'node scripts/check-docs.mjs', expect: '文档一致性检查通过' },
     { label: '命名空间契约', gate: 'namespace-contract', command: 'node scripts/namespace-contract.mjs', expect: '命名空间契约检查通过' },
     { label: '类型检查', gate: 'tsc', command: './node_modules/.bin/tsc --noEmit', expect: '__NO_OUTPUT__' },
     { label: '风格/类型感知', gate: 'oxlint', command: './node_modules/.bin/oxlint', expect: 'Found 0 warnings and 0 errors.' },
@@ -67,7 +66,6 @@ export function planSteps(opts = {}) {
     { label: '孤儿 i18n 键（死文案）', gate: 'i18n-orphans', command: 'node scripts/i18n-orphans.mjs', expect: '✅ 通过' },
     { label: 'demo 静态契约', gate: 'demo-static', command: 'node demo/check-static.mjs', expect: '__EXIT0__' },
     { label: 'demo 真渲染', gate: 'demo-runtime', command: 'node demo/check-runtime.mjs', expect: '失败 0 项' },
-    { label: '进度汇报 vs §11', gate: 'progress', command: 'node scripts/progress.mjs', expect: '__PROGRESS__' },
     { label: '发布就绪（探针清零 + npm 前提）', gate: 'release-ready', command: 'node scripts/check-release-ready.mjs', expect: '✅ 发布就绪检查通过' },
   ]
   if (opts.withDsh === true) {

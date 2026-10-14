@@ -3,7 +3,7 @@ import { defineConfig } from 'vitest/config'
 // Specs import src/ directly (never the built lib/ artifacts), so the suite
 // runs with no build step.
 //
-// Lanes (docs/05-test-plan.md §1):
+// Project lanes:
 //   edit    — OUR pure-logic guardrails. Imports only `src/redline/**` and
 //             `src/shared/**`: no `node:*`, no DOM, no React. Must always be green.
 //   channel — OUR route-level guardrails. Captures the exact Fetch route the

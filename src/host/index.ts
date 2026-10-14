@@ -30,6 +30,7 @@ import { watchDetailChannel } from './detail'
 import { createFallbackActivityDefinition, createFallbackHeadersDefinition, createFallbackTimelineDefinition } from './fallback'
 import { createContextHeadersDefinition } from './headers'
 import { watchRedlineChannel } from './redline-channel'
+import { watchCarrierRecovery } from './redline-carrier-recovery'
 import { watchStepIdentity } from './stepIdentity'
 import { createContextTimelineDefinition } from './timeline'
 import { detectHarnessVersion } from './version'
@@ -50,6 +51,7 @@ export function apply(ctx: Context, config: Config): void {
   // upstream's host entry wires). Armed BEFORE the baseline gate and therefore
   // on BOTH sides of it: it owns its own namespaced route and depends on no
   // projection generation, so a below-baseline harness must not lose it.
+  watchCarrierRecovery(ctx)
   watchRedlineChannel(ctx)
   // The DeepSeek platform balance route (balance.ts): independent of the
   // projection generations, so it arms on either side of the baseline gate —

@@ -1,11 +1,8 @@
 /**
  * The 上下文批改 RPC surface shared by BOTH halves — the single source of truth
- * for the route paths, the request/response envelope and (from M2 on) the op
- * vocabulary. `docs/02-architecture.md` §5.1/§5.2 make this the only place
- * allowed to spell them: a path spelled twice drifts into a 404 that looks like
- * a broken feature (upstream's own comment on the `path` field is wrong about
- * the `/api` prefix — `docs/01` F1 — so the constant is also the fence against
- * "fixing" it back).
+ * for the route path, request/response envelope, and operation vocabulary.
+ * This is the only place allowed to spell the path: duplicating it risks a
+ * silent Client/Host drift into 404s.
  *
  * Namespacing is a HARD constraint, not a preference: the connection registry
  * THROWS on a duplicate exact path (`exact Fetch route "…" is already

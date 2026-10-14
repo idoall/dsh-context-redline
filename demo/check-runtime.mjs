@@ -133,7 +133,7 @@ check('聚焦某类后总量变小', focused.series.every((v, i) => v <= turnAgg
 check('富态轮有 3 步', api.turnSteps(28) === 3, `steps=${api.turnSteps(28)}`);
 check('被遮蔽的原文仍在 surface 里（R4.6/A3）', api.nodesOfReq(api.lastOfTurn(28), false).some((n) => n.seq === 1287));
 check('但可见集合里没有它', !api.nodesOfReq(api.lastOfTurn(28), true).some((n) => n.seq === 1287));
-check('能力判定：助手消息不可改写', api.ability(api.NODES.find((n) => n.type === 'assistant/message')).canRewrite === false);
+check('能力判定：助手消息的迁移副本可编辑', api.ability(api.NODES.find((n) => n.type === 'assistant/message')).canRewrite === true);
 check('能力判定：替换体可改写', api.ability(api.NODES.find((n) => n.seq === 1301)).canRewrite === true);
 check('能力判定：被压缩埋掉的不可改写', api.ability(api.NODES.find((n) => n.seq === 1303)).canRewrite === false);
 check('压缩标记挂在它之后的请求上', api.markerOf(api.lastOfTurn(28)) !== null);
@@ -499,7 +499,7 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
     'user/user/message': '编辑',
     'inject/user/message': '编辑',
     'skill/user/message': '编辑',
-    'assistant/assistant/message': '',
+    'assistant/assistant/message': '编辑',
     'tool/tool/result': '编辑',
     'user/user/message/compacted': ''
   };
@@ -711,9 +711,9 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
       }
     }
   }
-  const ALLOWED = new Set(['编辑', '标记为不要', '取消标记', '丢弃这条改动']);
+  const ALLOWED = new Set(['编辑', '删除', '取消删除', '丢弃这条改动']);
   const extra = [...labels].filter((l) => !ALLOWED.has(l));
-  check('行内动作白名单：只允许「编辑」「标记为不要」「取消标记」「丢弃这条改动」（没有版本历史 / 去改现在这条 / 写一句更正 / 批注 / 应用到会话）',
+  check('行内动作白名单：只允许「编辑」「删除」「取消删除」「丢弃这条改动」（没有版本历史 / 去改现在这条 / 写一句更正 / 批注 / 应用到会话）',
     extra.length === 0, `出现白名单外的动作：${extra.join('、') || '（无）'}｜实际动作=${[...acts].join(',')}`);
   S.openCat = null; api.render();
 }
@@ -911,8 +911,8 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
     !Object.keys(seen).some((k) => /冻结/.test(k)), Object.keys(seen).join(','));
   /* 去向写在**标题 + 提示行**两处（v0 定稿把长标题拆成「首条任务」+ 一行说明）⟹ 两处合起来判。 */
   const dest = seen['开子会话'] + ' ' + seen['开子会话Hint'];
-  check('确认框去向③：开子会话写明「成为子会话的第一句话、它的模型看得到」',
-    /子会话/.test(dest) && /第一句话/.test(dest) && /看得到|可见/.test(dest), dest);
+  check('确认框去向③：写明最终全文就是普通新会话实际收到的完整第一句话',
+    /新会话/.test(dest) && /第一句话/.test(dest) && /实际写入/.test(dest), dest);
   const vals = Object.values(seen);
   S.children = []; S.invariants = []; api.render();
 }
@@ -1184,30 +1184,50 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
 const bad = results.filter((r) => !r.ok);
 for (const r of results) console.log(`${r.ok ? '✅' : '❌'} ${r.name}${r.detail ? '  → ' + r.detail : ''}`);
 
-/* ---------------- 「标记为不要」：本地作废标记（docs/11 D65，用户 2026-10-08 选 A） ----------------
- * 平台**没有删除**，fork 也排除不掉历史（docs/01 F38）⟹ 这条能力只能表达成"标为作废 + 首条任务声明"。
- * 这里锁住三件事：① 行上出现「已标为不要」；② 动作换成「取消标记」（与「编辑」互斥）；
- * ③ 开启子会话的确认框把它算进"会写进去的改动"，并明确写出「历史原文仍会被带过去」。 */
+/* ---------------- 「删除」：这一条不写进新会话（`docs/03` R4.8 / `docs/13` §7，2026-10-09） --------
+ * 旧口径（「标记为不要」+ 在首条任务里声明"请不要采用"）解决的是**旧载体**的问题：fork 会把历史
+ * 原文一起带过去，所以只能再声明一句。新会话是**零历史** ⟹ 不带的条目就是不在，声明段整段作废。
+ * 这里锁四件事：
+ *   ① 行上写「已删除」、动作换成「取消删除」、不再给「编辑」；
+ *   ② **删除不清空改稿**（旧实现在这里 `delete S.drafts[seq]`，那正是"取消删除丢改稿"的根因）；
+ *   ③ 被删条目**不进首条任务**（正文不出现），确认框只说实话"不会带过去"；
+ *   ④ 取消删除后改稿原样回来、并重新参与投递。 */
 {
   const S = api.S();
-  S.drafts = {}; S.excluded = {}; S.applied = []; S.extraNodes = []; S.editor = null;
+  S.drafts = {}; S.excluded = {}; S.applied = []; S.extraNodes = []; S.editor = null; S.children = [];
   S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; S.openCat = 'user'; api.render();
   const node = api.nodesOfReq(api.lastOfTurn(api.TOTAL_TURNS), true).find((n) => n.cat === 'user' && n.type === 'user/message');
+  const KEPT = '（被删也要保留的改稿）';
+  S.drafts[node.seq] = { seq: node.seq, kind: 'edit', text: KEPT, reasoning: '', err: false, cat: 'user', name: '' };
+  api.render();
   api.rowAct({ dataset: { act: 'exclude', seq: String(node.seq) } });
   const html = registry.get('cardBrowser').innerHTML;
-  check('标记为不要：行上写明「已标为不要」', html.includes('已标为不要'));
-  check('标记为不要：动作换成「取消标记」，不再给「编辑」',
+  check('删除：行上写明「已删除」', html.includes('已删除'));
+  check('删除：动作换成「取消删除」，不再给「编辑」',
     new RegExp('data-act="unexclude" data-seq="' + node.seq + '"').test(html)
     && !new RegExp('data-act="edit" data-seq="' + node.seq + '"').test(html));
-  check('标记为不要：只写本地 —— 不产生任何本地改动', !S.drafts[node.seq]);
+  check('删除：**不清空**你之前的改稿（旧实现会在这里把改稿删掉）', S.drafts[node.seq] !== undefined);
   api.orchAct({ dataset: { act: 'spawn' } });
   const rows = registry.get('modalList').innerHTML;
-  check('标记为不要：确认框里也说出来（含"历史原文仍会被带过去"这句实话）',
-    rows.includes('被标为不要') && rows.includes('#' + node.seq) && rows.includes('历史原文仍会被带过去'));
+  check('删除：确认框写明"已删除，不会带过去"，且不再声称"历史原文仍会被带过去"',
+    rows.includes('已删除，不会带过去') && rows.includes('#' + node.seq) && !rows.includes('历史原文仍会被带过去'));
+  document.getElementById('modalReason').value = '干一件小事';
+  document.getElementById('modalOk').onclick();
+  check('删除：被删条目的正文**不进**新会话的第一句话',
+    !/以下是本次改动/.test(S.children[0].prime || '') && !(S.children[0].prime || '').includes(KEPT),
+    (S.children[0].prime || '').slice(0, 80));
   document.getElementById('modalWrap').hidden = true;
   api.rowAct({ dataset: { act: 'unexclude', seq: String(node.seq) } });
-  check('取消标记：行上恢复原样（「已标为不要」没了）', !registry.get('cardBrowser').innerHTML.includes('已标为不要'));
-  S.excluded = {}; S.drafts = {}; api.render();
+  check('取消删除：行上恢复原样（「已删除」没了）', !registry.get('cardBrowser').innerHTML.includes('已删除'));
+  S.children = [];
+  api.orchAct({ dataset: { act: 'spawn' } });
+  document.getElementById('modalReason').value = '再来一次';
+  document.getElementById('modalOk').onclick();
+  check('取消删除：改稿原样回来，并重新被带进新会话',
+    /以下是本次改动/.test(S.children[0].prime || '') && (S.children[0].prime || '').includes(KEPT),
+    (S.children[0].prime || '').slice(0, 80));
+  document.getElementById('modalWrap').hidden = true;
+  S.excluded = {}; S.drafts = {}; S.children = []; api.render();
 }
 
 console.log(`\n共 ${results.length} 项，失败 ${bad.length} 项`);

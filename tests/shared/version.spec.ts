@@ -44,15 +44,16 @@ describe('compareVersions', () => {
 
 describe('meetsBaseline', () => {
   test(`the supported baseline is ${BASELINE_DSH_VERSION}`, () => {
-    assert.equal(BASELINE_DSH_VERSION, '0.2.0-rc.2')
+    assert.equal(BASELINE_DSH_VERSION, '0.2.1-alpha.2')
   })
 
   test('baseline and above pass; anything below fails', () => {
-    assert.equal(meetsBaseline('0.2.0-rc.2'), true, 'the baseline itself')
-    assert.equal(meetsBaseline('0.2.0-rc.3'), true)
-    assert.equal(meetsBaseline('0.2.0'), true, 'the final release of the baseline line')
-    assert.equal(meetsBaseline('0.2.1-alpha.1'), true, 'a newer X.Y.Z outranks any channel')
-    assert.equal(meetsBaseline('0.2.0-rc.1'), false, 'one rc below the baseline')
+    assert.equal(meetsBaseline('0.2.1-alpha.2'), true, 'the baseline itself')
+    assert.equal(meetsBaseline('0.2.1-beta.1'), true)
+    assert.equal(meetsBaseline('0.2.1'), true, 'the final release of the baseline line')
+    assert.equal(meetsBaseline('0.2.2-alpha.1'), true, 'a newer X.Y.Z outranks any channel')
+    assert.equal(meetsBaseline('0.2.1-alpha.1'), false, 'one alpha below the baseline')
+    assert.equal(meetsBaseline('0.2.0'), false, 'the older patch line is unsupported')
     assert.equal(meetsBaseline('0.2.0-beta.9'), false, 'beta is below rc at equal X.Y.Z')
     assert.equal(meetsBaseline('0.1.7-rc.2'), false, 'the 0.1.x line is no longer supported')
     assert.equal(meetsBaseline('0.1.9'), false)

@@ -4,16 +4,14 @@
  * host probes and gates; the client displays what the wire record carries),
  * so this module must stay dependency-free.
  *
- * The baseline mirrors OUR support matrix (`package.json` `engines.dsh` =
- * `>=0.2.0-rc.2 <0.3.0`, `docs/11` D1): the oldest dsh release this plugin
- * works on, measured on this machine. Upstream declared `0.1.5-rc.1` because it
- * shipped a compat matrix for the 0.1.x line; we support exactly the runtime
- * this fork is exercised against, so a harness BELOW it gets the fallback units
- * (`host/fallback.ts`) instead of the real folds.
+ * The baseline mirrors OUR support matrix (`package.json` `engines.dsh`):
+ * the oldest runtime matching the direct DSH peer dependencies and the version
+ * this fork is exercised against. A Harness below it gets fallback units rather
+ * than loading API contracts it cannot satisfy.
  */
 
 /** The oldest supported dsh release (see the note above). */
-export const BASELINE_DSH_VERSION = '0.2.0-rc.2'
+export const BASELINE_DSH_VERSION = '0.2.1-alpha.2'
 
 /**
  * Release-channel rank at an equal X.Y.Z: a final release outranks its

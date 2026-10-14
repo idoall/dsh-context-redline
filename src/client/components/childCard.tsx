@@ -20,11 +20,12 @@
  *   the user asked to drop it (2026-10-08).
  */
 
-import { createElement as h, useCallback, useEffect, useRef, useState, type ChangeEvent, type ReactElement } from 'react'
+import { createElement as h, useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type CSSProperties, type ReactElement } from 'react'
+import { createPortal } from 'react-dom'
 import type { ViewKit } from '../viewkit'
 import type { ChildIndexRow, ChildRow } from '../childSessions'
-import { UNKNOWN_CAPACITY, type ChildCapacity } from '../../shared/redline-capacity'
-import type { ChildPlan, ChildStarted, RedlineResult } from '../redlineChannel'
+import type { ChildCapacity } from '../../shared/redline-capacity'
+import type { CarrierModelOption, ChildPlan, ChildStarted, RedlineResult } from '../redlineChannel'
 
 export interface ChildCardProps {
   /** The parent session the panel is showing. */
@@ -37,6 +38,8 @@ export interface ChildCardProps {
   readonly originsError?: string | null
   /** 这台机器允许几个团队成员（M5-13 的分母）；缺省 = 不知道。 */
   readonly capacity?: ChildCapacity
+  /** Live model catalog; choosing one only configures the new carrier. */
+  readonly models?: readonly CarrierModelOption[]
   /** The parent is live in this process (`turnState.known`). */
   readonly live: boolean
   /** The parent's turn has not closed yet. */
@@ -46,18 +49,126 @@ export interface ChildCardProps {
   /** `child.plan` — read-only, builds the five items for this exact task text. */
   readonly plan: (humanTask: string) => Promise<RedlineResult<ChildPlan>>
   /** `child.start` — the ONLY session write the panel can perform. */
-  readonly start: (humanTask: string, draftRevision: string) => Promise<RedlineResult<ChildStarted>>
+  readonly start: (
+    humanTask: string,
+    confirmationToken: string,
+    finalText?: string,
+    config?: { provider: string; model: string; reasoningEffort?: string },
+  ) => Promise<RedlineResult<ChildStarted>>
 }
 
-/** 确认项的排版编号（纯展示，与宿主五项一一对应；不参与任何文案生成）。 */
-const ORDINALS = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧', '⑨', '⑩']
+interface CarrierSelectionBarProps {
+  readonly models: readonly CarrierModelOption[]
+  readonly selectedRoute: string
+  readonly selectedEffort: string
+  readonly onRoute: (route: string) => void
+  readonly onEffort: (effort: string) => void
+  readonly t: ViewKit['t']
+}
+
+function CarrierSelectionBar(props: CarrierSelectionBarProps): ReactElement {
+  const [open, setOpen] = useState<'model' | 'effort' | null>(null)
+  const modelRef = useRef<HTMLButtonElement | null>(null)
+  const effortRef = useRef<HTMLButtonElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({ visibility: 'hidden' })
+  const selected = props.models.find(model => JSON.stringify([model.provider, model.model]) === props.selectedRoute)
+  const effortLabel = props.selectedEffort === ''
+    ? props.t('child.confirm.effortDefault')
+    : selected?.efforts.find(level => level.id === props.selectedEffort)?.name ?? props.selectedEffort
+
+  useLayoutEffect(() => {
+    if (open === null) return
+    const trigger = open === 'model' ? modelRef.current : effortRef.current
+    if (trigger === null) return
+    const rect = trigger.getBoundingClientRect()
+    const width = Math.min(Math.max(open === 'model' ? 300 : 220, rect.width), window.innerWidth - 32)
+    const left = Math.min(Math.max(16, rect.left), window.innerWidth - width - 16)
+    setMenuStyle({ left, width, bottom: window.innerHeight - rect.top + 6, maxHeight: Math.max(120, rect.top - 22) })
+  }, [open])
+
+  useEffect(() => {
+    if (open === null) return
+    const dismiss = (event: MouseEvent): void => {
+      const node = event.target
+      if (!(node instanceof Node) || menuRef.current?.contains(node) === true
+        || modelRef.current?.contains(node) === true || effortRef.current?.contains(node) === true) return
+      setOpen(null)
+    }
+    const escape = (event: KeyboardEvent): void => { if (event.key === 'Escape') setOpen(null) }
+    document.addEventListener('mousedown', dismiss)
+    document.addEventListener('keydown', escape)
+    return () => {
+      document.removeEventListener('mousedown', dismiss)
+      document.removeEventListener('keydown', escape)
+    }
+  }, [open])
+
+  const toggle = (pane: 'model' | 'effort'): void => { setOpen(current => current === pane ? null : pane) }
+  const groups = new Map<string, { name: string; models: CarrierModelOption[] }>()
+  for (const model of props.models) {
+    const group = groups.get(model.provider) ?? { name: model.providerName, models: [] }
+    group.models.push(model)
+    groups.set(model.provider, group)
+  }
+  const menu = open === null ? null : createPortal(h('div', {
+    ref: menuRef,
+    className: 'redline-picker-menu scrollable',
+    style: menuStyle,
+    role: 'menu',
+    'data-redline-picker-menu': open,
+  }, open === 'model'
+    ? [...groups.entries()].map(([provider, group]) => h('section', { key: provider, className: 'redline-picker-group' },
+      h('div', { className: 'redline-picker-group-label' }, group.name),
+      group.models.map((model) => {
+        const route = JSON.stringify([model.provider, model.model])
+        const active = route === props.selectedRoute
+        return h('button', {
+          type: 'button', role: 'menuitemradio', 'aria-checked': active,
+          className: 'redline-picker-option' + (active ? ' is-selected' : ''),
+          key: route,
+          onClick: () => { props.onRoute(route); setOpen(null) },
+        }, h('span', null, model.modelName), h('span', { className: 'redline-picker-check' }, active ? '✓' : ''))
+      })))
+    : h('div', null,
+      [{ id: '', name: props.t('child.confirm.effortDefault') }, ...(selected?.efforts ?? [])].map((level) => {
+        const active = level.id === props.selectedEffort
+        return h('button', {
+          type: 'button', role: 'menuitemradio', 'aria-checked': active,
+          className: 'redline-picker-option' + (active ? ' is-selected' : ''),
+          key: level.id || 'default',
+          onClick: () => { props.onEffort(level.id); setOpen(null) },
+        }, h('span', null, level.name), h('span', { className: 'redline-picker-check' }, active ? '✓' : ''))
+      }))), document.body)
+
+  return h('div', { className: 'redline-picker-bar', 'data-redline-picker': '1' },
+    h('button', {
+      ref: modelRef, type: 'button', className: 'redline-picker-trigger',
+      'data-redline-model': '1', 'aria-haspopup': 'menu', 'aria-expanded': open === 'model',
+      onClick: () => { toggle('model') },
+    }, h('span', { className: 'redline-picker-value' }, selected?.modelName ?? props.t('child.confirm.modelLabel')),
+    h('span', { className: 'redline-picker-chevron' + (open === 'model' ? ' redline-picker-chevron-open' : '') }, '⌄')),
+    h('span', { className: 'redline-picker-divider' }),
+    h('button', {
+      ref: effortRef, type: 'button', className: 'redline-picker-trigger',
+      'data-redline-effort': '1', 'aria-haspopup': 'menu', 'aria-expanded': open === 'effort',
+      disabled: selected === undefined,
+      onClick: () => { toggle('effort') },
+    }, h('span', { className: 'redline-picker-value redline-picker-effort-value' }, effortLabel),
+    h('span', { className: 'redline-picker-chevron' + (open === 'effort' ? ' redline-picker-chevron-open' : '') }, '⌄')),
+    menu,
+  )
+}
 
 /** The state dot + word a row shows, from the probed `turnState`. */
 function stateOf(row: ChildRow): { tone: string; key: string; hint: string } {
   if (row.live === null) return { tone: 'unknown', key: 'child.state.unknown', hint: 'child.hint.unknown' }
-  if (!row.live) return { tone: 'gone', key: 'child.state.gone', hint: 'child.hint.gone' }
-  return row.open === true
-    ? { tone: 'run', key: 'child.state.running', hint: 'child.hint.running' }
+  if (!row.live) return row.via === 'ordinary-session'
+    ? { tone: 'gone', key: 'child.state.unloaded', hint: 'child.hint.unloaded' }
+    : { tone: 'gone', key: 'child.state.gone', hint: 'child.hint.gone' }
+  if (row.open === true) return { tone: 'run', key: 'child.state.running', hint: 'child.hint.running' }
+  return row.via === 'ordinary-session'
+    ? { tone: 'idle', key: 'child.state.idle', hint: 'child.hint.carrierIdle' }
     : { tone: 'idle', key: 'child.state.idle', hint: 'child.hint.idle' }
 }
 
@@ -76,10 +187,14 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
     const [open, setOpen] = useState(false)
     const [task, setTask] = useState('')
     const [plan, setPlan] = useState<ChildPlan | null>(null)
+    const [finalText, setFinalText] = useState('')
+    const [selectedRoute, setSelectedRoute] = useState('')
+    const [selectedEffort, setSelectedEffort] = useState('')
     const [busy, setBusy] = useState(false)
-    const [errorCode, setErrorCode] = useState<string | null>(null)
-    // A late plan answer for an older task must not overwrite the newer one.
+    const [error, setError] = useState<{ code: string; message: string } | null>(null)
+    // Late plan/start answers for an older task or selected session must not overwrite the new view.
     const generation = useRef(0)
+    const startGeneration = useRef(0)
 
     const blockedKey = !props.live
       ? 'redline.blocked.notLive'
@@ -88,8 +203,21 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
     const close = useCallback(() => {
       setOpen(false)
       setPlan(null)
-      setErrorCode(null)
+      setError(null)
     }, [])
+
+    useEffect(() => {
+      generation.current += 1
+      startGeneration.current += 1
+      setOpen(false)
+      setTask('')
+      setPlan(null)
+      setFinalText('')
+      setSelectedRoute('')
+      setSelectedEffort('')
+      setBusy(false)
+      setError(null)
+    }, [props.sessionId])
 
     // The confirm box's five items come from the host and depend on the task text
     // (item 3 IS that text, and the refusal fires on an empty one), so refetch on change —
@@ -102,40 +230,68 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
         void (async () => {
           const answer = await props.plan(task)
           if (generation.current !== mine) return
-          if (!answer.ok) { setErrorCode(answer.code); setPlan(null); return }
-          setErrorCode(null)
+          if (!answer.ok) { setError({ code: answer.code, message: answer.message }); setPlan(null); return }
+          setError(null)
           setPlan(answer.value)
+          setFinalText(answer.value.prompt ?? '')
+          const config = answer.value.config
+          setSelectedRoute(config === undefined ? '' : JSON.stringify([config.provider, config.model]))
+          // Start from the selected model's own default; never carry an explicit source effort by accident.
+          setSelectedEffort('')
         })()
       }, 220)
       return () => { clearTimeout(timer) }
     }, [open, task, props.plan])
 
-    const refused = plan !== null && plan.refusal !== null
+    const catalog = props.models ?? []
+    const currentConfig = plan?.config
+    const hasCurrent = currentConfig !== undefined && catalog.some(model =>
+      model.provider === currentConfig.provider && model.model === currentConfig.model)
+    const availableModels = currentConfig !== undefined && !hasCurrent
+      ? [{
+        provider: currentConfig.provider, providerName: currentConfig.provider,
+        model: currentConfig.model, modelName: currentConfig.model, efforts: [],
+      }, ...catalog]
+      : catalog
+    const selectedModel = availableModels.find(model => JSON.stringify([model.provider, model.model]) === selectedRoute)
+    const legacyPlan = plan !== null && plan.config === undefined
+    const finalBytes = new TextEncoder().encode(finalText).byteLength
+    const refused = plan !== null && (plan.refusal !== null || finalText.trim() === '' || (!legacyPlan && selectedModel === undefined))
     const confirm = useCallback(() => {
       if (busy || plan === null || refused) return
       setBusy(true)
-      setErrorCode(null)
+      setError(null)
+      startGeneration.current += 1
+      const mine = startGeneration.current
       void (async () => {
-        const answer = await props.start(task, plan.draftRevision)
+        if (!legacyPlan && selectedModel === undefined) return
+        const selectedConfig = selectedModel === undefined ? undefined : {
+          provider: selectedModel.provider,
+          model: selectedModel.model,
+          ...(selectedEffort === '' ? {} : { reasoningEffort: selectedEffort }),
+        }
+        const answer = legacyPlan
+          ? await props.start(task, plan.draftRevision)
+          : await props.start(task, plan.draftRevision, finalText, selectedConfig)
+        if (startGeneration.current !== mine) return
         setBusy(false)
-        if (!answer.ok) { setErrorCode(answer.code); return }
+        if (!answer.ok) { setError({ code: answer.code, message: answer.message }); return }
         // The child is visible in the card's live index; do not replace the
         // confirmation with a second success screen that hides that outcome.
         close()
       })()
-    }, [busy, close, plan, refused, props.start, task])
+    }, [busy, close, finalText, legacyPlan, plan, refused, selectedEffort, selectedModel, props.start, task])
 
     // ⚠️ 口径跟 demo（`renderOrch()` 的 `state === 'running' || state === 'idle'`）：
     // 「活跃」= **在场的子会话**（运行中 + 空闲），**不是**"只有正在跑的" ——
     // 2026-10-07 真机读数时发现我们原先少算了一半（只在 `open` 为真时计数）。
     const active = props.rows.filter(row => row.live === true).length
-    const capacity = props.capacity ?? UNKNOWN_CAPACITY
-    // 分母只在**真读到**的时候写；读不到就只写 `活跃 N`（绝不编 8 / 16，`docs/01` F31）。
-    const scale = capacity.known && capacity.max !== null
-      ? t('child.bmeta.cap', { a: active, max: capacity.max, n: props.rows.length })
-      : t('child.bmeta', { a: active, n: props.rows.length })
-    const atCap = capacity.known && capacity.max !== null && active >= capacity.max
-    const errKey = errorCode === null ? null : `redline.err.${errorCode.replace('redline/', '')}`
+    // Ordinary carrier sessions are root sessions and do not consume Agent Team member capacity.
+    const scale = t('child.bmeta', { a: active, n: props.rows.length })
+    const errKey = error === null ? null : `redline.err.${error.code.replace('redline/', '')}`
+    const errText = error === null ? null : error.code === 'redline/internal' && error.message !== ''
+      ? `${t(errKey ?? 'redline.err.internal')}：${error.message}`
+      : t(errKey ?? 'redline.err.internal')
 
     return h('div', { className: 'redline-card', 'data-redline-card': 'child' },
       h('div', { className: 'redline-card-title' },
@@ -162,7 +318,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
           type: 'button',
           className: 'redline-orch-open',
           'data-redline-spawn': '1',
-          disabled: blockedKey !== null || atCap,
+          disabled: blockedKey !== null,
           onClick: () => { setTask(''); setOpen(true) },
         }, t('child.spawn.button')),
       ),
@@ -171,9 +327,6 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
         h('div', { className: 'redline-orch-listhead' },
           h('span', null, t('child.list.head')),
           h('span', null, t('child.list.hint'))),
-        atCap
-          ? h('div', { className: 'redline-cap', 'data-redline-cap': '1' }, t('child.cap.reached', { max: capacity.max }))
-          : null,
         props.originsError === undefined || props.originsError === null
           ? null
           : h('div', { className: 'redline-cap', 'data-redline-origins-error': props.originsError },
@@ -194,12 +347,13 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
                     // 来源（M5-12）：三态各自一句 —— 台账里有说是哪条路；没有说"不是在这儿开的"；
                     // 台账读不出来说"来源未知"。**不猜**（官方目录里没有来源字段，docs/01 F59）。
                     (() => {
-                      const known = props.originsKnown !== false
+                      const known = row.via === 'ordinary-session' || props.originsKnown !== false
                       const tone = !known ? 'unknown' : row.via == null ? 'other' : 'own'
                       const key = !known
                         ? 'child.src.unknown'
-                        : row.via === 'official-member' ? 'child.src.own.official'
-                          : row.via === 'bare-child' ? 'child.src.own.bare' : 'child.src.other'
+                        : row.via === 'ordinary-session' ? 'child.src.own.carrier'
+                          : row.via === 'official-member' ? 'child.src.own.official'
+                            : row.via === 'bare-child' ? 'child.src.own.bare' : 'child.src.other'
                       return h('span', { className: 'redline-src redline-src-' + tone, 'data-redline-src': tone, title: t('child.src.tip') }, t(key))
                     })(),
                     clock === null ? null : h('span', { className: 'redline-orch-clock' }, clock),
@@ -232,21 +386,14 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
             h('p', { className: 'redline-confirm-intro' }, t('child.confirm.intro')),
             plan === null
               ? h('div', { className: 'redline-cap' }, t('child.confirm.preparing'))
-              : h('ol', { className: 'redline-confirm-list' },
-                // 编号是**纯排版**（①…⑤），与宿主给的五项一对一，不替代也不改写宿主的文案。
-                plan.items.map((item, index) => h('li', { key: item.label },
-                  h('h3', { className: 'redline-confirm-item-title' },
-                    h('span', { className: 'redline-confirm-num' }, ORDINALS[index] ?? String(index + 1)),
-                    item.label),
-                  h('p', null, item.text))),
+              : h('div', { className: 'redline-confirm-summary' },
+                plan.items.filter(item => item.label !== '新会话配置与回程').map(item => h('div', { key: item.label },
+                  h('strong', null, item.label + '：'),
+                  h('span', null, item.text))),
                 plan.metrics === null || typeof plan.metrics.bytes !== 'number'
                   ? null
-                  : h('li', { key: 'metrics' },
-                    h('h3', { className: 'redline-confirm-item-title' },
-                      h('span', { className: 'redline-confirm-num' }, '·'),
-                      t('child.confirm.metrics.label')),
-                    h('p', { 'data-redline-first-task': String(plan.metrics.bytes) },
-                      t('child.confirm.metrics', { bytes: plan.metrics.bytes, edits: plan.metrics.edits })))),
+                  : h('div', { 'data-redline-first-task': String(finalBytes) },
+                    t('child.confirm.metrics', { bytes: finalBytes, edits: plan.metrics.edits }))),
             // 空任务时宿主会拒绝（`redline/empty-task`）：按钮禁用即可，**不再把那句拒绝话术打在弹窗里**
             // （用户 2026-10-08：「子会话的第一句话必须由你自己写……可以去掉」）。
             // 拒绝这件事仍然可观测（`data-redline-refusal` 挂在任务块上），只是不再占版面。
@@ -261,12 +408,37 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
               'data-redline-task': '1',
               placeholder: t('child.confirm.taskPlaceholder'),
               value: task,
-              onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setTask(event.target.value) },
+              onChange: (event: ChangeEvent<HTMLTextAreaElement>) => {
+                generation.current += 1
+                setTask(event.target.value)
+                setPlan(null)
+                setFinalText('')
+                setSelectedRoute('')
+                setSelectedEffort('')
+                setError(null)
+              },
             })),
-            errKey !== null ? h('div', { className: 'redline-editor-err', role: 'alert' }, t(errKey)) : null,
-            plan !== null && plan.carriedSeqs.length > 0
-              ? h('div', { className: 'redline-cap' }, '#' + plan.carriedSeqs.join(' · #'))
-              : null,
+            h(CarrierSelectionBar, {
+              models: availableModels,
+              selectedRoute,
+              selectedEffort,
+              t,
+              onRoute: (route: string) => {
+                setSelectedRoute(route)
+                setSelectedEffort('')
+              },
+              onEffort: (effort: string) => { setSelectedEffort(effort) },
+            }),
+            h('label', { className: 'redline-confirm-task redline-confirm-final' },
+              h('span', { className: 'redline-confirm-task-label' }, t('child.confirm.finalLabel')),
+              h('span', { className: 'redline-confirm-task-hint' }, t('child.confirm.finalHint')),
+              h('textarea', {
+                rows: 6,
+                'data-redline-final': '1',
+                value: finalText,
+                onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setFinalText(event.target.value) },
+              })),
+            errText !== null ? h('div', { className: 'redline-editor-err', role: 'alert' }, errText) : null,
           ),
           h('div', { className: 'redline-modal-foot' },
             h('button', { type: 'button', className: 'redline-confirm-btn redline-confirm-btn-cancel', onClick: close }, t('child.confirm.cancel')),

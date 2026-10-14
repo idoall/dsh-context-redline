@@ -228,20 +228,20 @@ describe('detectHarnessVersion — running anchor', () => {
     // The library resolves, so the witness is trusted, but its manifest name
     // never matches: the anchor yields nothing and home answers.
     const ctx = ctxWithHome(homeResolver('future'))
-    assert.equal(detectHarnessVersion(ctx, runningResolver('running-decoy', scratch), ELSEWHERE), '0.2.0')
+    assert.equal(detectHarnessVersion(ctx, runningResolver('running-decoy', scratch), ELSEWHERE), '0.2.2-alpha.1')
   })
 
   test('a non-file running URL is no answer', () => {
     const ctx = ctxWithHome(homeResolver('future'))
-    assert.equal(detectHarnessVersion(ctx, fixedUrl('data:text/javascript,'), ELSEWHERE), '0.2.0')
+    assert.equal(detectHarnessVersion(ctx, fixedUrl('data:text/javascript,'), ELSEWHERE), '0.2.2-alpha.1')
   })
 
   test('classifies the plugin root and its parent correctly', () => {
     // A witness equal to the plugin root is inside it (the `relative` result is
     // empty); a witness one level above is reached through `..`.
     const ctx = ctxWithHome(homeResolver('future'))
-    assert.equal(detectHarnessVersion(ctx, fixedUrl(pathToFileURL(ELSEWHERE).href), ELSEWHERE), '0.2.0')
-    assert.equal(detectHarnessVersion(ctx, fixedUrl(pathToFileURL(ELSEWHERE).href), join(ELSEWHERE, 'inner')), '0.2.0')
+    assert.equal(detectHarnessVersion(ctx, fixedUrl(pathToFileURL(ELSEWHERE).href), ELSEWHERE), '0.2.2-alpha.1')
+    assert.equal(detectHarnessVersion(ctx, fixedUrl(pathToFileURL(ELSEWHERE).href), join(ELSEWHERE, 'inner')), '0.2.2-alpha.1')
   })
 })
 
@@ -249,8 +249,8 @@ describe('detectHarnessVersion — home anchor', () => {
   test('reads the CLI package manifest of the running installation', () => {
     const ctx = (home: string) => ctxWithHome(homeResolver(home))
     assert.equal(detectHarnessVersion(ctx('old'), NO_RUNNING), '0.1.1-rc.2')
-    assert.equal(detectHarnessVersion(ctx('baseline'), NO_RUNNING), '0.2.0-rc.2')
-    assert.equal(detectHarnessVersion(ctx('future'), NO_RUNNING), '0.2.0')
+    assert.equal(detectHarnessVersion(ctx('baseline'), NO_RUNNING), '0.2.1-alpha.2')
+    assert.equal(detectHarnessVersion(ctx('future'), NO_RUNNING), '0.2.2-alpha.1')
     assert.equal(detectHarnessVersion(ctx('dev'), NO_RUNNING), '0.0.0-dev')
   })
 

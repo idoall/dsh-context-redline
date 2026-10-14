@@ -262,40 +262,6 @@ describe('every save is temporary (the hard constraint)', () => {
   })
 })
 
-describe('the read-only probe (M4.5 包 A；真机调用需重启，见 docs/01 F46)', () => {
-  test('probe.services is a KNOWN op — it answers structure, not "unknown-op"', async () => {
-    const ops = await boot()
-    const reply = await call(ops, { op: 'probe.services', sessionId: ops.sessionId })
-    assert.equal(reply.ok, true, JSON.stringify(reply))
-    const v = value(reply) as Record<string, unknown>
-    assert.ok(typeof v.present === 'object' && v.present !== null, 'present 是对象')
-    assert.ok(Array.isArray(v.subagentsProviders), 'providers 是数组')
-    assert.ok(typeof v.subagentsHasStartContinuable === 'boolean', 'startContinuable 是布尔')
-    assert.equal(v.logReadable, true, '这个假会话的日志读得到')
-    assert.equal(typeof v.eventCount, 'number', '报了事件条数')
-    // 2026-10-05 扩的三个只读问题：服务路径探索 / V8 原文读回 / V13 Lead 判定
-    assert.ok(typeof v.ctxKeys === 'object' || typeof v.ctxKeys === 'string', 'ctxKeys（枚举不到就如实说）')
-    const shadow = v.shadow as Record<string, unknown>
-    assert.equal(typeof shadow.replaceish, 'number', 'V8：日志里带 sourceEventSeqs 的事件条数')
-    assert.ok(typeof shadow.readback === 'string', 'V8：读回结果一定是一句话/一个状态')
-    assert.ok(v.membership !== undefined, 'V13：membership 一定有个交代（拿不到就说拿不到）')
-  })
-
-  test('it reads and writes NOTHING: no draft file, no session append', async () => {
-    const ops = await boot()
-    await call(ops, { op: 'probe.services', sessionId: ops.sessionId })
-    assert.equal(existsSync(draftPath(ops)), false, '探针不写草稿')
-    assert.deepEqual(ops.sessionWrites, [], '探针不碰会话')
-  })
-
-  test('an unreadable session is reported as unreadable, not silently "fine"', async () => {
-    const ops = await boot()
-    const v = value(await call(ops, { op: 'probe.services', sessionId: 'somewhere-else' })) as Record<string, unknown>
-    assert.equal(v.logReadable, false, '读不到就说读不到')
-    assert.equal(v.eventCount, null)
-  })
-})
-
 describe('the turn boundary (docs/03 R4.3: the demo disables 保存 mid-turn)', () => {
   test('turnState answers known+closed for a hosted, finished session', async () => {
     const ops = await boot()
@@ -376,7 +342,7 @@ describe('concurrent saves on one session must not lose an edit (Code Review P1-
 })
 
 describe('the host re-checks what the row may do (Code Review P1-3)', () => {
-  test('an assistant/message row is refused with assistant-immutable, and writes nothing', async () => {
+  test('an assistant/message edit is saved locally for migration and never rewrites the old session log', async () => {
     const ops = await boot()
     const reply = await call(ops, {
       op: 'draft.update',
@@ -384,9 +350,9 @@ describe('the host re-checks what the row may do (Code Review P1-3)', () => {
       seq: 1401,
       edit: { text: '想把助手的回答改掉', reasoning: '', isError: false },
     })
-    assert.equal(code(reply), REDLINE_ERROR.assistantImmutable, JSON.stringify(reply))
-    assert.equal(existsSync(draftPath(ops)), false, '被拒绝的保存一个字都不写')
-    assert.deepEqual(ops.sessionWrites, [])
+    assert.equal(reply.ok, true, JSON.stringify(reply))
+    assert.equal(existsSync(draftPath(ops)), true, '迁移副本写进插件本地草稿')
+    assert.deepEqual(ops.sessionWrites, [], '旧会话日志仍然零写入')
   })
 
   test('a host-protected system/message row is refused with unsupported-type', async () => {

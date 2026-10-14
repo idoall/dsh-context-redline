@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Version and bilingual notes gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+      - name: Require tag to match package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ "$version" != "$tag" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package.json version $version" >&2
+            exit 1
+          fi
+      - name: Require bilingual release notes
+        run: |
+          notes="docs/releases/${GITHUB_REF_NAME}.md"
+          test -f "$notes" || {
+            echo "Missing release notes: $notes" >&2
+            exit 1
+          }
+          grep -q "<h3 id=\"cn-${GITHUB_REF_NAME}\">" "$notes" || {
+            echo "$notes has no Chinese section anchor" >&2
+            exit 1
+          }
+          grep -q "<h3 id=\"en-${GITHUB_REF_NAME}\">" "$notes" || {
+            echo "$notes has no English section anchor" >&2
+            exit 1
+          }
+
+  package:
+    name: Package
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - run: pnpm run test
+      - name: Pack plugin
+        run: |
+          pnpm pack
+          shasum -a 256 *dsh-context-redline-*.tgz > dsh-context-redline-plugin.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin-package
+          path: |
+            *dsh-context-redline-*.tgz
+            dsh-context-redline-plugin.sha256
+          if-no-files-found: error
+
+  publish:
+    name: Publish npm package
+    needs: package
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin-package
+          path: release-assets
+      - name: Publish over npm Trusted Publishing
+        run: |
+          package="$(find "$GITHUB_WORKSPACE/release-assets" -maxdepth 1 -type f -name '*dsh-context-redline-*.tgz' -print -quit)"
+          test -n "$package"
+          version="${GITHUB_REF_NAME#v}"
+          published="$(npm view "dsh-context-redline@$version" version 2>/dev/null || true)"
+          if [ "$published" = "$version" ]; then
+            echo "dsh-context-redline@$version is already published; leaving npm unchanged."
+            exit 0
+          fi
+          # Trusted publishing (OIDC): NODE_AUTH_TOKEN is intentionally unset.
+          npm publish "$package" --access public
+
+  github-release:
+    name: GitHub release
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Create or update the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="docs/releases/${GITHUB_REF_NAME}.md"
+          test -f "$notes" || { echo "Missing release notes: $notes" >&2; exit 1; }
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --title "$GITHUB_REF_NAME" --notes-file "$notes"
+            gh release upload "$GITHUB_REF_NAME" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" --verify-tag \
+              --title "$GITHUB_REF_NAME" --notes-file "$notes"
+          fi

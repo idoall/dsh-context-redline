@@ -1,16 +1,24 @@
 {
   "name": "dsh-context-redline",
   "version": "0.1.0",
-  "description": "上下文批改 (Context Redline) — a DeepSeek Harness plugin to read the context a model will see, edit one item at a time, keep every edit local to the plugin, and carry the edits verbatim into the first message of a new child session. Independent fork of dsh-context (Apache-2.0 portions; provenance in UPSTREAM.md).",
+  "description": "上下文批改 (Context Redline) — review, edit, or delete the context a model will receive; open a zero-history ordinary session with the confirmed content; and return its bound result verbatim to the source session. Independent fork of dsh-context (Apache-2.0 portions; provenance in UPSTREAM.md).",
   "icon": "icon.svg",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/idoall/dsh-context-redline.git"
   },
+  "bugs": {
+    "url": "https://github.com/idoall/dsh-context-redline/issues"
+  },
+  "homepage": "https://github.com/idoall/dsh-context-redline#readme",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "type": "module",
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
-    "dsh": ">=0.2.0-rc.2 <0.3.0"
+    "dsh": ">=0.2.1-alpha.2 <0.3.0"
   },
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -82,11 +90,12 @@
     "zod": "^4.4.3"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.0-rc.2 <0.3.0",
-    "@deepseek-ai/dsh-session": ">=0.2.0-rc.2 <0.3.0",
-    "@deepseek-ai/dsh-settings": ">=0.2.0-rc.2 <0.3.0",
-    "@deepseek-ai/schemastery": "^3.18.4",
+    "@deepseek-ai/cordis": ">=4.0.5-alpha.1 <5.0.0",
+    "@deepseek-ai/dsh-client-ui-primitives": ">=0.2.1-alpha.2 <0.3.0",
+    "@deepseek-ai/dsh-llm": ">=0.2.1-alpha.2 <0.3.0",
+    "@deepseek-ai/dsh-session": ">=0.2.1-alpha.2 <0.3.0",
+    "@deepseek-ai/dsh-settings": ">=0.2.1-alpha.2 <0.3.0",
+    "@deepseek-ai/schemastery": ">=3.18.5-alpha.1 <4.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
@@ -102,16 +111,17 @@
     }
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-client-store": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-client-ui-primitives": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-scope": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-session-projection": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-settings": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-util-code-language": "0.2.0-rc.2",
-    "@deepseek-ai/dsh-util-workspace-path": "0.2.0-rc.2",
-    "@deepseek-ai/schemastery": "^3.18.4",
+    "@deepseek-ai/cordis": "4.0.5-alpha.1",
+    "@deepseek-ai/dsh-client-store": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-llm": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-scope": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-session": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-session-projection": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-settings": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-util-code-language": "0.2.1-alpha.2",
+    "@deepseek-ai/dsh-util-workspace-path": "0.2.1-alpha.2",
+    "@deepseek-ai/schemastery": "3.18.5-alpha.1",
     "@opencode-ai/models": "^0.0.93",
     "@shikijs/langs": "^4.3.1",
     "@stylistic/eslint-plugin": "^5.10.0",

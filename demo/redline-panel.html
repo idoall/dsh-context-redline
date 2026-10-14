@@ -61,6 +61,17 @@
         <span class="rhint" id="modalReasonHint" hidden></span>
         <input type="text" id="modalReason" placeholder="一句话说明为什么这样改" />
       </label>
+      <div class="modal-carrier-options" id="modalCarrierOptions" hidden>
+        <div class="modal-picker-bar">
+          <button type="button" class="modal-picker-trigger" id="modalModel">gpt-5.6-sol <span>⌄</span></button>
+          <i></i>
+          <button type="button" class="modal-picker-trigger" id="modalEffort">模型默认值 <span>⌄</span></button>
+        </div>
+        <label class="modal-final"><span>最终发送全文</span>
+          <span class="rhint">这就是实际写入新会话的完整第一句话，可直接删段或改字。</span>
+          <textarea id="modalFinal" rows="6"></textarea>
+        </label>
+      </div>
     </div>
     <div class="modal-foot">
       <button class="btn ghost" id="modalCancel">取消</button>
@@ -71,6 +82,7 @@
     </div>
   </div>
 </div>
+<div class="modal-picker-menu" id="modalPickerMenu" hidden></div>
 
 <!-- 右下角自测面板：报状态组合 / 该出现的按钮 / 盒子测量 -->
 <div class="selfcheck" id="selfcheck" hidden></div>

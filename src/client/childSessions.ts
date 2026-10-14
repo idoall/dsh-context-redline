@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { planChild, readCapacity, readOrigins, readTurnState, startChild, type ChildPlan, type ChildStarted, type RedlineResult } from './redlineChannel'
+import { planChild, readCapacity, readCarrierModels, readCarriers, readOrigins, readTurnState, startChild, type CarrierModelOption, type ChildPlan, type ChildStarted, type RedlineResult } from './redlineChannel'
 import { viaOf, type OriginRecord, type OriginVia } from '../shared/redline-origins'
 import { REDLINE_ERROR as ERR } from '../shared/redline-errors'
 import { UNKNOWN_CAPACITY, capacityOf, type ChildCapacity } from '../shared/redline-capacity'
@@ -39,6 +39,8 @@ export interface ChildRow {
   readonly live: boolean | null
   /** `true` = its turn has not closed yet (writes are refused there too). */
   readonly open: boolean | null
+  /** Carrier rows declare their source directly; legacy rows fill this from the old origin ledger. */
+  readonly via?: OriginVia | 'ordinary-session' | null
 }
 
 interface CatalogEntryLike {
@@ -82,7 +84,7 @@ export function childRowsOf(raw: unknown): ChildRow[] {
 /** 索引行 + "在这儿开的吗"（台账）。 */
 export interface ChildIndexRow extends ChildRow {
   /** 在这儿开的：走的是官方成员还是裸子会话；`null`/缺省 = 台账里没有这条（不猜是谁开的）。 */
-  readonly via?: OriginVia | null
+  readonly via?: OriginVia | 'ordinary-session' | null
 }
 
 export interface ChildController {
@@ -103,10 +105,17 @@ export interface ChildController {
    * 界面要把它说出来 —— 只说"来源未知"等于把原因吞掉（`docs/11` D54 的教训）。
    */
   readonly originsError: string | null
-  /** Open the confirm box: the five items the host builds for this exact task. */
+  /** Live selectable models; reading them never changes this or the source session. */
+  readonly models: readonly CarrierModelOption[]
+  /** Open the confirm box: the host builds exact default bytes/config for this task. */
   readonly plan: (humanTask: string) => Promise<RedlineResult<ChildPlan>>
   /** The only call in this whole panel that writes a session (`docs/11` D15). */
-  readonly start: (humanTask: string, draftRevision: string) => Promise<RedlineResult<ChildStarted>>
+  readonly start: (
+    humanTask: string,
+    confirmationToken: string,
+    finalText?: string,
+    config?: { provider: string; model: string; reasoningEffort?: string },
+  ) => Promise<RedlineResult<ChildStarted>>
 }
 
 /**
@@ -115,6 +124,35 @@ export interface ChildController {
  * @param sessionId - the child's own session id.
  * @returns `live`/`open`, or `null`s when the read failed (never a guess).
  */
+export function carrierModelsOf(raw: unknown): CarrierModelOption[] {
+  if (!Array.isArray(raw)) return []
+  const models: CarrierModelOption[] = []
+  for (const item of raw) {
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
+    const model = item as Record<string, unknown>
+    if (typeof model.provider !== 'string' || model.provider === '' || typeof model.providerName !== 'string'
+      || typeof model.model !== 'string' || model.model === '' || typeof model.modelName !== 'string'
+      || !Array.isArray(model.efforts)) continue
+    const efforts: { id: string; name: string }[] = []
+    for (const rawEffort of model.efforts) {
+      if (rawEffort === null || typeof rawEffort !== 'object' || Array.isArray(rawEffort)) continue
+      const effort = rawEffort as Record<string, unknown>
+      if (typeof effort.id === 'string' && effort.id !== '' && typeof effort.name === 'string') {
+        efforts.push({ id: effort.id, name: effort.name })
+      }
+    }
+    models.push({
+      provider: model.provider,
+      providerName: model.providerName,
+      model: model.model,
+      modelName: model.modelName,
+      efforts,
+      ...(typeof model.defaultEffort === 'string' ? { defaultEffort: model.defaultEffort } : {}),
+    })
+  }
+  return models
+}
+
 async function probeChild(sessionId: string): Promise<{ live: boolean; open: boolean } | null> {
   const state = await readTurnState(sessionId)
   if (!state.ok) return null
@@ -131,7 +169,39 @@ export function useChildSessions(
   sessionId: string | undefined,
   catalog: unknown,
 ): ChildController {
-  const base = useMemo(() => childRowsOf(catalog), [catalog])
+  const legacy = useMemo(() => childRowsOf(catalog), [catalog])
+  const [carriers, setCarriers] = useState<ChildIndexRow[]>([])
+  const carrierGeneration = useRef(0)
+  const refreshCarriers = useCallback(async (): Promise<void> => {
+    carrierGeneration.current += 1
+    const mine = carrierGeneration.current
+    setCarriers([])
+    if (sessionId === undefined || sessionId === '') return
+    const answer = await readCarriers(sessionId)
+    if (carrierGeneration.current !== mine || !answer.ok) return
+    const payload: unknown = answer.value
+    const rows = payload !== null && typeof payload === 'object' && Array.isArray((payload as { rows?: unknown }).rows)
+      ? (payload as { rows: { id?: unknown; label?: unknown; mode?: unknown; createdAt?: unknown; via?: unknown }[] }).rows
+      : []
+    setCarriers(rows.flatMap((row) => {
+      if (typeof row.id !== 'string' || row.id === '') return []
+      return [{
+        id: row.id,
+        short: row.id.length > 8 ? row.id.slice(-8) : row.id,
+        label: typeof row.label === 'string' ? row.label : '',
+        mode: 'continuable' as const,
+        createdAt: typeof row.createdAt === 'number' ? row.createdAt : 0,
+        via: 'ordinary-session' as const,
+        live: null,
+        open: null,
+      }]
+    }))
+  }, [sessionId])
+  useEffect(() => { void refreshCarriers() }, [refreshCarriers])
+  const base = useMemo(() => {
+    const carrierIds = new Set(carriers.map(row => row.id))
+    return [...carriers, ...legacy.filter(row => !carrierIds.has(row.id))]
+  }, [carriers, legacy])
   const [states, setStates] = useState<Record<string, { live: boolean; open: boolean }>>({})
   const generation = useRef(0)
 
@@ -159,9 +229,10 @@ export function useChildSessions(
   const [origins, setOrigins] = useState<OriginsState>(EMPTY_ORIGINS)
   const originsGeneration = useRef(0)
   useEffect(() => {
-    if (sessionId === undefined || sessionId === '') return
     originsGeneration.current += 1
     const mine = originsGeneration.current
+    setOrigins(EMPTY_ORIGINS)
+    if (sessionId === undefined || sessionId === '') return
     void (async () => {
       const answer = await readOrigins(sessionId)
       if (originsGeneration.current !== mine) return
@@ -176,7 +247,11 @@ export function useChildSessions(
   }, [sessionId])
 
   const rows = useMemo(
-    () => base.map(row => ({ ...row, ...(states[row.id] ?? { live: null, open: null }), via: viaOf(origins.records, row.id) })),
+    () => base.map(row => ({
+      ...row,
+      ...(states[row.id] ?? { live: null, open: null }),
+      via: row.via === 'ordinary-session' ? row.via : viaOf(origins.records, row.id),
+    })),
     [base, states, origins],
   )
 
@@ -197,6 +272,15 @@ export function useChildSessions(
     })()
   }, [])
 
+  const [models, setModels] = useState<readonly CarrierModelOption[]>([])
+  useEffect(() => {
+    void (async () => {
+      const answer = await readCarrierModels()
+      if (!answer.ok) return
+      setModels(carrierModelsOf((answer.value as { models?: unknown }).models))
+    })()
+  }, [])
+
   const plan = useCallback(async (humanTask: string): Promise<RedlineResult<ChildPlan>> => {
     if (sessionId === undefined || sessionId === '') {
       return { ok: false, code: 'redline/not-live', message: 'no session' }
@@ -204,15 +288,22 @@ export function useChildSessions(
     return await planChild(sessionId, humanTask)
   }, [sessionId])
 
-  const start = useCallback(async (humanTask: string, draftRevision: string): Promise<RedlineResult<ChildStarted>> => {
+  const start = useCallback(async (
+    humanTask: string,
+    confirmationToken: string,
+    finalText?: string,
+    config?: { provider: string; model: string; reasoningEffort?: string },
+  ): Promise<RedlineResult<ChildStarted>> => {
     if (sessionId === undefined || sessionId === '') {
       return { ok: false, code: 'redline/not-live', message: 'no session' }
     }
-    return await startChild(sessionId, humanTask, draftRevision)
-  }, [sessionId])
+    const answer = await startChild(sessionId, humanTask, confirmationToken, finalText, config)
+    if (answer.ok) await refreshCarriers()
+    return answer
+  }, [refreshCarriers, sessionId])
 
   return useMemo(
-    () => ({ rows, capacity, originsKnown: origins.known, originsError: origins.error, plan, start }),
-    [rows, capacity, origins.known, origins.error, plan, start],
+    () => ({ rows, capacity, originsKnown: origins.known, originsError: origins.error, models, plan, start }),
+    [rows, capacity, origins.known, origins.error, models, plan, start],
   )
 }

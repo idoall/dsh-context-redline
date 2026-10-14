@@ -48,6 +48,8 @@
 .redline-br-body { border-top: 1px solid var(--dsw-alias-border-l1); padding: 4px 6px; display: flex; flex-direction: column; gap: 2px; }
 .redline-br-elem { border-radius: 6px; }
 .redline-br-elem-on { background: var(--dsw-alias-interactive-bg-active); }
+/* 已删除（`docs/03` R4.8）：删除线画在**当前生效的正文**上 —— 预览渲染的就是它（有改稿时是改稿）。 */
+.redline-br-elem-deleted .redline-br-preview { text-decoration: line-through; opacity: .72; }
 .redline-br-elem-row { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; padding: 5px 6px; cursor: pointer; text-align: left; border-radius: 6px; transition: background-color var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out); }
 /* Failed tool result: the chat's red run-state dot (6px core on a 10px
  halo) leads the collapsed row, so the failure scans without expanding. */

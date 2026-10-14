@@ -202,7 +202,7 @@ describe('① the only row action is 编辑', () => {
     const bar = actionsIn(m, 11)
     assert.ok(bar !== null, 'the row carries an action bar')
     const buttons = queryAll(bar, 'button').map(b => b.textContent)
-    assert.deepEqual(buttons, [DICT_EN['redline.edit'], DICT_EN['redline.exclude']], '编辑 + 标记为不要（后者 2026-10-08 新增）')
+    assert.deepEqual(buttons, [DICT_EN['redline.edit'], DICT_EN['redline.exclude']], '编辑 + 删除')
     assert.equal(text(bar).includes(DICT_EN['redline.local']), false, 'no marker before a save')
     await m.unmount()
   })
@@ -214,16 +214,13 @@ describe('① the only row action is 编辑', () => {
   // `makeRedlineActions` returns null for them). Reaching them here would mean
   // standing up a header-epoch fetch for no extra signal.
 
-  // 2026-10-08（用户选 A）：助手消息**改不了，但可以「标记为不要」** —— 那是它唯一的处置手段。
-  test('an assistant message states WHY, offers no edit, and offers 「标记为不要」', async () => {
+  test('an assistant message offers 编辑 + 删除 because migration does not rewrite the old log', async () => {
     const m = await mountBrowser(step([node({ seq: 21, cat: 'assistant', text: 'reply' })]), controller())
     await openCategory(m, 5) // CATS order: system, tools, user, inject, skill, assistant, tool
     const bar = actionsIn(m, 21)
     assert.ok(bar !== null)
-    const buttons = queryAll(bar, 'button')
-    assert.equal(buttons.length, 1, '助手消息只给一个动作')
-    assert.equal(text(buttons[0]), DICT_EN['redline.exclude'], '而且只能是「标记为不要」')
-    assert.ok(text(bar).includes(DICT_EN['redline.reason.assistant']), '为什么没有「编辑」仍要说清')
+    assert.deepEqual(queryAll(bar, 'button').map(button => text(button)), [DICT_EN['redline.edit'], DICT_EN['redline.exclude']])
+    assert.equal(text(bar).includes(DICT_EN['redline.reason.assistant']), false)
     await m.unmount()
   })
 
@@ -405,21 +402,40 @@ describe('④ the tool-result action hides behind the advanced switch', () => {
   })
 })
 
-// ── 「标记为不要」的界面态（`docs/11` D65，用户 2026-10-08 选 A）─────────────────
-describe('⑤ 标记为不要：标记态、取消、以及与编辑互斥', () => {
-  test('标了之后：行上是「已标为不要」，动作只剩「取消标记」（没有编辑）', async () => {
-    const table = { 11: { seq: 11, text: '', reasoning: '', isError: false, updatedAt: '', excluded: true } }
+// ── 「删除」的界面态（`docs/03` R4.8，2026-10-09）───────────────────────────────
+// 旧口径是"标记为不要 + 与编辑互斥"（标了就清掉改稿）；R4.8 取消互斥、并把删除态与改稿分开存。
+// 这里按四态锁界面：已删除原文（只有标记）/ 已删除编辑稿（标记 + 改稿，仍给「丢弃这条改动」）。
+describe('⑤ 删除：删除态、取消删除、以及删除后仍能丢弃改动', () => {
+  test('已删除原文：行上是「已删除」+ 删除线，动作只剩「取消删除」', async () => {
+    const table = { 11: { seq: 11, text: '', reasoning: '', isError: false, updatedAt: '', deleted: true } }
     const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'hello' })]), controller({ table }))
     await openCategory(m, 2)
     const bar = actionsIn(m, 11)
     assert.ok(bar !== null, 'the row carries an action bar')
-    assert.ok(text(bar).includes(DICT_EN['redline.excluded']), '行上写明已作废')
-    assert.deepEqual(queryAll(bar, 'button').map(b => b.textContent), [DICT_EN['redline.unexclude']], '只剩取消标记')
-    assert.equal(text(bar).includes(DICT_EN['redline.local']), false, '标记不是「已改（本地）」')
+    assert.ok(text(bar).includes(DICT_EN['redline.excluded']), '行上写明已删除')
+    assert.deepEqual(queryAll(bar, 'button').map(b => b.textContent), [DICT_EN['redline.unexclude']], '只剩取消删除')
+    assert.equal(text(bar).includes(DICT_EN['redline.local']), false, '没有改稿就不显示「已改（本地）」')
+    assert.equal(queryAll(m.container, '.redline-br-elem-deleted').length, 1, '删除线画在这一行上')
     await m.unmount()
   })
 
-  test('点「标记为不要」调一次宿主 op（seq 与 on 都要对）', async () => {
+  test('已删除编辑稿：改稿仍在行上，动作是「取消删除 + 丢弃这条改动」（互斥已作废）', async () => {
+    const table = { 11: { seq: 11, text: '我改过的正文', reasoning: '', isError: false, updatedAt: '', deleted: true } }
+    const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'hello' })]), controller({ table }))
+    await openCategory(m, 2)
+    const bar = actionsIn(m, 11)
+    assert.ok(bar !== null)
+    assert.ok(text(bar).includes(DICT_EN['redline.excluded']), '删除标记还在')
+    assert.ok(text(bar).includes(DICT_EN['redline.local']), '改稿也还在（R4.8：两个字段独立存储）')
+    assert.deepEqual(
+      queryAll(bar, 'button').map(b => b.textContent),
+      [DICT_EN['redline.unexclude'], DICT_EN['redline.drop']],
+      '取消删除 + 丢弃这条改动',
+    )
+    await m.unmount()
+  })
+
+  test('点「删除」调一次宿主 op（seq 与 on 都要对）', async () => {
     const calls: [number, boolean][] = []
     const m = await mountBrowser(step([node({ seq: 11, cat: 'user', text: 'x' })]),
       controller({ exclude: (seq, on) => { calls.push([seq, on]); return Promise.resolve(true) } }))
@@ -429,13 +445,13 @@ describe('⑤ 标记为不要：标记态、取消、以及与编辑互斥', () 
     const excludeBtn = queryAll(bar, 'button').find(b => (b.textContent ?? '') === DICT_EN['redline.exclude'])
     assert.ok(excludeBtn !== undefined)
     await act(async () => { excludeBtn.click() })
-    assert.deepEqual(calls, [[11, true]], '标为不要 = exclude(11, true)')
+    assert.deepEqual(calls, [[11, true]], '删除 = exclude(11, true)')
     await m.unmount()
   })
 })
 
 // ── 拒绝必须说出来（docs/03 R3.5）─────────────────────────────────────────────
-// 真机踩到：`标记为不要` 在没有编辑器打开时被宿主拒绝（例如运行中的宿主还不认识这个新 op
+// 真机踩到：`删除` 在没有编辑器打开时被宿主拒绝（例如运行中的宿主还不认识这个新 op
 // ⟹ redline/unknown-op），界面**什么都不显示** —— 那就是静默失败。
 describe('⑥ 行内动作被拒时要说话（没有编辑器也要说）', () => {
   test('exclude 被拒：那一行上出现拒绝原因（不吞掉）', async () => {

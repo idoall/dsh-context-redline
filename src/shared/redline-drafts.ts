@@ -49,12 +49,24 @@ export interface LocalEdit {
   readonly cat?: string
   readonly name?: string
   /**
-   * 「标记为不要」：这条**作废**，开启子会话时在首条任务里逐字声明不使用它。
-   * 与「编辑」**互斥**（同一条记录只有一份，标了就清掉改动，改了就把标记清掉）。
-   * ⚠️ 平台只有 append/replace，**没有 delete**；fork 的种子也排除不掉某一条
-   * （`docs/01` F38）⟹ 这是"删除"在本产品里唯一诚实的表达（用户 2026-10-08 选 A）。
+   * 「删除」标记（`docs/03` R4.8 / `docs/13` §7）：这一条**不写进新会话**。
+   *
+   * ⚠️ 与编辑正文**独立存储** —— 删一条**不清空**它的编辑稿，取消删除要能原样恢复整条记录。
+   * 旧实现（`excluded`）是"整条覆盖 + 清空正文"，那种互斥语义**已作废**。
+   */
+  readonly deleted?: boolean
+  /**
+   * 旧名字的**兼容镜像**：与 `deleted` 同写同清（历史草稿与尚未改名的调用方仍按这个字段名过滤）。
+   * ⚠️ 不是"废弃 API"的注解写法 —— 命名空间契约的 lint 禁止仓库内**使用**被标 `@deprecated` 的成员，
+   * 而这个镜像在被调用方改名（归 C3/C6）之前必须在本文件里读写。退役时把两处一起删。
    */
   readonly excluded?: boolean
+  /**
+   * 旧实现**先清空正文**再写删除标记 ⟹ 那条"删除前的编辑"已经不可能恢复。
+   * 迁移时如实置位，让界面能说"这条旧标记无法恢复删除前的编辑"（R4.8 硬要求 5），
+   * 而不是伪造一份正文、也不是静默丢掉标记。用户重新编辑后此位清除。
+   */
+  readonly legacyBodyLost?: true
 }
 
 /** All local edits of one session, keyed by `String(seq)`. */
@@ -74,19 +86,87 @@ export interface SurfaceRowText {
  * ends up with a case it cannot map.
  */
 /**
- * 把某一行标为「不要」。**整条覆盖**该行的本地记录 ⟹ 与该行的本地改动天然互斥。
- * 只写我们自己这份表；当前会话一个字都不写（硬约束，`docs/11` D15）。
+ * 一条记录是否**带编辑正文**。
+ *
+ * 判据用"正文或思考文本非空"，而不是另加一个布尔字段：保存路径的 `checkChange` 会拒绝
+ * `text === '' && reasoning === ''`（`empty-content`），所以**能存下来的编辑一定有正文**，
+ * 而"空正文"只能来自删除墓碑。这样"已删除原文 / 已删除编辑稿"两态天然可分。
  */
-export function putExcluded(table: DraftTable, seq: number, updatedAt: string): DraftTable {
+export function hasEditBody(edit: LocalEdit): boolean {
+  return edit.text !== '' || edit.reasoning !== ''
+}
+
+/** 按固定字段顺序重建一条记录（保证序列化与 revision 稳定，不带上游对象的键序）。 */
+function withMarks(entry: LocalEdit, deleted: boolean, legacyBodyLost: boolean): LocalEdit {
   return {
-    ...table,
-    [String(seq)]: { seq, text: '', reasoning: '', isError: false, updatedAt, excluded: true },
+    seq: entry.seq,
+    text: entry.text,
+    reasoning: entry.reasoning,
+    isError: entry.isError,
+    updatedAt: entry.updatedAt,
+    ...entry.cat === undefined ? {} : { cat: entry.cat },
+    ...entry.name === undefined ? {} : { name: entry.name },
+    ...deleted ? { deleted: true, excluded: true } : {},
+    ...legacyBodyLost ? { legacyBodyLost: true } : {},
   }
 }
 
-/** 被标为「不要」的 seq，升序（带入首条任务时按这个顺序列）。 */
+/**
+ * 把某一行标为**删除**：这一条不写进新会话（`docs/03` R4.8 / `docs/13` §7）。
+ *
+ * ⚠️ **保留**该行已有的编辑正文与显示元数据 —— 取消删除要能原样恢复整条记录。
+ * 只写我们自己这份表；当前会话一个字都不写（硬约束，`docs/11` D15）。
+ */
+export function putDeleted(table: DraftTable, seq: number, updatedAt: string): DraftTable {
+  const key = String(seq)
+  // `Readonly<Record<string, LocalEdit>>` 把索引类型成 `LocalEdit`（不是 `| undefined`）⟹ 只能
+  // 用 `Object.hasOwn` 问"到底有没有这条"，`=== undefined` 会既骗读者又被 lint 抓（同 dropEdit 的口径）。
+  const existing: LocalEdit | undefined = Object.hasOwn(table, key) ? table[key] : undefined
+  const base: LocalEdit = existing ?? { seq, text: '', reasoning: '', isError: false, updatedAt }
+  return { ...table, [key]: withMarks(base, true, existing?.legacyBodyLost === true) }
+}
+
+/**
+ * 取消删除：**回到删除之前的状态**（R4.8 关键转换）。
+ * 有编辑正文 ⟹ 回到"已编辑"（正文原样）；没有正文 ⟹ 回到"原文"（整条记录去掉）。
+ */
+export function unmarkDeleted(table: DraftTable, seq: number): DraftTable {
+  const key = String(seq)
+  if (!Object.hasOwn(table, key)) return table
+  const existing = table[key]
+  if (!hasEditBody(existing)) {
+    // 没有正文可留 ⟹ 就是"原文"。
+    return Object.fromEntries(Object.entries(table).filter(([k]) => k !== key))
+  }
+  return { ...table, [key]: withMarks(existing, false, false) }
+}
+
+/** 被删除的 seq，升序。 */
+export function deletedSeqsOf(table: DraftTable): number[] {
+  return Object.values(table).filter(entry => isDeleted(table, entry.seq)).map(entry => entry.seq).sort((a, b) => a - b)
+}
+
+/** Whether a row carries the delete mark (`deleted`, or the compat mirror `excluded`). */
+export function isDeleted(table: DraftTable, seq: number): boolean {
+  const key = String(seq)
+  if (!Object.hasOwn(table, key)) return false
+  const entry = table[key]
+  return entry.deleted === true || entry.excluded === true
+}
+
+/**
+ * 旧名字（`putExcluded`）。语义**已改变**：不再清空正文（R4.8 硬要求 3 作废了互斥）。
+ * 委托给 `putDeleted`；调用方改名归 C3/C6。
+ * ⚠️ 不写 `@deprecated` 注解：lint 会因此拒绝任何**使用**它的调用方，而唯一剩下的使用者是
+ * 尚未获准改动的那几个文件。退役时连名字一起删。
+ */
+export function putExcluded(table: DraftTable, seq: number, updatedAt: string): DraftTable {
+  return putDeleted(table, seq, updatedAt)
+}
+
+/** 旧名字（`deletedSeqsOf`）——同一口径的委托；宿主已改用新名字，退役归 C3/C6。 */
 export function excludedSeqsOf(table: DraftTable): number[] {
-  return Object.values(table).filter(entry => entry.excluded === true).map(entry => entry.seq).sort((a, b) => a - b)
+  return deletedSeqsOf(table)
 }
 
 export type ChangeRefusal = typeof REDLINE_ERROR.emptyContent | typeof REDLINE_ERROR.noChange
@@ -128,15 +208,18 @@ export { REDLINE_DATA_DIR_NAME }
 /** The edit for a row, if any. */
 export function editOf(table: DraftTable, seq: number): LocalEdit | undefined {
   const entry = Object.values(table).find(candidate => candidate.seq === seq)
-  // ⚠️ 标为「不要」的那条**不是编辑**：它没有改后的正文，只有一个作废标记。
-  // 若把它当编辑返回，`effectiveText` 会给出空串 —— 行会渲染成空白（真机必现）。
-  // 互斥语义也因此只在一个方向需要额外处理：putEdit 整条覆盖，标记自动消失。
-  return entry === undefined || entry.excluded ? undefined : entry
+  // ⚠️ 判据是"**有没有编辑正文**"，不是"有没有删除标记"（`docs/03` R4.8）：
+  //   · 删除墓碑（没有正文）不是编辑 —— 若当成编辑返回，`effectiveText` 会给出空串，行渲染成空白；
+  //   · 「已删除编辑稿」（有正文 + 有删除标记）**是**编辑 —— 取消删除后要原样恢复它。
+  return entry === undefined || !hasEditBody(entry) ? undefined : entry
 }
 
-/** Whether a row is marked 「不要」(a tombstone, not an edit). */
+/**
+ * 旧名字（`isDeleted`）——同一口径，含 `deleted` 与兼容镜像字段。
+ * 客户端 `browser.tsx` 还在用它（那个文件不在本卡允许改清单里）⟹ 退役归 C3/C6。
+ */
 export function isExcluded(table: DraftTable, seq: number): boolean {
-  return table[String(seq)]?.excluded === true
+  return isDeleted(table, seq)
 }
 
 /** Whether a row carries a local edit. */
@@ -144,17 +227,32 @@ export function hasLocalEdit(table: DraftTable, seq: number): boolean {
   return editOf(table, seq) !== undefined
 }
 
-/** Insert or OVERWRITE the edit for one row. One row, one edit — never two. */
+/**
+ * Insert or OVERWRITE the edit for one row. One row, one edit — never two.
+ *
+ * ⚠️ 覆盖**不解除删除标记**（`docs/03` R4.8 硬要求 3：互斥已作废）⟹ 编辑一条已删除的行
+ * 得到的仍是"已删除编辑稿"。同时清掉 `legacyBodyLost`：用户给了新正文，那条"旧编辑已丢失"
+ * 的提示不再适用（继续显示会说假话）。
+ */
 export function putEdit(table: DraftTable, edit: LocalEdit): DraftTable {
-  return { ...table, [String(edit.seq)]: edit }
+  const key = String(edit.seq)
+  if (!Object.hasOwn(table, key) || !isDeleted(table, edit.seq)) {
+    return { ...table, [key]: edit }
+  }
+  return { ...table, [key]: withMarks(edit, true, false) }
 }
 
-/** Forget one row's edit. Dropping a row that has none is a no-op. */
+/** Forget one row's edit — but a **deleted** row keeps its tombstone (R4.8). */
 export function dropEdit(table: DraftTable, seq: number): DraftTable {
   const key = String(seq)
   // Existence, not value: a `Record<string, T>` indexes as `T`, so `=== undefined`
   // is both a lie to the reader and a lint error. `Object.hasOwn` is the honest check.
   if (!Object.hasOwn(table, key)) return table
+  const existing = table[key]
+  if (isDeleted(table, seq)) {
+    // 「已删除编辑稿 ──丢弃这条改动──▶ 已删除原文」：只清正文，**保持删除态**。
+    return { ...table, [key]: withMarks({ ...existing, text: '', reasoning: '', isError: false }, true, false) }
+  }
   // Built immutably (no `delete` on a computed key), so callers can diff by identity.
   return Object.fromEntries(Object.entries(table).filter(([k]) => k !== key))
 }
@@ -283,17 +381,24 @@ export function parseDrafts(raw: string | null | undefined, expectedSessionId?: 
     if (edit.excluded !== undefined && typeof edit.excluded !== 'boolean') {
       return { ok: false, code: REDLINE_ERROR.draftCorrupt, message: `draft #${edit.seq} has a non-boolean excluded` }
     }
-    table[String(edit.seq)] = {
-      seq: edit.seq,
-      text: edit.text,
-      reasoning: edit.reasoning,
-      isError: edit.isError,
-      updatedAt: typeof edit.updatedAt === 'string' ? edit.updatedAt : '',
-      ...(typeof edit.cat === 'string' ? { cat: edit.cat } : {}),
-      ...(typeof edit.name === 'string' ? { name: edit.name } : {}),
-      // 上面已经校验过类型 ⟹ 这里只做取值。
-      ...(edit.excluded ? { excluded: true } : {}),
+    if (edit.deleted !== undefined && typeof edit.deleted !== 'boolean') {
+      return { ok: false, code: REDLINE_ERROR.draftCorrupt, message: `draft #${edit.seq} has a non-boolean deleted` }
     }
+    // 旧实现**先清空正文**才写 `excluded`（没有 `deleted` 字段）⟹ 那条"删除前的编辑"已经不可能恢复。
+    // 迁移到 `deleted` 的同时如实置 `legacyBodyLost`：标记不丢、也不伪造正文（R4.8 硬要求 5）。
+    const legacyOnly = edit.deleted === undefined && edit.excluded === true
+    const deleted = edit.deleted === true || edit.excluded === true
+    const body = { seq: edit.seq, text: edit.text, reasoning: edit.reasoning, isError: edit.isError }
+    table[String(edit.seq)] = withMarks(
+      {
+        ...body,
+        updatedAt: typeof edit.updatedAt === 'string' ? edit.updatedAt : '',
+        ...(typeof edit.cat === 'string' ? { cat: edit.cat } : {}),
+        ...(typeof edit.name === 'string' ? { name: edit.name } : {}),
+      },
+      deleted,
+      legacyOnly && !hasEditBody({ ...body, updatedAt: '', seq: edit.seq }),
+    )
   }
   return { ok: true, table }
 }
