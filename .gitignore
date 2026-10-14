@@ -1,4 +1,9 @@
 node_modules/
+# The version-probe host fixtures deliberately contain node_modules trees that
+# Node resolution must see. Without this exception a clean clone has no fixture
+# manifests and the probe walks up into the repository's real dependencies, so
+# tests/host only passed on trees where those files happened to exist locally.
+!tests/host/fixtures/**/node_modules/
 lib/
 *.tsbuildinfo
 *.tgz
