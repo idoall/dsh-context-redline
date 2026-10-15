@@ -30,10 +30,12 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
  */
 export const REQUIRED_GATES = [
   { gate: 'check-docs', why: '当前文档完整、本地链接有效、历史设计档案清零' },
+  { gate: 'workflow-contract', why: 'CI/Release 固定 SHA、最小权限、OIDC、哈希、SBOM 与并发规则' },
   { gate: 'namespace-contract', why: '命名空间契约 11 个面（与参考插件并存的机械保障）' },
   { gate: 'tsc', why: '类型检查（exit 0 是底线，含 tests/**）' },
   { gate: 'oxlint', why: '风格与类型感知规则（必须 0 error）' },
   { gate: 'tsdown', why: '构建 lib/（宿主半边 + 客户端半边）' },
+  { gate: 'package-contract', why: 'npm tarball 精确白名单、元数据、入口与 bundle 身份' },
   { gate: 'lanes', why: '4 个自有门禁 lane（edit / channel / client-logic / client-ui）' },
   { gate: 'suite', why: '全量 vitest（含上游 lane，防止我改坏复制基线）' },
   { gate: 'css-closure', why: 'CSS 闭包：我们的样式出不去、别人的样式删了也影响不到我们（用户 2026-10-05）' },
@@ -51,10 +53,12 @@ export const REQUIRED_GATES = [
 export function planSteps(opts = {}) {
   const steps = [
     { label: '当前文档完整性', gate: 'check-docs', command: 'node scripts/check-docs.mjs', expect: '文档一致性检查通过' },
+    { label: '工作流供应链契约', gate: 'workflow-contract', command: 'node scripts/check-workflows.mjs', expect: 'workflow security contract passed' },
     { label: '命名空间契约', gate: 'namespace-contract', command: 'node scripts/namespace-contract.mjs', expect: '命名空间契约检查通过' },
     { label: '类型检查', gate: 'tsc', command: './node_modules/.bin/tsc --noEmit', expect: '__NO_OUTPUT__' },
     { label: '风格/类型感知', gate: 'oxlint', command: './node_modules/.bin/oxlint', expect: 'Found 0 warnings and 0 errors.' },
     { label: '构建', gate: 'tsdown', command: './node_modules/.bin/tsdown', expect: '__NO_OUTPUT__' },
+    { label: 'npm 包精确契约', gate: 'package-contract', command: 'node scripts/check-package.mjs', expect: 'npm package contract passed' },
     {
       label: '门禁 lane ×4',
       gate: 'lanes',

@@ -7,13 +7,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   version:
     name: Version and bilingual notes gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24.15.0
       - name: Require tag to match package.json
@@ -41,31 +45,58 @@ jobs:
           }
 
   package:
-    name: Package
+    name: Build and verify package
     needs: version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         with:
           version: 10.33.1
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24.15.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm run lint
       - run: pnpm run build
-      - run: pnpm run test
-      - name: Pack plugin
+      - run: ./node_modules/.bin/vitest run
+      - run: node scripts/check-docs.mjs
+      - run: node scripts/namespace-contract.mjs
+      - run: node scripts/css-closure.mjs
+      - run: node scripts/i18n-orphans.mjs
+      - run: node scripts/check-workflows.mjs
+      - run: node scripts/check-release-ready.mjs
+      - name: Pack or adopt the immutable npm artifact
         run: |
-          pnpm pack
-          shasum -a 256 *dsh-context-redline-*.tgz > dsh-context-redline-plugin.sha256
-      - uses: actions/upload-artifact@v4
+          version="$(node -p "require('./package.json').version")"
+          published="$(npm view "dsh-context-redline@$version" version 2>/dev/null || true)"
+          rm -f dsh-context-redline-*.tgz
+          if [ "$published" = "$version" ]; then
+            # A published npm version is immutable. Download that exact registry
+            # tarball so the GitHub Release cannot attach different bytes under
+            # the same package/version identity.
+            npm pack "dsh-context-redline@$version" --pack-destination .
+          else
+            pnpm pack
+          fi
+          package="$(find . -maxdepth 1 -type f -name 'dsh-context-redline-*.tgz' -print -quit)"
+          test -n "$package" && test -f "$package"
+          node scripts/check-package.mjs "$package"
+          sha256sum "$package" > dsh-context-redline-plugin.sha256
+          sha256sum -c dsh-context-redline-plugin.sha256
+      - name: Generate CycloneDX SBOM
+        run: |
+          npm sbom --sbom-format cyclonedx --omit dev > dsh-context-redline-sbom.cdx.json
+          node -e "const s=require('./dsh-context-redline-sbom.cdx.json'); if(s.bomFormat!=='CycloneDX'||s.metadata?.component?.name!=='dsh-context-redline'||s.metadata?.component?.version!==require('./package.json').version) process.exit(1)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: plugin-package
           path: |
             *dsh-context-redline-*.tgz
             dsh-context-redline-plugin.sha256
+            dsh-context-redline-sbom.cdx.json
           if-no-files-found: error
 
   publish:
@@ -76,15 +107,18 @@ jobs:
       id-token: write
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24.15.0
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: plugin-package
           path: release-assets
+      - name: Verify artifact checksum
+        working-directory: release-assets
+        run: sha256sum -c dsh-context-redline-plugin.sha256
       - name: Publish over npm Trusted Publishing
         run: |
           package="$(find "$GITHUB_WORKSPACE/release-assets" -maxdepth 1 -type f -name '*dsh-context-redline-*.tgz' -print -quit)"
@@ -108,11 +142,14 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: release-assets
           merge-multiple: true
+      - name: Verify artifact checksum
+        working-directory: release-assets
+        run: sha256sum -c dsh-context-redline-plugin.sha256
       - name: Create or update the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

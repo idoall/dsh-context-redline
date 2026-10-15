@@ -49,9 +49,11 @@ pnpm install
 ./node_modules/.bin/vitest run --project edit --project channel --project client-logic --project client-ui
 ./node_modules/.bin/vitest run
 node scripts/check-docs.mjs
+node scripts/check-workflows.mjs
 node scripts/namespace-contract.mjs
 node scripts/css-closure.mjs
 node scripts/i18n-orphans.mjs
+node scripts/check-package.mjs
 node demo/check-static.mjs
 node demo/check-runtime.mjs
 node scripts/check-release-ready.mjs
