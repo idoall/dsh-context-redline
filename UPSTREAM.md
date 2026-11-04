@@ -62,6 +62,14 @@ The Client UI was substantially changed:
 
 New Host modules under `src/host/redline-*` and pure modules under `src/redline` / `src/shared/redline-*` implement source capture, manifests, strict ledgers, ordinary-session control, result attribution, recovery and return delivery.
 
+### DSH 0.2.2 compatibility (0.1.1, 2026-11-04)
+
+- Await Host projection registration and retain a ready handle for detail reads.
+- Read the Agent's current Session-local model selection for carrier previews and recovery validation, and the recorded preset selection; do not modify source selections.
+- Preserve direct tool-result message content and error metadata in the Client history mapper, alongside legacy wrapped results.
+- Raise the supported baseline to DSH 0.2.2-rc.1 / Node.js 24.9 and synchronize release metadata and dependency contracts.
+- Keep unpublished diagnostics and carrier-seed experiments outside this maintenance release.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

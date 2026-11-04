@@ -31,6 +31,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import { currentModelSelection, type RedlineModelAgent } from './redline-model-selection'
 import { REDLINE_ERROR, REDLINE_ERROR_MESSAGE, isRedlineErrorCode } from '../shared/redline-errors'
 import {
   REDLINE_CHANNEL_ROUTE,
@@ -472,7 +473,7 @@ const excludeDraft: RedlineOpHandler = async ({ ctx, call }) => {
   })
 }
 
-interface CarrierSourceAgentFace {
+interface CarrierSourceAgentFace extends RedlineModelAgent {
   readonly options?: { readonly provider?: string; readonly model?: string; readonly reasoningEffort?: string; readonly maxTokens?: number }
   readonly session?: { readonly header?: { readonly cwd?: string; readonly agentPreset?: string } }
   readonly ctx?: Context
@@ -532,16 +533,24 @@ function fixedCarrierIds(operationId: string) {
 }
 
 function confirmedConfigOf(ctx: Context, agent: CarrierSourceAgentFace): CarrierConfirmedConfig | null {
-  const provider = agent.options?.provider
-  const model = agent.options?.model
-  const presets = ctx.get('agentPresets') as { composedPreset?(agentCtx: Context): string | undefined } | undefined
-  const preset = agent.session?.header?.agentPreset ?? (agent.ctx === undefined ? undefined : presets?.composedPreset?.(agent.ctx))
-  if (provider === undefined || model === undefined || preset === undefined) return null
+  const selection = currentModelSelection(agent)
+  const provider = selection?.provider
+  const model = selection?.model
+  const presets = ctx.get('agentPresets') as {
+    presetForSession?(session: unknown): string | null
+    composedPreset?(agentCtx: Context): string | undefined
+  } | undefined
+  const preset = typeof presets?.presetForSession === 'function' && agent.session !== undefined
+    ? presets.presetForSession(agent.session)
+    : agent.ctx !== undefined && typeof presets?.composedPreset === 'function'
+      ? presets.composedPreset(agent.ctx)
+      : agent.session?.header?.agentPreset
+  if (provider === undefined || model === undefined || preset === undefined || preset === null) return null
   return {
     agentPreset: preset,
     provider,
     model,
-    reasoningEffort: agent.options?.reasoningEffort ?? 'not-specified',
+    reasoningEffort: selection?.reasoningEffort ?? 'not-specified',
     inheritedFrom: 'source-session-explicit-config',
   }
 }

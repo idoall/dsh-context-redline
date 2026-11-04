@@ -166,15 +166,22 @@ export function pageNodesOf(entries: readonly unknown[]): Map<number, Conversati
       const first = Array.isArray(message?.content) ? (message.content as unknown[])[0] : undefined
       const block = first !== null && typeof first === 'object' ? first as Record<string, unknown> : null
       const callId = typeof source?.callId === 'string' ? source.callId
-        : typeof block?.toolCallId === 'string' ? block.toolCallId
-          : null
+        : typeof message?.toolCallId === 'string' ? message.toolCallId
+          : typeof block?.toolCallId === 'string' ? block.toolCallId
+            : null
       const call = callId !== null ? calls.get(callId) ?? null : null
       nodes.set(seq, {
         kind: 'tool-result',
         seq,
         call,
-        content: block !== null && Array.isArray(block.content) ? block.content as readonly unknown[] : [],
-        isError: block?.isError === true || data.error === true,
+        // Current DSH stores tool output directly on the message. Historical
+        // logs may still wrap it in one tool-result block; preserve both.
+        content: message?.role === 'tool'
+          ? Array.isArray(message.content) ? message.content as readonly unknown[] : []
+          : block !== null && Array.isArray(block.content) ? block.content as readonly unknown[]
+            : Array.isArray(message?.content) ? message.content as readonly unknown[] : [],
+        isError: message?.isError === true || block?.isError === true || data.error === true
+          || (data.error !== null && typeof data.error === 'object'),
       })
       continue
     }

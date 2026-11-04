@@ -36,8 +36,9 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import type { FoldBounds } from './config'
-import { applyTimeline, buildTimelineDetail, createTimelineState } from './fold'
+import { applyTimeline, buildTimelineDetail, createTimelineState, type TimelineState } from './fold'
 
 /** The plugin's detail route, under the authenticated `/api` fence. */
 export const DETAIL_ROUTE = '/api/dsh-context-redline/detail'
@@ -90,7 +91,11 @@ function failure(code: string, message: string): Response {
  * registration rides the injected fiber: either service unloading withdraws
  * the route and closes the gate.
  */
-export function watchDetailChannel(ctx: Context, bounds: FoldBounds): DetailChannelGate {
+export function watchDetailChannel(
+  ctx: Context,
+  bounds: FoldBounds,
+  timeline: Pick<ProjectionHandle<TimelineState | undefined>, 'stateOf'>,
+): DetailChannelGate {
   const gate = { live: false }
   ctx.inject(['connection', 'sessions'], (c) => {
     const connection = c.get('connection') as ConnectionHostFace | undefined
@@ -101,7 +106,6 @@ export function watchDetailChannel(ctx: Context, bounds: FoldBounds): DetailChan
       : undefined
     const getSession = typeof sessions?.get === 'function' ? sessions.get.bind(sessions) : undefined
     if (register === undefined || getSession === undefined) return
-    const projections = ctx.sessionProjections
 
     const handler = async (request: Request): Promise<Response> => {
       let sessionId: unknown
@@ -122,7 +126,7 @@ export function watchDetailChannel(ctx: Context, bounds: FoldBounds): DetailChan
           // Live (attached) session: read the registry's CURRENT fold state —
           // no second fold. `stateOf` materializes the cell at the session
           // cursor (no-op when the drive is current); never mutate the result.
-          const state = projections.stateOf(session as never, 'redlineTimeline')
+          const state = timeline.stateOf(session as never)
           // The unit is absent only in the baseline-gated composition, which never
           // installs this route — a miss is defensive.
           if (state === undefined) return reply({ ok: true, value: null })

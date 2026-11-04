@@ -8,13 +8,17 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { DETAIL_ROUTE, watchDetailChannel } from '../../src/host/detail'
+import { DETAIL_ROUTE, watchDetailChannel as watchWithHandle } from '../../src/host/detail'
 import { resolveBounds } from '../../src/host/config'
 import type { TimelineState } from '../../src/host/fold'
 import { assistantMessage, header, userMessage } from './helpers/events'
 import { driveTimeline } from './helpers/projection'
 
 const BOUNDS = resolveBounds({})
+const readers = new WeakMap<object, (session: unknown) => TimelineState | undefined>()
+const watchDetailChannel = (ctx: Context, bounds: typeof BOUNDS) => watchWithHandle(ctx, bounds, {
+  stateOf: session => readers.get(ctx)?.(session),
+})
 
 type RouteFetch = (request: Request) => Promise<Response>
 
@@ -39,7 +43,7 @@ function ctxOf(spec: CtxSpec): { ctx: Context; captured: { path?: string; fetch?
   if ('sessionQuery' in spec) services.set('sessionQuery', spec.sessionQuery)
   const ctx = {
     get: (name: string) => services.get(name),
-    sessionProjections: { stateOf: spec.stateOf ?? (() => undefined) },
+    sessionProjections: { stateOf: () => { throw new Error('deprecated registry read') } },
     effect(fn: () => unknown, _label?: string) {
       const d = fn()
       if (typeof d === 'function') disposers.push(d as () => void)
@@ -62,6 +66,7 @@ function ctxOf(spec: CtxSpec): { ctx: Context; captured: { path?: string; fetch?
       }
     }
   }
+  readers.set(ctx, session => spec.stateOf?.(session, 'redlineTimeline') as TimelineState | undefined)
   return { ctx: ctx as unknown as Context, captured, disposers }
 }
 

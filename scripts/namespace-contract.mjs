@@ -27,8 +27,8 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const PKG_NAME = 'dsh-context-redline'
 const API_PREFIX = '/api/dsh-context-redline'
 const DATA_DIR = 'dsh-context-redline'
-const DSH_ENGINES = '>=0.2.1-alpha.2 <0.3.0'
-const BASELINE = '0.2.1-alpha.2'
+const DSH_ENGINES = '>=0.2.2-rc.1 <0.3.0-0'
+const BASELINE = '0.2.2-rc.1'
 
 /** Upstream identities that must not leak into this fork. */
 const UPSTREAM_PREFIX = /\/api\/dsh-context\/(?!redline)/

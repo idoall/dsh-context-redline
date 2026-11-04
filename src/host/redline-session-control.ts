@@ -3,6 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { currentModelSelection, type RedlineModelAgent } from './redline-model-selection'
 
 export interface CarrierAgentOptions {
   readonly provider?: string
@@ -18,7 +19,7 @@ interface CarrierUserMessage {
   readonly source: { readonly kind: string; readonly rpcId?: string }
 }
 
-export interface CarrierAgent {
+export interface CarrierAgent extends RedlineModelAgent {
   readonly id: string
   readonly session: { readonly id: string }
   readonly options?: CarrierAgentOptions
@@ -220,10 +221,10 @@ export function createRedlineSessionControl(ctx: CarrierSessionControlContext) {
       agent = handle.agent
     }
 
-    const actual = agent.options
+    const actual = currentModelSelection(agent)
     if (actual === undefined || actual.provider !== request.agentOptions.provider || actual.model !== request.agentOptions.model
       || actual.reasoningEffort !== request.agentOptions.reasoningEffort
-      || (request.agentOptions.maxTokens !== undefined && actual.maxTokens !== request.agentOptions.maxTokens)) {
+      || (request.agentOptions.maxTokens !== undefined && agent.options?.maxTokens !== request.agentOptions.maxTokens)) {
       return { ok: false, state: 'unknown', cause: 'carrier-config-mismatch' }
     }
     if (ctx.agentPresets.composedPreset !== undefined && agent.ctx !== undefined

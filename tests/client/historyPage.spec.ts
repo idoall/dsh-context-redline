@@ -19,6 +19,28 @@ function row(type: string, seq: number, data: unknown): unknown {
 }
 
 describe('pageNodesOf — the durable-page mapper', () => {
+  test('current tool messages preserve every content block and message-level failure', () => {
+    const content = [{ type: 'text', text: 'first\\n' }, { type: 'text', text: 'second' }]
+    const nodes = pageNodesOf([
+      row('tool/call', 50, { callId: 'current', name: 'bash', arguments: '{}' }),
+      row('tool/result', 51, { message: { role: 'tool', toolCallId: 'current', source: { kind: 'tool', callId: 'current' }, content, isError: true } }),
+    ])
+    assert.deepEqual(nodes.get(51)?.content, content)
+    assert.equal(nodes.get(51)?.isError, true)
+    assert.deepEqual(nodes.get(51)?.call, { name: 'bash', argsRaw: '{}' })
+  })
+
+  test('current toolCallId pairs without source and structured errors stay errors', () => {
+    const content = [{ type: 'text', text: 'failed output' }]
+    const nodes = pageNodesOf([
+      row('tool/call', 50, { callId: 'current', name: 'read', arguments: '{}' }),
+      row('tool/result', 51, { message: { role: 'tool', toolCallId: 'current', content }, error: { name: 'Error', code: 'ENOENT' } }),
+    ])
+    assert.deepEqual(nodes.get(51)?.content, content)
+    assert.equal(nodes.get(51)?.isError, true)
+    assert.deepEqual(nodes.get(51)?.call, { name: 'read', argsRaw: '{}' })
+  })
+
   test('garbage rows and non-message events project to nothing', () => {
     const nodes = pageNodesOf([
       null,

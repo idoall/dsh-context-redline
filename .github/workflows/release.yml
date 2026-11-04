@@ -137,7 +137,7 @@ jobs:
 
   github-release:
     name: GitHub release
-    needs: package
+    needs: [package, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write

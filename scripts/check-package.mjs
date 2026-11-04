@@ -47,7 +47,7 @@ function validateManifest(pkg, label) {
   if (pkg.exports?.['./client'] !== './lib/client.js') fail(`${label} has wrong Client export`)
   if (pkg.exports?.['./package.json'] !== './package.json') fail(`${label} does not export package.json`)
   if (pkg.dsh?.bundle?.patch !== './cordis.patch.yml') fail(`${label} has wrong DSH bundle patch`)
-  if (pkg.engines?.dsh !== '>=0.2.1-alpha.2 <0.3.0') fail(`${label} has wrong DSH compatibility range`)
+  if (pkg.engines?.dsh !== '>=0.2.2-rc.1 <0.3.0-0') fail(`${label} has wrong DSH compatibility range`)
   if (pkg.publishConfig?.access !== 'public') fail(`${label} is not configured for public publishing`)
   if (pkg.publishConfig?.provenance !== undefined) fail(`${label} forces provenance outside supported CI providers`)
   if (pkg.license !== 'MIT AND Apache-2.0') fail(`${label} has wrong license expression`)

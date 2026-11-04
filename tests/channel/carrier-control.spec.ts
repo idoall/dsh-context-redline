@@ -118,6 +118,31 @@ function sourceOf(value: unknown): { kind?: unknown; rpcId?: unknown } | undefin
 }
 
 describe('redline carrier session control', () => {
+  test('refuses a changed current route even when startup options still match', async () => {
+    const h = harness({ live: true })
+    Object.assign(h.agent, { model: { current: () => ({ provider: 'test-provider', model: 'changed-model', reasoningEffort: 'high' }) } })
+    const result = await createRedlineSessionControl(h.ctx).start(request())
+    assert.deepEqual(result, { ok: false, state: 'unknown', cause: 'carrier-config-mismatch' })
+    assert.equal(h.calls.followups.length, 0)
+  })
+
+  test('accepts the confirmed current route without inheriting a stale effort', async () => {
+    const h = harness({ live: true })
+    const selected = { provider: 'test-provider', model: 'changed-model' }
+    Object.assign(h.agent, { model: { current: () => selected } })
+    const result = await createRedlineSessionControl(h.ctx).start(request({ agentOptions: selected }))
+    assert.equal(result.ok, true)
+    assert.equal(h.calls.followups.length, 1)
+  })
+
+  test('an unknown current selection stops before any send', async () => {
+    const h = harness({ live: true })
+    Object.assign(h.agent, { model: { current: () => undefined } })
+    const result = await createRedlineSessionControl(h.ctx).start(request())
+    assert.deepEqual(result, { ok: false, state: 'unknown', cause: 'carrier-config-mismatch' })
+    assert.equal(h.calls.followups.length, 0)
+  })
+
   test('reuses a live agent without create or resume', async () => {
     const h = harness({ live: true })
     const result = await createRedlineSessionControl(h.ctx).start(request())

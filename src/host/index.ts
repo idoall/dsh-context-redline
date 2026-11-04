@@ -26,7 +26,10 @@ import { createToolAttribution } from './attribution'
 import { watchBalanceChannel } from './balance'
 import { watchActivityBackfill } from './backfill'
 import { Config, resolveBounds } from './config'
-import { watchDetailChannel } from './detail'
+import { watchDetailChannel, type DetailChannelGate } from './detail'
+import type { TimelineState } from './fold'
+import type { HeadersState } from './headers'
+import type { ActivityState } from './activity'
 import { createFallbackActivityDefinition, createFallbackHeadersDefinition, createFallbackTimelineDefinition } from './fallback'
 import { createContextHeadersDefinition } from './headers'
 import { watchRedlineChannel } from './redline-channel'
@@ -46,7 +49,7 @@ export const inject = ['sessionProjections']
  */
 export { Config } from './config'
 
-export function apply(ctx: Context, config: Config): void {
+export async function apply(ctx: Context, config: Config): Promise<void> {
   // OUR edit-surface channel (redline-channel.ts — the single file of ours that
   // upstream's host entry wires). Armed BEFORE the baseline gate and therefore
   // on BOTH sides of it: it owns its own namespaced route and depends on no
@@ -66,12 +69,10 @@ export function apply(ctx: Context, config: Config): void {
   // the normal composition below.
   const harnessVersion = detectHarnessVersion(ctx)
   if (harnessVersion !== undefined && !meetsBaseline(harnessVersion)) {
-    // The dts register() constrains a unit's state to the declared
-    // SessionProjectionStateMap entry; the gate's opaque empty state is
-    // deliberately neither (nothing is folded) — cast through.
-    ctx.sessionProjections.register(createFallbackTimelineDefinition(harnessVersion) as never)
-    ctx.sessionProjections.register(createFallbackHeadersDefinition() as never)
-    ctx.sessionProjections.register(createFallbackActivityDefinition() as never)
+    // Even fallback projections must finish registering before activation.
+    await ctx.sessionProjections.register(createFallbackTimelineDefinition(harnessVersion) as never)
+    await ctx.sessionProjections.register(createFallbackHeadersDefinition() as never)
+    await ctx.sessionProjections.register(createFallbackActivityDefinition() as never)
     return
   }
   // Tool-to-plugin attribution (see attribution.ts): the static chain from
@@ -87,10 +88,17 @@ export function apply(ctx: Context, config: Config): void {
   // the connection/sessions/webServer services compose (load order never
   // assumed), and the unit's view reads the gate per serve — slim while the
   // channel is live, inline otherwise.
-  const gate = watchDetailChannel(ctx, resolveBounds(config))
-  ctx.sessionProjections.register(createContextTimelineDefinition(config, () => gate.live))
-  ctx.sessionProjections.register(createContextHeadersDefinition(name => attribution.ownerOf(name)))
-  ctx.sessionProjections.register(createContextActivityDefinition())
+  let gate: DetailChannelGate = { live: false }
+  const timeline = await ctx.sessionProjections.register<'redlineTimeline', TimelineState>(
+    createContextTimelineDefinition(config, () => gate.live),
+  )
+  await ctx.sessionProjections.register<'redlineHeaders', HeadersState>(
+    createContextHeadersDefinition(name => attribution.ownerOf(name)),
+  )
+  await ctx.sessionProjections.register<'redlineActivity', ActivityState>(createContextActivityDefinition())
+  // Publish the reader only after all registrations are ready. The registry
+  // owns disposal on this fiber; retained handles replace deprecated key reads.
+  gate = watchDetailChannel(ctx, resolveBounds(config), timeline)
   // The overview's cold-history warm-up (backfill.ts): sessions folded before
   // a unit existed get their rows from one background cold read each, run on
   // demand — the dashboard (the rows' only reader) summons the pass through

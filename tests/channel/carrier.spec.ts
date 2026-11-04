@@ -279,6 +279,40 @@ afterEach(() => {
 })
 
 describe('carrier.plan through the real host plugin route', () => {
+  test('preview reads the current model selection, not stale startup options', async () => {
+    const ops = await boot()
+    Object.assign(ops.sourceAgent, { model: { current: () => ({ provider: 'provider-alt', model: 'model-alt' }) } })
+    const preview = await plan(ops)
+    assert.deepEqual(preview.config, { agentPreset: 'preset-exact', provider: 'provider-alt', model: 'model-alt' })
+    assert.equal(ops.sourceAgent.options.reasoningEffort, 'high', 'source options are never mutated')
+    assert.equal(ops.creates.length, 0)
+  })
+
+  test('preview uses the selected preset rather than the immutable creation header', async () => {
+    const ops = await boot()
+    Object.assign(ops.ctx.get('agentPresets') as object, { presetForSession: () => 'preset-selected' })
+    const preview = await plan(ops)
+    assert.equal((preview.config as { agentPreset: string }).agentPreset, 'preset-selected')
+    assert.equal(ops.sourceAgent.session.header.agentPreset, 'preset-exact')
+    assert.equal(ops.creates.length, 0)
+  })
+
+  test('an unresolved authoritative preset never revives the creation preset', async () => {
+    const ops = await boot()
+    Object.assign(ops.ctx.get('agentPresets') as object, { presetForSession: () => null })
+    const response = await call(ops, { op: 'carrier.plan', sessionId: ops.sessionId, humanTask: 'check' })
+    assert.equal(response.ok, false)
+    assert.equal(ops.creates.length, 0)
+  })
+
+  test('an unavailable current selection does not fall back to stale options', async () => {
+    const ops = await boot()
+    Object.assign(ops.sourceAgent, { model: { current: () => undefined } })
+    const response = await call(ops, { op: 'carrier.plan', sessionId: ops.sessionId, humanTask: 'check' })
+    assert.equal(response.ok, false)
+    assert.equal(ops.creates.length, 0)
+  })
+
   test('returns one opaque confirmation token, exactly five items, and a full role-labelled prompt', async () => {
     const ops = await boot()
     const preview = await plan(ops)
