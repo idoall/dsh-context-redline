@@ -20,7 +20,7 @@
 
 > A DeepSeek Harness community plugin. It does not modify DSH source or rewrite the source session log.
 >
-> **Version `0.1.1` — supports DSH `>=0.2.2-rc.1 <0.3.0-0`.** Built and regression-tested against `0.2.2-rc.1`; Node.js `>=24.9.0` is required. DSH `0.3.0` prereleases are excluded.
+> **Version `0.1.2` — supports DSH `>=0.2.2-rc.4 <0.3.0-0`.** Built and regression-tested against `0.2.2-rc.4`; Node.js `>=24.9.0` is required. DSH `0.3.0` prereleases are excluded.
 
 Edits stay local until confirmation. The plugin then opens a zero-history ordinary session in the current workspace and sends the exact final message you approved. When the task finishes, its bound result returns verbatim to the source session.
 
@@ -57,15 +57,15 @@ Edits stay local until confirmation. The plugin then opens a zero-history ordina
 
 ## Install
 
-Requires DeepSeek Harness `0.2.2-rc.1` or a newer supported `0.2.x`, plus Node.js `24.9+`. Older DSH installations should stay on plugin `0.1.0` until upgrading DSH.
+Requires DeepSeek Harness `0.2.2-rc.4` or a newer supported `0.2.x`, plus Node.js `24.9+`. Older DSH installations should stay on plugin `0.1.1` until upgrading DSH.
 
 Install or upgrade to this exact release:
 
 ```sh
-dsh plugin --profile web add dsh-context-redline@0.1.1
+dsh plugin --profile web add dsh-context-redline@0.1.2
 ```
 
-This compatibility patch awaits projection registration, uses retained projection readers, reads the Session's current model and preset instead of stale startup metadata, and preserves current tool-result history content and errors. Unaccepted diagnostics and carrier-seed experiments are not included. Automated tests do not constitute production visual or real-session acceptance.
+This compatibility patch moves the verified baseline to DSH `0.2.2-rc.4` (Zod 4.6.6, the new `dsh-error` peer) and keeps the previous model/preset, projection-reader and tool-result fixes. Unaccepted diagnostics and carrier-seed experiments are not included. Automated tests do not constitute production visual or real-session acceptance.
 
 Local development:
 

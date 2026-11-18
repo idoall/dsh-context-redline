@@ -1,5 +1,21 @@
 # 更新日志 / Changelog
 
+## [0.1.2] — 2026-11-18
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.4 <0.3.0-0`; verified with `0.2.2-rc.4`. Node.js `>=24.9.0`.
+
+### 变更 / Changed
+
+- 验证基线提升到 DSH `0.2.2-rc.4`，包含其 Zod 4.6.6 与新增的 `dsh-error` 对等依赖；类型检查、全量测试与构建均以该版本依赖完成。
+- Move the verified baseline to DSH `0.2.2-rc.4`, including its Zod 4.6.6 and the new `dsh-error` peer; typecheck, the full test suite and the build run against that dependency set.
+- 0.2.2-rc.2 至 rc.4 未移除本插件使用的公开接口；会话批量追加与更明确的工具错误类型不影响现有只读、台账和回程路径。
+- DSH 0.2.2-rc.2 through rc.4 removed no public interface this plugin uses; batched event append and clearer tool error types do not affect the read-only capture, ledger or return paths.
+- 保留 0.1.1 的模型 / 预设读取、异步投影句柄与工具结果历史修复；支持范围下限随验证基线上移，旧 DSH 用户可继续使用 0.1.1。
+- Retain the 0.1.1 model/preset reads, asynchronous projection handle and tool-result history fixes. The supported floor moves with the verified baseline; older DSH users can stay on 0.1.1.
+
+本次仍为兼容性补丁，不包含未验收的上下文体检、carrier-seed 实验或其他未发布功能。自动化回归不代表生产人工验收。
+This remains a compatibility patch and excludes unaccepted context diagnostics, carrier-seed experiments and other unpublished features. Automated regression checks do not constitute production manual acceptance.
+
 ## [0.1.1] — 2026-11-04
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.1 <0.3.0-0`; verified with `0.2.2-rc.1`. Node.js `>=24.9.0`.

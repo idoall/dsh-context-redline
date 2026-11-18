@@ -70,6 +70,11 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 - Raise the supported baseline to DSH 0.2.2-rc.1 / Node.js 24.9 and synchronize release metadata and dependency contracts.
 - Keep unpublished diagnostics and carrier-seed experiments outside this maintenance release.
 
+### DSH 0.2.2-rc.4 compatibility (0.1.2, 2026-11-18)
+
+- Move the verified baseline to DSH 0.2.2-rc.4, Zod 4.6.6 and the new `dsh-error` peer; recheck Session Query, Agent, preset, workspace, projection and Client slot contracts.
+- Keep the 0.1.1 behavioral fixes and the unpublished diagnostics/carrier-seed work outside this maintenance release.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

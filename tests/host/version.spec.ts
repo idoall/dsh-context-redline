@@ -249,7 +249,7 @@ describe('detectHarnessVersion — home anchor', () => {
   test('reads the CLI package manifest of the running installation', () => {
     const ctx = (home: string) => ctxWithHome(homeResolver(home))
     assert.equal(detectHarnessVersion(ctx('old'), NO_RUNNING), '0.1.1-rc.2')
-    assert.equal(detectHarnessVersion(ctx('baseline'), NO_RUNNING), '0.2.2-rc.1')
+    assert.equal(detectHarnessVersion(ctx('baseline'), NO_RUNNING), '0.2.2-rc.4')
     assert.equal(detectHarnessVersion(ctx('future'), NO_RUNNING), '0.2.3-alpha.1')
     assert.equal(detectHarnessVersion(ctx('dev'), NO_RUNNING), '0.0.0-dev')
   })
