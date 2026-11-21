@@ -200,3 +200,20 @@ describe('首尾锚点（0.2.0）的线路层', () => {
     assert.equal(bodyOf(calls[0]).anchor, '必须用 TypeScript')
   })
 })
+
+describe('运行时规则模式（0.3.0）的线路层', () => {
+  test('只在运行时模式下发送 anchorMode；消息模式保持旧请求体', async () => {
+    calls.length = 0
+    stubFetch(() => envelope({ items: [], carriedSeqs: [], excludedSeqs: [], draftRevision: 'd1', prompt: 'p', metrics: null, refusal: null }))
+    await planChild('sv-1', '继续', '锚点 A')
+    assert.equal(Object.hasOwn(bodyOf(calls[0]), 'anchorMode'), false, 'message mode omits anchorMode')
+    await planChild('sv-1', '继续', '锚点 A', 'runtime')
+    assert.equal(bodyOf(calls[1]).anchorMode, 'runtime')
+
+    calls.length = 0
+    stubFetch(() => envelope({ label: 'x', prompt: 'p', carriedSeqs: [], started: null }))
+    await startChild('sv-1', '继续', 'd1', 'p', undefined, '锚点 A', 'runtime')
+    assert.equal(bodyOf(calls[0]).anchorMode, 'runtime')
+    assert.equal(bodyOf(calls[0]).anchor, '锚点 A')
+  })
+})

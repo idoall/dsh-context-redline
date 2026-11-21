@@ -157,10 +157,22 @@ export interface ChildPlan {
   refusal: { code: string; message: string } | null
 }
 
+/** Anchor delivery mode: inside the first message, or as a per-request runtime rule. */
+export type CarrierAnchorMode = 'message' | 'runtime'
+
 /** 开子会话之前问事实（只读，绝不写任何东西）。 */
-export async function planChild(sessionId: string, humanTask: string, anchor = ''): Promise<RedlineResult<ChildPlan>> {
+export async function planChild(
+  sessionId: string,
+  humanTask: string,
+  anchor = '',
+  anchorMode: CarrierAnchorMode = 'message',
+): Promise<RedlineResult<ChildPlan>> {
   const trimmed = anchor.trim()
-  return await call<ChildPlan>({ op: 'carrier.plan', sessionId, humanTask, ...(trimmed === '' ? {} : { anchor }) })
+  return await call<ChildPlan>({
+    op: 'carrier.plan', sessionId, humanTask,
+    ...(trimmed === '' ? {} : { anchor }),
+    ...(anchorMode === 'runtime' ? { anchorMode } : {}),
+  })
 }
 
 export interface CarrierModelOption {
@@ -203,11 +215,13 @@ export async function startChild(
   finalText?: string,
   config?: { provider: string; model: string; reasoningEffort?: string },
   anchor = '',
+  anchorMode: CarrierAnchorMode = 'message',
 ): Promise<RedlineResult<ChildStarted>> {
   const trimmed = anchor.trim()
   return await call<ChildStarted>({
     op: 'carrier.start', sessionId, humanTask, confirmationToken, finalText, config,
     ...(trimmed === '' ? {} : { anchor }),
+    ...(anchorMode === 'runtime' ? { anchorMode } : {}),
   })
 }
 

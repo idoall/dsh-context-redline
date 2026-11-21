@@ -2,6 +2,11 @@
 
 export const CARRIER_LEDGER_SCHEMA_VERSION = 1
 
+/** Runtime-context identity used when the anchor is delivered as a per-request rule. */
+export const RUNTIME_ANCHOR_NAME = 'dsh-context-redline:anchor'
+/** Place the rule after every standard runtime context (joined ascending). */
+export const RUNTIME_ANCHOR_ORDER = 10000
+
 export type CarrierTaskState =
   | 'previewed' | 'authorized' | 'creating' | 'created' | 'prompted'
   | 'running' | 'waiting-user' | 'completed' | 'failed' | 'cancelled'
@@ -27,6 +32,9 @@ export interface CarrierExecutionInput {
   /** Source-session config used only if automatic return must cold-resume that source. */
   readonly returnConfig?: CarrierConfirmedConfig
   readonly returnConfigFingerprint?: string
+  /** Opt-in runtime rule: provided to every model request instead of the first message. */
+  readonly runtimeAnchor?: string
+  readonly runtimeAnchorFingerprint?: string
   readonly attachments: readonly { readonly id: string; readonly fingerprint: string }[]
 }
 
@@ -252,6 +260,8 @@ function validExecutionInput(value: unknown, configFingerprint?: unknown): value
   if (input.contentFingerprint !== carrierContentFingerprint(input.deliveryContent)) return false
   if (input.returnConfig !== undefined && (!validConfig(input.returnConfig)
     || input.returnConfigFingerprint !== carrierConfigFingerprint(input.returnConfig))) return false
+  if (input.runtimeAnchor !== undefined
+    && (!isString(input.runtimeAnchor) || input.runtimeAnchorFingerprint !== carrierContentFingerprint(input.runtimeAnchor))) return false
   return configFingerprint === undefined || configFingerprint === carrierConfigFingerprint(input.confirmedConfig)
 }
 

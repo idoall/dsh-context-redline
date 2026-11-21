@@ -85,6 +85,11 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 - Add an optional human-written anchor mirrored at the start and end of the carrier's first message; it is fingerprinted with the task and never touches preset-owned prompt layers.
 - Keep the 0.1.1–0.1.3 compatibility fixes and the unpublished diagnostics/carrier-seed work outside this release.
 
+### Runtime-rule anchor (0.3.0, 2026-11-21)
+
+- Add an opt-in per-request runtime rule for the carrier via `systemPrompt.context`, alongside the 0.2.0 first-message anchor; both are user-written, fingerprinted and frozen in the ledger.
+- The rule is never a preset system-prompt section or tool definition, and never touches the source session.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

@@ -46,6 +46,7 @@ interface CarrierOps {
     readonly session: { readonly id: string; readonly header: { readonly cwd: string; readonly agentPreset: string } }
   }
   setSurface(events: readonly SurfaceEvent[], capturedThroughSeq: number | null): void
+  readonly runtimeContexts: Record<string, unknown>[]
 }
 
 const plugin = { name, inject, apply } as never
@@ -104,6 +105,7 @@ async function boot(): Promise<CarrierOps> {
   const flushes: unknown[] = []
   const carrierAgents = new Map<string, CarrierAgent>()
   const carrierLogs = new Map<string, unknown[]>()
+  const runtimeContexts: Record<string, unknown>[] = []
   let surface: readonly SurfaceEvent[] = sourceEvents()
   let capturedThroughSeq: number | null = 12
 
@@ -182,6 +184,8 @@ async function boot(): Promise<CarrierOps> {
     },
   })
   ctx.provide('sessionTitle', { rename() { return undefined } })
+  const systemPrompt = { context(contribution: Record<string, unknown>) { runtimeContexts.push(contribution); return () => {} } }
+  ctx.provide('systemPrompt', systemPrompt)
   ctx.provide('agents', {
     get(id: string) {
       if (id === sourceSession.id) return sourceAgent
@@ -206,7 +210,7 @@ async function boot(): Promise<CarrierOps> {
       carrierLogs.set(id, [])
       const setup = options.setup
       assert.equal(typeof setup, 'function')
-      await (setup as (agentCtx: unknown) => Promise<void>)({ scope: 'carrier-created' })
+      await (setup as (agentCtx: unknown) => Promise<void>)({ scope: 'carrier-created', systemPrompt })
       carrierAgents.set(id, agent)
       return { agent, async dispose() {} }
     },
@@ -233,6 +237,7 @@ async function boot(): Promise<CarrierOps> {
     followups,
     flushes,
     sourceAgent,
+    runtimeContexts,
     setSurface(events, nextCapturedThroughSeq) {
       surface = structuredClone(events)
       capturedThroughSeq = nextCapturedThroughSeq
@@ -545,5 +550,66 @@ describe('首尾锚点（0.2.0）', () => {
     assert.equal(delivered, String(preview.prompt))
     assert.ok(delivered?.endsWith(`【锚点重申】\n${ANCHOR}`))
     assert.equal(started.prompt, delivered)
+  })
+})
+
+describe('运行时规则模式（0.3.0）', () => {
+  const ANCHOR = '保持用户意图优先级；所有修改必须做过有头 UAT。'
+
+  test('运行时模式不把锚点写进首条消息，确认项改为运行时规则', async () => {
+    const ops = await boot()
+    const preview = value(await call(ops, {
+      op: 'carrier.plan', sessionId: ops.sessionId, humanTask: '继续完成当前任务',
+      anchor: ANCHOR, anchorMode: 'runtime',
+    }))
+    const prompt = String(preview.prompt)
+    assert.equal(prompt.includes(ANCHOR), false, 'runtime mode keeps the anchor out of the first message')
+    const item = (preview.items as { label: string, text: string }[]).find(entry => entry.label === '运行时规则（每次请求前提供）')
+    assert.equal(item?.text, ANCHOR)
+    assert.equal(ops.creates.length, 0)
+  })
+
+  test('确认后把锚点注册到承载会话的运行时上下文，不注册到来源会话', async () => {
+    const ops = await boot()
+    const preview = value(await call(ops, {
+      op: 'carrier.plan', sessionId: ops.sessionId, humanTask: '继续', anchor: ANCHOR, anchorMode: 'runtime',
+    }))
+    value(await call(ops, {
+      op: 'carrier.start', sessionId: ops.sessionId, humanTask: '继续', anchor: ANCHOR,
+      anchorMode: 'runtime', confirmationToken: preview.draftRevision,
+    }))
+    assert.deepEqual(ops.runtimeContexts, [{
+      name: 'dsh-context-redline:anchor',
+      order: 10000,
+      text: ANCHOR,
+      interpolate: false,
+      required: true,
+    }])
+    assert.equal(ops.creates.length, 1)
+  })
+
+  test('改生效方式会使旧确认失效，消息模式仍保持首尾锚点', async () => {
+    const ops = await boot()
+    const preview = value(await call(ops, {
+      op: 'carrier.plan', sessionId: ops.sessionId, humanTask: '继续', anchor: ANCHOR,
+    }))
+    const refused = await call(ops, {
+      op: 'carrier.start', sessionId: ops.sessionId, humanTask: '继续', anchor: ANCHOR,
+      anchorMode: 'runtime', confirmationToken: preview.draftRevision,
+    })
+    assert.equal(refused.ok, false)
+    assert.equal((refused.error as { code: string }).code, 'redline/drafts-changed')
+    assert.ok(String(preview.prompt).startsWith(`继续\n\n【锚点】\n${ANCHOR}`))
+    assert.ok(String(preview.prompt).endsWith(`【锚点重申】\n${ANCHOR}`))
+    assert.equal(ops.creates.length, 0)
+  })
+
+  test('运行时模式必须提供非空锚点', async () => {
+    const ops = await boot()
+    const refused = await call(ops, {
+      op: 'carrier.plan', sessionId: ops.sessionId, humanTask: '继续', anchorMode: 'runtime',
+    })
+    assert.equal(refused.ok, false)
+    assert.equal((refused.error as { code: string }).code, 'redline/bad-request')
   })
 })

@@ -437,7 +437,50 @@ describe('首尾锚点（0.2.0）', () => {
     await act(async () => { await new Promise(r => setTimeout(r, 300)) })
     assert.ok(plans.some(plan => plan.anchor === '必须用 TypeScript。'), '锚点变化会重新规划')
     await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-confirm-ok]').click() })
-    assert.equal(starts[0]?.at(-1), '必须用 TypeScript。', '确认时锚点作为最后一个参数交给宿主')
+    assert.deepEqual(starts[0]?.slice(-2), ['必须用 TypeScript。', 'message'], '确认时锚点与生效方式一起交给宿主')
+    await m.unmount()
+  })
+})
+
+describe('运行时规则模式（0.3.0）', () => {
+  test('填锚点后可切到每轮运行时规则；重新规划并在确认时把模式交给宿主', async () => {
+    const plans: { anchor?: string, mode?: string }[] = []
+    const starts: unknown[][] = []
+    const modernPlan = {
+      ...PLAN,
+      config: { agentPreset: 'standard', provider: 'provider-a', model: 'model-a' },
+      prompt: '任务\n\n以下是经你确认后迁移到这个零历史新会话的上下文。',
+    }
+    const models = [{ provider: 'provider-a', providerName: 'A', model: 'model-a', modelName: 'A', efforts: [] }]
+    const m = await open({
+      models,
+      plan: (_task: string, anchor?: string, mode?: string) => {
+        plans.push({ anchor, mode })
+        return Promise.resolve({ ok: true as const, value: modernPlan })
+      },
+      start: (...args: unknown[]) => {
+        starts.push(args)
+        return Promise.resolve({ ok: true as const, value: { label: 'x', prompt: 'p', carriedSeqs: [], started: null } })
+      },
+    })
+    await openDialog(m)
+    const anchor = query<HTMLTextAreaElement>(m.container, '[data-redline-anchor]')
+    const runtime = query<HTMLButtonElement>(m.container, '[data-redline-anchor-mode="runtime"]')
+    assert.equal(runtime.disabled, true, '空锚点不能选运行时模式')
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      setter?.call(anchor, '保持用户意图优先级')
+      anchor.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => { await new Promise(r => setTimeout(r, 300)) })
+    const enabled = query<HTMLButtonElement>(m.container, '[data-redline-anchor-mode="runtime"]')
+    assert.equal(enabled.disabled, false)
+    await act(async () => { enabled.click() })
+    await act(async () => { await new Promise(r => setTimeout(r, 300)) })
+    assert.ok(plans.some(plan => plan.mode === 'runtime'), '切换模式会重新规划')
+    assert.equal(queryAll(m.container, '[data-redline-anchor-runtime-note]').length, 1, '运行时模式给出说明')
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-confirm-ok]').click() })
+    assert.deepEqual(starts[0]?.slice(-2), ['保持用户意图优先级', 'runtime'])
     await m.unmount()
   })
 })

@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { planChild, readCapacity, readCarrierModels, readCarriers, readOrigins, readTurnState, startChild, type CarrierModelOption, type ChildPlan, type ChildStarted, type RedlineResult } from './redlineChannel'
+import { planChild, readCapacity, readCarrierModels, readCarriers, readOrigins, readTurnState, startChild, type CarrierAnchorMode, type CarrierModelOption, type ChildPlan, type ChildStarted, type RedlineResult } from './redlineChannel'
 import { viaOf, type OriginRecord, type OriginVia } from '../shared/redline-origins'
 import { REDLINE_ERROR as ERR } from '../shared/redline-errors'
 import { UNKNOWN_CAPACITY, capacityOf, type ChildCapacity } from '../shared/redline-capacity'
@@ -108,7 +108,7 @@ export interface ChildController {
   /** Live selectable models; reading them never changes this or the source session. */
   readonly models: readonly CarrierModelOption[]
   /** Open the confirm box: the host builds exact default bytes/config for this task. */
-  readonly plan: (humanTask: string, anchor?: string) => Promise<RedlineResult<ChildPlan>>
+  readonly plan: (humanTask: string, anchor?: string, anchorMode?: CarrierAnchorMode) => Promise<RedlineResult<ChildPlan>>
   /** The only call in this whole panel that writes a session (`docs/11` D15). */
   readonly start: (
     humanTask: string,
@@ -116,6 +116,7 @@ export interface ChildController {
     finalText?: string,
     config?: { provider: string; model: string; reasoningEffort?: string },
     anchor?: string,
+    anchorMode?: CarrierAnchorMode,
   ) => Promise<RedlineResult<ChildStarted>>
 }
 
@@ -282,11 +283,11 @@ export function useChildSessions(
     })()
   }, [])
 
-  const plan = useCallback(async (humanTask: string, anchor = ''): Promise<RedlineResult<ChildPlan>> => {
+  const plan = useCallback(async (humanTask: string, anchor = '', anchorMode: CarrierAnchorMode = 'message'): Promise<RedlineResult<ChildPlan>> => {
     if (sessionId === undefined || sessionId === '') {
       return { ok: false, code: 'redline/not-live', message: 'no session' }
     }
-    return await planChild(sessionId, humanTask, anchor)
+    return await planChild(sessionId, humanTask, anchor, anchorMode)
   }, [sessionId])
 
   const start = useCallback(async (
@@ -295,11 +296,12 @@ export function useChildSessions(
     finalText?: string,
     config?: { provider: string; model: string; reasoningEffort?: string },
     anchor = '',
+    anchorMode: CarrierAnchorMode = 'message',
   ): Promise<RedlineResult<ChildStarted>> => {
     if (sessionId === undefined || sessionId === '') {
       return { ok: false, code: 'redline/not-live', message: 'no session' }
     }
-    const answer = await startChild(sessionId, humanTask, confirmationToken, finalText, config, anchor)
+    const answer = await startChild(sessionId, humanTask, confirmationToken, finalText, config, anchor, anchorMode)
     if (answer.ok) await refreshCarriers()
     return answer
   }, [refreshCarriers, sessionId])

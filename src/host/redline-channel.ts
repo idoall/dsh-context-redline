@@ -536,8 +536,19 @@ function carrierAnchorOf(call: RedlineCall): string | null {
   return trimmed.length > CARRIER_ANCHOR_LIMIT ? null : trimmed
 }
 
-/** Confirmation fingerprint over the task and its optional anchor. */
-function carrierTaskFingerprint(task: string, anchor: string): string {
+/** Optional anchor delivery mode: inside the first message, or as a runtime rule. */
+type CarrierAnchorMode = 'message' | 'runtime'
+
+/** Read the optional mode; `null` means an unusable value. Defaults to the first message. */
+function carrierAnchorModeOf(call: RedlineCall): CarrierAnchorMode | null {
+  const raw = call.anchorMode
+  if (raw === undefined || raw === null) return 'message'
+  return raw === 'message' || raw === 'runtime' ? raw : null
+}
+
+/** Confirmation fingerprint over the task, anchor and delivery mode. */
+function carrierTaskFingerprint(task: string, anchor: string, mode: CarrierAnchorMode = 'message'): string {
+  if (mode === 'runtime') return stableFingerprint(`${task}\u0000runtime\u0000${anchor}`)
   return stableFingerprint(anchor === '' ? task : `${task}\u0000${anchor}`)
 }
 
@@ -579,6 +590,7 @@ async function prepareCarrierPlan(
   humanTask: string,
   operationId = `redline-op-${randomUUID()}`,
   anchor = '',
+  anchorMode: CarrierAnchorMode = 'message',
 ): Promise<RedlineEnvelope<CarrierPlanValue & { readonly preview?: CarrierOperation }>> {
   const drafts = await readTable(ctx, sessionId)
   if (!drafts.ok) return drafts
@@ -648,7 +660,7 @@ async function prepareCarrierPlan(
     deletions,
   })
   let prompt: string
-  try { prompt = serializeManifestDelivery(humanTask, manifest.delivery, anchor) } catch {
+  try { prompt = serializeManifestDelivery(humanTask, manifest.delivery, anchorMode === 'runtime' ? '' : anchor) } catch {
     return redlineOk({
       operationId, draftRevision: draftRevisionOf(sessionId, drafts.value),
       surfaceFingerprint: capture.surfaceFingerprint, manifestFingerprint: manifest.manifestFingerprint,
@@ -675,6 +687,7 @@ async function prepareCarrierPlan(
     confirmedConfig: config,
     returnConfig: config,
     returnConfigFingerprint: stableFingerprint(JSON.stringify(config)),
+    ...(anchorMode === 'runtime' ? { runtimeAnchor: anchor, runtimeAnchorFingerprint: stableFingerprint(anchor) } : {}),
     attachments: [],
   }
   const task = humanTask.trim()
@@ -697,7 +710,11 @@ async function prepareCarrierPlan(
     { label: '来源', text: `当前会话 ${sessionId}，捕获到 seq ${String(capture.capturedThroughSeq)}；确认前来源或草稿变化会要求重看。` },
     { label: '会带上的内容', text: `带 ${String(manifest.counts.carried)} 条；删除 ${String(manifest.counts.deleted)} 条；图片 ${String(capture.omittedImages)} 个未迁移。删除项和图片不会写进零历史新会话。` },
     { label: '第一句话（你来写）', text: task },
-    ...(anchor === '' ? [] : [{ label: '锚点（首尾各一次）', text: anchor }]),
+    ...(anchor === ''
+      ? []
+      : anchorMode === 'runtime'
+        ? [{ label: '运行时规则（每次请求前提供）', text: anchor }]
+        : [{ label: '锚点（首尾各一次）', text: anchor }]),
     { label: '新会话配置与回程', text: `工作区 ${workspace.id}；预设 ${config.agentPreset}；模型 ${config.provider}/${config.model}；任务结束后原样回到当前会话。` },
     { label: '取消', text: '取消就是什么都不发生：不建会话、不写任何会话日志。' },
   ]
@@ -772,9 +789,11 @@ const planCarrier: RedlineOpHandler = async ({ ctx, call }) => {
   if (turn.open) return fail(REDLINE_ERROR.turnOpen)
   const humanTask = typeof call.humanTask === 'string' ? call.humanTask : ''
   const anchor = carrierAnchorOf(call)
-  if (anchor === null) return fail(REDLINE_ERROR.badRequest, 'anchor is too long')
+  const anchorMode = carrierAnchorModeOf(call)
+  if (anchor === null || anchorMode === null) return fail(REDLINE_ERROR.badRequest, 'anchor is too long')
+  if (anchorMode === 'runtime' && anchor === '') return fail(REDLINE_ERROR.badRequest, 'runtime anchor is empty')
   const operationId = `redline-op-${randomUUID()}`
-  const prepared = await prepareCarrierPlan(ctx, sessionId, humanTask, operationId, anchor)
+  const prepared = await prepareCarrierPlan(ctx, sessionId, humanTask, operationId, anchor, anchorMode)
   if (!prepared.ok) return prepared
   const { preview: _preview, ...wire } = prepared.value
   return redlineOk({
@@ -784,7 +803,7 @@ const planCarrier: RedlineOpHandler = async ({ ctx, call }) => {
       draftRevision: wire.draftRevision,
       surfaceFingerprint: wire.surfaceFingerprint,
       manifestFingerprint: wire.manifestFingerprint,
-      taskFingerprint: carrierTaskFingerprint(typeof call.humanTask === 'string' ? call.humanTask.trim() : '', anchor),
+      taskFingerprint: carrierTaskFingerprint(typeof call.humanTask === 'string' ? call.humanTask.trim() : '', anchor, anchorMode),
     }),
   })
 }
@@ -803,7 +822,9 @@ const startCarrier: RedlineOpHandler = async ({ ctx, call }) => {
   const confirmation = decodeCarrierConfirmation(call.confirmationToken)
   const humanTask = typeof call.humanTask === 'string' ? call.humanTask : ''
   const anchor = carrierAnchorOf(call)
-  if (sessionId === null || confirmation === null || anchor === null) return fail(REDLINE_ERROR.badRequest)
+  const anchorMode = carrierAnchorModeOf(call)
+  if (sessionId === null || confirmation === null || anchor === null || anchorMode === null) return fail(REDLINE_ERROR.badRequest)
+  if (anchorMode === 'runtime' && anchor === '') return fail(REDLINE_ERROR.badRequest, 'runtime anchor is empty')
   const {
     operationId,
     draftRevision: expectedDraft,
@@ -812,7 +833,7 @@ const startCarrier: RedlineOpHandler = async ({ ctx, call }) => {
     taskFingerprint: expectedTask,
   } = confirmation
   if (humanTask.trim() === '') return fail(REDLINE_ERROR.emptyTask)
-  if (carrierTaskFingerprint(humanTask.trim(), anchor) !== expectedTask) return fail(REDLINE_ERROR.draftsChanged)
+  if (carrierTaskFingerprint(humanTask.trim(), anchor, anchorMode) !== expectedTask) return fail(REDLINE_ERROR.draftsChanged)
   const turn = await turnStateOfSession(ctx, sessionId)
   if (!turn.known) return fail(REDLINE_ERROR.notLive)
   if (turn.open) return fail(REDLINE_ERROR.turnOpen)
@@ -829,7 +850,7 @@ const startCarrier: RedlineOpHandler = async ({ ctx, call }) => {
         return fail(REDLINE_ERROR.internal, 'carrier operation identity mismatch')
       }
     } else {
-      const prepared = await prepareCarrierPlan(ctx, sessionId, humanTask, operationId, anchor)
+      const prepared = await prepareCarrierPlan(ctx, sessionId, humanTask, operationId, anchor, anchorMode)
       if (!prepared.ok) return prepared
       const freshPreview = prepared.value.preview
       if (freshPreview === undefined || freshPreview.previewExecutionInput === undefined) {
@@ -903,6 +924,7 @@ const startCarrier: RedlineOpHandler = async ({ ctx, call }) => {
       },
       promptRequestId: operation.promptRequestId,
       promptText: input.deliveryContent,
+      ...(input.runtimeAnchor === undefined ? {} : { runtimeAnchor: input.runtimeAnchor }),
     }
     if (request.cwd === '') return fail(REDLINE_ERROR.internal, 'carrier cwd is missing')
     const control = carrierControl(ctx)

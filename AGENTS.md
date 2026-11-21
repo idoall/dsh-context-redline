@@ -23,7 +23,7 @@ The source session log is append-only and is never rewritten or deleted. A delet
 - Editor prefill must use full durable text, never the shortened list preview.
 - Raw `agent.followup` does not deduplicate request IDs. Fixed IDs, durable ledgers, exact byte comparison, cold-read verification, and plugin locks are required.
 - Recovery has three outcomes: exists / absent / unknown. Retry only on definite absence.
-- System prompts and tool definitions are owned by the selected preset. Migrated prose must never pretend to modify those platform layers.
+- System prompts and tool definitions are owned by the selected preset. Migrated prose must never pretend to modify those platform layers. The opt-in carrier runtime rule is a separate, user-reviewed runtime context (`systemPrompt.context`) for the carrier only — never a preset section or tool definition.
 
 ## Current media policy
 

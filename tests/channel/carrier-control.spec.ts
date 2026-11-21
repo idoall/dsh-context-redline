@@ -24,6 +24,7 @@ interface Harness {
     inbox: { nextTurn: unknown[]; nextStep: unknown[] }
     followup(message: unknown): void
   }
+  runtimeContexts: Record<string, unknown>[]
   calls: {
     creates: Record<string, unknown>[]
     resumes: Record<string, unknown>[]
@@ -42,6 +43,7 @@ function notFound(): Error & { code: string } {
 }
 
 function harness(options: { live?: boolean; persisted?: boolean; titleResult?: unknown } = {}): Harness {
+  const runtimeContexts: Record<string, unknown>[] = []
   const calls = { creates: [] as Record<string, unknown>[], resumes: [] as Record<string, unknown>[], mounts: [] as { receiver: unknown; agentCtx: unknown; preset: string }[], attaches: [] as string[], renames: [] as { session: unknown; title: string }[], followups: [] as unknown[], flushes: [] as unknown[], reads: [] as string[] }
   const agent = {
     id: 'carrier-fixed-id',
@@ -67,18 +69,20 @@ function harness(options: { live?: boolean; persisted?: boolean; titleResult?: u
       return (agentCtx as { preset?: string }).preset ?? 'coding'
     },
   }
+  const systemPrompt = { context(contribution: Record<string, unknown>) { runtimeContexts.push(contribution); return () => {} } }
   const ctx: CarrierSessionControlContext = {
+    systemPrompt,
     agents: {
       get(id: string) { return live && id === agent.id ? agent : undefined },
       async create(options: Record<string, unknown>) {
         calls.creates.push(options)
-        await (options.setup as (agentCtx: unknown, child: unknown) => unknown)({ scope: 'created' }, agent)
+        await (options.setup as (agentCtx: unknown, child: unknown) => unknown)({ scope: 'created', systemPrompt }, agent)
         live = true
         return handle
       },
       async resume(options: Record<string, unknown>) {
         calls.resumes.push(options)
-        await (options.setup as (agentCtx: unknown, child: unknown) => unknown)({ scope: 'resumed' }, agent)
+        await (options.setup as (agentCtx: unknown, child: unknown) => unknown)({ scope: 'resumed', systemPrompt }, agent)
         live = true
         return handle
       },
@@ -110,7 +114,7 @@ function harness(options: { live?: boolean; persisted?: boolean; titleResult?: u
       },
     },
   }
-  return { ctx, agent, calls, setRead(next) { read = next } }
+  return { ctx, agent, calls, runtimeContexts, setRead(next) { read = next } }
 }
 
 function sourceOf(value: unknown): { kind?: unknown; rpcId?: unknown } | undefined {
@@ -302,5 +306,38 @@ describe('redline carrier session control', () => {
     assert.deepEqual(result, { ok: false, state: 'unknown', cause: 'prompt-not-persisted' })
     assert.deepEqual(order, ['cold-read', 'flush', 'cold-read'])
     assert.equal(h.calls.reads.length, 2)
+  })
+})
+
+describe('运行时规则模式（0.3.0）', () => {
+  const ANCHOR = '保持用户意图优先级；所有修改必须做过有头 UAT。'
+
+  test('携带运行时锚点时在承载会话的 setup 上注册精确的运行时上下文', async () => {
+    const h = harness()
+    const result = await createRedlineSessionControl(h.ctx).start(request({ runtimeAnchor: ANCHOR }))
+    assert.equal(result.ok, true)
+    assert.deepEqual(h.runtimeContexts, [{
+      name: 'dsh-context-redline:anchor',
+      order: 10000,
+      text: ANCHOR,
+      interpolate: false,
+      required: true,
+    }])
+  })
+
+  test('宿主没有 systemPrompt.context 时拒绝创建，不静默丢规则', async () => {
+    const h = harness()
+    delete (h.ctx as { systemPrompt?: unknown }).systemPrompt
+    const result = await createRedlineSessionControl(h.ctx).start(request({ runtimeAnchor: ANCHOR }))
+    assert.deepEqual(result, { ok: false, state: 'unknown', cause: 'runtime-context-unavailable' })
+    assert.equal(h.calls.creates.length, 0)
+    assert.equal(h.calls.followups.length, 0)
+  })
+
+  test('不携带运行时锚点时完全不注册运行时上下文', async () => {
+    const h = harness()
+    const result = await createRedlineSessionControl(h.ctx).start(request())
+    assert.equal(result.ok, true)
+    assert.deepEqual(h.runtimeContexts, [])
   })
 })

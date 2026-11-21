@@ -9,8 +9,13 @@ import {
   type CarrierStoreFileSystem,
 } from '../../src/host/redline-carrier-store'
 import {
+  authorizeCarrier,
+  carrierConfigFingerprint,
+  carrierContentFingerprint,
   carrierFileName,
   createCarrierPreview,
+  parseCarrierOperation,
+  type CarrierConfirmedConfig,
   type CarrierOperation,
 } from '../../src/shared/redline-carrier'
 
@@ -180,5 +185,48 @@ describe('redline carrier store', () => {
     await store.write(op)
     await rejectsCode(store.mutate(op.opId, current => ({ ...current, opId: 'changed', revision: 2 })), 'identity')
     await rejectsCode(store.mutate(op.opId, current => ({ ...current, revision: current.revision })), 'updater')
+  })
+})
+
+describe('运行时锚点的台账完整性（0.3.0）', () => {
+  const config: CarrierConfirmedConfig = {
+    agentPreset: 'p', provider: 'provider', model: 'model', reasoningEffort: 'not-specified', inheritedFrom: 'source',
+  }
+  function authorized(anchor: string, fingerprint = carrierContentFingerprint(anchor)) {
+    const preview = operation()
+    return authorizeCarrier(preview, {
+      userConfirmedAt: '2026-11-21T00:00:00.000Z',
+      manifestFingerprint: preview.manifestFingerprint,
+      configFingerprint: carrierConfigFingerprint(config),
+      sourceSessionId: preview.mainSessionId,
+      returnSessionId: preview.mainSessionId,
+    }, {
+      deliveryContent: 'task',
+      contentFingerprint: carrierContentFingerprint('task'),
+      workspaceId: 'workspace',
+      cwd: '/workspace',
+      confirmedConfig: config,
+      attachments: [],
+      runtimeAnchor: anchor,
+      runtimeAnchorFingerprint: fingerprint,
+    })
+  }
+
+  test('合法运行时锚点通过解析；锚点或其指纹被篡改即拒绝', () => {
+    const anchor = '保持用户意图优先级'
+    const good = authorized(anchor)
+    assert.equal(parseCarrierOperation(JSON.stringify(good)).ok, true)
+
+    const badFingerprint = JSON.parse(JSON.stringify(good)) as CarrierOperation
+    ;(badFingerprint.executionInput as { runtimeAnchorFingerprint?: string }).runtimeAnchorFingerprint = 'tampered'
+    const refusedFingerprint = parseCarrierOperation(JSON.stringify(badFingerprint))
+    assert.equal(refusedFingerprint.ok, false)
+    if (!refusedFingerprint.ok) assert.equal(refusedFingerprint.code, 'corrupt')
+
+    const badText = JSON.parse(JSON.stringify(good)) as CarrierOperation
+    ;(badText.executionInput as { runtimeAnchor?: string }).runtimeAnchor = 'changed'
+    const refusedText = parseCarrierOperation(JSON.stringify(badText))
+    assert.equal(refusedText.ok, false)
+    if (!refusedText.ok) assert.equal(refusedText.code, 'corrupt')
   })
 })

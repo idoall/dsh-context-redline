@@ -1,5 +1,23 @@
 # 更新日志 / Changelog
 
+## [0.3.0] — 2026-11-21
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
+
+### 新增 / Added
+
+- 锚点新增「每轮运行时规则」方式：不写进首条消息，而是通过 `systemPrompt.context` 注册为承载会话的运行时上下文。文本不变不重复写入，压缩折叠后自动重新声明并声明取代旧版本。
+- New "per-request runtime rule" anchor mode: kept out of the first message and registered through `systemPrompt.context` for the carrier. Unchanged text is not rewritten; after compaction it is re-declared with a supersession notice.
+- 该方式默认关闭、必须显式选择；锚点原文与指纹写入台账，恢复时按同一文本重新注册。空锚点不能选择；改锚点或改方式会使旧确认失效。
+- Off by default and explicitly selected; the anchor text and fingerprint are frozen in the ledger and re-registered on recovery. Empty anchors cannot select it; changing the anchor or mode invalidates an old confirmation.
+
+### 边界 / Boundaries
+
+- 运行时规则只作用于本插件创建的承载会话，不是预设系统提示词或工具定义；不调用模型、不摘要、不改写，来源会话保持 append-only。
+- The runtime rule applies only to the carrier this plugin creates; it is not a preset system prompt or tool definition, involves no model call, summary or rewrite, and leaves the source session append-only.
+- 保留 0.1.x / 0.2.0 的模型 / 预设读取、异步投影句柄与工具结果历史修复；不包含未验收的体检功能和 carrier-seed 实验。自动化回归不代表生产人工验收。
+- Retains the 0.1.x / 0.2.0 model/preset reads, asynchronous projection handle and tool-result history fixes; excludes unaccepted diagnostics and carrier-seed experiments. Automated regression checks do not constitute production manual acceptance.
+
 ## [0.2.0] — 2026-11-21
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.

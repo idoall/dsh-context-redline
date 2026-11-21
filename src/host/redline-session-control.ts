@@ -4,6 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { currentModelSelection, type RedlineModelAgent } from './redline-model-selection'
+import { RUNTIME_ANCHOR_NAME, RUNTIME_ANCHOR_ORDER } from '../shared/redline-carrier'
 
 export interface CarrierAgentOptions {
   readonly provider?: string
@@ -46,6 +47,17 @@ export interface CarrierSessionControlContext {
   readonly workspaceRegistry: { get(id: string): { readonly path?: string; attachSession(id: string): Promise<void> } | undefined }
   readonly sessionTitle: { rename(session: unknown, title: string): unknown }
   readonly sessions: { flush(session: unknown): Promise<boolean> }
+  /** Present on the Host context; the carrier setup registers its opt-in runtime rule there. */
+  readonly get?: (name: string) => unknown
+  readonly systemPrompt?: {
+    context?(contribution: {
+      readonly name: string
+      readonly order: number
+      readonly text: string
+      readonly interpolate: boolean
+      readonly required: boolean
+    }): unknown
+  }
 }
 
 export interface CarrierSessionRequest {
@@ -57,6 +69,8 @@ export interface CarrierSessionRequest {
   readonly title: string
   readonly promptRequestId: string
   readonly promptText: string
+  /** Opt-in runtime rule re-asserted after compaction; never part of the first message. */
+  readonly runtimeAnchor?: string
 }
 
 export interface CarrierReturnRequest {
@@ -164,6 +178,11 @@ function failureCause(error: unknown): string {
   return codeOf(error) ?? (error instanceof Error ? error.message : String(error))
 }
 
+/** Narrow an optional service face without asserting on an already-typed union. */
+function systemPromptFace(value: unknown): CarrierSessionControlContext['systemPrompt'] {
+  return value !== null && typeof value === 'object' ? value : undefined
+}
+
 /** One controller owns live handles and per-carrier critical sections. */
 export function createRedlineSessionControl(ctx: CarrierSessionControlContext) {
   const handles = new Map<string, CarrierAgentHandle>()
@@ -186,6 +205,10 @@ export function createRedlineSessionControl(ctx: CarrierSessionControlContext) {
     let agent = ctx.agents.get(SessionId(request.carrierId))
     let mode: 'live' | 'created' | 'resumed' = 'live'
     let presenceSnapshot: unknown
+    const hostSystemPrompt = systemPromptFace(ctx.get?.('systemPrompt') ?? ctx.systemPrompt)
+    if (request.runtimeAnchor !== undefined && typeof hostSystemPrompt?.context !== 'function') {
+      return { ok: false, state: 'unknown', cause: 'runtime-context-unavailable' }
+    }
 
     if (agent === undefined) {
       try {
@@ -204,19 +227,36 @@ export function createRedlineSessionControl(ctx: CarrierSessionControlContext) {
       }
       const setup = async (agentCtx: unknown): Promise<void> => {
         await ctx.agentPresets.mount(agentCtx, request.agentPreset)
+        if (request.runtimeAnchor !== undefined) {
+          const systemPrompt = systemPromptFace((agentCtx as { get?: (name: string) => unknown }).get?.('systemPrompt')
+            ?? (agentCtx as { systemPrompt?: unknown }).systemPrompt)
+          if (typeof systemPrompt?.context !== 'function') throw new Error('runtime-context-unavailable')
+          systemPrompt.context({
+            name: RUNTIME_ANCHOR_NAME,
+            order: RUNTIME_ANCHOR_ORDER,
+            text: request.runtimeAnchor,
+            interpolate: false,
+            required: true,
+          })
+        }
       }
-      const handle = mode === 'created'
-        ? await ctx.agents.create({
-          sessionId: SessionId(request.carrierId),
-          meta: { cwd: request.cwd, agentPreset: request.agentPreset },
-          agentOptions: request.agentOptions,
-          setup,
-        })
-        : await ctx.agents.resume({
-          resumeSessionId: SessionId(request.carrierId),
-          agentOptions: request.agentOptions,
-          setup,
-        })
+      let handle: CarrierAgentHandle
+      try {
+        handle = mode === 'created'
+          ? await ctx.agents.create({
+            sessionId: SessionId(request.carrierId),
+            meta: { cwd: request.cwd, agentPreset: request.agentPreset },
+            agentOptions: request.agentOptions,
+            setup,
+          })
+          : await ctx.agents.resume({
+            resumeSessionId: SessionId(request.carrierId),
+            agentOptions: request.agentOptions,
+            setup,
+          })
+      } catch (error) {
+        return { ok: false, state: 'unknown', cause: `carrier-create-failed:${failureCause(error)}` }
+      }
       handles.set(request.carrierId, handle)
       agent = handle.agent
     }
@@ -347,6 +387,7 @@ export function contextCarrierServices(ctx: Context): CarrierSessionControlConte
   const workspaceRegistry = service(ctx, 'workspaceRegistry')
   const sessionTitle = service(ctx, 'sessionTitle')
   const sessions = service(ctx, 'sessions')
+  const systemPrompt = service(ctx, 'systemPrompt')
   if (agents === undefined || agentPresets === undefined || sessionQuery === undefined
     || workspaceRegistry === undefined || sessionTitle === undefined || sessions === undefined) {
     throw new Error('carrier services are not composed')
@@ -358,6 +399,8 @@ export function contextCarrierServices(ctx: Context): CarrierSessionControlConte
     workspaceRegistry: workspaceRegistry as CarrierSessionControlContext['workspaceRegistry'],
     sessionTitle: sessionTitle as CarrierSessionControlContext['sessionTitle'],
     sessions: sessions as CarrierSessionControlContext['sessions'],
+    get: (name: string) => service(ctx, name),
+    ...(systemPrompt === undefined ? {} : { systemPrompt: systemPrompt as CarrierSessionControlContext['systemPrompt'] }),
   }
 }
 
