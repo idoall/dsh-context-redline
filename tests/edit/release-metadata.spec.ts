@@ -13,12 +13,12 @@ const pkg = JSON.parse(read('package.json')) as {
 
 describe('release metadata stays synchronized', () => {
   test('publishes a fresh patch with the current DSH and Node baseline', () => {
-    assert.equal(pkg.version, '0.1.2')
-    assert.equal(BASELINE_DSH_VERSION, '0.2.2-rc.4')
-    assert.equal(pkg.engines.dsh, '>=0.2.2-rc.4 <0.3.0-0')
+    assert.equal(pkg.version, '0.1.3')
+    assert.equal(BASELINE_DSH_VERSION, '0.2.2-rc.5')
+    assert.equal(pkg.engines.dsh, '>=0.2.2-rc.5 <0.3.0-0')
     assert.equal(pkg.engines.node, '>=24.9.0')
-    assert.equal(meetsBaseline('0.2.2-rc.4'), true)
-    assert.equal(meetsBaseline('0.2.2-rc.1'), false)
+    assert.equal(meetsBaseline('0.2.2-rc.5'), true)
+    assert.equal(meetsBaseline('0.2.2-rc.4'), false)
     assert.equal(meetsBaseline('0.2.2-alpha.3'), false)
     assert.equal(meetsBaseline('0.2.1-rc.5'), false)
     for (const [name, version] of Object.entries(pkg.devDependencies)) {
@@ -38,7 +38,7 @@ describe('release metadata stays synchronized', () => {
     }
     const notes = read(`docs/releases/v${pkg.version}.md`)
     for (const locale of ['cn', 'en']) assert.ok(notes.includes(`<h3 id="${locale}-v${pkg.version}">`))
-    assert.ok(read('CHANGELOG.md').includes(`## [${pkg.version}] — 2026-11-18`))
+    assert.ok(read('CHANGELOG.md').includes(`## [${pkg.version}] — 2026-11-21`))
     assert.ok(!read('CHANGELOG.md').includes('Unreleased'))
   })
 

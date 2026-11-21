@@ -11,7 +11,7 @@
  */
 
 /** The oldest supported dsh release (see the note above). */
-export const BASELINE_DSH_VERSION = '0.2.2-rc.4'
+export const BASELINE_DSH_VERSION = '0.2.2-rc.5'
 
 /**
  * Release-channel rank at an equal X.Y.Z: a final release outranks its

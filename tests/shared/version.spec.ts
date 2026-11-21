@@ -44,16 +44,16 @@ describe('compareVersions', () => {
 
 describe('meetsBaseline', () => {
   test(`the supported baseline is ${BASELINE_DSH_VERSION}`, () => {
-    assert.equal(BASELINE_DSH_VERSION, '0.2.2-rc.4')
+    assert.equal(BASELINE_DSH_VERSION, '0.2.2-rc.5')
   })
 
   test('baseline and above pass; anything below fails', () => {
-    assert.equal(meetsBaseline('0.2.2-rc.4'), true, 'the baseline itself')
-    assert.equal(meetsBaseline('0.2.2-rc.5'), true)
+    assert.equal(meetsBaseline('0.2.2-rc.5'), true, 'the baseline itself')
+    assert.equal(meetsBaseline('0.2.2-rc.6'), true)
     assert.equal(meetsBaseline('0.2.2'), true, 'the final release of the baseline line')
     assert.equal(meetsBaseline('0.2.3-alpha.1'), true, 'a newer X.Y.Z outranks any channel')
+    assert.equal(meetsBaseline('0.2.2-rc.4'), false)
     assert.equal(meetsBaseline('0.2.2-rc.1'), false)
-    assert.equal(meetsBaseline('0.2.2-rc.3'), false)
     assert.equal(meetsBaseline('0.2.2-alpha.3'), false)
     assert.equal(meetsBaseline('0.2.1-rc.5'), false)
     assert.equal(meetsBaseline('0.2.1-alpha.1'), false, 'one alpha below the baseline')
