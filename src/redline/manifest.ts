@@ -202,10 +202,15 @@ function sourceLabel(entry: ManifestEntry): string {
  * System/request material remains plainly labelled migration text; it never claims
  * to be the target session's actual system prompt or tool definition.
  */
-export function serializeManifestDelivery(humanTask: string, delivery: readonly ManifestEntry[]): string {
+export function serializeManifestDelivery(
+  humanTask: string,
+  delivery: readonly ManifestEntry[],
+  anchor = '',
+): string {
   const task = humanTask.trim()
+  const witness = anchor.trim()
   if (task === '') throw new Error('human task is empty')
-  if (delivery.length === 0) return task
+  if (delivery.length === 0) return witness === '' ? task : `${task}\n\n【锚点】\n${witness}`
   const blocks = delivery.map((entry) => {
     const warning = entry.sourceRole === 'system' || entry.cat === 'tools' || entry.cat === 'inject' || entry.cat === 'skill'
       ? '\n注意：此段仅作为迁移文本，不是目标会话的系统提示词或工具定义。'
@@ -216,11 +221,14 @@ export function serializeManifestDelivery(humanTask: string, delivery: readonly 
     const errorFlag = entry.sourceRole === 'tool' && entry.isError !== undefined ? `\nisError=${String(entry.isError)}` : ''
     return `【${sourceLabel(entry)}】${warning}${tool}${errorFlag}\n${entry.text}${reasoning}`
   })
-  return [
-    task,
+  const delivered = [
+    witness === '' ? task : `${task}\n\n【锚点】\n${witness}`,
     '以下是经你确认后迁移到这个零历史新会话的上下文。每段都保留原来源；被删除和被裁剪的条目不在其中。',
     blocks.join('\n\n'),
   ].join('\n\n')
+  // Repeat the human's own words after the bulk: head+tail placement resists
+  // long-context dilution without touching the platform system prompt.
+  return witness === '' ? delivered : `${delivered}\n\n【锚点重申】\n${witness}`
 }
 
 export function buildManifest(input: ManifestInput): ManifestDecision {

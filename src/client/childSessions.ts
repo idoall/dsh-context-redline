@@ -108,13 +108,14 @@ export interface ChildController {
   /** Live selectable models; reading them never changes this or the source session. */
   readonly models: readonly CarrierModelOption[]
   /** Open the confirm box: the host builds exact default bytes/config for this task. */
-  readonly plan: (humanTask: string) => Promise<RedlineResult<ChildPlan>>
+  readonly plan: (humanTask: string, anchor?: string) => Promise<RedlineResult<ChildPlan>>
   /** The only call in this whole panel that writes a session (`docs/11` D15). */
   readonly start: (
     humanTask: string,
     confirmationToken: string,
     finalText?: string,
     config?: { provider: string; model: string; reasoningEffort?: string },
+    anchor?: string,
   ) => Promise<RedlineResult<ChildStarted>>
 }
 
@@ -281,11 +282,11 @@ export function useChildSessions(
     })()
   }, [])
 
-  const plan = useCallback(async (humanTask: string): Promise<RedlineResult<ChildPlan>> => {
+  const plan = useCallback(async (humanTask: string, anchor = ''): Promise<RedlineResult<ChildPlan>> => {
     if (sessionId === undefined || sessionId === '') {
       return { ok: false, code: 'redline/not-live', message: 'no session' }
     }
-    return await planChild(sessionId, humanTask)
+    return await planChild(sessionId, humanTask, anchor)
   }, [sessionId])
 
   const start = useCallback(async (
@@ -293,11 +294,12 @@ export function useChildSessions(
     confirmationToken: string,
     finalText?: string,
     config?: { provider: string; model: string; reasoningEffort?: string },
+    anchor = '',
   ): Promise<RedlineResult<ChildStarted>> => {
     if (sessionId === undefined || sessionId === '') {
       return { ok: false, code: 'redline/not-live', message: 'no session' }
     }
-    const answer = await startChild(sessionId, humanTask, confirmationToken, finalText, config)
+    const answer = await startChild(sessionId, humanTask, confirmationToken, finalText, config, anchor)
     if (answer.ok) await refreshCarriers()
     return answer
   }, [refreshCarriers, sessionId])

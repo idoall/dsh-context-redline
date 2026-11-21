@@ -275,3 +275,34 @@ describe('清单：顺序、计数与指纹', () => {
     )
   })
 })
+
+describe('首尾锚点（0.2.0）', () => {
+  const ANCHOR = '必须用 TypeScript；不要改公开接口。'
+
+  test('非空锚点出现在首条消息开头与迁移内容之后各一次', () => {
+    const result = buildManifest(input({ candidates: [candidate({ seq: 10, text: 'A' })] }))
+    const prompt = serializeManifestDelivery('继续处理', result.delivery, ANCHOR)
+    assert.ok(prompt.startsWith(`继续处理\n\n【锚点】\n${ANCHOR}\n\n`), prompt.slice(0, 80))
+    assert.ok(prompt.endsWith(`【锚点重申】\n${ANCHOR}`))
+    assert.equal(prompt.split(ANCHOR).length - 1, 2, '只出现首尾两次')
+    assert.ok(prompt.indexOf(ANCHOR) < prompt.indexOf('以下是经你确认后迁移'))
+  })
+
+  test('空锚点与纯空白锚点保持旧字节，不插入任何标题', () => {
+    const result = buildManifest(input({ candidates: [candidate({ seq: 10 })] }))
+    const legacy = serializeManifestDelivery('继续处理', result.delivery)
+    assert.equal(serializeManifestDelivery('继续处理', result.delivery, ''), legacy)
+    assert.equal(serializeManifestDelivery('继续处理', result.delivery, '   '), legacy)
+    assert.equal(legacy.includes('锚点'), false)
+  })
+
+  test('没有迁移内容时不重复相邻锚点，只保留开头那一次', () => {
+    assert.equal(serializeManifestDelivery('继续处理', [], ANCHOR), `继续处理\n\n【锚点】\n${ANCHOR}`)
+  })
+
+  test('锚点不会注入到迁移条目的正文里', () => {
+    const result = buildManifest(input({ candidates: [candidate({ seq: 10, text: '原文' })] }))
+    const prompt = serializeManifestDelivery('继续处理', result.delivery, ANCHOR)
+    assert.equal(prompt.split('原文').length - 1, 1)
+  })
+})

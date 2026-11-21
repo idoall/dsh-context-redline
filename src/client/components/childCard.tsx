@@ -46,14 +46,15 @@ export interface ChildCardProps {
   readonly turnOpen: boolean
   /** How many local edits the confirm box will carry (0 → the sentence says "no edits"). */
   readonly carriedCount: number
-  /** `child.plan` — read-only, builds the five items for this exact task text. */
-  readonly plan: (humanTask: string) => Promise<RedlineResult<ChildPlan>>
+  /** `child.plan` — read-only, builds the confirmation items for this task and optional anchor. */
+  readonly plan: (humanTask: string, anchor?: string) => Promise<RedlineResult<ChildPlan>>
   /** `child.start` — the ONLY session write the panel can perform. */
   readonly start: (
     humanTask: string,
     confirmationToken: string,
     finalText?: string,
     config?: { provider: string; model: string; reasoningEffort?: string },
+    anchor?: string,
   ) => Promise<RedlineResult<ChildStarted>>
 }
 
@@ -186,6 +187,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
   return function ChildCard(props): ReactElement {
     const [open, setOpen] = useState(false)
     const [task, setTask] = useState('')
+    const [anchor, setAnchor] = useState('')
     const [plan, setPlan] = useState<ChildPlan | null>(null)
     const [finalText, setFinalText] = useState('')
     const [selectedRoute, setSelectedRoute] = useState('')
@@ -211,6 +213,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
       startGeneration.current += 1
       setOpen(false)
       setTask('')
+      setAnchor('')
       setPlan(null)
       setFinalText('')
       setSelectedRoute('')
@@ -228,7 +231,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
       const mine = generation.current
       const timer = setTimeout(() => {
         void (async () => {
-          const answer = await props.plan(task)
+          const answer = await props.plan(task, anchor)
           if (generation.current !== mine) return
           if (!answer.ok) { setError({ code: answer.code, message: answer.message }); setPlan(null); return }
           setError(null)
@@ -241,7 +244,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
         })()
       }, 220)
       return () => { clearTimeout(timer) }
-    }, [open, task, props.plan])
+    }, [open, task, anchor, props.plan])
 
     const catalog = props.models ?? []
     const currentConfig = plan?.config
@@ -272,7 +275,9 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
         }
         const answer = legacyPlan
           ? await props.start(task, plan.draftRevision)
-          : await props.start(task, plan.draftRevision, finalText, selectedConfig)
+          : anchor.trim() === ''
+            ? await props.start(task, plan.draftRevision, finalText, selectedConfig)
+            : await props.start(task, plan.draftRevision, finalText, selectedConfig, anchor)
         if (startGeneration.current !== mine) return
         setBusy(false)
         if (!answer.ok) { setError({ code: answer.code, message: answer.message }); return }
@@ -280,7 +285,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
         // confirmation with a second success screen that hides that outcome.
         close()
       })()
-    }, [busy, close, finalText, legacyPlan, plan, refused, selectedEffort, selectedModel, props.start, task])
+    }, [anchor, busy, close, finalText, legacyPlan, plan, refused, selectedEffort, selectedModel, props.start, task])
 
     // ⚠️ 口径跟 demo（`renderOrch()` 的 `state === 'running' || state === 'idle'`）：
     // 「活跃」= **在场的子会话**（运行中 + 空闲），**不是**"只有正在跑的" ——
@@ -418,6 +423,22 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
                 setError(null)
               },
             })),
+            legacyPlan ? null : h('label', { className: 'redline-confirm-task redline-confirm-anchor' },
+              h('span', { className: 'redline-confirm-task-label' }, t('child.confirm.anchorLabel')),
+              h('span', { className: 'redline-confirm-task-hint' }, t('child.confirm.anchorHint')),
+              h('textarea', {
+                rows: 2,
+                'data-redline-anchor': '1',
+                placeholder: t('child.confirm.anchorPlaceholder'),
+                value: anchor,
+                onChange: (event: ChangeEvent<HTMLTextAreaElement>) => {
+                  generation.current += 1
+                  setAnchor(event.target.value)
+                  setPlan(null)
+                  setFinalText('')
+                  setError(null)
+                },
+              })),
             h(CarrierSelectionBar, {
               models: availableModels,
               selectedRoute,

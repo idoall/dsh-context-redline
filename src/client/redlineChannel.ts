@@ -139,7 +139,7 @@ export async function dropDraft(sessionId: string, seq: number): Promise<Redline
 
 /** 确认框五项 + 组装好的首条任务（开子会话**之前**能问的全部事实；只读）。 */
 export interface ChildPlan {
-  /** 恰好五项：从哪儿开始 / 会带上的改动 / 第一句话由人写 / 会带什么不带什么 / 取消。 */
+  /** 五项固定项，另加可选的「锚点（首尾各一次）」：来源 / 会带上的内容 / 第一句话 / 锚点 / 配置回程 / 取消。 */
   items: readonly { label: string; text: string }[]
   /** 会逐字带过去的本地改动（按 seq）。 */
   carriedSeqs: readonly number[]
@@ -158,8 +158,9 @@ export interface ChildPlan {
 }
 
 /** 开子会话之前问事实（只读，绝不写任何东西）。 */
-export async function planChild(sessionId: string, humanTask: string): Promise<RedlineResult<ChildPlan>> {
-  return await call<ChildPlan>({ op: 'carrier.plan', sessionId, humanTask })
+export async function planChild(sessionId: string, humanTask: string, anchor = ''): Promise<RedlineResult<ChildPlan>> {
+  const trimmed = anchor.trim()
+  return await call<ChildPlan>({ op: 'carrier.plan', sessionId, humanTask, ...(trimmed === '' ? {} : { anchor }) })
 }
 
 export interface CarrierModelOption {
@@ -201,8 +202,13 @@ export async function startChild(
   confirmationToken: string,
   finalText?: string,
   config?: { provider: string; model: string; reasoningEffort?: string },
+  anchor = '',
 ): Promise<RedlineResult<ChildStarted>> {
-  return await call<ChildStarted>({ op: 'carrier.start', sessionId, humanTask, confirmationToken, finalText, config })
+  const trimmed = anchor.trim()
+  return await call<ChildStarted>({
+    op: 'carrier.start', sessionId, humanTask, confirmationToken, finalText, config,
+    ...(trimmed === '' ? {} : { anchor }),
+  })
 }
 
 export interface CarrierListRow {

@@ -403,3 +403,41 @@ describe('确认框样式的两条真机回归', () => {
     assert.ok(!/label-dimmed/.test(ph), 'label-dimmed 在浅色下是 #e1e5ee，当文字色几乎看不见')
   })
 })
+
+describe('首尾锚点（0.2.0）', () => {
+  test('可选锚点输入框会重新规划，并在确认时随任务交给宿主；空锚点保持旧调用', async () => {
+    const plans: { task: string, anchor?: string }[] = []
+    const starts: unknown[][] = []
+    const modernPlan = {
+      ...PLAN,
+      config: { agentPreset: 'standard', provider: 'provider-a', model: 'model-a' },
+      prompt: '任务\n\n【锚点】\n必须用 TypeScript。',
+    }
+    const models = [{ provider: 'provider-a', providerName: 'A', model: 'model-a', modelName: 'A', efforts: [] }]
+    const m = await open({
+      models,
+      plan: (task: string, anchor?: string) => {
+        plans.push({ task, anchor })
+        return Promise.resolve({ ok: true as const, value: modernPlan })
+      },
+      start: (...args: unknown[]) => {
+        starts.push(args)
+        return Promise.resolve({ ok: true as const, value: { label: 'x', prompt: 'p', carriedSeqs: [], started: null } })
+      },
+    })
+    await openDialog(m)
+    const anchor = query<HTMLTextAreaElement>(m.container, '[data-redline-anchor]')
+    assert.equal(anchor.value, '', '默认空锚点')
+    assert.ok(text(m.container).includes(DICT_EN['child.confirm.anchorLabel']))
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      setter?.call(anchor, '必须用 TypeScript。')
+      anchor.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => { await new Promise(r => setTimeout(r, 300)) })
+    assert.ok(plans.some(plan => plan.anchor === '必须用 TypeScript。'), '锚点变化会重新规划')
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-confirm-ok]').click() })
+    assert.equal(starts[0]?.at(-1), '必须用 TypeScript。', '确认时锚点作为最后一个参数交给宿主')
+    await m.unmount()
+  })
+})

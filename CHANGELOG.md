@@ -1,5 +1,23 @@
 # 更新日志 / Changelog
 
+## [0.2.0] — 2026-11-21
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
+
+### 新增 / Added
+
+- 确认框新增可选的「锚点」：人写的关键词或硬约束，原样放在首条消息的开头和结尾各一次，用来抵抗长会话里的注意力稀释。
+- Optional "anchor" in the confirmation box: human-written keywords or hard constraints, placed verbatim at the start and end of the first message to resist long-context attention dilution.
+- 锚点进入确认项、最终发送全文和确认指纹；改动锚点会要求重新确认。空锚点与 0.1.3 的首条消息逐字节相同。
+- The anchor is part of the confirmation items, the final message and the confirmation fingerprint; changing it requires re-confirmation. An empty anchor keeps the 0.1.3 first message byte-identical.
+
+### 边界 / Boundaries
+
+- 锚点不调用模型、不做摘要或改写，也不进入系统提示词或工具定义；来源会话仍保持 append-only。
+- The anchor involves no model call, summarization or rewrite, and never enters the system prompt or tool definitions; the source session stays append-only.
+- 保留此前的模型 / 预设读取、异步投影句柄与工具结果历史修复；不包含未验收的体检功能和 carrier-seed 实验。自动化回归不代表生产人工验收。
+- Retains the model/preset reads, asynchronous projection handle and tool-result history fixes; excludes unaccepted diagnostics and carrier-seed experiments. Automated regression checks do not constitute production manual acceptance.
+
 ## [0.1.3] — 2026-11-21
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.

@@ -184,3 +184,19 @@ describe('open an ordinary carrier session (the ONLY migration write point)', ()
     })
   })
 })
+
+describe('首尾锚点（0.2.0）的线路层', () => {
+  test('提供锚点时随 carrier.plan / carrier.start 一起发送；不提供时旧请求体不变', async () => {
+    calls.length = 0
+    stubFetch(() => envelope({ items: [], carriedSeqs: [], excludedSeqs: [], draftRevision: 'd1', prompt: 'p', metrics: null, refusal: null }))
+    await planChild('sv-1', '继续')
+    assert.equal(Object.hasOwn(bodyOf(calls[0]), 'anchor'), false, '空锚点不改变旧请求体')
+    await planChild('sv-1', '继续', '必须用 TypeScript')
+    assert.equal(bodyOf(calls[1]).anchor, '必须用 TypeScript')
+
+    calls.length = 0
+    stubFetch(() => envelope({ label: 'x', prompt: 'p', carriedSeqs: [], started: null }))
+    await startChild('sv-1', '继续', 'd1', 'p', undefined, '必须用 TypeScript')
+    assert.equal(bodyOf(calls[0]).anchor, '必须用 TypeScript')
+  })
+})

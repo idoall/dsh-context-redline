@@ -260,8 +260,8 @@ function code(reply: Record<string, unknown>): string {
   return (reply.error as { code: string }).code
 }
 
-async function plan(ops: CarrierOps, humanTask = '继续完成当前任务'): Promise<Record<string, unknown>> {
-  return value(await call(ops, { op: 'carrier.plan', sessionId: ops.sessionId, humanTask }))
+async function plan(ops: CarrierOps, humanTask = '继续完成当前任务', anchor?: string): Promise<Record<string, unknown>> {
+  return value(await call(ops, { op: 'carrier.plan', sessionId: ops.sessionId, humanTask, ...(anchor === undefined ? {} : { anchor }) }))
 }
 
 async function saveUserEdit(ops: CarrierOps, text: string): Promise<void> {
@@ -503,5 +503,47 @@ describe('carrier.start through the real host plugin route', () => {
     assert.ok((requestIdOf(ops.followups[0])?.length ?? 0) > 0, 'the single followup carries its stable request id')
     assert.equal((first.started as { messageId: string }).messageId, (second.started as { messageId: string }).messageId)
     assert.ok(messageIdOf(ops.followups[0]) !== undefined)
+  })
+})
+
+describe('首尾锚点（0.2.0）', () => {
+  const ANCHOR = '必须用 TypeScript；不要改公开接口。'
+
+  test('锚点同时出现在首条消息开头与迁移内容之后，并列入确认项', async () => {
+    const ops = await boot()
+    const preview = await plan(ops, '继续完成当前任务', ANCHOR)
+    const prompt = String(preview.prompt)
+    assert.ok(prompt.startsWith(`继续完成当前任务\n\n【锚点】\n${ANCHOR}\n\n`))
+    assert.ok(prompt.endsWith(`【锚点重申】\n${ANCHOR}`))
+    assert.equal(prompt.split(ANCHOR).length - 1, 2)
+    const item = (preview.items as { label: string, text: string }[]).find(entry => entry.label === '锚点（首尾各一次）')
+    assert.equal(item?.text, ANCHOR)
+    assert.equal(ops.creates.length, 0, 'preview remains read-only')
+  })
+
+  test('锚点变化使旧确认失效，不误用旧令牌创建', async () => {
+    const ops = await boot()
+    const preview = await plan(ops, '原任务', '锚点 A')
+    const refused = await call(ops, {
+      op: 'carrier.start', sessionId: ops.sessionId, humanTask: '原任务', anchor: '锚点 B',
+      confirmationToken: preview.draftRevision,
+    })
+    assert.equal(refused.ok, false)
+    assert.equal((refused.error as { code: string }).code, 'redline/drafts-changed')
+    assert.equal(ops.creates.length, 0)
+    assert.equal(ops.followups.length, 0)
+  })
+
+  test('确认后按同一锚点冻结首尾字节', async () => {
+    const ops = await boot()
+    const preview = await plan(ops, '继续', ANCHOR)
+    const started = value(await call(ops, {
+      op: 'carrier.start', sessionId: ops.sessionId, humanTask: '继续', anchor: ANCHOR,
+      confirmationToken: preview.draftRevision,
+    }))
+    const delivered = textOfMessage(ops.followups[0])
+    assert.equal(delivered, String(preview.prompt))
+    assert.ok(delivered?.endsWith(`【锚点重申】\n${ANCHOR}`))
+    assert.equal(started.prompt, delivered)
   })
 })
