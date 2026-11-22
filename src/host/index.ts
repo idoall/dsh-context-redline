@@ -33,6 +33,7 @@ import type { ActivityState } from './activity'
 import { createFallbackActivityDefinition, createFallbackHeadersDefinition, createFallbackTimelineDefinition } from './fallback'
 import { createContextHeadersDefinition } from './headers'
 import { watchRedlineChannel } from './redline-channel'
+import { registerHandoffSkill } from './handoff-skill'
 import { watchCarrierRecovery } from './redline-carrier-recovery'
 import { watchStepIdentity } from './stepIdentity'
 import { createContextTimelineDefinition } from './timeline'
@@ -50,6 +51,10 @@ export const inject = ['sessionProjections']
 export { Config } from './config'
 
 export async function apply(ctx: Context, config: Config): Promise<void> {
+  // The copy-paste handoff skill is independent of the projection generation:
+  // arm it before the baseline gate so even a below-baseline harness whose
+  // skills registry exists still gets the guidance.
+  registerHandoffSkill(ctx)
   // OUR edit-surface channel (redline-channel.ts — the single file of ours that
   // upstream's host entry wires). Armed BEFORE the baseline gate and therefore
   // on BOTH sides of it: it owns its own namespaced route and depends on no

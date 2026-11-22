@@ -111,6 +111,10 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 
 - Keep the trend's Total/Delta state consistent when DNA is toggled from the Context browser; no feature or data change.
 
+### Handoff skill (0.7.0, 2026-11-22)
+
+- Add an optional runtime skill that drafts the four anchored-conversation fields from the current conversation; registered only when the host has a skills registry.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

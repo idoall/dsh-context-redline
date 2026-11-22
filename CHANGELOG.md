@@ -1,5 +1,23 @@
 # 更新日志 / Changelog
 
+## [0.7.0] — 2026-11-22
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
+
+### 新增 / Added
+
+- 注册运行时技能 `context-redline-handoff`：读取当前对话，输出首条任务 / 目标 / 验收标准 / 执行纪律四段，直接粘贴到「新建带规则的对话」。
+- Register a runtime skill, `context-redline-handoff`: read the current conversation and output first task / goal / acceptance criteria / discipline, ready to paste into **New conversation with rules**.
+- 技能区分当前里程碑与整个目标，要求验收可执行/可观察，未知信息标“未验证”，不编造。
+- The skill separates the current milestone from the whole goal, requires executable/observable acceptance, and marks unknown facts unverified instead of inventing them.
+- 通过 `ctx.inject(['skills'])` 可选注册；没有 skills 服务或注册失败都不影响插件其他功能。
+- Registered optionally through `ctx.inject(['skills'])`; a missing skills service or a failed registration leaves the rest of the plugin unaffected.
+
+### 边界 / Boundaries
+
+- 技能只输出文本，不建会话、不写文件；不改变趋势、锚定会话或既有数据。
+- The skill only outputs text; it creates no session and writes no file, and changes no trend, anchored-conversation or existing data.
+
 ## [0.6.1] — 2026-11-22
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
