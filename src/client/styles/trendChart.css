@@ -135,3 +135,8 @@
 .redline-duration polyline, .redline-duration circle { fill: none; stroke: var(--dsw-alias-brand-primary); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
 .redline-duration circle { fill: var(--dsw-alias-brand-primary); }
 .redline-chart-dim .redline-duration { opacity: 0.35; }
+
+/* DNA mode: one gradient per bar, built from the per-item bands in prompt order.
+   The fill sits in the normal stack slot so the entrance/selection chrome is shared. */
+.redline-dna-fill { width: 100%; border-radius: 2px 2px 0 0; background-size: 100% 100%; }
+.redline-gran-btn:disabled { cursor: not-allowed; opacity: 0.45; }

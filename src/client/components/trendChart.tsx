@@ -7,6 +7,7 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type UIEvent } from 'react'
 import type { Category, ContextEventRecord, RequestRecord } from '../../shared/types'
 import { CATS } from '../categories'
+import type { TrendBand } from '../dna'
 import { containHorizontalOverscroll } from '../overscroll'
 import type { ViewKit } from '../viewkit'
 
@@ -40,6 +41,13 @@ export interface TrendChartProps {
    * `activeMs`, even while the bars read deltas.
    */
   durationCurve?: boolean
+  /**
+   * DNA mode: per-bar bands in prompt order (the same decomposition the Context
+   * browser's DNA strip uses), aligned with `requests` by index. Non-null draws
+   * each bar as one gradient fingerprint and forces total semantics; the parent
+   * disables the Total/Delta switch while it is on.
+   */
+  dna?: TrendBand[][] | null
   onSelect: (seq: number | null) => void
   onHover: (seq: number | null) => void
   onHoverTurn: (turn: number | null) => void
@@ -199,6 +207,22 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
     activeMs: number
   }
 
+  /** One gradient stop run from the bar's floor: category colors in prompt order. */
+  const dnaGradient = (bands: readonly TrendBand[]): string => {
+    const total = bands.reduce((n, band) => n + band.tokens, 0)
+    if (total <= 0) return 'transparent'
+    let acc = 0
+    const stops: string[] = []
+    for (const band of bands) {
+      if (band.tokens <= 0) continue
+      const from = (acc / total) * 100
+      acc += band.tokens
+      const to = (acc / total) * 100
+      stops.push(`${band.color} ${from}% ${to}%`)
+    }
+    return stops.length === 0 ? 'transparent' : `linear-gradient(to top, ${stops.join(', ')})`
+  }
+
   interface ChartBarProps {
     req: RequestRecord
     marker: ContextEventRecord | undefined
@@ -219,6 +243,8 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
     enterIndex: number
     /** The step flag's label (the bar's cumulative step number), or null to plant none. */
     flag: number | null
+    /** DNA mode: this bar's item bands in prompt order; null/absent draws the normal stack. */
+    dna?: TrendBand[] | null
     onSelect: (seq: number | null) => void
     onHover: (seq: number | null) => void
   }
@@ -256,7 +282,18 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
             title={'✂ ' + (markerAt !== null ? markerAt + ' — ' : '') + eventLabel(marker)}
           >{'✂'}</span>
         ) : null}
-        {diverge ? (
+        {props.dna !== undefined && props.dna !== null ? (
+          <div className="redline-bar-stack animate-redline-bar-in motion-reduce:animate-none" style={enterStyle}>
+            <div
+              className="redline-dna-fill"
+              data-redline-dna="1"
+              style={{
+                height: `${Math.max(1, Math.round(req.total / props.maxTotal * CHART_H))}px`,
+                backgroundImage: dnaGradient(props.dna),
+              }}
+            />
+          </div>
+        ) : diverge ? (
           <>
             <div className="redline-bar-up animate-redline-bar-in motion-reduce:animate-none" style={{ bottom: `${props.downPx}px`, ...enterStyle }}>
               {CATS.map((c) => {
@@ -288,10 +325,14 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
   })
 
   return function TrendChart(props: TrendChartProps): ReactElement {
-    const delta = props.mode === 'delta'
+    const dnaOn = props.dna !== null && props.dna !== undefined
+    // DNA forces total semantics: the bands ARE the composition, and a delta
+    // fingerprint would need a second axis vocabulary the 0.6.0 mode does not
+    // carry (the parent disables the switch).
+    const delta = !dnaOn && props.mode === 'delta'
     const durationOn = props.durationCurve === true
     // An unrecognized focus key degrades to the unfocused chart instead of plotting an empty axis.
-    const focus = props.focusCat !== null && props.focusCat !== undefined && CATS.some(c => c.key === props.focusCat)
+    const focus = !dnaOn && props.focusCat !== null && props.focusCat !== undefined && CATS.some(c => c.key === props.focusCat)
       ? props.focusCat
       : null
     const requests = useMemo(
@@ -737,6 +778,7 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
                   downPx={delta ? downPx : undefined}
                   deltaScale={delta ? deltaScale : undefined}
                   enterIndex={i}
+                  dna={dnaOn ? (props.dna ?? [])[i] ?? null : null}
                   onSelect={props.onSelect}
                   onHover={props.onHover}
                 />

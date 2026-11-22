@@ -187,6 +187,7 @@ body {
 /* Duration curve: one pointer-transparent polyline riding the bar area. */
 .dcurve { position: absolute; top: 0; left: 0; z-index: 2; overflow: visible; pointer-events: none; }
 .dcurve polyline { fill: none; stroke: var(--dsw-alias-brand); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.dnafill { display: block; width: 100%; border-radius: 2px 2px 0 0; background-size: 100% 100%; }
 .chart-dim .dcurve { opacity: .35; }
 /* 定位上下文：tooltip 必须挂在**滚动容器外面**——放里面会撑大 scrollWidth，
    让横向滚动条在每次 hover 时开合、整张卡片跟着跳（参考插件原话）。 */

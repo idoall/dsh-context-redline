@@ -21,6 +21,7 @@
 
 import type { Category, SurfaceNode } from '../shared/types'
 import type { Assembled } from './assemble'
+import { CAT_COLOR } from './categories'
 
 /**
  * One band of the DNA strip. Header bands carry their tokens only; message
@@ -53,4 +54,29 @@ export function dnaOf(view: Assembled): DnaItem[] {
     })
   }
   return items
+}
+
+/**
+ * One band of a TREND bar's DNA gradient (the trend card's DNA mode): the
+ * same decomposition as {@link dnaOf}, plus the band's color and `off` — the
+ * cumulative tokens of the bands BELOW it, since the stack grows from the
+ * floor. The gradient builder and the bar tooltip read it.
+ */
+export type TrendBand =
+  | { key: string; cat: 'system' | 'tools'; tokens: number; off: number; color: string }
+  | { key: string; cat: Category; tokens: number; off: number; color: string; node: SurfaceNode }
+
+/** The per-bar bands behind a trend chart bar: read order, category colors, cumulative offsets. */
+export function trendBandsOf(view: Assembled): TrendBand[] {
+  const bands: TrendBand[] = []
+  let off = 0
+  for (const item of dnaOf(view)) {
+    if ('node' in item) {
+      bands.push({ key: item.key, cat: item.cat, tokens: item.tokens, off, color: CAT_COLOR[item.cat], node: item.node })
+    } else {
+      bands.push({ key: item.key, cat: item.cat, tokens: item.tokens, off, color: CAT_COLOR[item.cat] })
+    }
+    off += item.tokens
+  }
+  return bands
 }

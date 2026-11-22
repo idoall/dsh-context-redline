@@ -1081,10 +1081,11 @@ check('切换粒度/模式/轮/步/状态开关时 render() 不抛错', threw ==
   const S = api.S();
   S.trendGran = 'turn'; S.trendMode = 'total'; S.selSeq = api.lastOfTurn(api.TOTAL_TURNS).seq; api.render();
   const html = registry.get('cardTrend').innerHTML;
-  check('趋势框：标题旁是一行短副标题（轮次读数），不再是那行 ~200 字长说明；耗时开关与右侧刻度都在',
-    /class="hint"[^>]*>按轮次（共 \d+ 轮）/.test(html)
+  check('趋势框：标题是显示修饰组 + 粒度/模式控件；DNA、耗时与右侧耗时轴都在，旧的轮次/刻度读数已移除',
+    /data-trend="dna"/.test(html)
     && /data-trend="duration"/.test(html)
     && /class="axis axis-r"/.test(html)
+    && !/按轮次（共/.test(html)
     && !/柱体<b>按类别分色堆叠<\/b>：段高/.test(html), html.slice(0, 120));
   check('趋势框：纵轴 5 档刻度齐全（上 / 3q / 中 / 1q / 0）',
     ['trendAxisTop', 'trendAxisQ3', 'trendAxisMid', 'trendAxisQ1', 'trendAxisBottom'].every((id) => html.includes(`id="${id}"`)));

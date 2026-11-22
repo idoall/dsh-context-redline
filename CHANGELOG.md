@@ -1,5 +1,25 @@
 # 更新日志 / Changelog
 
+## [0.6.0] — 2026-11-22
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
+
+### 新增 / Added
+
+- 趋势 DNA 指纹模式：每根柱子按模型读取顺序拆成逐条色带；系统提示词、工具定义在前，随后是消息。
+- Trend DNA fingerprint mode: each bar decomposes into per-item bands in the model's read order — system prompt and tool schemas first, then messages.
+- 浏览器的 DNA 开关与趋势开关联动；DNA 开启时增量模式禁用（色带即组成，固定总计语义）。
+- The browser DNA switch and the trend switch move together; Delta is disabled while DNA is on (the bands are the composition, so total semantics are fixed).
+- 趋势标题移除轮次/刻度读数，与参考插件标题结构同步。
+- The trend title drops the turn/scale readout, matching the reference title structure.
+
+### 边界 / Boundaries
+
+- DNA + 增量组合、色带点击跳转到浏览器条目不包含在本版；持久化状态版本保持 24。
+- DNA + Delta and band click-through to a browser row are not in this release; the persisted state stays at version 24.
+- README 总览截图随标题与开关更新；中英文 README、发布说明与 npm 包内容同步。
+- The README overview screenshot follows the title and switch changes; both READMEs, release notes and npm package contents stay synchronized.
+
 ## [0.5.0] — 2026-11-22
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.

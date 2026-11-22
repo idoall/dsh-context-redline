@@ -437,11 +437,11 @@ describe('ContextView — interactions', () => {
     // The scale readout (`docs/03` R1.5) sits between the title text and the switch,
     // so the switch's group is now the SECOND sibling after the title — still inside
     // the same title row, left of the card's right-hand control cluster.
-    // The scale readout (docs/03 R1.5) states the SIZE of what is plotted and
-    // follows the granularity switch: N requests by step, T turns by turn.
-    assert.equal(text(query(card, '.redline-card-scale')), DICT_EN['trend.gran.step'].replace('{n}', '3'))
+    // The scale readout was removed with the reference trend sync: the title carries the
+    // display modifiers and the chart axis carries the size.
+    assert.equal(queryAll(card, '.redline-card-scale').length, 0)
     const toggleOf = () => buttonByText(m.container, DICT_EN['trend.adaptive'])
-    assert.equal(toggleOf().parentElement?.previousElementSibling?.previousElementSibling, titleText)
+    assert.equal(toggleOf().parentElement?.previousElementSibling, titleText)
     assert.equal(toggleOf().getAttribute('title'), DICT_EN['trend.adaptiveHint'])
     assert.equal(buttonByText(m.container, DICT_EN['trend.duration']).getAttribute('title'), DICT_EN['trend.durationHint'])
     assert.ok(!toggleOf().className.includes('redline-gran-on'), 'off at mount')
@@ -944,3 +944,24 @@ describe('ContextView — the split generation (slim head + detail channel)', ()
   })
 })
 
+
+describe('ContextView — DNA mode (0.6.0)', () => {
+  test('the trend DNA toggle shares the browser switch and parks the delta mode at total', async () => {
+    const m = await mountRich('sv-dna')
+    const card = queryAll(m.container, '.redline-card').find(c => text(c).includes(DICT_EN['trend.title']))
+    assert.ok(card !== undefined)
+    const dna = buttonByText(card, DICT_EN['trend.dna'])
+    const browserDna = buttonByText(m.container, DICT_EN['browser.dna'])
+    assert.ok(!dna.className.includes('redline-gran-on'))
+    await click(dna)
+    assert.ok(dna.className.includes('redline-gran-on'))
+    assert.ok(browserDna.className.includes('redline-gran-on'), 'one switch, both cards')
+    assert.equal(buttonByText(m.container, DICT_EN['gran.delta']).hasAttribute('disabled'), true)
+    assert.equal(queryAll(m.container, '.redline-dna-fill').length > 0, true)
+    await click(dna)
+    assert.ok(!dna.className.includes('redline-gran-on'))
+    assert.ok(!browserDna.className.includes('redline-gran-on'))
+    assert.equal(buttonByText(m.container, DICT_EN['gran.delta']).hasAttribute('disabled'), false)
+    await m.unmount()
+  })
+})

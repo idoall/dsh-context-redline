@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { createElement as h } from 'react'
 import { describe, test } from 'vitest'
 import { aggregateByTurn, makeTrendChart, type TrendChartProps } from '../../src/client/components/trendChart'
+import type { TrendBand } from '../../src/client/dna'
 import { makeKit, mount, query, queryAll, text } from '../client/helpers/kit'
 
 const kit = makeKit()
@@ -74,6 +75,33 @@ describe('trend duration overlay (0.5.0)', () => {
     const m = await mount(h(TrendChart, props([req(1, 1_000), req(2, 2_000)], { durationCurve: false })))
     assert.equal(queryAll(m.container, '.redline-duration').length, 0)
     assert.equal(queryAll(m.container, '.redline-axis-r').length, 0)
+    await m.unmount()
+  })
+})
+
+describe('trend DNA mode (0.6.0)', () => {
+  const band = (key: string, cat: 'system' | 'tools', tokens: number, off: number, color: string): TrendBand => ({ key, cat, tokens, off, color })
+
+  test('the DNA gradient draws one fill per bar instead of the category stack', async () => {
+    const bands: TrendBand[][] = [
+      [band('sys', 'system', 20, 0, 'rgb(1, 2, 3)'), band('tool1', 'tools', 10, 20, 'rgb(4, 5, 6)')],
+      [band('sys', 'system', 20, 0, 'rgb(1, 2, 3)'), band('tool1', 'tools', 10, 20, 'rgb(4, 5, 6)'), band('tool2', 'tools', 10, 30, 'rgb(7, 8, 9)')],
+    ]
+    const requests = [req(1, 1_000), req(2, 2_000)].map((r, i) => ({ ...r, total: bands[i].reduce((n, b) => n + b.tokens, 0) }))
+    const m = await mount(h(TrendChart, props(requests, { dna: bands, durationCurve: true })))
+    assert.equal(queryAll(m.container, '.redline-dna-fill').length, 2)
+    assert.equal(queryAll(m.container, '.redline-cat-seg').length, 0)
+    const fill = query<HTMLElement>(m.container, '.redline-dna-fill')
+    assert.match(fill.style.backgroundImage, /linear-gradient/)
+    assert.ok(fill.style.backgroundImage.includes('rgb(1, 2, 3)'))
+    await m.unmount()
+  })
+
+  test('DNA forces total semantics even when the parent passes delta', async () => {
+    const bands: TrendBand[][] = [[band('sys', 'system', 20, 0, 'red')], [band('sys', 'system', 20, 0, 'red')]]
+    const requests = [req(1), req(2)].map(r => ({ ...r, total: 20 }))
+    const m = await mount(h(TrendChart, props(requests, { dna: bands, mode: 'delta' })))
+    assert.equal(queryAll(m.container, '.redline-dna-fill').length, 2)
     await m.unmount()
   })
 })

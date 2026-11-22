@@ -27,6 +27,7 @@ import { countsOfRecords, makeStatsContext } from './statsContext'
 import { assemble, stepStatsOf } from '../assemble'
 import { makeStackedBar } from './stackedBar'
 import { aggregateByTurn, attachMarkers, jumpTargetOf, makeTrendChart, turnStepsOf } from './trendChart'
+import { trendBandsOf } from '../dna'
 
 import { subscribeContextFocus, takeContextFocus } from '../viewFocus'
 import { useSurfaceVisibility } from '../surfaceVisibility'
@@ -91,6 +92,10 @@ export function makeContextView(
     // toggles above, mount-local and never written back.
     const [adaptive, setAdaptive] = useState(false)
     const [durationCurve, setDurationCurve] = useState(true)
+    // DNA mode is shared by the trend bars and the browser's composition strip:
+    // one switch, both cards move. It forces total semantics (the bands are the
+    // composition), so turning it on parks the Total/Delta switch at total.
+    const [dna, setDna] = useState(false)
     // Strip-clicked turn: chart switches to turn granularity and scroll-centers that turn's bar, then clears via onFocusTurnHandled.
     const [focusTurn, setFocusTurn] = useState<number | null>(null)
     // Chat → Context jump: the assistant-action relay's one-shot request, held until the projection data is in, then resolved into a
@@ -199,13 +204,16 @@ export function makeContextView(
       () => (granularity === 'turn' ? aggregateByTurn(requests) : requests),
       [requests, granularity],
     )
-    // The scale readout's turn count: the LAST request's turn — the demo's own
-    // `REQUESTS[last].turn` (`docs/03` R1.5).
-    const lastTurn = displayRequests.length > 0 ? displayRequests[displayRequests.length - 1]?.turn ?? 1 : 0
     // The step labels' per-turn totals ("第 s 步 (共 n 步)"), tallied over the RAW step records — turn-mode
     // aggregates read their own stepCount instead.
     const stepsOf = useMemo(() => turnStepsOf(requests), [requests])
     const markers = useMemo(() => attachMarkers(displayRequests, events), [displayRequests, events])
+    // DNA mode's per-bar bands: one assemble() per displayed record, memoized on
+    // the timeline so hover-driven re-renders never reassemble.
+    const dnaBands = useMemo(
+      () => (dna && data !== null ? displayRequests.map(req => trendBandsOf(assemble(data, headers, req.seq))) : null),
+      [dna, data, headers, displayRequests],
+    )
 
     // Chat → Context jump, leg 1: pick up the assistant-action relay's request for this session —
     // once per mount, and again on every later record (the sidebar landing keeps this view mounted
@@ -347,12 +355,15 @@ export function makeContextView(
           <span className="redline-card-title-text">{t('trend.title')}</span>
           {/* 规模读数（`docs/03` R1.5，与 demo 的 `granLabel` 同一句）：`按轮次（共 N 轮）` / `按步骤（共 N 次请求）`。
               单独一个 class：`.redline-card-sub` 是**聚焦**那一行，两者语义不同（混用会让"没聚焦⇒没有副标题"的契约失真）。 */}
-          <span className="redline-card-scale">
-            {t(granularity === 'turn' ? 'trend.gran.turn' : 'trend.gran.step', { n: granularity === 'turn' ? lastTurn : displayRequests.length })}
-          </span>
           {/* Display modifiers ride the title's right as one segmented group: Adaptive rescales the bars to
               the visible window, Duration overlays each step's active time as a curve. */}
           <span className="redline-gran redline-trend-mods" role="group">
+            <button
+              type="button"
+              className={'redline-gran-btn' + (dna ? ' redline-gran-on' : '')}
+              title={t('trend.dnaTip')}
+              onClick={() => { const next = !dna; setDna(next); if (next) setTrendMode('total') }}
+            >{t('trend.dna')}</button>
             <button
               type="button"
               className={'redline-gran-btn' + (adaptive ? ' redline-gran-on' : '')}
@@ -384,6 +395,7 @@ export function makeContextView(
               >{t('gran.total')}</button>
               <button
                 className={'redline-gran-btn' + (trendMode === 'delta' ? ' redline-gran-on' : '')}
+                disabled={dna}
                 onClick={() => { setTrendMode('delta') }}
               >{t('gran.delta')}</button>
             </div>
@@ -415,6 +427,7 @@ export function makeContextView(
                 focusCat={focusCat}
                 adaptive={adaptive}
                 durationCurve={durationCurve}
+                dna={dnaBands}
                 onSelect={setSelectedSeq}
                 onHover={setHoveredSeq}
                 onHoverTurn={setHoverTurn}
@@ -457,6 +470,8 @@ export function makeContextView(
         loadImage={loadImage}
         detailState={source.detailState}
         onDetailRetry={source.retryDetail}
+        dna={dna}
+        onDnaChange={setDna}
       />
     )
 

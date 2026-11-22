@@ -58,6 +58,9 @@ export interface ContextBrowserProps {
    */
   nodeFocus?: { step: number | 'live'; seq: number; cat: Category } | null
   onNodeFocusHandled?: () => void
+  /** Controlled DNA mode shared with the trend card; omitted keeps the browser's own state. */
+  dna?: boolean
+  onDnaChange?: (dna: boolean) => void
   /**
    * The local-edit controller (`redlineDrafts.ts`): a row's `编辑` reads the FULL
    * text through it and its `保存` writes the plugin's own store — never the
@@ -641,7 +644,9 @@ export function makeContextBrowser(
     // stays mount-local and never writes back.
     const [toolSort, setToolSort] = useState<DefaultToolSort>(() => settings.defaultToolSort())
     // DNA mode: the composition bar redraws as ONE band per context item in prompt order (dna.ts), hovered/clicked per item.
-    const [dna, setDna] = useState(false)
+    const [localDna, setLocalDna] = useState(false)
+    const dna = props.dna ?? localDna
+    const setDna = (next: boolean): void => { if (props.onDnaChange !== undefined) props.onDnaChange(next); else setLocalDna(next) }
     const [dnaKey, setDnaKey] = useState<string | null>(null)
     // Every open-category change (toggle, step pick, pin, brief reveal) reports outward so the Context tab
     // can focus the trend chart on the open category.
@@ -1265,7 +1270,7 @@ export function makeContextBrowser(
             <button
               type="button"
               className={'redline-gran-btn' + (dna ? ' redline-gran-on' : '')}
-              onClick={() => { setDna(on => !on) }}
+              onClick={() => { setDna(!dna) }}
             >
               {t('browser.dna')}
             </button>

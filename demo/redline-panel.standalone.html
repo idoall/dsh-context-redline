@@ -195,6 +195,7 @@ body {
 /* Duration curve: one pointer-transparent polyline riding the bar area. */
 .dcurve { position: absolute; top: 0; left: 0; z-index: 2; overflow: visible; pointer-events: none; }
 .dcurve polyline { fill: none; stroke: var(--dsw-alias-brand); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.dnafill { display: block; width: 100%; border-radius: 2px 2px 0 0; background-size: 100% 100%; }
 .chart-dim .dcurve { opacity: .35; }
 /* 定位上下文：tooltip 必须挂在**滚动容器外面**——放里面会撑大 scrollWidth，
    让横向滚动条在每次 hover 时开合、整张卡片跟着跳（参考插件原话）。 */
@@ -741,7 +742,7 @@ body.explain [data-explain].explain-num::after {
 
 <header class="topbar">
   <div class="brand">
-    <b>上下文批改</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 ef86f9f</span>
+    <b>上下文批改</b><span class="tag" title="单文件版打包指纹（demo.css + demo.js 的 sha256 前 7 位）：拿它跟我核对是不是最新版">交互原型 v1 · 单文件版 c92ab20</span>
     <a class="link" href="./README.md">说明</a>
   </div>
   <div class="switches" id="switches" aria-label="状态开关"></div>
@@ -852,6 +853,7 @@ const EXPLAIN = {
   'trend.gran': { t: '按轮次 / 按步骤', what: '切换趋势图的粒度：按轮次 = 一轮一根柱（合并该轮各步，柱下标步数）；按步骤 = 一次请求一根柱。', effect: '只换画法；点柱子的含义随之变化——按轮次点柱子 = 选这一轮（右侧显示该轮末步），按步骤点柱子 = 选那一步。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.3', '参考插件 trendChart: granularity'] },
   'trend.mode': { t: '总计 / 增量', what: '一根柱代表"这次请求的上下文总量"还是"比上一次请求多了多少"。', effect: '增量模式下负值向下画（上下文变小，通常是压缩/裁剪之后）。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.4', '参考插件 trendChart: mode'] },
   'trend.adaptive': { t: '自适应刻度', what: '打开时，纵轴最大值按"当前可见的那几根柱"算；关闭时按整段历史算。', effect: '长会话里远处的尖峰不会把眼前的柱子压成一条线。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.5', '参考插件 trendChart: adaptive'] },
+  'trend.dna': { t: 'DNA 指纹', what: '按模型读取上下文的次序，把每一步的组成拆成一条色带；柱子的渐变就是这一步的上下文指纹。', effect: '只换柱子的画法，不改数据；DNA 模式下固定为总计语义，增量开关暂时禁用。', rev: '再点一次回到堆叠柱', confirm: '不需要', refs: ['参考插件 trendChart: dna'] },
   'trend.duration': { t: '耗时曲线', what: '把每一步的活跃耗时（step 窗口减去审批/提问等待）画成柱子上的曲线，右轴按耗时读数。', effect: '只叠加曲线，不改柱子的组成；按轮次时把该轮各步的耗时相加。', rev: '随时切回', confirm: '不需要', refs: ['参考插件 trendChart: durationCurve', 'docs/03 R1.5'] },
   'trend.pick': { t: '点一根柱子', what: '按轮次模式：选中这一轮（右侧切到该轮**末步**）；按步骤模式：选中那一步。**整列都可点**（不只是色块那一截）：移上去有底色与虚线框预览，点中后是实线框 + 底色，同一轮的其它柱子也会带整轮底色。', effect: '右侧浏览器的分类树、条数、token 全部跟着变。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.1 / R1.2'] },
   'trend.mark': { t: '✂ 压缩 / 剪枝标记', what: '表示这一刻上下文被压过：压缩（历史被摘要替换）或剪枝（工具输出被丢弃）。', effect: '每个事件只标在它之后的第一个请求上；按轮次时标在包含它的那一轮，一轮里有多个事件就显示 ✂×N。鼠标移上去看详情，点它可以跳到那一次。', rev: '只读', confirm: '不需要', refs: ['docs/03 R1.12', '参考插件 attachMarkers'] },
@@ -1025,7 +1027,7 @@ const initial = () => ({
   explain: false, selfcheck: false,
   sw: { turnOpen: false, live: true, team: true, drafts: 0, compressBusy: false, pendingState: 'settled', noUser: false, advanced: false },
   /* 趋势区选项（参照参考插件） */
-  trendGran: 'turn', trendMode: 'total', trendAdaptive: true, trendDuration: true, trendCat: null,
+  trendGran: 'turn', trendMode: 'total', trendAdaptive: true, trendDuration: true, trendDna: false, trendCat: null,
   selTurn: RICH_TURN, selSeq: REQUESTS[REQUESTS.length - 1].seq,
   openCat: 'user', openElem: null,
   editor: null, editorError: null, editorOk: null, focusTurn: null, trendEnter: true, deltaBase: 'turn',
@@ -1319,6 +1321,22 @@ const BAR_W = 14, BAR_GAP = 3, CHART_H = 112;
 const fmtDur = (ms) => (ms >= 60000 ? `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s` : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`);
 /** Deterministic demo-only step active time, so the curve reads like a real session. */
 const activeMsOf = (r) => 900 + ((r.seq * 37) % 9) * 320;
+/** Demo DNA gradient: category colors in read order (the live plugin uses one band per item). */
+const dnaGradientOf = (p) => {
+  let acc = 0
+  const total = CATS.reduce((n, c) => n + (p[c.key] || 0), 0)
+  if (total <= 0) return 'transparent'
+  const stops = []
+  for (const c of CATS) {
+    const v = p[c.key] || 0
+    if (v <= 0) continue
+    const from = (acc / total) * 100
+    acc += v
+    const to = (acc / total) * 100
+    stops.push(`${c.color} ${from}% ${to}%`)
+  }
+  return `linear-gradient(to top, ${stops.join(', ')})`
+};
 /* ⚠️ **刻度带与柱体的对齐公式**（2026-10-02 用户报"错位"；照参考插件 `dsh-context` 的
  *  `.lc-chart`（柱体行）+ `.lc-turns`（轮号行）口径：两行用**同一个 gap 与 padding**，
  *  每一格的宽度只算"它覆盖的那几根柱子 + 它们**之间的** gap"，**不含尾随 gap**。
@@ -1553,7 +1571,7 @@ function renderTrend() {
 
   $('cardTrend').innerHTML = `
     <div class="card-title">上下文趋势
-      <span class="hint">${esc(granLabel)}${S.trendCat ? ` · 聚焦 <b style="color:${catColor(S.trendCat)}">${esc(catLabel(S.trendCat))}</b> <a href="#" data-act="clearCat">（全部）</a>` : ''}</span>
+      <span class="hint">${S.trendCat ? `聚焦 <b style="color:${catColor(S.trendCat)}">${esc(catLabel(S.trendCat))}</b> <a href="#" data-act="clearCat">（全部）</a>` : ''}</span>
       <span class="grow" style="flex:1"></span>
       <button class="seg" data-trend="gran" data-v="turn" aria-pressed="${S.trendGran === 'turn'}" data-explain="trend.gran">按轮次</button>
       <button class="seg" data-trend="gran" data-v="step" aria-pressed="${S.trendGran === 'step'}" data-explain="trend.gran">按步骤</button>
@@ -1561,6 +1579,7 @@ function renderTrend() {
       <button class="seg" data-trend="mode" data-v="total" aria-pressed="${S.trendMode === 'total'}" data-explain="trend.mode">总计</button>
       <button class="seg" data-trend="mode" data-v="delta" aria-pressed="${S.trendMode === 'delta'}" data-explain="trend.mode">增量</button>
       <span class="segsep"></span>
+      <button class="seg" data-trend="dna" aria-pressed="${S.trendDna}" data-explain="trend.dna">DNA</button>
       <button class="seg" data-trend="adaptive" aria-pressed="${S.trendAdaptive}" data-explain="trend.adaptive">自适应</button>
       <button class="seg" data-trend="duration" aria-pressed="${S.trendDuration}" data-explain="trend.duration">耗时</button>
     </div>
@@ -1611,12 +1630,14 @@ function renderTrend() {
                 return `<i class="cseg" data-cat="${c.key}" style="height:${Math.max(1, Math.round(Math.abs(sv) * scale))}px;background:${c.color}"></i>`;
               }).join('');
               const totalScale = CHART_H / Math.max(1, sc0.maxTotal);
-              const inner = S.trendMode === 'delta'
-                ? `<i class="tbar-fill tbar-diverge">
+              const inner = S.trendDna
+                ? `<i class="tbar-fill tbar-stack"><b class="dnafill" style="height:${Math.max(1, Math.round(v / Math.max(1, sc0.maxTotal) * CHART_H))}px;background:${dnaGradientOf(p)}"></b></i>`
+                : S.trendMode === 'delta'
+                  ? `<i class="tbar-fill tbar-diverge">
                      <i class="arm arm-up" style="bottom:${sc0.downPx}px">${segs(p, sc0.deltaScale, 'up')}</i>
                      <i class="arm arm-down" style="top:${sc0.upPx}px">${segs(p, sc0.deltaScale, 'down')}</i>
                    </i>`
-                : `<i class="tbar-fill tbar-stack">${segs(p, totalScale)}</i>`;
+                  : `<i class="tbar-fill tbar-stack">${segs(p, totalScale)}</i>`;
               return `<button class="tbar${enter ? ' enter' : ''}${sel ? ' sel' : ''}${inTurn ? ' in-turn' : ''}" data-i="${i}" data-seq="${r.seq}" data-explain="trend.pick"
                         aria-label="${esc(label)}"
                         data-turn="${r.turn}" style="width:${BAR_W}px;--i:${Math.min(i, 40)}">${inner}</button>`;
@@ -1647,6 +1668,7 @@ function renderTrend() {
       if (k === 'mode') { S.trendMode = b.dataset.v; S.trendEnter = true; }
       if (k === 'adaptive') { S.trendAdaptive = !S.trendAdaptive; S.trendEnter = true; }
       if (k === 'duration') { S.trendDuration = !S.trendDuration; S.trendEnter = true; }
+      if (k === 'dna') { S.trendDna = !S.trendDna; if (S.trendDna) S.trendMode = 'total'; S.trendEnter = true; }
       render();
     };
   });
