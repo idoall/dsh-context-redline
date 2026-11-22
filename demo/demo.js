@@ -29,6 +29,7 @@ const EXPLAIN = {
   'trend.gran': { t: '按轮次 / 按步骤', what: '切换趋势图的粒度：按轮次 = 一轮一根柱（合并该轮各步，柱下标步数）；按步骤 = 一次请求一根柱。', effect: '只换画法；点柱子的含义随之变化——按轮次点柱子 = 选这一轮（右侧显示该轮末步），按步骤点柱子 = 选那一步。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.3', '参考插件 trendChart: granularity'] },
   'trend.mode': { t: '总计 / 增量', what: '一根柱代表"这次请求的上下文总量"还是"比上一次请求多了多少"。', effect: '增量模式下负值向下画（上下文变小，通常是压缩/裁剪之后）。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.4', '参考插件 trendChart: mode'] },
   'trend.adaptive': { t: '自适应刻度', what: '打开时，纵轴最大值按"当前可见的那几根柱"算；关闭时按整段历史算。', effect: '长会话里远处的尖峰不会把眼前的柱子压成一条线。', rev: '随时切回', confirm: '不需要', refs: ['docs/03 R1.5', '参考插件 trendChart: adaptive'] },
+  'trend.duration': { t: '耗时曲线', what: '把每一步的活跃耗时（step 窗口减去审批/提问等待）画成柱子上的曲线，右轴按耗时读数。', effect: '只叠加曲线，不改柱子的组成；按轮次时把该轮各步的耗时相加。', rev: '随时切回', confirm: '不需要', refs: ['参考插件 trendChart: durationCurve', 'docs/03 R1.5'] },
   'trend.pick': { t: '点一根柱子', what: '按轮次模式：选中这一轮（右侧切到该轮**末步**）；按步骤模式：选中那一步。**整列都可点**（不只是色块那一截）：移上去有底色与虚线框预览，点中后是实线框 + 底色，同一轮的其它柱子也会带整轮底色。', effect: '右侧浏览器的分类树、条数、token 全部跟着变。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.1 / R1.2'] },
   'trend.mark': { t: '✂ 压缩 / 剪枝标记', what: '表示这一刻上下文被压过：压缩（历史被摘要替换）或剪枝（工具输出被丢弃）。', effect: '每个事件只标在它之后的第一个请求上；按轮次时标在包含它的那一轮，一轮里有多个事件就显示 ✂×N。鼠标移上去看详情，点它可以跳到那一次。', rev: '只读', confirm: '不需要', refs: ['docs/03 R1.12', '参考插件 attachMarkers'] },
   'trend.strip': { t: '轮次刻度带（趋势图下面那排轮号）', what: '就是图下面那排 1…28 的号码格。**按轮次**模式：一格 = 一轮；**按步骤**模式：一格 = 一轮，格子的宽度 = 这一轮有几步。', effect: '点一格 = 选中那一轮的末步（选中的格子会描边，并弹一句提示）。⚠️ 手机上这排格子很窄（它是坐标轴，宽度跟着轮长走），要稳定选轮次请用上面的 `轮次` 下拉。讲解模式下**每类只标一个编号**（只标第一格），其余每格行为一样。', rev: '随时可改选', confirm: '不需要', refs: ['docs/03 R1.10'] },
@@ -201,7 +202,7 @@ const initial = () => ({
   explain: false, selfcheck: false,
   sw: { turnOpen: false, live: true, team: true, drafts: 0, compressBusy: false, pendingState: 'settled', noUser: false, advanced: false },
   /* 趋势区选项（参照参考插件） */
-  trendGran: 'turn', trendMode: 'total', trendAdaptive: true, trendCat: null,
+  trendGran: 'turn', trendMode: 'total', trendAdaptive: true, trendDuration: true, trendCat: null,
   selTurn: RICH_TURN, selSeq: REQUESTS[REQUESTS.length - 1].seq,
   openCat: 'user', openElem: null,
   editor: null, editorError: null, editorOk: null, focusTurn: null, trendEnter: true, deltaBase: 'turn',
@@ -491,6 +492,10 @@ function renderStats() {
 
 /* ---------- 5.1 上下文趋势（按轮次 / 按步骤 · 总计 / 增量 · 自适应 · 聚焦 · ✂） ---------- */
 const BAR_W = 14, BAR_GAP = 3, CHART_H = 112;
+/** The duration overlay's compact formatter (same units as the plugin's fmtDuration). */
+const fmtDur = (ms) => (ms >= 60000 ? `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s` : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`);
+/** Deterministic demo-only step active time, so the curve reads like a real session. */
+const activeMsOf = (r) => 900 + ((r.seq * 37) % 9) * 320;
 /* ⚠️ **刻度带与柱体的对齐公式**（2026-10-02 用户报"错位"；照参考插件 `dsh-context` 的
  *  `.lc-chart`（柱体行）+ `.lc-turns`（轮号行）口径：两行用**同一个 gap 与 padding**，
  *  每一格的宽度只算"它覆盖的那几根柱子 + 它们**之间的** gap"，**不含尾随 gap**。
@@ -605,8 +610,6 @@ function applyTrendScale() {
   if (mid) mid.textContent = delta ? '' : fmt(sc0.maxTotal / 2);
   if (q1) q1.textContent = delta ? '' : fmt(sc0.maxTotal * 0.25);
   if (bot) bot.textContent = delta ? '-' + fmt(sc0.maxDown) : '0';
-  const inline = $('trendAxisTopInline');
-  if (inline) inline.textContent = fmt(delta ? sc0.maxUp : sc0.maxTotal);
   const zero = sc.querySelector ? sc.querySelector('.zeroline') : null;
   if (zero) zero.style.bottom = sc0.downPx + 'px';
   const totalScale = CHART_H / Math.max(1, sc0.maxTotal);
@@ -716,12 +719,18 @@ function renderTrend() {
   const selIdx = list.findIndex((r) => r.seq === S.selSeq);
   const granLabel = S.trendGran === 'turn' ? `按轮次（共 ${REQUESTS[REQUESTS.length - 1].turn} 轮）` : `按步骤（共 ${REQUESTS.length} 次请求）`;
   const markers = list.map((r) => markersOfBar(r));
+  // Duration overlay: turn bars sum the turn's steps; step bars use the step's own figure.
+  const durations = list.map((r) => (S.trendGran === 'turn'
+    ? reqsOfTurn(r.turn).reduce((n, q) => n + activeMsOf(q), 0)
+    : activeMsOf(r)));
+  const maxActive = Math.max(1, ...durations);
+  const durationPoints = durations.map((ms, i) => `${i * (BAR_W + BAR_GAP) + BAR_W / 2},${Math.round(CHART_H - (ms / maxActive) * CHART_H)}`).join(' ');
   const enter = !!S.trendEnter;      // 逐根升起：只在切粒度/模式/自适应时播（照上游 lc-bar-in）
   S.trendEnter = false;
 
   $('cardTrend').innerHTML = `
     <div class="card-title">上下文趋势
-      <span class="hint">${esc(granLabel)}${S.trendCat ? ` · 聚焦 <b style="color:${catColor(S.trendCat)}">${esc(catLabel(S.trendCat))}</b> <a href="#" data-act="clearCat">（全部）</a>` : ''} · 刻度 = <b id="trendAxisTopInline">${fmt(maxAll)}</b>${S.trendAdaptive ? '（自适应）' : ''}</span>
+      <span class="hint">${esc(granLabel)}${S.trendCat ? ` · 聚焦 <b style="color:${catColor(S.trendCat)}">${esc(catLabel(S.trendCat))}</b> <a href="#" data-act="clearCat">（全部）</a>` : ''}</span>
       <span class="grow" style="flex:1"></span>
       <button class="seg" data-trend="gran" data-v="turn" aria-pressed="${S.trendGran === 'turn'}" data-explain="trend.gran">按轮次</button>
       <button class="seg" data-trend="gran" data-v="step" aria-pressed="${S.trendGran === 'step'}" data-explain="trend.gran">按步骤</button>
@@ -730,6 +739,7 @@ function renderTrend() {
       <button class="seg" data-trend="mode" data-v="delta" aria-pressed="${S.trendMode === 'delta'}" data-explain="trend.mode">增量</button>
       <span class="segsep"></span>
       <button class="seg" data-trend="adaptive" aria-pressed="${S.trendAdaptive}" data-explain="trend.adaptive">自适应</button>
+      <button class="seg" data-trend="duration" aria-pressed="${S.trendDuration}" data-explain="trend.duration">耗时</button>
     </div>
     <div class="trendwrap">
       <div class="axis">
@@ -739,6 +749,13 @@ function renderTrend() {
         <span id="trendAxisQ1" class="at-q1">${S.trendMode === 'delta' ? '' : fmt(maxAll * 0.25)}</span>
         <span id="trendAxisBottom" class="at-bot">${S.trendMode === 'delta' ? '-' + fmt(sc0.maxDown) : '0'}</span>
       </div>
+      ${S.trendDuration ? `<div class="axis axis-r">
+        <span class="at-top">${fmtDur(maxActive)}</span>
+        <span class="at-q3">${fmtDur(Math.round(maxActive * 0.75))}</span>
+        <span class="at-mid">${fmtDur(Math.round(maxActive * 0.5))}</span>
+        <span class="at-q1">${fmtDur(Math.round(maxActive * 0.25))}</span>
+        <span class="at-bot">0</span>
+      </div>` : ''}
       <div class="trendpos">
       <div class="chart-tip" id="trendTip" hidden></div>
       <div class="trendscroll" id="trendScroll">
@@ -751,6 +768,7 @@ function renderTrend() {
               <i class="gl" style="top:0"></i><i class="gl" style="top:28px"></i><i class="gl" style="top:56px"></i><i class="gl" style="top:84px"></i><i class="gl zero" style="top:112px"></i>
             </div>`}
             ${S.trendMode === 'delta' ? `<i class="zeroline" style="bottom:${sc0.downPx}px"></i>` : ''}
+            ${S.trendDuration ? `<svg class="dcurve" width="${spanW(list.length)}" height="${CHART_H}" aria-hidden="true"><polyline points="${durationPoints}"></polyline></svg>` : ''}
             ${list.map((r, i) => {
               const v = series[i] || 0, p = parts[i] || {};
               const sel = r.seq === S.selSeq;
@@ -805,6 +823,7 @@ function renderTrend() {
       if (k === 'gran') { S.trendGran = b.dataset.v; S.trendEnter = true; }
       if (k === 'mode') { S.trendMode = b.dataset.v; S.trendEnter = true; }
       if (k === 'adaptive') { S.trendAdaptive = !S.trendAdaptive; S.trendEnter = true; }
+      if (k === 'duration') { S.trendDuration = !S.trendDuration; S.trendEnter = true; }
       render();
     };
   });

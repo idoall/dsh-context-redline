@@ -415,8 +415,8 @@ describe('ContextView — interactions', () => {
     const segs = queryAll(m.container, '.redline-bar .redline-bar-stack > .redline-cat-seg')
     assert.equal(segs.length, 3)
     for (const s of segs) assert.equal(s.getAttribute('data-redline-cat'), 'assistant')
-    assert.ok(text(m.container).includes(DICT_EN['trend.focus'].replace('{cat}', DICT_EN['cat.assistant'])),
-      'the card subtitle names the focused category')
+    assert.equal(text(m.container).includes('Showing ' + DICT_EN['cat.assistant'] + ' only'), false,
+      'the upstream focus subtitle is gone; the bars alone carry the focus')
 
     // Collapsing the category restores the whole composition and drops the subtitle.
     await click(queryAll(m.container, '.redline-br-cat-row')[5])
@@ -442,7 +442,8 @@ describe('ContextView — interactions', () => {
     assert.equal(text(query(card, '.redline-card-scale')), DICT_EN['trend.gran.step'].replace('{n}', '3'))
     const toggleOf = () => buttonByText(m.container, DICT_EN['trend.adaptive'])
     assert.equal(toggleOf().parentElement?.previousElementSibling?.previousElementSibling, titleText)
-    assert.equal(toggleOf().parentElement?.getAttribute('title'), DICT_EN['trend.adaptiveHint'])
+    assert.equal(toggleOf().getAttribute('title'), DICT_EN['trend.adaptiveHint'])
+    assert.equal(buttonByText(m.container, DICT_EN['trend.duration']).getAttribute('title'), DICT_EN['trend.durationHint'])
     assert.ok(!toggleOf().className.includes('redline-gran-on'), 'off at mount')
 
     // Toggling is mount-local: the chart keeps rendering (jsdom has no layout, so the zero-width viewport falls

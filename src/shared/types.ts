@@ -618,6 +618,14 @@ export interface RequestRecord {
   cacheRead?: number
   output?: number
   /**
+   * The step's ACTIVE milliseconds (step window minus the user's approval /
+   * Q&A waits) — the trend chart's duration overlay reads it. Additive and
+   * optional: rows folded before the field existed carry no figure, and the
+   * curve breaks there instead of faking a point. The Host writes it at
+   * `step/end` onto the record committed by that step's `assistant/message`.
+   */
+  activeMs?: number
+  /**
    * Turn-mode aggregate marker, set by the Client's aggregateByTurn (one bar
    * per turn shows its LAST step's record). The Host never sets it.
    */

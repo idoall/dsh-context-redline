@@ -70,6 +70,7 @@ const requestRecordSchema = z.object({
   skill: z.number().int().nonnegative().optional(),
   cacheRead: z.number().int().nonnegative().optional(),
   output: z.number().int().nonnegative().optional(),
+  activeMs: z.number().nonnegative().optional(),
   stepCount: z.number().int().positive().optional(),
 }).strict()
 
@@ -261,6 +262,9 @@ const timelineStateSchema = z.object({
     time: z.number(),
     firstToken: z.number().optional(),
   }).strict().optional(),
+  stepWaits: z.array(z.object({ start: z.number(), end: z.number() }).strict()).optional(),
+  stepApprovals: z.record(z.string(), z.number()).optional(),
+  stepRequestSeq: z.number().optional(),
   callNames: z.record(z.string(), z.object({ name: z.string(), start: z.number(), argsRaw: z.string().optional() }).strict()),
   pendingShadowedSeqs: z.array(z.number()).optional(),
   pendingShadowEventSeq: z.number().optional(),
@@ -426,7 +430,11 @@ export function createContextTimelineDefinition(config: Config, slim: () => bool
     // so per the rule above the version is bumped: cached rows refold from the log
     // instead of being restored against a schema that now (correctly) says those
     // keys do not exist.
-    stateVersion: 23,
+    // 24: the per-request step active time (`activeMs`) joined request records,
+    // and the step-wait/approval/request-back-pointer slots joined the state —
+    // the trend chart's duration overlay. Requests folded before it can never
+    // gain the figure later, so cached rows refold from the durable log.
+    stateVersion: 24,
   }
   return definition
 }

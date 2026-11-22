@@ -20,7 +20,7 @@
 
 > A DeepSeek Harness community plugin. It does not modify DSH source or rewrite the source session log.
 >
-> **Version `0.4.1` — supports DSH `>=0.2.2-rc.5 <0.3.0-0`.** Built and regression-tested against `0.2.2-rc.5`; Node.js `>=24.9.0` is required. DSH `0.3.0` prereleases are excluded.
+> **Version `0.5.0` — supports DSH `>=0.2.2-rc.5 <0.3.0-0`.** Built and regression-tested against `0.2.2-rc.5`; Node.js `>=24.9.0` is required. DSH `0.3.0` prereleases are excluded.
 
 Edits stay local until confirmation. The plugin then opens a zero-history ordinary session in the current workspace and sends the exact final message you approved. When the task finishes, its bound result returns verbatim to the source session.
 
@@ -37,6 +37,7 @@ Edits stay local until confirmation. The plugin then opens a zero-history ordina
 - **Reversible deletion.** Delete means “do not migrate this identity”; the source log remains append-only.
 - **Authoritative final message.** The confirmation textarea is the exact first user message written to the new session.
 - **Anchored conversation without migration.** Starts an independent root conversation from a task plus a frozen runtime snapshot of goal, acceptance criteria and discipline. Nothing is copied from the current session and no result is returned to it.
+- **Trend duration overlay.** Each trend bar carries its step’s active time as a curve read off the right-hand axis; turn mode sums the turn’s steps. The Adaptive and Duration modifiers share one compact toggle group, and the old focused-category subtitle is gone.
 - **Anchor with two modes.** An optional short anchor, written by you, can be repeated at the start and end of the first message, or supplied as a per-request runtime rule. The runtime mode uses DSH's runtime-context snapshot: unchanged text is not rewritten, and after compaction it is re-declared with a supersession notice. Neither mode touches the preset-owned system prompt or the source session.
 - **Per-session model selection.** A compact floating picker configures only the carrier Agent and never changes the source/global default.
 - **Ordinary zero-history session.** The carrier is a root session in the current workspace, not inherited fork history.
@@ -64,10 +65,10 @@ Requires DeepSeek Harness `0.2.2-rc.5` or a newer supported `0.2.x`, plus Node.j
 Install or upgrade to this exact release:
 
 ```sh
-dsh plugin --profile web add dsh-context-redline@0.4.1
+dsh plugin --profile web add dsh-context-redline@0.5.0
 ```
 
-This patch fixes the anchored-conversation false negative `prompt-not-persisted` (the post-flush query projection can lag; the Host now re-reads a bounded number of times) and gives the dialog footer its missing spacing. It keeps the independent anchored conversation, both anchor modes and the DSH 0.2.2-rc.5 compatibility fixes. The runtime rule is opt-in, shown verbatim in confirmation, frozen in the ledger, and registered through `systemPrompt.context` for the carrier only; it is not a preset system prompt or a hidden injection. Unaccepted diagnostics and carrier-seed experiments are not included. Automated tests do not constitute production visual or real-session acceptance.
+This release adds the trend duration overlay (step active time, turn-summed, with a right-hand axis), consolidates the title modifiers, removes the focused-category subtitle, and ports the hover-path performance fix. It keeps the anchored conversation, both anchor modes and the DSH 0.2.2-rc.5 compatibility fixes. The runtime rule is opt-in, shown verbatim in confirmation, frozen in the ledger, and registered through `systemPrompt.context` for the carrier only; it is not a preset system prompt or a hidden injection. Unaccepted diagnostics and carrier-seed experiments are not included. Automated tests do not constitute production visual or real-session acceptance.
 
 Local development:
 

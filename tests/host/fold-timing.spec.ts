@@ -447,3 +447,66 @@ describe('timing — the throughput seat', () => {
     assert.equal(state.timing?.genMs, 1_400)
   })
 })
+
+describe('activeMs — the trend duration overlay', () => {
+  test('a step with no waits stamps its whole window onto the committed request', () => {
+    const { state } = driveTimeline([
+      stepStart(1, { time: 0 }),
+      assistantMessage(2, { time: 1_000 }),
+      stepEnd(3, { time: 5_000 }),
+    ])
+    assert.equal(state.requests.length, 1)
+    assert.equal(state.requests[0]?.activeMs, 5_000)
+    assert.equal(state.stepWaits, undefined)
+    assert.equal(state.stepApprovals, undefined)
+    assert.equal(state.stepRequestSeq, undefined)
+  })
+
+  test('an approval wait is subtracted from the step window', () => {
+    const { state } = driveTimeline([
+      stepStart(1, { time: 0 }),
+      assistantMessage(2, { time: 1_000 }),
+      { type: 'approval/asked', seq: 3, time: 1_500, data: { id: 'approval-1' } },
+      { type: 'approval/decided', seq: 4, time: 2_500, data: { id: 'approval-1' } },
+      stepEnd(5, { time: 5_000 }),
+    ])
+    assert.equal(state.requests[0]?.activeMs, 4_000)
+    assert.equal(state.stepApprovals, undefined)
+    assert.equal(state.stepWaits, undefined)
+  })
+
+  test('the ask_user_question tool window is a user wait', () => {
+    const { state } = driveTimeline([
+      stepStart(1, { time: 0 }),
+      assistantMessage(2, { time: 1_000 }),
+      { type: 'tool/call', seq: 3, time: 1_200, data: { callId: 'q1', name: 'ask_user_question', arguments: '{}' } },
+      toolResult(4, { callId: 'q1', content: [{ type: 'text', text: 'answer' }], time: 3_200 }),
+      stepEnd(5, { time: 5_000 }),
+    ])
+    assert.equal(state.requests[0]?.activeMs, 3_000)
+  })
+
+  test('a dangling approval closes at step/end instead of pricing the whole step', () => {
+    const { state } = driveTimeline([
+      stepStart(1, { time: 0 }),
+      assistantMessage(2, { time: 1_000 }),
+      { type: 'approval/asked', seq: 3, time: 1_500, data: { id: 'crash-pair' } },
+      stepEnd(4, { time: 5_000 }),
+    ])
+    assert.equal(state.requests[0]?.activeMs, 1_500)
+  })
+
+  test('overlapping waits price their clamped union, never twice', () => {
+    const { state } = driveTimeline([
+      stepStart(1, { time: 0 }),
+      assistantMessage(2, { time: 1_000 }),
+      { type: 'approval/asked', seq: 3, time: 1_500, data: { id: 'a' } },
+      { type: 'approval/asked', seq: 4, time: 2_000, data: { id: 'b' } },
+      { type: 'approval/decided', seq: 5, time: 3_000, data: { id: 'a' } },
+      { type: 'approval/decided', seq: 6, time: 3_500, data: { id: 'b' } },
+      stepEnd(7, { time: 5_000 }),
+    ])
+    // Union of [1500,3000] and [2000,3500] = 2000ms, not 2500ms.
+    assert.equal(state.requests[0]?.activeMs, 3_000)
+  })
+})

@@ -171,6 +171,21 @@ export interface TimelineState {
     firstToken?: number
   }
   /**
+   * The open step's CLOSED user waits (real log instants): approval decisions
+   * (`approval/asked` → `approval/decided`) and the `ask_user_question` tool's
+   * whole window. `step/end` subtracts their clamped union from the step
+   * window to price the request's `activeMs`, then deletes the slot.
+   */
+  stepWaits?: { start: number; end: number }[]
+  /** Pending approval waits (request id → asked instant), armed inside an open step. */
+  stepApprovals?: Record<string, number>
+  /**
+   * The seq of the request committed by the open step's `assistant/message`;
+   * `step/end` stamps `activeMs` onto that record. One slot, removed with the
+   * step like `stepStart`.
+   */
+  stepRequestSeq?: number
+  /**
    * Tool callId → the call's name, start instant, and raw arguments, armed by
    * `tool/call` and DELETED when its `tool/result` folds in (one result per
    * call, in log order) — the map stays at pending-call size instead of
@@ -1004,6 +1019,9 @@ export function applyTimeline(state: TimelineState, event: TimelineEvent, bounds
         // never hit that, hostile ones just supersede it.
         const s = ensure([])
         s.stepStart = { time: event.time }
+        delete s.stepWaits
+        delete s.stepApprovals
+        delete s.stepRequestSeq
         break
       }
       case 'step/end': {
@@ -1011,11 +1029,58 @@ export function applyTimeline(state: TimelineState, event: TimelineEvent, bounds
         // refold) — nothing to price, and the state must stay reference-equal.
         const start = state.stepStart
         if (start === undefined) return state
-        const s = ensure(['timing'])
+        const s = ensure(state.stepRequestSeq !== undefined ? ['timing', 'requests'] : ['timing'])
         ensureTiming(s).wallMs += durOf(start.time, event.time)
-        // Consume-once: DELETE the optional field — assigning `undefined`
+        // Active time = step window minus the clamped union of the step's
+        // user waits. Approval pairs left dangling by a crash close at this
+        // end instant; overlapping waits price their union, never twice.
+        const waits: { start: number; end: number }[] = [...(state.stepWaits ?? [])]
+        for (const id in (state.stepApprovals ?? {})) {
+          waits.push({ start: (state.stepApprovals ?? {})[id] ?? event.time, end: event.time })
+        }
+        waits.sort((a, b) => (a.start - b.start) || (a.end - b.end))
+        let waitMs = 0
+        let waitCursor = start.time
+        for (const wait of waits) {
+          const from = Math.max(waitCursor, wait.start)
+          const to = Math.min(wait.end, event.time)
+          if (to > from) { waitMs += to - from; waitCursor = to }
+        }
+        const activeMs = durOf(start.time, event.time) - waitMs
+        const last = state.requests.at(-1)
+        if (last !== undefined && last.seq === state.stepRequestSeq) {
+          s.requests[s.requests.length - 1] = { ...last, activeMs }
+        }
+        // Consume-once: DELETE the optional fields — assigning `undefined`
         // would break the plain-JSON persisted-state precondition.
         delete s.stepStart
+        delete s.stepWaits
+        delete s.stepApprovals
+        delete s.stepRequestSeq
+        break
+      }
+      case 'approval/asked': {
+        // Arm one approval wait inside the open step; an out-of-step ask
+        // prices nothing and leaves the state reference-equal.
+        const id = data?.id
+        if (state.stepStart === undefined || typeof id !== 'string') return state
+        const s = ensure([])
+        s.stepApprovals = { ...(state.stepApprovals ?? {}), [id]: event.time }
+        break
+      }
+      case 'approval/decided': {
+        // Close the matching wait; a decided without its armed asked is a
+        // refold/out-of-step pair and prices nothing.
+        const id = data?.id
+        const open = state.stepApprovals
+        const askedAt = typeof id === 'string' ? open?.[id] : undefined
+        if (open === undefined || askedAt === undefined) return state
+        const s = ensure([])
+        s.stepWaits = [...(state.stepWaits ?? []), { start: askedAt, end: event.time }]
+        const kept: Record<string, number> = {}
+        for (const k in open) if (k !== id) kept[k] = open[k] ?? 0
+        if (Object.keys(kept).length > 0) s.stepApprovals = kept
+        else delete s.stepApprovals
         break
       }
       case 'user/message': {
@@ -1088,6 +1153,12 @@ export function applyTimeline(state: TimelineState, event: TimelineEvent, bounds
         // tally): the result only carries its tool name when it pairs with
         // the armed call, so an unpaired/foreign one counts nothing.
         if (node.tool === ASK_USER_TOOL) s.humanInputs = (s.humanInputs ?? 0) + 1
+        // The Q&A tool's whole window is the user's answer wait; book it for
+        // the `activeMs` subtraction, with the same pairing authority as the
+        // human-input tally (an unpaired result waits nothing).
+        if (pendingEntry !== undefined && pendingEntry.name === ASK_USER_TOOL && state.stepStart !== undefined) {
+          s.stepWaits = [...(state.stepWaits ?? []), { start: pendingEntry.start, end: event.time }]
+        }
         // The file-op derivation (shared/fileOps.ts): the armed call's
         // arguments + the result's presentation meta. Unpaired results book
         // nothing (parity with the surface node's missing tool label).
@@ -1203,6 +1274,9 @@ export function applyTimeline(state: TimelineState, event: TimelineEvent, bounds
           }
         }
         s.requests.push(record)
+        // Arm the step's request back-pointer; `step/end` stamps activeMs on
+        // this record. A message without an open step arms nothing.
+        if (state.stepStart !== undefined) s.stepRequestSeq = record.seq
         // The `turnRuns` ledger (see TimelineState): one turn run per change
         // of the `turn` value, exactly `countTurnRuns`'s rule — the last
         // retained request decides the delta, and a restored row without the

@@ -50,9 +50,9 @@ describe('createContextTimelineDefinition', () => {
   test('carries the supported projection contract on one unit', () => {
     const def = createContextTimelineDefinition({}, () => false)
     assert.equal(def.key, 'redlineTimeline')
-    // 23（2026-10-07）：持久化状态删掉了 notices / lastRequestSeq 两个字段（结果回流可见性
-    // 随用户裁定撤下，docs/11 D55）⟹ 按 timeline.ts 里的规则必须递增（缓存行改为重 fold）。
-    assert.equal(def.stateVersion, 23)
+    // 24（2026-11-22）：请求记录新增 activeMs（趋势时长曲线），状态新增 stepWaits /
+    // stepApprovals / stepRequestSeq；缓存行必须重 fold 才能补回时长。
+    assert.equal(def.stateVersion, 24)
     assert.equal(typeof def.init, 'function')
     assert.equal(typeof def.apply, 'function')
     // The supported registry contract: stateSchema + a REQUIRED wire block.

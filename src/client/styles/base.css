@@ -98,9 +98,9 @@
 .redline-trend-ctl { margin-left: auto; display: flex; gap: 6px; align-items: center; }
 .redline-trend-ctl .redline-gran { margin-left: 0; }
 /* 原来这里还有 `.redline-heat-ctl`（洞察面的热力图标题包装）三条规则 —— 随洞察面删除（docs/10 M3-35/M6-17）。 */
-/* The trend card's adaptive switch rides the title text's right — a single-button group whose auto margin is
-   neutralized so it stays adjacent (the browser card's DNA toggle idiom). */
-.redline-trend-adaptive { margin-left: 0; flex: none; }
+/* The trend card's display-modifier group rides the title text's right; its auto margin is neutralized so it
+   stays adjacent (the browser card's toggle idiom). */
+.redline-trend-mods { margin-left: 0; flex: none; }
 .redline-gran-btn { border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1; padding: 3px 8px; border-radius: 5px; cursor: pointer; font-family: inherit; transition: color var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out); }
 .redline-gran-btn:hover { color: var(--dsw-alias-label-primary); }
 .redline-gran-on, .redline-gran-on:hover { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); }

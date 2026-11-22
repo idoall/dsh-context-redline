@@ -99,6 +99,10 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 
 - Bounded post-flush re-reads for prompt persistence (query projection lag) and dialog footer spacing; no product-semantics change.
 
+### Trend duration overlay (0.5.0, 2026-11-22)
+
+- Port the reference trend chart's per-step active-time overlay (`activeMs`), merged title modifiers, focused-category subtitle removal and the hover-path performance fix into the `redline-` namespace; no upstream-only cards or DNA mode are imported.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

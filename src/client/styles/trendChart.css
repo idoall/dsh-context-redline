@@ -9,6 +9,9 @@
 .redline-axis-mid { top: 69px; }
 .redline-axis-q1 { top: 97px; }
 .redline-axis-bot { top: 125px; }
+/* The duration overlay's right-hand axis: anchored to its column's left edge so labels stream away from the plot. */
+.redline-axis-r { width: 34px; flex: none; }
+.redline-axis-r span { left: 0; right: auto; }
 /* Positioned wrapper owning the chart viewport: the scroller holds ONLY the scrolling content, while the hover
    tip sits beside it anchored here — absolutely-positioned children of a scroller would contribute to its
    scrollable overflow (a wide tooltip once flapped the horizontal scrollbar per hover) AND translate away with
@@ -90,7 +93,7 @@
  bars' dim+brightness pairing. The re-light list below must track the Category vocabulary —
  a bucket missing here dims EVERY bar with nothing lit (the #66 skill regression).
  */
-.redline-cat-seg { transition: filter var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out), opacity var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out); }
+.redline-cat-seg { transition: opacity var(--ds-transition-duration, 0.2s) var(--ds-ease-in-out, ease-in-out); }
 .redline-chart[data-redline-catdim] .redline-cat-seg { opacity: 0.35; }
 .redline-chart[data-redline-catdim='system'] .redline-cat-seg[data-redline-cat='system'],
 .redline-chart[data-redline-catdim='tools'] .redline-cat-seg[data-redline-cat='tools'],
@@ -98,7 +101,7 @@
 .redline-chart[data-redline-catdim='inject'] .redline-cat-seg[data-redline-cat='inject'],
 .redline-chart[data-redline-catdim='skill'] .redline-cat-seg[data-redline-cat='skill'],
 .redline-chart[data-redline-catdim='assistant'] .redline-cat-seg[data-redline-cat='assistant'],
-.redline-chart[data-redline-catdim='tool'] .redline-cat-seg[data-redline-cat='tool'] { opacity: 1; filter: brightness(1.18); }
+.redline-chart[data-redline-catdim='tool'] .redline-cat-seg[data-redline-cat='tool'] { opacity: 1; }
 .redline-bar-marker { position: absolute; top: -16px; left: 50%; transform: translateX(-50%); font-size: 11px; color: var(--dsw-alias-state-warn-primary); }
 /*
  Step flags (step granularity only): every 5th bar plants a flag at its RIGHT edge — a 1px pole rising from
@@ -126,3 +129,9 @@
    updateTurnLabels' thinning chain stays only as the measured last resort past the 6px floor. */
 .redline-turn-label { display: inline-block; }
 
+/* The duration overlay: one pointer-transparent svg riding the scrolling content (the 18px top padding band
+   excluded), so it scrolls with the bars; a bar without activeMs breaks the polyline instead of faking a point. */
+.redline-duration { position: absolute; top: 18px; left: 2px; z-index: 1; overflow: visible; pointer-events: none; }
+.redline-duration polyline, .redline-duration circle { fill: none; stroke: var(--dsw-alias-brand-primary); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.redline-duration circle { fill: var(--dsw-alias-brand-primary); }
+.redline-chart-dim .redline-duration { opacity: 0.35; }

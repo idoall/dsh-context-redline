@@ -180,6 +180,14 @@ body {
 .axis .at-mid { top: 69px; }
 .axis .at-q1  { top: 97px; }
 .axis .at-bot { top: 125px; }
+/* The duration overlay's right-hand axis: labels stream rightward away from the plot. */
+.axis-r { width: 34px; order: 3; }
+.axis-r span { left: 0; right: auto; }
+.trendpos { order: 2; }
+/* Duration curve: one pointer-transparent polyline riding the bar area. */
+.dcurve { position: absolute; top: 0; left: 0; z-index: 2; overflow: visible; pointer-events: none; }
+.dcurve polyline { fill: none; stroke: var(--dsw-alias-brand); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.chart-dim .dcurve { opacity: .35; }
 /* 定位上下文：tooltip 必须挂在**滚动容器外面**——放里面会撑大 scrollWidth，
    让横向滚动条在每次 hover 时开合、整张卡片跟着跳（参考插件原话）。 */
 .trendpos { position: relative; flex: 1; min-width: 0; }

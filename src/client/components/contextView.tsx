@@ -90,6 +90,7 @@ export function makeContextView(
     // Adaptive scale (the title-adjacent toggle): the trend bars rescale to the visible window; like the two
     // toggles above, mount-local and never written back.
     const [adaptive, setAdaptive] = useState(false)
+    const [durationCurve, setDurationCurve] = useState(true)
     // Strip-clicked turn: chart switches to turn granularity and scroll-centers that turn's bar, then clears via onFocusTurnHandled.
     const [focusTurn, setFocusTurn] = useState<number | null>(null)
     // Chat → Context jump: the assistant-action relay's one-shot request, held until the projection data is in, then resolved into a
@@ -349,18 +350,22 @@ export function makeContextView(
           <span className="redline-card-scale">
             {t(granularity === 'turn' ? 'trend.gran.turn' : 'trend.gran.step', { n: granularity === 'turn' ? lastTurn : displayRequests.length })}
           </span>
-          {/* The adaptive switch rides the title's right (the browser card's DNA toggle idiom): bars rescale
-              to the bars currently on screen instead of the whole retained log. */}
-          <span className="redline-gran redline-trend-adaptive" role="group" title={t('trend.adaptiveHint')}>
+          {/* Display modifiers ride the title's right as one segmented group: Adaptive rescales the bars to
+              the visible window, Duration overlays each step's active time as a curve. */}
+          <span className="redline-gran redline-trend-mods" role="group">
             <button
               type="button"
               className={'redline-gran-btn' + (adaptive ? ' redline-gran-on' : '')}
+              title={t('trend.adaptiveHint')}
               onClick={() => { setAdaptive(on => !on) }}
             >{t('trend.adaptive')}</button>
+            <button
+              type="button"
+              className={'redline-gran-btn' + (durationCurve ? ' redline-gran-on' : '')}
+              title={t('trend.durationHint')}
+              onClick={() => { setDurationCurve(on => !on) }}
+            >{t('trend.duration')}</button>
           </span>
-          {focusCat !== null
-            ? <span className="redline-card-sub">{t('trend.focus', { cat: kit.catLabel(focusCat) })}</span>
-            : null}
           <div className="redline-trend-ctl">
             <div className="redline-gran">
               <button
@@ -409,6 +414,7 @@ export function makeContextView(
                 hoverCat={trendHoverCat}
                 focusCat={focusCat}
                 adaptive={adaptive}
+                durationCurve={durationCurve}
                 onSelect={setSelectedSeq}
                 onHover={setHoveredSeq}
                 onHoverTurn={setHoverTurn}

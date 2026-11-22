@@ -33,6 +33,13 @@ export interface TrendChartProps {
    * on screen. Off = the whole retained log scales the axis, the historical behavior.
    */
   adaptive?: boolean
+  /**
+   * Duration overlay (the trend card's Duration toggle): each bar's step
+   * active time drawn as a curve over the bars, read off the right-hand
+   * quartile axis. Mode-independent — the curve always plots the raw
+   * `activeMs`, even while the bars read deltas.
+   */
+  durationCurve?: boolean
   onSelect: (seq: number | null) => void
   onHover: (seq: number | null) => void
   onHoverTurn: (turn: number | null) => void
@@ -47,13 +54,18 @@ export interface TrendChartProps {
 export function aggregateByTurn(requests: RequestRecord[]): RequestRecord[] {
   const out: RequestRecord[] = []
   let runSteps = 0
+  let runActiveMs = 0
+  let runHasActiveMs = false
   for (const req of requests) {
     const last = out.length > 0 ? out[out.length - 1] : null
     if (last !== null && (last.turn ?? 0) === (req.turn ?? 0)) {
       runSteps++
-      out[out.length - 1] = { ...req, stepCount: runSteps }
+      if (req.activeMs !== undefined) { runActiveMs += req.activeMs; runHasActiveMs = true }
+      out[out.length - 1] = { ...req, stepCount: runSteps, ...(runHasActiveMs ? { activeMs: runActiveMs } : {}) }
     } else {
       runSteps = 1
+      runActiveMs = req.activeMs ?? 0
+      runHasActiveMs = req.activeMs !== undefined
       out.push({ ...req, stepCount: 1 })
     }
   }
@@ -103,7 +115,7 @@ export function jumpTargetOf(requests: RequestRecord[], seq: number): RequestRec
 }
 
 export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactElement {
-  const { t, fmt, eventLabel, eventAt, catLabel } = kit
+  const { t, fmt, fmtDuration, eventLabel, eventAt, catLabel } = kit
 
   const CHART_H = 112
   // Quarter-mark label tops for the axis (mirrored to .redline-axis-q1/.redline-axis-q3 in trendChart.css): chart top 18
@@ -184,6 +196,7 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
     total: number
     up: number
     down: number
+    activeMs: number
   }
 
   interface ChartBarProps {
@@ -276,6 +289,7 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
 
   return function TrendChart(props: TrendChartProps): ReactElement {
     const delta = props.mode === 'delta'
+    const durationOn = props.durationCurve === true
     // An unrecognized focus key degrades to the unfocused chart instead of plotting an empty axis.
     const focus = props.focusCat !== null && props.focusCat !== undefined && CATS.some(c => c.key === props.focusCat)
       ? props.focusCat
@@ -305,6 +319,7 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
       let total = 0
       let up = 0
       let down = 0
+      let activeMs = 0
       // The column holding the left edge through the one holding the right edge; the per-column test then drops
       // the neighbour whose column falls in the 2px gap just outside the viewport.
       const from = Math.max(0, Math.floor(sl / pitch))
@@ -313,6 +328,10 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
         const col = i * pitch
         if (col >= vr || col + BAR_W <= sl) continue
         const req = requests[i]
+        // The duration curve's window maximum rides the same pass, whether or
+        // not the overlay is on, so toggling it never needs a re-measure.
+        const m = req.activeMs ?? 0
+        if (m > activeMs) activeMs = m
         if (delta) {
           // Per-bar arms, then the window maximum — the same figures the whole-log loop takes.
           let bu = 0
@@ -328,9 +347,9 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
           total = req.total
         }
       }
-      setVisMax(prev => prev !== null && prev.total === total && prev.up === up && prev.down === down
+      setVisMax(prev => prev !== null && prev.total === total && prev.up === up && prev.down === down && prev.activeMs === activeMs
         ? prev
-        : { total, up, down })
+        : { total, up, down, activeMs })
     }
     // Whole-log maxima: the axis when adaptive is off, and the fallback for a delta window with no change at all
     // (it carries no scale of its own).
@@ -363,6 +382,36 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
       } else {
         maxTotal = Math.max(1, visMax.total)
       }
+    }
+    // The duration overlay's scale (right-hand axis): raw active time in every
+    // mode; the visible window's own maximum when adaptive is on.
+    let maxActiveMs = 0
+    if (durationOn) {
+      for (const req of requests) {
+        const m = req.activeMs ?? 0
+        if (m > maxActiveMs) maxActiveMs = m
+      }
+      if (adaptive && visMax !== null) maxActiveMs = visMax.activeMs
+    }
+    // One polyline per contiguous run carrying a duration; a bar without the
+    // figure breaks the line instead of faking a point, and an isolated point
+    // gets a dot (a one-point polyline is invisible).
+    const durationRuns: string[] = []
+    const durationDots: [number, number][] = []
+    if (durationOn) {
+      const scale = CHART_H / Math.max(1, maxActiveMs)
+      let run: [number, number][] = []
+      const flushRun = (): void => {
+        if (run.length >= 2) durationRuns.push(run.map(p => `${p[0]},${p[1]}`).join(' '))
+        else if (run.length === 1) durationDots.push(run[0])
+        run = []
+      }
+      for (let i = 0; i < requests.length; i++) {
+        const m = requests[i].activeMs
+        if (m === undefined) { flushRun(); continue }
+        run.push([i * (BAR_W + BAR_GAP) + BAR_W / 2, Math.round((CHART_H - m * scale) * 100) / 100])
+      }
+      flushRun()
     }
     // The zero line splits the bar area PROPORTIONALLY to the larger side, so the px-per-token scale
     // is identical above and below it — a compaction's downward bar reads honestly against a growth bar.
@@ -432,6 +481,11 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
     // has to compare against the width as it was BEFORE the new bar landed — by the time the layout effect runs,
     // `el.scrollWidth` is already the new (wider) value, so a near-edge check against it would miss the auto-follow.
     const prevScrollWidthRef = useRef(0)
+    // Cached viewport width / scroll offset for the hover path (issue #116): syncTip runs after every commit, and
+    // reading clientWidth/scrollLeft there would force a synchronous layout flush of whatever that commit just
+    // dirtied. The commit effect, the scroll handler and the resize observer keep these refs fresh instead.
+    const cwRef = useRef(0)
+    const slRef = useRef(0)
     /**
      * Keep each turn label centered within its block's VISIBLE slice, then thin colliding labels: a label wider
      * than its block overflows it, so consecutive narrow turns would smear into each other — walking left→right
@@ -506,6 +560,8 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
       }
       lastSeqRef.current = newestSeq
       prevScrollWidthRef.current = el.scrollWidth
+      slRef.current = el.scrollLeft
+      cwRef.current = el.clientWidth
       updateTurnLabels(el)
       syncTip(el)
       measureVisible(el)
@@ -523,7 +579,7 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
          attaches refs before layout effects run; el is never null here. */
       if (el === null) return
       if (typeof ResizeObserver !== 'function') return
-      const observer = new ResizeObserver(() => { measureRef.current(el) })
+      const observer = new ResizeObserver(() => { cwRef.current = el.clientWidth; measureRef.current(el) })
       observer.observe(el)
       return () => { observer.disconnect() }
     }, [])
@@ -544,7 +600,7 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
     // stepCount degrades to that too), step bars carry the step index plus the turn's step total. Delta swaps
     // the metric row for the net.
     const stepsOf = useMemo(() => turnStepsOf(props.requests), [props.requests])
-    const tipRowsOf = (req: RequestRecord): [string, string] => {
+    const tipRowsOf = (req: RequestRecord): string[] => {
       const n = req.stepCount ?? 1
       const head = props.granularity === 'turn'
         ? (n > 1 ? t('tip.turn', { t: req.turn ?? 0, n }) : t('tip.turn1', { t: req.turn ?? 0 }))
@@ -553,12 +609,16 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
         /* v8 ignore next 1 -- delta mode only receives records from
            deltaOf, which always assigns net; the fallback is defensive. */
         const n = req.net ?? 0
-        return [head, t('tip.delta', { n: (n > 0 ? '+' : '') + fmt(n) })]
+        const rows = [head, t('tip.delta', { n: (n > 0 ? '+' : '') + fmt(n) })]
+        if (durationOn && req.activeMs !== undefined) rows.push(t('tip.duration', { n: fmtDuration(req.activeMs) }))
+        return rows
       }
       // Focused: the metric row IS the focused category's figure, so the tip names it instead of claiming a total.
-      return [head, focus !== null
+      const rows = [head, focus !== null
         ? t('tip.cat', { cat: catLabel(focus), n: fmt(req.total) })
         : t('tip.total', { n: fmt(req.total) })]
+      if (durationOn && req.activeMs !== undefined) rows.push(t('tip.duration', { n: fmtDuration(req.activeMs) }))
+      return rows
     }
     const hoveredIdx = props.hoveredSeq !== null ? requests.findIndex(r => r.seq === props.hoveredSeq) : -1
     const hoveredReq = hoveredIdx >= 0 ? requests[hoveredIdx] : null
@@ -579,11 +639,11 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
       // No hover, nothing to place.
       if (tip === null) return
       const lw = tip.offsetWidth
-      const cw = el.clientWidth
+      const cw = cwRef.current
       // Center over the bar's visible slice, clamped so the tip never hangs past either edge nor gets cut off; a tip
       // wider than the viewport centers over it instead of picking a bogus side on an inverted clamp window.
       const half = Math.min(lw / 2, cw / 2)
-      const cx = Math.min(Math.max(tipColRef.current - el.scrollLeft, half), cw - half)
+      const cx = Math.min(Math.max(tipColRef.current - slRef.current, half), cw - half)
       const next = `translate(${Math.round(cx - lw / 2)}px, 0)`
       if (tip.style.transform !== next) tip.style.transform = next
     }
@@ -635,6 +695,8 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
             className={'redline-chart-scroll' + (props.activeTurn !== null ? ' redline-chart-dim' : '')}
             ref={scrollRef}
             onScroll={(e: UIEvent<HTMLDivElement>) => {
+              slRef.current = e.currentTarget.scrollLeft
+              cwRef.current = e.currentTarget.clientWidth
               updateTurnLabels(e.currentTarget)
               syncTip(e.currentTarget)
               measureVisible(e.currentTarget)
@@ -679,6 +741,17 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
                   onHover={props.onHover}
                 />
               ))}
+              {durationOn && (durationRuns.length > 0 || durationDots.length > 0) ? (
+                <svg
+                  className="redline-duration"
+                  width={requests.length * (BAR_W + BAR_GAP) - BAR_GAP}
+                  height={CHART_H}
+                  aria-hidden="true"
+                >
+                  {durationRuns.map((pts, i) => <polyline key={i} points={pts} />)}
+                  {durationDots.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r={1.5} />)}
+                </svg>
+              ) : null}
             </div>
             {/* Turn strip: one COLOR BLOCK per turn spanning exactly its bars' columns, so the partition reads at a glance and lines
                 up with the steps; hovering a block highlights that turn's bars and vice versa — one shared hover-only state.
@@ -711,6 +784,15 @@ export function makeTrendChart(kit: ViewKit): (props: TrendChartProps) => ReactE
             <div className="redline-chart-tip">{tipRowsOf(hoveredReq).map((row, i) => <span key={i}>{row}</span>)}</div>
           ) : null}
         </div>
+        {durationOn ? (
+          <div className="redline-axis redline-axis-r">
+            <span className="redline-axis-top">{fmtDuration(maxActiveMs)}</span>
+            <span className="redline-axis-q3">{fmtDuration(Math.round(maxActiveMs * 3 / 4))}</span>
+            <span className="redline-axis-mid">{fmtDuration(Math.round(maxActiveMs / 2))}</span>
+            <span className="redline-axis-q1">{fmtDuration(Math.round(maxActiveMs / 4))}</span>
+            <span className="redline-axis-bot">{'0'}</span>
+          </div>
+        ) : null}
       </div>
     )
   }

@@ -1,5 +1,28 @@
 # 更新日志 / Changelog
 
+## [0.5.0] — 2026-11-22
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
+
+### 新增 / Added
+
+- 趋势耗时曲线：每步活跃耗时（step 窗口减审批/提问等待）叠加在柱子上，右轴读取；按轮次求和；缺失值断开曲线。
+- Trend duration overlay: each step's active time (step window minus approval / Q&A waits) as a curve over the bars, read off the right-hand axis; turn mode sums the steps; a missing figure breaks the line.
+- 自适应与耗时合并为一组标题开关；移除聚焦分类副标题；移植 hover 性能修复。
+- Adaptive and Duration share one compact title group; the focused-category subtitle is removed; the hover-path performance fix is ported.
+
+### 内部 / Internal
+
+- 请求记录新增 `activeMs`，宿主在 `step/end` 写入；状态版本 23 → 24，旧缓存行从日志重折叠。
+- Request records gain `activeMs`, stamped by the Host at `step/end`; the state version moves 23 → 24 so cached rows refold from the log.
+- README 总览截图随趋势 UI 更新；中英文 README、发布说明与 npm 包内容同步。
+- The README overview screenshot follows the trend UI change; both READMEs, release notes and npm package contents stay synchronized.
+
+### 边界 / Boundaries
+
+- 不包含 DNA 趋势指纹模式、未验收的体检功能或 carrier-seed 实验。
+- Excludes the DNA trend fingerprint mode, unaccepted diagnostics and carrier-seed experiments.
+
 ## [0.4.1] — 2026-11-22
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
