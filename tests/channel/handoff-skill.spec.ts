@@ -7,7 +7,7 @@ import {
   registerHandoffSkill,
 } from '../../src/host/handoff-skill'
 
-describe('context handoff skill (0.7.0)', () => {
+describe('context handoff skill (0.8.2)', () => {
   test('the registration is kebab-case and pins the four copy-paste blocks', () => {
     const skill = handoffSkillRegistration()
     assert.equal(skill.name, HANDOFF_SKILL_NAME)
@@ -17,10 +17,10 @@ describe('context handoff skill (0.7.0)', () => {
     for (const label of ['首条任务', '目标', '验收标准', '执行纪律']) {
       assert.ok(skill.content.includes(label), `missing ${label}`)
     }
-    for (const marker of ['情况 A', '情况 B', '每轮运行时规则', '最终发送全文', '有头 UAT', '主会话不直接开发', '子会话或团队成员']) {
+    for (const marker of ['情况 A', '情况 B', '每轮运行时规则', '最终发送全文', '有头 UAT', '主会话不直接开发', '子会话或团队成员', '先拆任务', '不得把所有工作合成一个连续任务', '不得自己连续做多个任务', '即使我说“过程中不用确认”']) {
       assert.ok(skill.content.includes(marker), `missing ${marker}`)
     }
-    assert.ok(HANDOFF_SKILL_CONTENT.includes('每个里程碑结束必须停下汇报证据'))
+    assert.ok(HANDOFF_SKILL_CONTENT.includes('每个任务 / 里程碑结束必须停下汇报证据'))
     assert.ok(skill.content.length < 7000)
   })
 

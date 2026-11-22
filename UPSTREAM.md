@@ -123,6 +123,10 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 
 - Drop the generic title prefix from anchored sessions and embed role separation plus conditional headed UAT into the optional handoff skill.
 
+### Mandatory task decomposition (0.8.2, 2026-11-22)
+
+- Make the optional handoff skill require a task list, one subagent per task, and main-session review only; no single-session multi-milestone path.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

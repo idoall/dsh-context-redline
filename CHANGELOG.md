@@ -1,5 +1,18 @@
 # 更新日志 / Changelog
 
+## [0.8.2] — 2026-11-22
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
+
+### 变更 / Changed
+
+- `context-redline-handoff` 强制拆任务：每个里程碑 / 交付物一个独立任务，每个任务至少一个子会话；首条任务从建任务清单开始。
+- `context-redline-handoff` mandates task decomposition: one independent task per milestone/deliverable, at least one subagent per task, and the first task starts with building the task list.
+- 主会话只规划/分派/审查，不得直接开发、修改或测试，也不得自己连续做多个任务或多个里程碑。
+- The main session only plans, dispatches and reviews; it never develops, modifies or tests directly, and never runs several tasks or milestones itself.
+- 即使说“过程中不用确认”，拆分与审查也不取消，只取消逐里程碑确认；验收必须包含任务清单、子会话产物与审查记录。
+- “No confirmation during the process” waives only the per-milestone confirmation, not decomposition or review; acceptance requires the task list, subagent output and review record.
+
 ## [0.8.1] — 2026-11-22
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
