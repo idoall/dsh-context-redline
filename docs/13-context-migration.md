@@ -85,6 +85,18 @@ manifest 先生成默认文本：
 
 未编辑最终文本时，默认 manifest 文本与实际投递逐字一致；编辑后，确认框文本、`executionInput.deliveryContent`、实际 followup 和恢复重放必须逐字一致。
 
+## 锚定会话（0.4.0）
+
+「新建带规则的对话」是**不迁移上下文**的独立路径，不读取来源会话的 surface，也不写来源会话日志。
+
+- 输入：人写的四段 `task / goal / acceptance / discipline`，逐段去首尾空白，每段最长 4000 字符；任一为空即拒绝。
+- 首条消息：`task` 原文。
+- 运行时快照：`目标：{goal}\n\n验收：{acceptance}\n\n纪律：{discipline}`；通过 `systemPrompt.context` 注册给新会话，`name=dsh-context-redline:anchor`、`order=10000`、`interpolate=false`、`required=true`。
+- 指纹：`snapshotFingerprint` 绑定快照文本；`requestFingerprint` 绑定四段输入（含 task）。`anchor.start` 必须同时匹配，否则 `redline/drafts-changed`。
+- 身份：`operationId` 经稳定哈希得到 `session-anchor-<hash>` 与固定 `promptRequestId`；同一 `operationId` 的重试只会创建/投递一次。没有 operation 台账，也没有回程 watcher。
+- 失败：`systemPrompt.context` 不可用时拒绝创建（`runtime-context-unavailable`），不静默降级。
+- 边界：不迁移条目、不带图片/附件、不继承来源会话的工具输出；不改预设系统提示词或工具定义。
+
 ## 锚点与运行时规则（0.2.0 / 0.3.0）
 
 - 输入：人写的可选 `anchor`（去首尾空白，最大 2000 字符）。它不是模型生成内容，不参与候选捕获，也不来自草稿。
