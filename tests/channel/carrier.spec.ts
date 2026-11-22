@@ -627,7 +627,7 @@ describe('锚定会话（0.4.0）', () => {
     const ops = await boot()
     const preview = value(await call(ops, { op: 'anchor.plan', sessionId: ops.sessionId, ...ANCHOR }))
     assert.equal(preview.snapshot, SNAPSHOT)
-    assert.equal(preview.title, '新对话 · 把设置页改成深色模式')
+    assert.equal(preview.title, '把设置页改成深色模式')
     assert.ok(String(preview.snapshotFingerprint).length > 0)
     assert.ok(String(preview.requestFingerprint).length > 0)
     assert.equal(ops.creates.length, 0)
@@ -651,7 +651,7 @@ describe('锚定会话（0.4.0）', () => {
       interpolate: false,
       required: true,
     }])
-    assert.equal(started.title, '新对话 · 把设置页改成深色模式')
+    assert.equal(started.title, '把设置页改成深色模式')
     assert.equal(String(started.sessionId).startsWith('session-anchor-'), true)
     assert.equal(ops.creates[0]?.agentOptions !== undefined, true)
   })

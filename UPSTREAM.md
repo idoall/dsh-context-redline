@@ -119,6 +119,10 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 
 - Extend the optional handoff skill to cover both the migration fields and the anchored-conversation fields, with one shared goal/acceptance/discipline quality gate.
 
+### Handoff rules and title cleanup (0.8.1, 2026-11-22)
+
+- Drop the generic title prefix from anchored sessions and embed role separation plus conditional headed UAT into the optional handoff skill.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

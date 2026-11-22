@@ -64,12 +64,12 @@ async function open(props: Partial<ChildCardProps> = {}): Promise<Mounted> {
       ok: true as const,
       value: {
         snapshot: '目标：目标\n\n验收：验收\n\n纪律：纪律', snapshotFingerprint: 'sf', requestFingerprint: 'rf',
-        title: '新对话 · 目标', workspaceId: 'workspace', config: { agentPreset: 'standard', provider: 'provider-a', model: 'model-a' },
+        title: '目标', workspaceId: 'workspace', config: { agentPreset: 'standard', provider: 'provider-a', model: 'model-a' },
       },
     }),
     startAnchor: () => Promise.resolve({
       ok: true as const,
-      value: { sessionId: 'session-anchor-test', title: '新对话 · 目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+      value: { sessionId: 'session-anchor-test', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
     }),
     openSession: () => {},
     ...props,
@@ -506,7 +506,7 @@ describe('锚定会话（0.4.0）', () => {
       snapshot: '目标：目标 A\n\n验收：验收 A\n\n纪律：纪律 A',
       snapshotFingerprint: 'snapshot-fp',
       requestFingerprint: 'request-fp',
-      title: '新对话 · 目标 A',
+      title: '目标 A',
       workspaceId: 'workspace',
       config: { agentPreset: 'standard', provider: 'provider-a', model: 'model-a' },
     }
@@ -519,7 +519,7 @@ describe('锚定会话（0.4.0）', () => {
         starts.push(args)
         return Promise.resolve({
           ok: true as const,
-          value: { sessionId: 'session-anchor-created', title: '新对话 · 目标 A', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+          value: { sessionId: 'session-anchor-created', title: '目标 A', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
         })
       },
       openSession: (id) => { opened.push(id) },

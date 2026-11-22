@@ -224,7 +224,7 @@ describe('锚定会话（0.4.0）的线路层', () => {
     calls.length = 0
     stubFetch(() => envelope({
       snapshot: '目标：目标\n\n验收：验收\n\n纪律：纪律', snapshotFingerprint: 'sf', requestFingerprint: 'rf',
-      title: '新对话 · 目标', workspaceId: 'w', config: { provider: 'p', model: 'm' },
+      title: '目标', workspaceId: 'w', config: { provider: 'p', model: 'm' },
     }))
     const planned = await planAnchor('sv-1', input)
     assert.equal(planned.ok, true)
@@ -232,7 +232,7 @@ describe('锚定会话（0.4.0）的线路层', () => {
     assert.deepEqual(bodyOf(calls[0]), { op: 'anchor.plan', sessionId: 'sv-1', ...input })
 
     calls.length = 0
-    stubFetch(() => envelope({ sessionId: 'session-anchor-1', title: '新对话 · 目标', mode: 'created', delivery: 'sent', messageId: 'm1' }))
+    stubFetch(() => envelope({ sessionId: 'session-anchor-1', title: '目标', mode: 'created', delivery: 'sent', messageId: 'm1' }))
     const started = await startAnchor('sv-1', 'op-1', input, 'sf', 'rf')
     assert.equal(started.ok, true)
     assert.deepEqual(bodyOf(calls[0]), {

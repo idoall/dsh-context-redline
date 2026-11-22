@@ -1,5 +1,23 @@
 # 更新日志 / Changelog
 
+## [0.8.1] — 2026-11-22
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
+
+### 修复 / Fixed
+
+- 锚定会话标题不再加 `新对话 ·` 前缀，直接用目标；目标为空时退回首条任务。
+- Anchored session titles no longer carry a `新对话 ·` prefix; they use the goal, falling back to the first task.
+
+### 变更 / Changed
+
+- `context-redline-handoff` 内置主会话/子会话分工：主会话只规划、分派、审查，开发与测试修改交子会话；收到的成果必须审查，问题打回或重新分派。
+- The `context-redline-handoff` skill embeds role separation: the main session plans, dispatches and reviews only; development and test changes go to subagents; results are reviewed and problems bounced or reassigned.
+- UAT 按需判断：UI / 交互 / 视觉改动必须有头 UAT 并复测到无问题；纯后端 / 文档改动写“无需 UAT”及理由。
+- UAT is conditional: UI / interaction / visual changes require headed UAT with retests until clean; backend/documentation changes state why no UAT is needed.
+- 验收标准保留可检查门：有头 UAT 证据与主会话审查记录；执行纪律写行为约束。
+- Acceptance keeps checkable gates (headed-UAT evidence and review record); discipline carries the behavioral constraints.
+
 ## [0.8.0] — 2026-11-22
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.

@@ -53,8 +53,9 @@ export function anchorRequestFingerprint(draft: AnchorDraft): string {
   return carrierContentFingerprint(JSON.stringify({ task, goal, acceptance, discipline }))
 }
 
-/** One-line title for the new session, derived from the goal. */
+/** One-line title for the new session, derived from the goal (no generic prefix). */
 export function anchorTitle(draft: AnchorDraft): string {
   const goal = draft.goal.trim().replace(/\s+/g, ' ').slice(0, 48)
-  return `新对话 · ${goal}`
+  const task = draft.task.trim().replace(/\s+/g, ' ').slice(0, 48)
+  return goal || task || '未命名会话'
 }
