@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { createElement as h } from 'react'
 import { describe, test } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { aggregateByTurn, makeTrendChart, type TrendChartProps } from '../../src/client/components/trendChart'
+import { modeAfterDnaChange } from '../../src/client/dna'
 import type { TrendBand } from '../../src/client/dna'
 import { makeKit, mount, query, queryAll, text } from '../client/helpers/kit'
 
@@ -103,5 +106,21 @@ describe('trend DNA mode (0.6.0)', () => {
     const m = await mount(h(TrendChart, props(requests, { dna: bands, mode: 'delta' })))
     assert.equal(queryAll(m.container, '.redline-dna-fill').length, 2)
     await m.unmount()
+  })
+})
+
+describe('DNA mode switch (0.6.1)', () => {
+  test('turning DNA on parks the trend at total; turning it off preserves the current mode', () => {
+    assert.equal(modeAfterDnaChange(true, 'delta'), 'total')
+    assert.equal(modeAfterDnaChange(true, 'total'), 'total')
+    assert.equal(modeAfterDnaChange(false, 'delta'), 'delta')
+    assert.equal(modeAfterDnaChange(false, 'total'), 'total')
+  })
+
+  test('both DNA switches share the same handler (source contract)', () => {
+    const source = readFileSync(join(process.cwd(), 'src/client/components/contextView.tsx'), 'utf8')
+    assert.match(source, /onDnaChange=\{setDnaMode\}/)
+    assert.match(source, /setDnaMode\(!dna\)/)
+    assert.match(source, /setTrendMode\(mode => modeAfterDnaChange\(next, mode\)\)/)
   })
 })

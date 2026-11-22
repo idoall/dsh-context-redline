@@ -1,5 +1,21 @@
 # 更新日志 / Changelog
 
+## [0.6.1] — 2026-11-22
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
+
+### 修复 / Fixed
+
+- 从上下文浏览器打开 DNA 时，趋势的「增量」模式没有复位：图上已按 DNA 的总计语义绘制，但「增量」按钮仍然显示选中（仅被禁用）。现在两个 DNA 开关共用一个处理函数，开启 DNA 时同时把趋势复位到「总计」。
+- Opening DNA from the Context browser left the trend's Delta mode selected: the chart plotted DNA total semantics while the Delta segment still looked active (only disabled). Both DNA switches now use one handler that parks the trend at Total when DNA turns on.
+- 关闭 DNA 时保留当前模式，不额外改写用户选择。
+- Turning DNA off preserves the current mode instead of rewriting the user's choice.
+
+### 边界 / Boundaries
+
+- 只改客户端状态同步；DNA 仍是总计语义，DNA + 增量与色带点击跳转仍不在范围内。
+- Client-side state sync only; DNA remains total-only, and DNA + Delta plus band click-through remain out of scope.
+
 ## [0.6.0] — 2026-11-22
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.

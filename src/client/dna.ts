@@ -80,3 +80,14 @@ export function trendBandsOf(view: Assembled): TrendBand[] {
   }
   return bands
 }
+
+/** The trend's display mode; DNA forces total semantics, so the two share this vocabulary. */
+export type TrendMode = 'total' | 'delta'
+
+/**
+ * DNA is the step's composition, not a delta: turning it on parks the trend at
+ * Total. Turning it off keeps whatever mode the card is already in.
+ */
+export function modeAfterDnaChange(next: boolean, current: TrendMode): TrendMode {
+  return next ? 'total' : current
+}

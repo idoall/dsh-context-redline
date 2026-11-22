@@ -27,7 +27,7 @@ import { countsOfRecords, makeStatsContext } from './statsContext'
 import { assemble, stepStatsOf } from '../assemble'
 import { makeStackedBar } from './stackedBar'
 import { aggregateByTurn, attachMarkers, jumpTargetOf, makeTrendChart, turnStepsOf } from './trendChart'
-import { trendBandsOf } from '../dna'
+import { modeAfterDnaChange, trendBandsOf } from '../dna'
 
 import { subscribeContextFocus, takeContextFocus } from '../viewFocus'
 import { useSurfaceVisibility } from '../surfaceVisibility'
@@ -96,6 +96,13 @@ export function makeContextView(
     // one switch, both cards move. It forces total semantics (the bands are the
     // composition), so turning it on parks the Total/Delta switch at total.
     const [dna, setDna] = useState(false)
+    // One handler for both DNA switches: opening DNA from the browser must also
+    // park the trend's Total/Delta switch at Total, or the chart plots total
+    // while the Delta segment still looks selected.
+    const setDnaMode = (next: boolean): void => {
+      setDna(next)
+      setTrendMode(mode => modeAfterDnaChange(next, mode))
+    }
     // Strip-clicked turn: chart switches to turn granularity and scroll-centers that turn's bar, then clears via onFocusTurnHandled.
     const [focusTurn, setFocusTurn] = useState<number | null>(null)
     // Chat → Context jump: the assistant-action relay's one-shot request, held until the projection data is in, then resolved into a
@@ -362,7 +369,7 @@ export function makeContextView(
               type="button"
               className={'redline-gran-btn' + (dna ? ' redline-gran-on' : '')}
               title={t('trend.dnaTip')}
-              onClick={() => { const next = !dna; setDna(next); if (next) setTrendMode('total') }}
+              onClick={() => { setDnaMode(!dna) }}
             >{t('trend.dna')}</button>
             <button
               type="button"
@@ -471,7 +478,7 @@ export function makeContextView(
         detailState={source.detailState}
         onDetailRetry={source.retryDetail}
         dna={dna}
-        onDnaChange={setDna}
+        onDnaChange={setDnaMode}
       />
     )
 

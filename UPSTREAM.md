@@ -107,6 +107,10 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 
 - Port the reference trend chart's per-item DNA gradient into the `redline-` namespace and share the browser's DNA switch through controlled props. DNA + Delta and band click-through are deliberately out of scope; the reference plugin's fixed blocks/team entry are not imported.
 
+### DNA switch state fix (0.6.1, 2026-11-22)
+
+- Keep the trend's Total/Delta state consistent when DNA is toggled from the Context browser; no feature or data change.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.
