@@ -613,3 +613,83 @@ describe('运行时规则模式（0.3.0）', () => {
     assert.equal((refused.error as { code: string }).code, 'redline/bad-request')
   })
 })
+
+describe('锚定会话（0.4.0）', () => {
+  const ANCHOR = {
+    task: '把设置页改成深色模式，并补齐移动端断点。',
+    goal: '把设置页改成深色模式',
+    acceptance: '375/430 无横向溢出；深色对比度达标；有头 UAT 通过。',
+    discipline: '出错时修正并复验，继续原目标；完成前不换目标。',
+  }
+  const SNAPSHOT = '目标：把设置页改成深色模式\n\n验收：375/430 无横向溢出；深色对比度达标；有头 UAT 通过。\n\n纪律：出错时修正并复验，继续原目标；完成前不换目标。'
+
+  test('plan 只组合快照与配置，不建会话、不读上下文', async () => {
+    const ops = await boot()
+    const preview = value(await call(ops, { op: 'anchor.plan', sessionId: ops.sessionId, ...ANCHOR }))
+    assert.equal(preview.snapshot, SNAPSHOT)
+    assert.equal(preview.title, '新对话 · 把设置页改成深色模式')
+    assert.ok(String(preview.snapshotFingerprint).length > 0)
+    assert.ok(String(preview.requestFingerprint).length > 0)
+    assert.equal(ops.creates.length, 0)
+    assert.equal(ops.followups.length, 0)
+  })
+
+  test('start 建普通 root 会话：首条消息是任务，运行时快照是目标/验收/纪律，且没有回程', async () => {
+    const ops = await boot()
+    const preview = value(await call(ops, { op: 'anchor.plan', sessionId: ops.sessionId, ...ANCHOR }))
+    const started = value(await call(ops, {
+      op: 'anchor.start', sessionId: ops.sessionId, operationId: 'anchor-op-1', ...ANCHOR,
+      snapshotFingerprint: preview.snapshotFingerprint, requestFingerprint: preview.requestFingerprint,
+    }))
+    assert.equal(ops.creates.length, 1)
+    assert.equal(ops.followups.length, 1)
+    assert.equal(textOfMessage(ops.followups[0]), ANCHOR.task)
+    assert.deepEqual(ops.runtimeContexts, [{
+      name: 'dsh-context-redline:anchor',
+      order: 10000,
+      text: SNAPSHOT,
+      interpolate: false,
+      required: true,
+    }])
+    assert.equal(started.title, '新对话 · 把设置页改成深色模式')
+    assert.equal(String(started.sessionId).startsWith('session-anchor-'), true)
+    assert.equal(ops.creates[0]?.agentOptions !== undefined, true)
+  })
+
+  test('同一 operationId 重试只建一次、只发一次', async () => {
+    const ops = await boot()
+    const preview = value(await call(ops, { op: 'anchor.plan', sessionId: ops.sessionId, ...ANCHOR }))
+    const request = {
+      op: 'anchor.start', sessionId: ops.sessionId, operationId: 'anchor-op-retry', ...ANCHOR,
+      snapshotFingerprint: preview.snapshotFingerprint, requestFingerprint: preview.requestFingerprint,
+    }
+    const first = value(await call(ops, request))
+    const second = value(await call(ops, request))
+    assert.equal(first.sessionId, second.sessionId)
+    assert.equal(ops.creates.length, 1)
+    assert.equal(ops.followups.length, 1)
+  })
+
+  test('任一字段变化或成对指纹不符都要求重看，不创建', async () => {
+    const ops = await boot()
+    const preview = value(await call(ops, { op: 'anchor.plan', sessionId: ops.sessionId, ...ANCHOR }))
+    const refused = await call(ops, {
+      op: 'anchor.start', sessionId: ops.sessionId, operationId: 'anchor-op-changed',
+      ...ANCHOR, goal: '换成另一个目标',
+      snapshotFingerprint: preview.snapshotFingerprint, requestFingerprint: preview.requestFingerprint,
+    })
+    assert.equal(refused.ok, false)
+    assert.equal((refused.error as { code: string }).code, 'redline/drafts-changed')
+    assert.equal(ops.creates.length, 0)
+    assert.equal(ops.followups.length, 0)
+  })
+
+  test('空的目标/验收/纪律直接拒绝', async () => {
+    const ops = await boot()
+    for (const key of ['goal', 'acceptance', 'discipline'] as const) {
+      const refused = await call(ops, { op: 'anchor.plan', sessionId: ops.sessionId, ...ANCHOR, [key]: '   ' })
+      assert.equal(refused.ok, false)
+      assert.equal((refused.error as { code: string }).code, 'redline/bad-request')
+    }
+  })
+})

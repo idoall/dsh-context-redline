@@ -90,6 +90,11 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 - Add an opt-in per-request runtime rule for the carrier via `systemPrompt.context`, alongside the 0.2.0 first-message anchor; both are user-written, fingerprinted and frozen in the ledger.
 - The rule is never a preset system-prompt section or tool definition, and never touches the source session.
 
+### Anchored conversation (0.4.0, 2026-11-22)
+
+- Add an independent root conversation that carries a frozen goal/acceptance/discipline runtime snapshot without migrating context or returning a result.
+- Keep the 0.1.x–0.3.0 fixes, both anchor modes and the unpublished diagnostics/carrier-seed work outside this release.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

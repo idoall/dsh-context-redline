@@ -1,5 +1,25 @@
 # 更新日志 / Changelog
 
+## [0.4.0] — 2026-11-22
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
+
+### 新增 / Added
+
+- 「新建带规则的对话」：不迁移上下文，直接创建独立普通 root 会话；首条任务 + 目标/验收/纪律快照，无回程。
+- "New conversation with rules": creates an independent ordinary root session without migration; first task plus a goal/acceptance/discipline snapshot, with no return path.
+- 目标默认跟随首条任务；快照在确认前逐字预览、创建后冻结。文本不变不重复写入，压缩后自动重新声明。
+- The goal follows the first task; the snapshot is shown verbatim before creation and frozen afterwards. Unchanged text is not rewritten and is re-declared after compaction.
+- 同一 `operationId` 重试只创建/投递一次；不读也不写来源会话日志。
+- Retrying the same `operationId` creates and delivers only once; the source session log is neither read nor written.
+
+### 边界 / Boundaries
+
+- 只影响这一个新对话，不改 DSH 原生新建对话、其他会话或其他工作区；不调用模型生成内容。
+- Affects only that new conversation; leaves DSH's native new-conversation flow, other sessions and other workspaces untouched; no model-generated content.
+- 自动化回归不代表生产人工验收；不包含未验收的体检功能和 carrier-seed 实验。
+- Automated regression does not constitute production manual acceptance; excludes unaccepted diagnostics and carrier-seed experiments.
+
 ## [0.3.0] — 2026-11-21
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.

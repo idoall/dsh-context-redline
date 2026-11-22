@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import { afterEach, describe, test } from 'vitest'
 import { REDLINE_ERROR } from '../../src/shared/redline-errors'
 import { REDLINE_CHANNEL_ROUTE } from '../../src/shared/redline-route'
-import { dropDraft, listDrafts, planChild, readCarrierModels, readRow, saveDraft, startChild } from '../../src/client/redlineChannel'
+import { dropDraft, listDrafts, planAnchor, planChild, readCarrierModels, readRow, saveDraft, startAnchor, startChild } from '../../src/client/redlineChannel'
 
 interface Call { url: string, init: RequestInit | undefined }
 
@@ -215,5 +215,29 @@ describe('运行时规则模式（0.3.0）的线路层', () => {
     await startChild('sv-1', '继续', 'd1', 'p', undefined, '锚点 A', 'runtime')
     assert.equal(bodyOf(calls[0]).anchorMode, 'runtime')
     assert.equal(bodyOf(calls[0]).anchor, '锚点 A')
+  })
+})
+
+describe('锚定会话（0.4.0）的线路层', () => {
+  const input = { task: '任务', goal: '目标', acceptance: '验收', discipline: '纪律' }
+  test('planAnchor / startAnchor 走 anchor.*，原样带四段与两个指纹', async () => {
+    calls.length = 0
+    stubFetch(() => envelope({
+      snapshot: '目标：目标\n\n验收：验收\n\n纪律：纪律', snapshotFingerprint: 'sf', requestFingerprint: 'rf',
+      title: '新对话 · 目标', workspaceId: 'w', config: { provider: 'p', model: 'm' },
+    }))
+    const planned = await planAnchor('sv-1', input)
+    assert.equal(planned.ok, true)
+    assert.equal(bodyOf(calls[0]).op, 'anchor.plan')
+    assert.deepEqual(bodyOf(calls[0]), { op: 'anchor.plan', sessionId: 'sv-1', ...input })
+
+    calls.length = 0
+    stubFetch(() => envelope({ sessionId: 'session-anchor-1', title: '新对话 · 目标', mode: 'created', delivery: 'sent', messageId: 'm1' }))
+    const started = await startAnchor('sv-1', 'op-1', input, 'sf', 'rf')
+    assert.equal(started.ok, true)
+    assert.deepEqual(bodyOf(calls[0]), {
+      op: 'anchor.start', sessionId: 'sv-1', operationId: 'op-1', ...input,
+      snapshotFingerprint: 'sf', requestFingerprint: 'rf',
+    })
   })
 })

@@ -20,7 +20,7 @@
 
 > A DeepSeek Harness community plugin. It does not modify DSH source or rewrite the source session log.
 >
-> **Version `0.3.0` — supports DSH `>=0.2.2-rc.5 <0.3.0-0`.** Built and regression-tested against `0.2.2-rc.5`; Node.js `>=24.9.0` is required. DSH `0.3.0` prereleases are excluded.
+> **Version `0.4.0` — supports DSH `>=0.2.2-rc.5 <0.3.0-0`.** Built and regression-tested against `0.2.2-rc.5`; Node.js `>=24.9.0` is required. DSH `0.3.0` prereleases are excluded.
 
 Edits stay local until confirmation. The plugin then opens a zero-history ordinary session in the current workspace and sends the exact final message you approved. When the task finishes, its bound result returns verbatim to the source session.
 
@@ -36,6 +36,7 @@ Edits stay local until confirmation. The plugin then opens a zero-history ordina
 - **Local redlining.** Edit user messages, injected/skill material, assistant migration copies, and paired tool results.
 - **Reversible deletion.** Delete means “do not migrate this identity”; the source log remains append-only.
 - **Authoritative final message.** The confirmation textarea is the exact first user message written to the new session.
+- **Anchored conversation without migration.** Starts an independent root conversation from a task plus a frozen runtime snapshot of goal, acceptance criteria and discipline. Nothing is copied from the current session and no result is returned to it.
 - **Anchor with two modes.** An optional short anchor, written by you, can be repeated at the start and end of the first message, or supplied as a per-request runtime rule. The runtime mode uses DSH's runtime-context snapshot: unchanged text is not rewritten, and after compaction it is re-declared with a supersession notice. Neither mode touches the preset-owned system prompt or the source session.
 - **Per-session model selection.** A compact floating picker configures only the carrier Agent and never changes the source/global default.
 - **Ordinary zero-history session.** The carrier is a root session in the current workspace, not inherited fork history.
@@ -63,10 +64,10 @@ Requires DeepSeek Harness `0.2.2-rc.5` or a newer supported `0.2.x`, plus Node.j
 Install or upgrade to this exact release:
 
 ```sh
-dsh plugin --profile web add dsh-context-redline@0.3.0
+dsh plugin --profile web add dsh-context-redline@0.4.0
 ```
 
-This release adds the runtime-rule anchor mode alongside the first-message mode, and keeps the DSH 0.2.2-rc.5 compatibility, model/preset reads, projection-reader and tool-result fixes. The runtime rule is opt-in, shown verbatim in confirmation, frozen in the ledger, and registered through `systemPrompt.context` for the carrier only; it is not a preset system prompt or a hidden injection. Unaccepted diagnostics and carrier-seed experiments are not included. Automated tests do not constitute production visual or real-session acceptance.
+This release adds the independent anchored conversation (task + goal/acceptance/discipline runtime snapshot, no migration, no return) and keeps the runtime-rule anchor mode, DSH 0.2.2-rc.5 compatibility, model/preset reads, projection-reader and tool-result fixes. The runtime rule is opt-in, shown verbatim in confirmation, frozen in the ledger, and registered through `systemPrompt.context` for the carrier only; it is not a preset system prompt or a hidden injection. Unaccepted diagnostics and carrier-seed experiments are not included. Automated tests do not constitute production visual or real-session acceptance.
 
 Local development:
 
@@ -91,10 +92,11 @@ Uninstalling does not automatically delete local drafts and operation ledgers un
 1. Open a session with messages and select **Context Redline**.
 2. Optionally edit/delete individual items; saves remain local.
 3. Choose **Open ordinary new session**.
-4. Enter the task; optionally add a short anchor (keywords or hard constraints) and choose **first message** or **runtime rule**, then finish the exact final message.
-5. Choose a model; keep effort at **Use model default** unless needed.
-6. Confirm creation and open the new session from the left sidebar.
-7. The bound result returns automatically after completion.
+4. To start a fresh conversation with a durable goal, choose **New conversation with rules**, then fill the task, goal, acceptance criteria and discipline. The snapshot is frozen before creation and re-declared after compaction.
+5. In the migration flow, enter the task; optionally add a short anchor (keywords or hard constraints) and choose **first message** or **runtime rule**, then finish the exact final message.
+6. Choose a model; keep effort at **Use model default** unless needed.
+7. Confirm creation and open the new session from the left sidebar.
+8. In the migration flow, the bound result returns automatically after completion.
 
 See the [user guide](https://github.com/idoall/dsh-context-redline/blob/main/docs/12-user-guide.md).
 

@@ -9,7 +9,7 @@ import { createElement as h, useCallback, useEffect, useLayoutEffect, useMemo, u
 import type { ContextEventRecord, RequestRecord, SurfaceNode } from '../../shared/types'
 import { briefNodes, briefOf } from '../brief'
 import type { ContextViewProps } from '../services'
-import { conversationNodesOf, headersOf, imageLoaderOf, projectionOf, unsupportedOf } from '../services'
+import { conversationNodesOf, headersOf, imageLoaderOf, openSessionVia, projectionOf, unsupportedOf } from '../services'
 import type { ClientCtx, ConversationNodeLike } from '../services'
 import { makeContentFetcher, makeHeaderFetcher, useHistoryFace } from '../historyPage'
 import { useTimelineSource } from '../timelineSource'
@@ -511,6 +511,9 @@ export function makeContextView(
               carriedCount={Object.keys(redline.table).length}
               plan={children.plan}
               start={children.start}
+              planAnchor={children.planAnchor}
+              startAnchor={children.startAnchor}
+              openSession={(id) => { openSessionVia(ctx, id) }}
             />
           </div>
         </div>

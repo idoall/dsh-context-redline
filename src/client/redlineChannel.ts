@@ -160,6 +160,52 @@ export interface ChildPlan {
 /** Anchor delivery mode: inside the first message, or as a per-request runtime rule. */
 export type CarrierAnchorMode = 'message' | 'runtime'
 
+/** Human-written fields of one anchored conversation. */
+export interface AnchorInput {
+  readonly task: string
+  readonly goal: string
+  readonly acceptance: string
+  readonly discipline: string
+}
+
+export interface AnchorPlan {
+  /** Exact runtime snapshot registered on the new session. */
+  readonly snapshot: string
+  readonly snapshotFingerprint: string
+  readonly requestFingerprint: string
+  readonly title: string
+  readonly workspaceId: string
+  readonly config?: { agentPreset: string; provider: string; model: string; reasoningEffort?: string }
+}
+
+export interface AnchorStarted {
+  readonly sessionId: string
+  readonly title: string
+  readonly mode: 'created' | 'resumed' | 'live'
+  readonly delivery: 'sent' | 'already-present'
+  readonly messageId: string
+}
+
+/** Read-only preview of one anchored conversation; creates nothing. */
+export async function planAnchor(sessionId: string, input: AnchorInput): Promise<RedlineResult<AnchorPlan>> {
+  return await call<AnchorPlan>({ op: 'anchor.plan', sessionId, ...input })
+}
+
+/** Create the anchored conversation after the human confirmation. */
+export async function startAnchor(
+  sessionId: string,
+  operationId: string,
+  input: AnchorInput,
+  snapshotFingerprint: string,
+  requestFingerprint: string,
+  config?: { provider: string; model: string; reasoningEffort?: string },
+): Promise<RedlineResult<AnchorStarted>> {
+  return await call<AnchorStarted>({
+    op: 'anchor.start', sessionId, operationId, ...input, snapshotFingerprint, requestFingerprint,
+    ...(config === undefined ? {} : { config }),
+  })
+}
+
 /** 开子会话之前问事实（只读，绝不写任何东西）。 */
 export async function planChild(
   sessionId: string,

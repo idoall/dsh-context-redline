@@ -60,6 +60,18 @@ async function open(props: Partial<ChildCardProps> = {}): Promise<Mounted> {
     carriedCount: 1,
     plan: () => Promise.resolve({ ok: true as const, value: PLAN }),
     start: () => Promise.resolve({ ok: true as const, value: { label: '上下文批改 · abcd1234', prompt: 'x', carriedSeqs: [7879], started: null } }),
+    planAnchor: () => Promise.resolve({
+      ok: true as const,
+      value: {
+        snapshot: '目标：目标\n\n验收：验收\n\n纪律：纪律', snapshotFingerprint: 'sf', requestFingerprint: 'rf',
+        title: '新对话 · 目标', workspaceId: 'workspace', config: { agentPreset: 'standard', provider: 'provider-a', model: 'model-a' },
+      },
+    }),
+    startAnchor: () => Promise.resolve({
+      ok: true as const,
+      value: { sessionId: 'session-anchor-test', title: '新对话 · 目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+    }),
+    openSession: () => {},
     ...props,
   } as unknown as ChildCardProps
   return await mount(h(Card, full))
@@ -82,7 +94,7 @@ describe('第 5 张卡：子会话索引（只读）', () => {
     assert.ok(body.includes('c1747787') && body.includes('61dffc3d'), '短 id 直接显示')
     assert.ok(body.includes(DICT_EN['child.mode.one-shot']) && body.includes(DICT_EN['child.mode.continuable']))
     // 索引里**只有**开子会话那一个按钮（每行不给"打开"按钮 —— 跳转是后续阶段）
-    assert.equal(queryAll(m.container, 'button').length, 1, '索引行本身不带动作')
+    assert.equal(queryAll(m.container, 'button').length, 2, '开子会话 + 新建带规则的对话；索引行本身不带动作')
     await m.unmount()
   })
 
@@ -481,6 +493,63 @@ describe('运行时规则模式（0.3.0）', () => {
     assert.equal(queryAll(m.container, '[data-redline-anchor-runtime-note]').length, 1, '运行时模式给出说明')
     await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-confirm-ok]').click() })
     assert.deepEqual(starts[0]?.slice(-2), ['保持用户意图优先级', 'runtime'])
+    await m.unmount()
+  })
+})
+
+describe('锚定会话（0.4.0）', () => {
+  test('新入口打开三段式确认框：目标跟随任务、预览精确快照、确认后打开新会话', async () => {
+    const plans: { task?: string, goal?: string }[] = []
+    const starts: unknown[][] = []
+    const opened: string[] = []
+    const anchorPlan = {
+      snapshot: '目标：目标 A\n\n验收：验收 A\n\n纪律：纪律 A',
+      snapshotFingerprint: 'snapshot-fp',
+      requestFingerprint: 'request-fp',
+      title: '新对话 · 目标 A',
+      workspaceId: 'workspace',
+      config: { agentPreset: 'standard', provider: 'provider-a', model: 'model-a' },
+    }
+    const m = await open({
+      planAnchor: (input) => {
+        plans.push({ task: input.task, goal: input.goal })
+        return Promise.resolve({ ok: true as const, value: anchorPlan })
+      },
+      startAnchor: (...args) => {
+        starts.push(args)
+        return Promise.resolve({
+          ok: true as const,
+          value: { sessionId: 'session-anchor-created', title: '新对话 · 目标 A', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+        })
+      },
+      openSession: (id) => { opened.push(id) },
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    assert.ok(modal, '锚定会话确认框出现')
+    const setValue = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setValue('[data-redline-anchor-task]', '任务 A')
+    assert.equal(query<HTMLTextAreaElement>(modal, '[data-redline-anchor-goal]').value, '任务 A', '目标默认跟随首条任务')
+    await setValue('[data-redline-anchor-acceptance]', '验收 A')
+    assert.ok(query<HTMLTextAreaElement>(modal, '[data-redline-anchor-discipline]').value.includes('不得因为出错而修改目标'))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    assert.equal(text(query(modal, '[data-redline-anchor-snapshot]')), anchorPlan.snapshot, '预览就是宿主返回的精确快照')
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    assert.equal(starts.length, 1)
+    const args = starts[0] ?? []
+    assert.equal(typeof args[0], 'string', '带上稳定的 operationId')
+    assert.deepEqual((args[1] as { task: string, goal: string }).task, '任务 A')
+    assert.equal(args[2], 'snapshot-fp')
+    assert.equal(args[3], 'request-fp')
+    assert.deepEqual(opened, ['session-anchor-created'])
+    assert.equal(queryAll(m.container, '[data-redline-anchor-modal]').length, 0, '创建后关闭确认框')
     await m.unmount()
   })
 })

@@ -25,7 +25,7 @@ import { createPortal } from 'react-dom'
 import type { ViewKit } from '../viewkit'
 import type { ChildIndexRow, ChildRow } from '../childSessions'
 import type { ChildCapacity } from '../../shared/redline-capacity'
-import type { CarrierAnchorMode, CarrierModelOption, ChildPlan, ChildStarted, RedlineResult } from '../redlineChannel'
+import type { AnchorInput, AnchorPlan, AnchorStarted, CarrierAnchorMode, CarrierModelOption, ChildPlan, ChildStarted, RedlineResult } from '../redlineChannel'
 
 export interface ChildCardProps {
   /** The parent session the panel is showing. */
@@ -57,6 +57,18 @@ export interface ChildCardProps {
     anchor?: string,
     anchorMode?: CarrierAnchorMode,
   ) => Promise<RedlineResult<ChildStarted>>
+  /** Read-only preview of one anchored conversation. */
+  readonly planAnchor: (input: AnchorInput) => Promise<RedlineResult<AnchorPlan>>
+  /** The second (and only other) session write: one anchored root conversation. */
+  readonly startAnchor: (
+    operationId: string,
+    input: AnchorInput,
+    snapshotFingerprint: string,
+    requestFingerprint: string,
+    config?: { provider: string; model: string; reasoningEffort?: string },
+  ) => Promise<RedlineResult<AnchorStarted>>
+  /** Jump to the session the Host just created. */
+  readonly openSession: (sessionId: string) => void
 }
 
 interface CarrierSelectionBarProps {
@@ -182,11 +194,192 @@ function clockOf(createdAt: number): string | null {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
+interface AnchorDialogProps {
+  readonly open: boolean
+  readonly models: readonly CarrierModelOption[]
+  readonly t: ViewKit['t']
+  readonly planAnchor: ChildCardProps['planAnchor']
+  readonly startAnchor: ChildCardProps['startAnchor']
+  readonly openSession: (sessionId: string) => void
+  readonly onClose: () => void
+}
+
+const DEFAULT_DISCIPLINE = '先确认目标与验收标准，再开始执行。\n出现错误时，修正错误、重新验证，继续执行原目标；不得因为出错而修改目标。\n只有验收标准全部通过才算完成；完成前不提出新目标。\n修改必须有测试；有界面的改动必须有头 UAT，通过后再汇报。'
+
+/**
+ * One anchored root conversation: goal + acceptance + discipline become a
+ * runtime snapshot; the task is the first user message. Nothing is migrated
+ * from the current session and no result is returned to it.
+ */
+function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
+  const { t } = props
+  const [task, setTask] = useState('')
+  const [goal, setGoal] = useState('')
+  const [goalDirty, setGoalDirty] = useState(false)
+  const [acceptance, setAcceptance] = useState('')
+  const [discipline, setDiscipline] = useState(DEFAULT_DISCIPLINE)
+  const [plan, setPlan] = useState<AnchorPlan | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<{ code: string; message: string } | null>(null)
+  const [route, setRoute] = useState('')
+  const [effort, setEffort] = useState('')
+  const operationId = useRef<string>(crypto.randomUUID())
+  const generation = useRef(0)
+  const valid = [task, goal, acceptance, discipline].every(value => value.trim() !== '')
+
+  useEffect(() => {
+    if (!props.open) return
+    setTask('')
+    setGoal('')
+    setGoalDirty(false)
+    setAcceptance('')
+    setDiscipline(DEFAULT_DISCIPLINE)
+    setPlan(null)
+    setBusy(false)
+    setError(null)
+    setRoute('')
+    setEffort('')
+    operationId.current = crypto.randomUUID()
+  }, [props.open])
+
+  useEffect(() => {
+    if (!props.open || !valid) { setPlan(null); return }
+    generation.current += 1
+    const mine = generation.current
+    const timer = setTimeout(() => {
+      void (async () => {
+        const answer = await props.planAnchor({ task, goal, acceptance, discipline })
+        if (generation.current !== mine) return
+        if (!answer.ok) { setError({ code: answer.code, message: answer.message }); setPlan(null); return }
+        setError(null)
+        setPlan(answer.value)
+        const config = answer.value.config
+        setRoute(config === undefined ? '' : JSON.stringify([config.provider, config.model]))
+        setEffort('')
+      })()
+    }, 220)
+    return () => { clearTimeout(timer) }
+  }, [props.open, valid, task, goal, acceptance, discipline, props.planAnchor])
+
+  const currentConfig = plan?.config
+  const catalog = props.models
+  const hasCurrent = currentConfig !== undefined && catalog.some(model =>
+    model.provider === currentConfig.provider && model.model === currentConfig.model)
+  const models = currentConfig !== undefined && !hasCurrent
+    ? [{
+      provider: currentConfig.provider, providerName: currentConfig.provider,
+      model: currentConfig.model, modelName: currentConfig.model, efforts: [],
+    }, ...catalog]
+    : catalog
+  const selectedModel = models.find(model => JSON.stringify([model.provider, model.model]) === route)
+  const refused = !valid || plan === null
+  const confirm = (): void => {
+    if (busy || !valid || plan === null) return
+    const frozen = plan
+    setBusy(true)
+    setError(null)
+    const config = selectedModel === undefined ? undefined : {
+      provider: selectedModel.provider,
+      model: selectedModel.model,
+      ...(effort === '' ? {} : { reasoningEffort: effort }),
+    }
+    void (async () => {
+      const answer = await props.startAnchor(operationId.current, { task, goal, acceptance, discipline },
+        frozen.snapshotFingerprint, frozen.requestFingerprint, config)
+      setBusy(false)
+      if (!answer.ok) { setError({ code: answer.code, message: answer.message }); return }
+      props.onClose()
+      props.openSession(answer.value.sessionId)
+    })()
+  }
+  const errKey = error === null ? null : `redline.err.${error.code.replace('redline/', '')}`
+  const errText = error === null ? null : error.code === 'redline/internal' && error.message !== ''
+    ? `${t(errKey ?? 'redline.err.internal')}：${error.message}`
+    : t(errKey ?? 'redline.err.internal')
+
+  if (!props.open) return null
+  return h('div', {
+    className: 'redline-modal-backdrop',
+    onMouseDown: (event: { target: unknown; currentTarget: unknown }) => {
+      if (event.target === event.currentTarget && !busy) props.onClose()
+    },
+  }, h('div', { className: 'redline-modal-card', role: 'dialog', 'aria-modal': 'true', 'data-redline-anchor-modal': '1' },
+    h('div', { className: 'redline-modal-head' },
+      h('h2', { className: 'redline-modal-title' }, t('anchor.title')),
+      h('button', { type: 'button', className: 'redline-modal-close', disabled: busy, onClick: props.onClose }, '×'),
+    ),
+    h('div', { className: 'redline-confirm-body' },
+      h('p', { className: 'redline-confirm-intro' }, t('anchor.intro')),
+      h('label', { className: 'redline-confirm-task' },
+        h('span', { className: 'redline-confirm-task-label' }, t('anchor.taskLabel')),
+        h('span', { className: 'redline-confirm-task-hint' }, t('anchor.taskHint')),
+        h('textarea', {
+          rows: 3, 'data-redline-anchor-task': '1', placeholder: t('anchor.taskPlaceholder'), value: task,
+          onChange: (event: ChangeEvent<HTMLTextAreaElement>) => {
+            const value = event.target.value
+            setTask(value)
+            if (!goalDirty) setGoal(value)
+          },
+        })),
+      h('label', { className: 'redline-confirm-task' },
+        h('span', { className: 'redline-confirm-task-label' },
+          t('anchor.goalLabel'), ' ',
+          h('button', {
+            type: 'button', className: 'redline-anchor-follow', 'data-redline-anchor-follow': '1',
+            onClick: () => { setGoalDirty(false); setGoal(task) },
+          }, goalDirty ? t('anchor.followReset') : t('anchor.following'))),
+        h('span', { className: 'redline-confirm-task-hint' }, t('anchor.goalHint')),
+        h('textarea', {
+          rows: 2, 'data-redline-anchor-goal': '1', value: goal,
+          onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setGoalDirty(true); setGoal(event.target.value) },
+        })),
+      h('label', { className: 'redline-confirm-task' },
+        h('span', { className: 'redline-confirm-task-label' }, t('anchor.acceptanceLabel')),
+        h('span', { className: 'redline-confirm-task-hint' }, t('anchor.acceptanceHint')),
+        h('textarea', {
+          rows: 3, 'data-redline-anchor-acceptance': '1', placeholder: t('anchor.acceptancePlaceholder'),
+          value: acceptance, onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setAcceptance(event.target.value) },
+        })),
+      h('label', { className: 'redline-confirm-task' },
+        h('span', { className: 'redline-confirm-task-label' }, t('anchor.disciplineLabel')),
+        h('span', { className: 'redline-confirm-task-hint' }, t('anchor.disciplineHint')),
+        h('textarea', {
+          rows: 5, 'data-redline-anchor-discipline': '1', placeholder: t('anchor.disciplinePlaceholder'),
+          value: discipline, onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setDiscipline(event.target.value) },
+        })),
+      h('div', { className: 'redline-anchor-snapshot' },
+        h('div', { className: 'redline-anchor-snapshot-head' }, t('anchor.snapshot')),
+        h('pre', {
+          'data-redline-anchor-snapshot': '1',
+          'data-redline-anchor-snapshot-fingerprint': plan?.snapshotFingerprint ?? '',
+        }, plan?.snapshot ?? t('anchor.preparing'))),
+      h(CarrierSelectionBar, {
+        models,
+        selectedRoute: route,
+        selectedEffort: effort,
+        t,
+        onRoute: (next: string) => { setRoute(next); setEffort('') },
+        onEffort: (next: string) => { setEffort(next) },
+      }),
+      errText !== null ? h('div', { className: 'redline-editor-err', role: 'alert' }, errText) : null,
+    ),
+    h('div', { className: 'redline-modal-foot' },
+      h('span', { className: 'redline-confirm-scope' }, t('anchor.scope')),
+      h('button', { type: 'button', className: 'redline-confirm-btn redline-confirm-btn-cancel', disabled: busy, onClick: props.onClose }, t('anchor.cancel')),
+      h('button', {
+        type: 'button', className: 'redline-confirm-btn redline-confirm-btn-ok', 'data-redline-anchor-confirm': '1',
+        disabled: busy || refused, onClick: confirm,
+      }, t('anchor.confirm')),
+    ),
+  ))
+}
+
 export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactElement {
   const { t } = kit
 
   return function ChildCard(props): ReactElement {
     const [open, setOpen] = useState(false)
+    const [anchorOpen, setAnchorOpen] = useState(false)
     const [task, setTask] = useState('')
     const [anchor, setAnchor] = useState('')
     const [anchorMode, setAnchorMode] = useState<CarrierAnchorMode>('message')
@@ -214,6 +407,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
       generation.current += 1
       startGeneration.current += 1
       setOpen(false)
+      setAnchorOpen(false)
       setTask('')
       setAnchor('')
       setAnchorMode('message')
@@ -322,13 +516,21 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
           h('p', { className: 'redline-orch-launch-note' }, t('child.spawn.note')),
           blockedKey !== null ? h('p', { className: 'redline-orch-launch-note' }, t(blockedKey)) : null,
         ),
-        h('button', {
-          type: 'button',
-          className: 'redline-orch-open',
-          'data-redline-spawn': '1',
-          disabled: blockedKey !== null,
-          onClick: () => { setTask(''); setOpen(true) },
-        }, t('child.spawn.button')),
+        h('div', { className: 'redline-orch-actions' },
+          h('button', {
+            type: 'button',
+            className: 'redline-orch-open',
+            'data-redline-spawn': '1',
+            disabled: blockedKey !== null,
+            onClick: () => { setTask(''); setOpen(true) },
+          }, t('child.spawn.button')),
+          h('button', {
+            type: 'button',
+            className: 'redline-orch-open redline-anchor-open',
+            'data-redline-anchor-open': '1',
+            disabled: blockedKey !== null,
+            onClick: () => { setAnchorOpen(true) },
+          }, t('anchor.entryButton'))),
       ),
 
       h('section', { 'data-redline-block': 'children' },
@@ -377,6 +579,16 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
             )
           })),
       ),
+
+      h(AnchorDialog, {
+        open: anchorOpen,
+        models: props.models ?? [],
+        t,
+        planAnchor: props.planAnchor,
+        startAnchor: props.startAnchor,
+        openSession: props.openSession,
+        onClose: () => { setAnchorOpen(false) },
+      }),
 
       open
         ? h('div', {

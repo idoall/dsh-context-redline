@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { planChild, readCapacity, readCarrierModels, readCarriers, readOrigins, readTurnState, startChild, type CarrierAnchorMode, type CarrierModelOption, type ChildPlan, type ChildStarted, type RedlineResult } from './redlineChannel'
+import { planAnchor, planChild, readCapacity, readCarrierModels, readCarriers, readOrigins, readTurnState, startAnchor, startChild, type AnchorInput, type AnchorPlan, type AnchorStarted, type CarrierAnchorMode, type CarrierModelOption, type ChildPlan, type ChildStarted, type RedlineResult } from './redlineChannel'
 import { viaOf, type OriginRecord, type OriginVia } from '../shared/redline-origins'
 import { REDLINE_ERROR as ERR } from '../shared/redline-errors'
 import { UNKNOWN_CAPACITY, capacityOf, type ChildCapacity } from '../shared/redline-capacity'
@@ -118,6 +118,16 @@ export interface ChildController {
     anchor?: string,
     anchorMode?: CarrierAnchorMode,
   ) => Promise<RedlineResult<ChildStarted>>
+  /** Read-only preview of one anchored conversation. */
+  readonly planAnchor: (input: AnchorInput) => Promise<RedlineResult<AnchorPlan>>
+  /** Create the anchored conversation; the only other session write in this panel. */
+  readonly startAnchor: (
+    operationId: string,
+    input: AnchorInput,
+    snapshotFingerprint: string,
+    requestFingerprint: string,
+    config?: { provider: string; model: string; reasoningEffort?: string },
+  ) => Promise<RedlineResult<AnchorStarted>>
 }
 
 /**
@@ -306,8 +316,27 @@ export function useChildSessions(
     return answer
   }, [refreshCarriers, sessionId])
 
+  const planAnchorForSession = useCallback(async (input: AnchorInput): Promise<RedlineResult<AnchorPlan>> => {
+    if (sessionId === undefined || sessionId === '') return { ok: false, code: 'redline/not-live', message: 'no session' }
+    return await planAnchor(sessionId, input)
+  }, [sessionId])
+
+  const startAnchorForSession = useCallback(async (
+    operationId: string,
+    input: AnchorInput,
+    snapshotFingerprint: string,
+    requestFingerprint: string,
+    config?: { provider: string; model: string; reasoningEffort?: string },
+  ): Promise<RedlineResult<AnchorStarted>> => {
+    if (sessionId === undefined || sessionId === '') return { ok: false, code: 'redline/not-live', message: 'no session' }
+    return await startAnchor(sessionId, operationId, input, snapshotFingerprint, requestFingerprint, config)
+  }, [sessionId])
+
   return useMemo(
-    () => ({ rows, capacity, originsKnown: origins.known, originsError: origins.error, models, plan, start }),
-    [rows, capacity, origins.known, origins.error, models, plan, start],
+    () => ({
+      rows, capacity, originsKnown: origins.known, originsError: origins.error, models, plan, start,
+      planAnchor: planAnchorForSession, startAnchor: startAnchorForSession,
+    }),
+    [rows, capacity, origins.known, origins.error, models, plan, start, planAnchorForSession, startAnchorForSession],
   )
 }

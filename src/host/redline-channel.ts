@@ -67,6 +67,7 @@ import { capacityFromService } from '../shared/redline-capacity'
 import { originsFileName, parseOrigins } from '../shared/redline-origins'
 import { captureEventSourceSnapshot, eventSourceKeyOf, type CapturedEventSource, type SurfaceSnapshotEvent } from '../shared/redline-source'
 import { buildManifest, serializeManifestDelivery, stableFingerprint, type ManifestCandidate } from '../redline/manifest'
+import { anchorRequestFingerprint, anchorTitle, composeAnchor, type AnchorDraft } from '../shared/redline-anchor'
 import {
   authorizeCarrier,
   createCarrierPreview,
@@ -528,6 +529,159 @@ function decodeCarrierConfirmation(raw: unknown): CarrierConfirmationToken | nul
 const CARRIER_ANCHOR_LIMIT = 2000
 
 /** Read the optional anchor; `null` means an unusable value (bad request). */
+/** Deterministic identities for one anchored conversation request. */
+function anchoredIds(operationId: string) {
+  const suffix = stableFingerprint(operationId)
+  return {
+    sessionId: `session-anchor-${suffix.slice(0, 24)}`,
+    promptRequestId: `anchor-prompt-${suffix.slice(24, 48)}`,
+  }
+}
+
+/** Read the four human-written fields; `null` means a non-string arrived. */
+function anchorDraftOf(call: RedlineCall): AnchorDraft | null {
+  const values: string[] = []
+  for (const key of ['task', 'goal', 'acceptance', 'discipline'] as const) {
+    const value = call[key]
+    if (typeof value !== 'string') return null
+    values.push(value)
+  }
+  return { task: values[0] ?? '', goal: values[1] ?? '', acceptance: values[2] ?? '', discipline: values[3] ?? '' }
+}
+
+interface AnchorSource {
+  readonly agent: CarrierSourceAgentFace
+  readonly cwd: string
+  readonly workspaceId: string
+  readonly config: CarrierConfirmedConfig
+}
+
+/** Resolve the source session's config/workspace without reading or writing its context. */
+async function resolveAnchorSource(
+  ctx: Context,
+  sessionId: string,
+): Promise<{ ok: true; source: AnchorSource } | { ok: false; envelope: RedlineEnvelope<never> }> {
+  const agents = ctx.get('agents') as { get?: (id: string) => CarrierSourceAgentFace | undefined } | undefined
+  const agent = agents?.get?.(sessionId)
+  if (agent === undefined) return { ok: false, envelope: fail(REDLINE_ERROR.notLive) }
+  const config = confirmedConfigOf(ctx, agent)
+  const cwd = agent.session?.header?.cwd
+  if (config === null || cwd === undefined) {
+    return { ok: false, envelope: fail(REDLINE_ERROR.internal, 'source session configuration is incomplete') }
+  }
+  const registry = ctx.get('workspaceRegistry') as CarrierWorkspaceRegistryFace | undefined
+  if (typeof registry?.resolveByPath !== 'function') {
+    return { ok: false, envelope: fail(REDLINE_ERROR.internal, 'workspace registry is unavailable') }
+  }
+  const workspace = await registry.resolveByPath(cwd)
+  if (workspace === undefined) return { ok: false, envelope: fail(REDLINE_ERROR.internal, 'source workspace is unavailable') }
+  return { ok: true, source: { agent, cwd, workspaceId: workspace.id, config } }
+}
+
+/** Turn gate shared by the read-only plan and the write. */
+async function anchorGate(ctx: Context, sessionId: string): Promise<RedlineEnvelope<never> | null> {
+  const turn = await turnStateOfSession(ctx, sessionId)
+  if (!turn.known) return fail(REDLINE_ERROR.notLive)
+  if (turn.open) return fail(REDLINE_ERROR.turnOpen)
+  return null
+}
+
+/** Read-only anchored-conversation preview; no session or ledger write. */
+const anchorPlan: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const gate = await anchorGate(ctx, sessionId)
+  if (gate !== null) return gate
+  const draft = anchorDraftOf(call)
+  if (draft === null) return fail(REDLINE_ERROR.badRequest)
+  let composed
+  try { composed = composeAnchor(draft) } catch { return fail(REDLINE_ERROR.badRequest, 'anchor fields are incomplete') }
+  const resolved = await resolveAnchorSource(ctx, sessionId)
+  if (!resolved.ok) return resolved.envelope
+  const { config, workspaceId } = resolved.source
+  return redlineOk({
+    snapshot: composed.text,
+    snapshotFingerprint: composed.fingerprint,
+    requestFingerprint: anchorRequestFingerprint(draft),
+    title: anchorTitle(draft),
+    workspaceId,
+    config: {
+      agentPreset: config.agentPreset,
+      provider: config.provider,
+      model: config.model,
+      ...(config.reasoningEffort.startsWith('not-') ? {} : { reasoningEffort: config.reasoningEffort }),
+    },
+  })
+}
+
+/** Create one ordinary root conversation with the frozen runtime snapshot; no return path. */
+const anchorStart: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  const operationId = typeof call.operationId === 'string' ? call.operationId.trim() : ''
+  if (sessionId === null || operationId === '' || operationId.length > 200) return fail(REDLINE_ERROR.badRequest)
+  const gate = await anchorGate(ctx, sessionId)
+  if (gate !== null) return gate
+  const draft = anchorDraftOf(call)
+  if (draft === null) return fail(REDLINE_ERROR.badRequest)
+  let composed
+  try { composed = composeAnchor(draft) } catch { return fail(REDLINE_ERROR.badRequest, 'anchor fields are incomplete') }
+  if (call.snapshotFingerprint !== composed.fingerprint
+    || call.requestFingerprint !== anchorRequestFingerprint(draft)) return fail(REDLINE_ERROR.draftsChanged)
+  const resolved = await resolveAnchorSource(ctx, sessionId)
+  if (!resolved.ok) return resolved.envelope
+  const { config: baseConfig, cwd, workspaceId } = resolved.source
+  let config = baseConfig
+  const requested = call.config !== null && typeof call.config === 'object'
+    ? call.config as Record<string, unknown>
+    : null
+  if (requested !== null) {
+    const provider = typeof requested.provider === 'string' ? requested.provider.trim() : ''
+    const model = typeof requested.model === 'string' ? requested.model.trim() : ''
+    const reasoningEffort = typeof requested.reasoningEffort === 'string' ? requested.reasoningEffort.trim() : undefined
+    if (provider === '' || model === '') return fail(REDLINE_ERROR.badRequest)
+    const llm = ctx.get('llm') as CarrierLlmDirectoryFace | undefined
+    if (llm === undefined) return fail(REDLINE_ERROR.internal, 'model directory is unavailable')
+    let info: Awaited<ReturnType<CarrierLlmDirectoryFace['resolveModelInfo']>>
+    try { info = await llm.resolveModelInfo(provider, model) } catch { return fail(REDLINE_ERROR.badRequest, 'selected model is unavailable') }
+    if (reasoningEffort !== undefined && !info.reasoning?.efforts.some(level => level.id === reasoningEffort)) {
+      return fail(REDLINE_ERROR.badRequest, 'selected reasoning effort is unavailable')
+    }
+    config = {
+      ...config,
+      provider,
+      model,
+      reasoningEffort: reasoningEffort ?? info.reasoning?.defaultEffort ?? 'not-specified',
+      inheritedFrom: 'confirmation-selection',
+    }
+  }
+  const ids = anchoredIds(operationId)
+  const title = anchorTitle(draft)
+  const control = carrierControl(ctx)
+  const result = await control.start({
+    carrierId: ids.sessionId,
+    cwd,
+    agentPreset: config.agentPreset,
+    agentOptions: {
+      provider: config.provider,
+      model: config.model,
+      ...(config.reasoningEffort.startsWith('not-') ? {} : { reasoningEffort: config.reasoningEffort }),
+    },
+    workspaceId,
+    title,
+    promptRequestId: ids.promptRequestId,
+    promptText: draft.task.trim(),
+    runtimeAnchor: composed.text,
+  })
+  if (!result.ok) return fail(REDLINE_ERROR.internal, `anchor start held: ${result.cause}`)
+  return redlineOk({
+    sessionId: ids.sessionId,
+    title,
+    mode: result.mode,
+    delivery: result.delivery,
+    messageId: result.messageId,
+  })
+}
+
 function carrierAnchorOf(call: RedlineCall): string | null {
   const raw = call.anchor
   if (raw === undefined || raw === null) return ''
@@ -1066,6 +1220,8 @@ const OPS = new Map<string, RedlineOpHandler>([
   ['carrier.start', startCarrier],
   ['carrier.list', readCarriers],
   ['carrier.models', readCarrierModels],
+  ['anchor.plan', anchorPlan],
+  ['anchor.start', anchorStart],
 ])
 
 /** One JSON reply on the channel. `no-store` matches every other plugin route. */
