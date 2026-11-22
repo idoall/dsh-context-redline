@@ -170,6 +170,45 @@ function coldMatch(snapshot: unknown, requestId: string, expectedText: string): 
   return classifyMessages(logMessages(snapshot), requestId, expectedText)
 }
 
+/** 生产用真实定时器；单元测试注入一个只记录不等待的实现。 */
+function realSleep(ms: number): Promise<void> {
+  return new Promise<void>((resolve) => { setTimeout(resolve, ms) })
+}
+
+/**
+ * Read back for exact persistence, but allow the just-flushed event to be
+ * briefly invisible: a bounded re-read, not a weaker verdict.
+ *
+ * Only `absent` is retried; `exact` and `conflict` are definite and return
+ * immediately. The retry budget is finite, and a final `absent` still fails —
+ * nothing is reported as persisted merely because time passed, and no message
+ * is ever resent.
+ */
+async function coldMatchWithRetry(
+  ctx: CarrierSessionControlContext,
+  sessionId: string,
+  requestId: string,
+  expectedText: string,
+  delays: readonly number[],
+  sleep: (ms: number) => Promise<void>,
+): Promise<MessageMatch> {
+  let match = coldMatch(await ctx.sessionQuery.readSession(SessionId(sessionId)), requestId, expectedText)
+  for (const delay of delays) {
+    if (match.kind !== 'absent') return match
+    await sleep(delay)
+    match = coldMatch(await ctx.sessionQuery.readSession(SessionId(sessionId)), requestId, expectedText)
+  }
+  return match
+}
+
+/** Post-flush re-read schedule; tests can inject a zero-delay schedule. */
+export const DEFAULT_COLD_READ_DELAYS: readonly number[] = [200, 500, 1000]
+
+export interface CarrierSessionControlOptions {
+  readonly sleep?: (ms: number) => Promise<void>
+  readonly coldReadDelays?: readonly number[]
+}
+
 function inboxMatch(agent: CarrierAgent, requestId: string, expectedText: string): MessageMatch {
   return classifyMessages([...agent.inbox.nextStep, ...agent.inbox.nextTurn], requestId, expectedText)
 }
@@ -184,7 +223,12 @@ function systemPromptFace(value: unknown): CarrierSessionControlContext['systemP
 }
 
 /** One controller owns live handles and per-carrier critical sections. */
-export function createRedlineSessionControl(ctx: CarrierSessionControlContext) {
+export function createRedlineSessionControl(
+  ctx: CarrierSessionControlContext,
+  options: CarrierSessionControlOptions = {},
+) {
+  const coldDelays = options.coldReadDelays ?? DEFAULT_COLD_READ_DELAYS
+  const coldSleep = options.sleep ?? realSleep
   const handles = new Map<string, CarrierAgentHandle>()
   const locks = new Map<string, Promise<void>>()
 
@@ -299,8 +343,7 @@ export function createRedlineSessionControl(ctx: CarrierSessionControlContext) {
     if (queued.kind === 'exact') {
       const flushed = await ctx.sessions.flush(agent.session)
       if (!flushed) return { ok: false, state: 'unknown', cause: 'prompt-flush-unconfirmed' }
-      const after = await ctx.sessionQuery.readSession(SessionId(request.carrierId))
-      const cold = coldMatch(after, request.promptRequestId, request.promptText)
+      const cold = await coldMatchWithRetry(ctx, request.carrierId, request.promptRequestId, request.promptText, coldDelays, coldSleep)
       if (cold.kind !== 'exact') return { ok: false, state: 'unknown', cause: cold.kind === 'conflict' ? 'prompt-request-id-content-conflict' : 'prompt-not-persisted' }
       return { ok: true, mode, delivery: 'already-present', messageId: cold.id, flushed: true, titleStatus }
     }
@@ -312,8 +355,7 @@ export function createRedlineSessionControl(ctx: CarrierSessionControlContext) {
     agent.followup(message)
     const flushed = await ctx.sessions.flush(agent.session)
     if (!flushed) return { ok: false, state: 'unknown', cause: 'prompt-flush-unconfirmed' }
-    const after = await ctx.sessionQuery.readSession(SessionId(request.carrierId))
-    const cold = coldMatch(after, request.promptRequestId, request.promptText)
+    const cold = await coldMatchWithRetry(ctx, request.carrierId, request.promptRequestId, request.promptText, coldDelays, coldSleep)
     if (cold.kind !== 'exact') return { ok: false, state: 'unknown', cause: cold.kind === 'conflict' ? 'prompt-request-id-content-conflict' : 'prompt-not-persisted' }
     return { ok: true, mode, delivery: 'sent', messageId: cold.id, flushed, titleStatus }
   })
@@ -346,8 +388,7 @@ export function createRedlineSessionControl(ctx: CarrierSessionControlContext) {
       if (queued.kind === 'exact') {
         const flushed = await ctx.sessions.flush(agent.session)
         if (!flushed) return { ok: false, state: 'unknown', cause: 'return-flush-unconfirmed' }
-        const after = await ctx.sessionQuery.readSession(SessionId(request.sessionId))
-        const cold = coldMatch(after, request.requestId, request.text)
+        const cold = await coldMatchWithRetry(ctx, request.sessionId, request.requestId, request.text, coldDelays, coldSleep)
         if (cold.kind !== 'exact') return { ok: false, state: 'unknown', cause: cold.kind === 'conflict' ? 'return-request-id-content-conflict' : 'return-not-persisted' }
         return { ok: true, delivery: 'already-present', messageId: cold.id, flushed: true }
       }
@@ -358,8 +399,7 @@ export function createRedlineSessionControl(ctx: CarrierSessionControlContext) {
       agent.followup(message)
       const flushed = await ctx.sessions.flush(agent.session)
       if (!flushed) return { ok: false, state: 'unknown', cause: 'return-flush-unconfirmed' }
-      const after = await ctx.sessionQuery.readSession(SessionId(request.sessionId))
-      const cold = coldMatch(after, request.requestId, request.text)
+      const cold = await coldMatchWithRetry(ctx, request.sessionId, request.requestId, request.text, coldDelays, coldSleep)
       if (cold.kind !== 'exact') return { ok: false, state: 'unknown', cause: cold.kind === 'conflict' ? 'return-request-id-content-conflict' : 'return-not-persisted' }
       return { ok: true, delivery: 'sent', messageId: cold.id, flushed }
     })

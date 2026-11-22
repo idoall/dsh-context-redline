@@ -168,3 +168,14 @@
 .redline-anchor-snapshot-head { margin-bottom: 6px; color: var(--dsw-alias-label-caption); font-size: 11px; }
 .redline-anchor-snapshot pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--dsw-alias-label-secondary); font: 11.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .redline-confirm-scope { margin-right: auto; color: var(--dsw-alias-label-caption); font-size: 11.5px; }
+
+/* Anchored-conversation dialog: the base modal has no footer layout, so the
+   scope text and the two actions collapsed together. Keep 10px between every
+   action and push the scope copy away from the buttons. */
+.redline-modal-card[data-redline-anchor-modal] .redline-modal-foot {
+  display: flex; flex: 0 0 auto; justify-content: flex-end; align-items: center;
+  gap: 10px; flex-wrap: wrap; margin: 14px 0 0; padding-top: 12px;
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+.redline-modal-card[data-redline-anchor-modal] .redline-confirm-scope { margin-right: auto; padding-right: 10px; }
+.redline-modal-card[data-redline-anchor-modal] .redline-confirm-btn { flex: 0 0 auto; }

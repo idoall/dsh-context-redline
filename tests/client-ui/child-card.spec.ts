@@ -553,3 +553,15 @@ describe('锚定会话（0.4.0）', () => {
     await m.unmount()
   })
 })
+
+describe('锚定会话弹窗底栏间距（0.4.1 回归）', () => {
+  test('底栏是 flex 且有 10px 间距，说明文字与按钮之间留出空隙', () => {
+    const css = readFileSync(join(process.cwd(), 'src/client/styles/childCard.css'), 'utf8')
+    const rule = /\.redline-modal-card\[data-redline-anchor-modal\] \.redline-modal-foot\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    assert.match(rule, /display:\s*flex/)
+    assert.match(rule, /gap:\s*10px/)
+    const scope = /\.redline-modal-card\[data-redline-anchor-modal\] \.redline-confirm-scope\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    assert.match(scope, /margin-right:\s*auto/)
+    assert.match(scope, /padding-right:\s*10px/)
+  })
+})

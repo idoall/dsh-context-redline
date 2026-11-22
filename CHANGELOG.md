@@ -1,5 +1,21 @@
 # 更新日志 / Changelog
 
+## [0.4.1] — 2026-11-22
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
+
+### 修复 / Fixed
+
+- 修复锚定会话首次创建时报 `anchor start held: prompt-not-persisted` 的假阴性：flush 已确认写入，但查询投影可能短暂滞后；宿主改为有界重读（3 次、200/500/1000ms 退避，最多约 1.7 秒），遇到真实冲突仍立即停止。
+- Fix the anchored-conversation false negative `anchor start held: prompt-not-persisted`: flush confirms the append, but the query projection can lag; the Host now re-reads a bounded number of times (3 retries, 200/500/1000 ms backoff, ~1.7 s worst case) and still stops immediately on a real conflict.
+- 补齐锚定会话弹窗底栏间距：底栏改为 flex、按钮间 10px，说明文字与按钮之间留出空隙。
+- Restore the anchored-conversation dialog footer spacing: flex layout, 10 px between actions, and a gap between the scope copy and the buttons.
+
+### 边界 / Boundaries
+
+- 不改变首次消息字节、运行时快照、台账或回程语义；不新增模型调用。
+- First-message bytes, runtime snapshot, ledger and return semantics are unchanged; no model call is added.
+
 ## [0.4.0] — 2026-11-22
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.

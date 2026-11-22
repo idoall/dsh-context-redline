@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
-import { createRedlineSessionControl, type CarrierSessionControlContext, type CarrierSessionRequest } from '../../src/host/redline-session-control'
+import { createRedlineSessionControl, DEFAULT_COLD_READ_DELAYS, type CarrierSessionControlContext, type CarrierSessionRequest } from '../../src/host/redline-session-control'
 
 const request = (patch: Partial<CarrierSessionRequest> = {}): CarrierSessionRequest => ({
   carrierId: 'carrier-fixed-id',
@@ -302,10 +302,12 @@ describe('redline carrier session control', () => {
     const order: string[] = []
     h.ctx.sessions.flush = async () => { order.push('flush'); return true }
     h.setRead(async () => { order.push('cold-read'); return { session: { id: 'carrier-fixed-id' }, events: [] } })
-    const result = await createRedlineSessionControl(h.ctx).start(request())
+    const result = await createRedlineSessionControl(h.ctx, { coldReadDelays: [0, 0, 0], sleep: async () => {} }).start(request())
     assert.deepEqual(result, { ok: false, state: 'unknown', cause: 'prompt-not-persisted' })
-    assert.deepEqual(order, ['cold-read', 'flush', 'cold-read'])
-    assert.equal(h.calls.reads.length, 2)
+    assert.equal(order[0], 'cold-read')
+    assert.equal(order[1], 'flush')
+    assert.deepEqual(order.slice(2), Array(4).fill('cold-read'))
+    assert.equal(h.calls.reads.length, 5, 'one presence read + one cold read + three bounded retries')
   })
 })
 
@@ -339,5 +341,52 @@ describe('运行时规则模式（0.3.0）', () => {
     const result = await createRedlineSessionControl(h.ctx).start(request())
     assert.equal(result.ok, true)
     assert.deepEqual(h.runtimeContexts, [])
+  })
+})
+
+describe('flush 后查询投影延迟（0.4.1 回归）', () => {
+  test('flush 已确认但前几次冷读仍为空时，有界重读最终找到同一条消息', async () => {
+    const h = harness({ live: true })
+    let postFlushReads = 0
+    h.setRead(async () => {
+      const message = h.calls.followups[0]
+      if (message === undefined) return { session: { id: 'carrier-fixed-id' }, events: [] }
+      postFlushReads += 1
+      if (postFlushReads < 3) return { session: { id: 'carrier-fixed-id' }, events: [] }
+      return { session: { id: 'carrier-fixed-id' }, events: [{ type: 'user/message', data: { message } }] }
+    })
+    const result = await createRedlineSessionControl(h.ctx, { coldReadDelays: [0, 0, 0], sleep: async () => {} }).start(request())
+    assert.equal(result.ok, true)
+    if (result.ok) {
+      assert.equal(result.delivery, 'sent')
+      assert.equal(result.flushed, true)
+    }
+    assert.ok(postFlushReads >= 3, `expected bounded retries, saw ${postFlushReads}`)
+  })
+
+  test('始终读不到时才报 prompt-not-persisted', async () => {
+    const h = harness({ live: true })
+    h.setRead(async () => ({ session: { id: 'carrier-fixed-id' }, events: [] }))
+    const result = await createRedlineSessionControl(h.ctx, { coldReadDelays: [0, 0, 0], sleep: async () => {} }).start(request())
+    assert.deepEqual(result, { ok: false, state: 'unknown', cause: 'prompt-not-persisted' })
+  })
+})
+
+describe('有界重读只在 absent 时继续（0.4.1）', () => {
+  test('同 ID 不同正文是确定冲突：只读一次，不重试', async () => {
+    const h = harness({ live: true })
+    let reads = 0
+    h.setRead(async () => {
+      reads += 1
+      const message = { role: 'user', id: 'conflict-message', content: [{ type: 'text', text: 'different verbatim text' }], source: { kind: 'user', rpcId: 'prompt-request-1' } }
+      return { session: { id: 'carrier-fixed-id' }, events: [{ type: 'user/message', data: { message } }] }
+    })
+    const result = await createRedlineSessionControl(h.ctx, { coldReadDelays: [0, 0, 0], sleep: async () => {} }).start(request())
+    assert.deepEqual(result, { ok: false, state: 'unknown', cause: 'prompt-request-id-content-conflict' })
+    assert.equal(reads, 1)
+  })
+
+  test('默认退避是 200/500/1000ms，且只在 absent 时走完', async () => {
+    assert.deepEqual(DEFAULT_COLD_READ_DELAYS, [200, 500, 1000])
   })
 })

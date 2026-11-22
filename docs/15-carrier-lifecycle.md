@@ -52,7 +52,7 @@ return: not-prepared -> pending-send -> sending -> accepted / uncertain
 5. 附着到冻结工作区；失败时保留固定会话 ID，不换 ID 重建。
 6. 尝试命名；命名失败不冒充成功。
 7. 用固定 request ID 创建完整 user message，并 `followup`。
-8. flush 后冷读；只有 request ID、用户消息形状和正文逐字一致才算已持久接纳。
+8. flush 后冷读；查询投影可能短暂延迟，因此允许**有界重读**（默认 3 次重读、200/500/1000ms 退避，最多约 1.7 秒），遇到冲突立即停止；只有 request ID、用户消息形状和正文逐字一致才算已持久接纳。
 
 同一 request ID 但正文不同是冲突：停止，不接受、不重发。
 

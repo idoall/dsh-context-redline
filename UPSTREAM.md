@@ -95,6 +95,10 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 - Add an independent root conversation that carries a frozen goal/acceptance/discipline runtime snapshot without migrating context or returning a result.
 - Keep the 0.1.x–0.3.0 fixes, both anchor modes and the unpublished diagnostics/carrier-seed work outside this release.
 
+### Anchored-conversation fixes (0.4.1, 2026-11-22)
+
+- Bounded post-flush re-reads for prompt persistence (query projection lag) and dialog footer spacing; no product-semantics change.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

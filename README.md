@@ -20,7 +20,7 @@
 
 > A DeepSeek Harness community plugin. It does not modify DSH source or rewrite the source session log.
 >
-> **Version `0.4.0` — supports DSH `>=0.2.2-rc.5 <0.3.0-0`.** Built and regression-tested against `0.2.2-rc.5`; Node.js `>=24.9.0` is required. DSH `0.3.0` prereleases are excluded.
+> **Version `0.4.1` — supports DSH `>=0.2.2-rc.5 <0.3.0-0`.** Built and regression-tested against `0.2.2-rc.5`; Node.js `>=24.9.0` is required. DSH `0.3.0` prereleases are excluded.
 
 Edits stay local until confirmation. The plugin then opens a zero-history ordinary session in the current workspace and sends the exact final message you approved. When the task finishes, its bound result returns verbatim to the source session.
 
@@ -64,10 +64,10 @@ Requires DeepSeek Harness `0.2.2-rc.5` or a newer supported `0.2.x`, plus Node.j
 Install or upgrade to this exact release:
 
 ```sh
-dsh plugin --profile web add dsh-context-redline@0.4.0
+dsh plugin --profile web add dsh-context-redline@0.4.1
 ```
 
-This release adds the independent anchored conversation (task + goal/acceptance/discipline runtime snapshot, no migration, no return) and keeps the runtime-rule anchor mode, DSH 0.2.2-rc.5 compatibility, model/preset reads, projection-reader and tool-result fixes. The runtime rule is opt-in, shown verbatim in confirmation, frozen in the ledger, and registered through `systemPrompt.context` for the carrier only; it is not a preset system prompt or a hidden injection. Unaccepted diagnostics and carrier-seed experiments are not included. Automated tests do not constitute production visual or real-session acceptance.
+This patch fixes the anchored-conversation false negative `prompt-not-persisted` (the post-flush query projection can lag; the Host now re-reads a bounded number of times) and gives the dialog footer its missing spacing. It keeps the independent anchored conversation, both anchor modes and the DSH 0.2.2-rc.5 compatibility fixes. The runtime rule is opt-in, shown verbatim in confirmation, frozen in the ledger, and registered through `systemPrompt.context` for the carrier only; it is not a preset system prompt or a hidden injection. Unaccepted diagnostics and carrier-seed experiments are not included. Automated tests do not constitute production visual or real-session acceptance.
 
 Local development:
 
