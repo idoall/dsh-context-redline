@@ -17,8 +17,11 @@ describe('context handoff skill (0.7.0)', () => {
     for (const label of ['首条任务', '目标', '验收标准', '执行纪律']) {
       assert.ok(skill.content.includes(label), `missing ${label}`)
     }
+    for (const marker of ['情况 A', '情况 B', '每轮运行时规则', '最终发送全文']) {
+      assert.ok(skill.content.includes(marker), `missing ${marker}`)
+    }
     assert.ok(HANDOFF_SKILL_CONTENT.includes('每个里程碑结束必须停下汇报证据'))
-    assert.ok(skill.content.length < 6000)
+    assert.ok(skill.content.length < 7000)
   })
 
   test('registers on the skills service through an injected fiber and never throws when absent', () => {

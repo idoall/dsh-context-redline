@@ -115,6 +115,10 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 
 - Add an optional runtime skill that drafts the four anchored-conversation fields from the current conversation; registered only when the host has a skills registry.
 
+### Two handoff shapes (0.8.0, 2026-11-22)
+
+- Extend the optional handoff skill to cover both the migration fields and the anchored-conversation fields, with one shared goal/acceptance/discipline quality gate.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

@@ -1,5 +1,23 @@
 # 更新日志 / Changelog
 
+## [0.8.0] — 2026-11-22
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.
+
+### 新增 / Added
+
+- `context-redline-handoff` 技能升级为双场景：先推荐迁移或锚定，再输出对应字段。
+- The `context-redline-handoff` skill now outputs both handoff shapes, after recommending one.
+- 情况 A（迁移）：首条任务 + 每轮运行时规则锚点，最终发送全文由插件拼接；情况 B（不迁移）：首条任务 / 目标 / 验收标准 / 执行纪律。
+- Case A (migration): first task + per-request runtime-rule anchor, with the final message composed by the plugin; Case B (fresh): first task / goal / acceptance criteria / discipline.
+- 两种场景共用目标、验收、纪律检查；未知信息标“未验证”，不编造。
+- Both scenarios share the goal/acceptance/discipline checks; unknown facts stay unverified.
+
+### 边界 / Boundaries
+
+- 技能只输出文本，不建会话、不写文件；不改变趋势、锚定会话或既有数据。
+- The skill only outputs text; it creates no session and writes no file, and changes no trend, anchored-conversation or existing data.
+
 ## [0.7.0] — 2026-11-22
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.2-rc.5 <0.3.0-0`; verified with `0.2.2-rc.5`. Node.js `>=24.9.0`.

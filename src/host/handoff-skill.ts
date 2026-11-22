@@ -8,13 +8,13 @@ import type { Context } from '@deepseek-ai/cordis'
 
 export const HANDOFF_SKILL_NAME = 'context-redline-handoff'
 
-export const HANDOFF_SKILL_DESCRIPTION = 'Build a copy-paste Context Redline handoff card from the current conversation: first task, stable goal, acceptance criteria, and execution discipline with milestone gates.'
+export const HANDOFF_SKILL_DESCRIPTION = 'Build both Context Redline handoff shapes from the current conversation: migration fields (first task + per-request runtime rule) and anchored fields (first task, goal, acceptance criteria, discipline).'
 
 export const HANDOFF_SKILL_WHEN_TO_USE = 'Use when a conversation is long or drifting, when the user asks how to continue without losing the goal, or before opening a fresh anchored conversation with Context Redline.'
 
 export const HANDOFF_SKILL_CONTENT = `# 上下文交接卡
 
-当用户说“接下来怎么继续 / 别跑偏 / 帮我把任务拆成目标、验收、纪律 / 我要开新会话”时，用这个技能把当前对话压成一张可直接粘贴到「新建带规则的对话」的卡片。
+当用户说“接下来怎么继续 / 别跑偏 / 帮我把任务拆成目标、验收、纪律 / 我要开新会话”时，用这个技能把当前对话压成一张可直接粘贴的交接卡。
 
 ## 先读再写
 
@@ -25,11 +25,33 @@ export const HANDOFF_SKILL_CONTENT = `# 上下文交接卡
    - 用户给过的硬约束（路径、技术栈、不能做的事、合规边界）；
    - 完成标志（可执行的命令、文件、可观察结果）。
 2. 如果用户指的是另一个 DSH 会话：让对方先打开那个会话再执行，或把目标、最近结论、当前阻塞贴进来。不要猜。
-3. 判断交接方式：
-   - 新会话不需要旧上下文 → 用「新建带规则的对话」，输出四段；
-   - 新会话必须带旧证据 → 建议「开启普通新会话」迁移，四段仍可用（后三段填入运行时规则锚点），并在四段外说明保留 / 删除哪些条目。
+3. 在正文第一行给出推荐场景：
+   - **情况 A**：新会话需要旧上下文 / 已确认的证据 → 用「上下文批改」里的「开启普通新会话」；
+   - **情况 B**：新会话不需要旧上下文 → 用「新建带规则的对话」。
 
-## 输出格式（只输出这四段）
+推荐行示例：\`推荐：情况 A（这次需要保留已确认的接口证据）。\`
+
+## 情况 A：开启普通新会话（迁移旧上下文）
+
+### 首条任务
+
+\`\`\`text
+（新会话第一句话：只做当前这一步，写清先读哪个文件 / 先跑哪条命令）
+\`\`\`
+
+### 锚点（可选）· 选择「每轮运行时规则」
+
+\`\`\`text
+目标：（整个任务完成时才算达成的稳定目标）
+验收：（可逐条检查的命令 / 文件 / 输出 / 用户验收）
+纪律：（出错修正并继续、每个里程碑停下等验收、每轮先读计划、不扩范围、证据真实）
+\`\`\`
+
+### 最终发送全文
+
+不用手填：确认框会根据首条任务和你保留 / 删除的迁移条目自动拼接；需要时再在框里微调。
+
+## 情况 B：新建带规则的对话（不迁移上下文）
 
 ### 首条任务
 
@@ -57,7 +79,7 @@ export const HANDOFF_SKILL_CONTENT = `# 上下文交接卡
 
 用户如果只说“三段”，仍保留四个标签：把「首条任务」和「目标」一起当作“任务目标”给出，方便直接粘贴。
 
-## 四段怎么写
+## 两种场景怎么写
 
 - **首条任务**：一个会话能完成的具体动作；若有计划文件，第一句就是“先读 <绝对路径>”；不要写“完成整个项目”。
 - **目标**：用户最初要的结果，不是当前步骤；写清最终交付物和项目级成功判据。
@@ -72,15 +94,16 @@ export const HANDOFF_SKILL_CONTENT = `# 上下文交接卡
 
 ## 质量检查
 
-- 新会话的模型只看这四段，能不能知道第一件事做什么？
+- 新会话的模型只看这些字段，能不能知道第一件事做什么？
 - 每条验收能不能被第三个人独立检查？
 - 纪律有没有覆盖这次对话已经出现过的失败模式（跑偏、跳验收、假完成、上下文丢失）？
 - 路径、命令、版本是否真实来自对话或用户？不确定就标“未验证”，不要编。
-- 四段各控制在 2000 字符内（运行时规则每请求可见，越短越稳）。
+- 情况 A 的锚点控制在 2000 字符内；情况 B 每段也尽量控制在 2000 字符内（运行时规则每请求可见，越短越稳）。
 
 ## 最后一行
 
-粘贴到「新建带规则的对话」的四个字段：首条任务 / 目标 / 验收标准 / 执行纪律。
+- 情况 A：粘贴「首条任务」+「锚点」，锚点模式选「每轮运行时规则」；最终发送全文由插件拼接。
+- 情况 B：粘贴到「新建带规则的对话」的四个字段：首条任务 / 目标 / 验收标准 / 执行纪律。
 `
 
 export interface HandoffSkillRegistration {

@@ -20,7 +20,7 @@
 
 > A DeepSeek Harness community plugin. It does not modify DSH source or rewrite the source session log.
 >
-> **Version `0.7.0` — supports DSH `>=0.2.2-rc.5 <0.3.0-0`.** Built and regression-tested against `0.2.2-rc.5`; Node.js `>=24.9.0` is required. DSH `0.3.0` prereleases are excluded.
+> **Version `0.8.0` — supports DSH `>=0.2.2-rc.5 <0.3.0-0`.** Built and regression-tested against `0.2.2-rc.5`; Node.js `>=24.9.0` is required. DSH `0.3.0` prereleases are excluded.
 
 Edits stay local until confirmation. The plugin then opens a zero-history ordinary session in the current workspace and sends the exact final message you approved. When the task finishes, its bound result returns verbatim to the source session.
 
@@ -36,7 +36,7 @@ Edits stay local until confirmation. The plugin then opens a zero-history ordina
 - **Local redlining.** Edit user messages, injected/skill material, assistant migration copies, and paired tool results.
 - **Reversible deletion.** Delete means “do not migrate this identity”; the source log remains append-only.
 - **Authoritative final message.** The confirmation textarea is the exact first user message written to the new session.
-- **Handoff skill.** The plugin contributes a runtime skill, `context-redline-handoff`: it reads the current conversation and outputs the four copy-paste fields (first task, goal, acceptance criteria, discipline) with milestone gates.
+- **Handoff skill.** The plugin contributes a runtime skill, `context-redline-handoff`: it reads the current conversation and outputs both handoff shapes — the migration fields (first task + per-request rule anchor) and the anchored conversation fields (first task, goal, acceptance criteria, discipline), with milestone gates.
 - **Anchored conversation without migration.** Starts an independent root conversation from a task plus a frozen runtime snapshot of goal, acceptance criteria and discipline. Nothing is copied from the current session and no result is returned to it.
 - **DNA fingerprint mode.** The trend bars can switch to a per-item gradient in the model’s read order; the browser’s DNA switch and the trend switch move together. DNA currently forces total semantics.
 - **Trend duration overlay.** Each trend bar carries its step’s active time as a curve read off the right-hand axis; turn mode sums the turn’s steps. The Adaptive and Duration modifiers share one compact toggle group, and the old focused-category subtitle is gone.
@@ -67,7 +67,7 @@ Requires DeepSeek Harness `0.2.2-rc.5` or a newer supported `0.2.x`, plus Node.j
 Install or upgrade to this exact release:
 
 ```sh
-dsh plugin --profile web add dsh-context-redline@0.7.0
+dsh plugin --profile web add dsh-context-redline@0.8.0
 ```
 
 This patch fixes the DNA switch state: opening DNA from the Context browser now also parks the trend at Total, so the Delta segment no longer looks selected while the chart plots total. It keeps the trend DNA mode, duration overlay, anchored conversation, both anchor modes and the DSH 0.2.2-rc.5 compatibility fixes. The runtime rule is opt-in, shown verbatim in confirmation, frozen in the ledger, and registered through `systemPrompt.context` for the carrier only; it is not a preset system prompt or a hidden injection. Unaccepted diagnostics and carrier-seed experiments are not included. Automated tests do not constitute production visual or real-session acceptance.
@@ -95,7 +95,7 @@ Uninstalling does not automatically delete local drafts and operation ledgers un
 1. Open a session with messages and select **Context Redline**.
 2. Optionally edit/delete individual items; saves remain local.
 3. Choose **Open ordinary new session**.
-4. If you are not sure what to fill, run the `context-redline-handoff` skill first; it outputs the four fields. Then choose **New conversation with rules** and paste them. The snapshot is frozen before creation and re-declared after compaction.
+4. If you are not sure what to fill, run the `context-redline-handoff` skill first; it recommends migration or a fresh anchored conversation and outputs the matching fields. The snapshot is frozen before creation and re-declared after compaction.
 5. In the migration flow, enter the task; optionally add a short anchor (keywords or hard constraints) and choose **first message** or **runtime rule**, then finish the exact final message.
 6. Choose a model; keep effort at **Use model default** unless needed.
 7. Confirm creation and open the new session from the left sidebar.
