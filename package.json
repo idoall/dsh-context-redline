@@ -1,6 +1,6 @@
 {
   "name": "dsh-context-redline",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "上下文批改 (Context Redline) — review, edit, or delete the context a model will receive; open a zero-history ordinary session with the confirmed content; and return its bound result verbatim to the source session. Independent fork of dsh-context (Apache-2.0 portions; provenance in UPSTREAM.md).",
   "icon": "icon.svg",
   "repository": {

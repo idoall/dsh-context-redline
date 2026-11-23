@@ -20,7 +20,7 @@
 
 > A DeepSeek Harness community plugin. It does not modify DSH source or rewrite the source session log.
 >
-> **Version `0.9.3` — supports DSH `>=0.2.3-alpha.2 <0.3.0-0`.** Built and regression-tested against `0.2.3-alpha.2`; Node.js `^24.22.3 || >=26.13.1` is required. DSH `0.3.0` prereleases are excluded.
+> **Version `0.9.4` — supports DSH `>=0.2.3-alpha.2 <0.3.0-0`.** Built and regression-tested against `0.2.3-alpha.2`; Node.js `^24.22.3 || >=26.13.1` is required. DSH `0.3.0` prereleases are excluded.
 
 Edits stay local until confirmation. The plugin then opens a zero-history ordinary session in the current workspace and sends the exact final message you approved. When the task finishes, its bound result returns verbatim to the source session.
 
@@ -68,10 +68,10 @@ Requires DeepSeek Harness `0.2.3-alpha.2` or a newer supported `0.2.x`, plus Nod
 Install or upgrade to this exact release:
 
 ```sh
-dsh plugin --profile web add dsh-context-redline@0.9.3
+dsh plugin --profile web add dsh-context-redline@0.9.4
 ```
 
-This patch fixes the anchored-conversation dialog on long forms. The dialog grew past the viewport once the Goal Guard fields were filled in, and because the card scrolled as one block while its body declared `overscroll-behavior: contain`, a wheel or drag over one of the tall text areas could not move the dialog — it only worked after leaving the field. The card now uses the same skeleton as the confirmation dialog: a fixed header, ONE scrolling body and a pinned footer, so the form scrolls to the guard options and the confirm button from anywhere, including while the cursor sits inside a field. No guard, handoff or accounting behaviour changed.
+This patch fixes the handoff card's review cadence. The skill's discipline template conflated “the main session reviews a task” with “the user approves each task”, so a six-task card demanded six stops — a real session stopped after T1 and asked whether to continue. The template now separates the two: the main session checks each task against its acceptance and moves straight on, a milestone earns one user report, and an explicit “no confirmation during the process” moves the single report to the end. The only mandatory stops are a goal/acceptance change, a broken premise (environment unavailable, missing licence, user action required), an irreversible or external side effect, or a safety/compliance conflict. A checklist item now catches a card that turns review into per-task approval. Guard behaviour is unchanged.
 
 Local development:
 
