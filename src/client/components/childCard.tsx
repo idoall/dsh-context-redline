@@ -23,6 +23,7 @@
 import { createElement as h, useCallback, useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type CSSProperties, type ReactElement } from 'react'
 import { createPortal } from 'react-dom'
 import type { ViewKit } from '../viewkit'
+import { randomUuid } from '../ids'
 import type { ChildIndexRow, ChildRow } from '../childSessions'
 import type { ChildCapacity } from '../../shared/redline-capacity'
 import type { AnchorInput, AnchorPlan, AnchorStarted, CarrierAnchorMode, CarrierModelOption, ChildPlan, ChildStarted, RedlineResult } from '../redlineChannel'
@@ -223,7 +224,7 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
   const [error, setError] = useState<{ code: string; message: string } | null>(null)
   const [route, setRoute] = useState('')
   const [effort, setEffort] = useState('')
-  const operationId = useRef<string>(crypto.randomUUID())
+  const operationId = useRef<string>(randomUuid())
   const generation = useRef(0)
   const valid = [task, goal, acceptance, discipline].every(value => value.trim() !== '')
 
@@ -239,7 +240,7 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
     setError(null)
     setRoute('')
     setEffort('')
-    operationId.current = crypto.randomUUID()
+    operationId.current = randomUuid()
   }, [props.open])
 
   useEffect(() => {

@@ -11,7 +11,7 @@ import { act, createElement as h } from 'react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
-import { describe, test } from 'vitest'
+import { describe, test, vi } from 'vitest'
 import { makeChildCard, type ChildCardProps } from '../../src/client/components/childCard'
 import { childRowsOf, type ChildRow } from '../../src/client/childSessions'
 import { DICT_EN } from '../../src/client/i18n'
@@ -551,6 +551,54 @@ describe('锚定会话（0.4.0）', () => {
     assert.deepEqual(opened, ['session-anchor-created'])
     assert.equal(queryAll(m.container, '[data-redline-anchor-modal]').length, 0, '创建后关闭确认框')
     await m.unmount()
+  })
+
+  test('不安全上下文（http 局域网地址）不崩溃：缺少 randomUUID 时仍能渲染并发起', async () => {
+    // 真机回归：DSH 以 http://<局域网IP>:<端口> 打开时不是 secure context，
+    // crypto.randomUUID 为 undefined，卡片一渲染就抛
+    // "crypto.randomUUID is not a function"（0.8.4 修复）。
+    vi.stubGlobal('crypto', {
+      getRandomValues: (bytes: Uint8Array) => {
+        for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 29 + 3) & 0xff
+        return bytes
+      },
+    })
+    try {
+      const starts: unknown[][] = []
+      const m = await open({
+        startAnchor: (...args) => {
+          starts.push(args)
+          return Promise.resolve({
+            ok: true as const,
+            value: { sessionId: 'session-anchor-insecure', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+          })
+        },
+      })
+      assert.ok(query(m.container, '[data-redline-spawn]'), '卡片照常渲染')
+      await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+      const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+      const setValue = async (selector: string, value: string): Promise<void> => {
+        const area = query<HTMLTextAreaElement>(modal, selector)
+        await act(async () => {
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+          setter?.call(area, value)
+          area.dispatchEvent(new Event('input', { bubbles: true }))
+        })
+      }
+      await setValue('[data-redline-anchor-task]', '任务 A')
+      await setValue('[data-redline-anchor-acceptance]', '验收 A')
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+      await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+      assert.equal(starts.length, 1)
+      assert.match(
+        String(starts[0]?.[0]),
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+        'operationId 仍是合法 UUID',
+      )
+      await m.unmount()
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 

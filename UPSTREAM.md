@@ -132,6 +132,10 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 - Move the verified baseline, dependency floors and Node.js requirement to DSH 0.2.3-alpha.2 (`^24.22.3 || >=26.13.1`); the removed `ctx.sessionQuery.inspectSession` is unused here.
 - Follow the host's section-era system prompt: the fold sums every surviving `system/message` node and removes the ones a compaction claim shadows; the Context browser and the DNA strip show the head prompt plus its section updates, matching the host's own `contextBreakdown`.
 
+### Insecure-origin id minting (0.8.4, 2026-11-23)
+
+- Replace the Client half's bare `crypto.randomUUID` call with a three-arm mint (native → `getRandomValues` → `Math.random`) so the anchored-conversation card renders on plain-HTTP DSH origins, which are not secure contexts; the operation id keeps the UUID v4 shape.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

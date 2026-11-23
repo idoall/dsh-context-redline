@@ -1,5 +1,15 @@
 # 更新日志 / Changelog
 
+## [0.8.4] — 2026-11-23
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.3-alpha.2 <0.3.0-0`; verified with `0.2.3-alpha.2`. Node.js `^24.22.3 || >=26.13.1`.
+
+### 修复 / Fixed
+
+- 普通 HTTP 部署（`http://<局域网IP>:<端口>`，非安全上下文）下点开「上下文批改」页签会抛 `crypto.randomUUID is not a function`：`crypto.randomUUID` 只在安全上下文（HTTPS 或 localhost）存在，而锚定会话卡片每次渲染都会生成 operationId。
+- 客户端 id 生成改为 `src/client/ids.ts`：优先 `crypto.randomUUID`，非安全上下文回退 `crypto.getRandomValues`，都没有时再回退 `Math.random`；三种路径都产出 RFC 4122 v4 形状，operationId 仍是稳定 UUID。
+- 回归覆盖：`tests/client-logic/ids.spec.ts` 钉住三条路径与 v4 形状；`tests/client-ui/child-card.spec.ts` 在缺少 `randomUUID` 的环境里渲染卡片、打开并确认锚定会话（旧实现会以用户看到的同一条错误失败）。
+
 ## [0.8.3] — 2026-11-23
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.3-alpha.2 <0.3.0-0`; verified with `0.2.3-alpha.2`. Node.js `^24.22.3 || >=26.13.1`.
