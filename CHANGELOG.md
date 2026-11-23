@@ -1,5 +1,15 @@
 # 更新日志 / Changelog
 
+## [0.9.3] — 2026-11-23
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.3-alpha.2 <0.3.0-0`; verified with `0.2.3-alpha.2`. Node.js `^24.22.3 || >=26.13.1`.
+
+### 修复 / Fixed
+
+- 锚定会话确认框在长表单下滚不动：目标守卫字段加进来后弹窗超过视口，卡片整块滚动、内容区又带 `overscroll-behavior: contain`，鼠标停在较高的文本框里时滚轮 / 拖动被吞掉，必须失焦移开才滚得动。
+- 现在与确认框同一套骨架：标题固定、内容区（`.redline-confirm-body`）是唯一滚动者、底栏固定；卡片定高 `min(740px, calc(100dvh - 28px))`，外层 `overflow: hidden`。光标在任意输入框里也能滚到守卫选项与「创建并进入」。
+- 只改客户端样式；目标守卫、交接技能、计价与数据写入都没有变化。
+
 ## [0.9.2] — 2026-11-23
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.3-alpha.2 <0.3.0-0`; verified with `0.2.3-alpha.2`. Node.js `^24.22.3 || >=26.13.1`.

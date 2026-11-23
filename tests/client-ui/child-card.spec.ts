@@ -640,6 +640,27 @@ describe('目标守卫（0.9.0 只观察）', () => {
   })
 })
 
+describe('锚定会话弹窗滚动（0.9.3 回归）', () => {
+  test('卡片是定高 flex 列：头/脚固定，内容区是唯一滚动者', () => {
+    const css = readFileSync(join(process.cwd(), 'src/client/styles/childCard.css'), 'utf8')
+    const card = /\.redline-modal-card\[data-redline-anchor-modal\]\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    assert.match(card, /display:\s*flex/, '卡片必须自己成为 flex 列，否则内容区没有高度约束')
+    assert.match(card, /flex-direction:\s*column/)
+    assert.match(card, /overflow:\s*hidden/, '外层不再整块滚动')
+    assert.match(card, /padding:\s*0/)
+    assert.match(card, /max-height:/, '必须有高度上限，长表单才能内部滚动')
+    const head = /\.redline-modal-card\[data-redline-anchor-modal\] \.redline-modal-head\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    assert.match(head, /flex:\s*0 0 auto/)
+    const foot = /\.redline-modal-card\[data-redline-anchor-modal\] \.redline-modal-foot\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    assert.match(foot, /flex:\s*0 0 auto/, '底栏固定，不随表单滚走')
+    const body = /\.redline-confirm-body\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    assert.match(body, /overflow:\s*auto/)
+    assert.match(body, /min-height:\s*0/)
+    const bodyOverride = /\.redline-modal-card\[data-redline-anchor-modal\] \.redline-confirm-body\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    assert.match(bodyOverride, /flex:\s*1 1 auto/, '内容区占满剩余高度，成为唯一滚动者')
+  })
+})
+
 describe('锚定会话弹窗底栏间距（0.4.1 回归）', () => {
   test('底栏是 flex 且有 10px 间距，说明文字与按钮之间留出空隙', () => {
     const css = readFileSync(join(process.cwd(), 'src/client/styles/childCard.css'), 'utf8')

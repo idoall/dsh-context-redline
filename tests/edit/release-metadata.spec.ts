@@ -13,7 +13,7 @@ const pkg = JSON.parse(read('package.json')) as {
 
 describe('release metadata stays synchronized', () => {
   test('publishes a fresh patch with the current DSH and Node baseline', () => {
-    assert.equal(pkg.version, '0.9.2')
+    assert.equal(pkg.version, '0.9.3')
     assert.equal(BASELINE_DSH_VERSION, '0.2.3-alpha.2')
     assert.equal(pkg.engines.dsh, '>=0.2.3-alpha.2 <0.3.0-0')
     assert.equal(pkg.engines.node, '^24.22.3 || >=26.13.1')

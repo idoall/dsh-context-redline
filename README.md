@@ -20,7 +20,7 @@
 
 > A DeepSeek Harness community plugin. It does not modify DSH source or rewrite the source session log.
 >
-> **Version `0.9.2` — supports DSH `>=0.2.3-alpha.2 <0.3.0-0`.** Built and regression-tested against `0.2.3-alpha.2`; Node.js `^24.22.3 || >=26.13.1` is required. DSH `0.3.0` prereleases are excluded.
+> **Version `0.9.3` — supports DSH `>=0.2.3-alpha.2 <0.3.0-0`.** Built and regression-tested against `0.2.3-alpha.2`; Node.js `^24.22.3 || >=26.13.1` is required. DSH `0.3.0` prereleases are excluded.
 
 Edits stay local until confirmation. The plugin then opens a zero-history ordinary session in the current workspace and sends the exact final message you approved. When the task finishes, its bound result returns verbatim to the source session.
 
@@ -68,10 +68,10 @@ Requires DeepSeek Harness `0.2.3-alpha.2` or a newer supported `0.2.x`, plus Nod
 Install or upgrade to this exact release:
 
 ```sh
-dsh plugin --profile web add dsh-context-redline@0.9.2
+dsh plugin --profile web add dsh-context-redline@0.9.3
 ```
 
-This release makes the optional Goal Guard block a standard part of every handoff card. The skill no longer waits for an explicit “enable the guard” request: it always emits the guard block — task list with acceptance the independent evaluator can judge, the plan-file choice, the evaluator choice, and the observe-only note — and the user simply ignores it when they do not want the guard. Output is only text: nothing is enabled by printing it, and the guard still starts only when the box is checked. Automated tests do not constitute production visual or real-session acceptance.
+This patch fixes the anchored-conversation dialog on long forms. The dialog grew past the viewport once the Goal Guard fields were filled in, and because the card scrolled as one block while its body declared `overscroll-behavior: contain`, a wheel or drag over one of the tall text areas could not move the dialog — it only worked after leaving the field. The card now uses the same skeleton as the confirmation dialog: a fixed header, ONE scrolling body and a pinned footer, so the form scrolls to the guard options and the confirm button from anywhere, including while the cursor sits inside a field. No guard, handoff or accounting behaviour changed.
 
 Local development:
 

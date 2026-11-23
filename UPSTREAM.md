@@ -148,6 +148,10 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 
 - The handoff skill always emits the optional Goal Guard block instead of waiting for an explicit request; printing the block enables nothing, and the user still decides whether to check the box.
 
+### Anchored-dialog scroll skeleton (0.9.3, 2026-11-23)
+
+- Give the anchored-conversation dialog the confirm dialog's fixed skeleton (fixed head, one scrolling body, pinned foot); the generic card scrolled as a block while its body declared `overscroll-behavior: contain`, which swallowed wheel/drag gestures over the tall text areas.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

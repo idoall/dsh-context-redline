@@ -171,12 +171,42 @@
 
 /* Anchored-conversation dialog: the base modal has no footer layout, so the
    scope text and the two actions collapsed together. Keep 10px between every
-   action and push the scope copy away from the buttons. */
+   action and push the scope copy away from the buttons.
+   The footer must also be a PINNED region of the card (flex: 0 0 auto), not a
+   block that scrolls with the form: the card below becomes one flex column. */
 .redline-modal-card[data-redline-anchor-modal] .redline-modal-foot {
   display: flex; flex: 0 0 auto; justify-content: flex-end; align-items: center;
-  gap: 10px; flex-wrap: wrap; margin: 14px 0 0; padding-top: 12px;
+  gap: 10px; flex-wrap: wrap; margin: 0;
+  padding: 10px 16px calc(11px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
+/*
+ * The anchored-conversation dialog needs the SAME skeleton as the confirm
+ * dialog: fixed head + ONE scrolling body + fixed foot. The generic card
+ * scrolls as a whole block while `.redline-confirm-body` declares
+ * `overscroll-behavior: contain`; with the guard fields the form outgrew the
+ * viewport, and a wheel gesture over one of the tall textareas was swallowed
+ * by that body, so the dialog could not be scrolled to the bottom without
+ * leaving the field (real-machine report, 2026-11-23). Making the card the
+ * flex column turns the body into the single scroller — the confirm dialog
+ * has worked this way all along.
+ */
+.redline-modal-card[data-redline-anchor-modal] {
+  width: min(720px, calc(100vw - 48px));
+  max-height: min(740px, calc(100dvh - 28px));
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.redline-modal-card[data-redline-anchor-modal] .redline-modal-head {
+  flex: 0 0 auto; margin: 0; padding: 14px 17px 13px;
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.redline-modal-card[data-redline-anchor-modal] .redline-modal-title { font-size: 15px; font-weight: 650; line-height: 1.4; }
+.redline-modal-card[data-redline-anchor-modal] .redline-confirm-body { flex: 1 1 auto; min-height: 0; }
 .redline-modal-card[data-redline-anchor-modal] .redline-confirm-scope { margin-right: auto; padding-right: 10px; }
 .redline-modal-card[data-redline-anchor-modal] .redline-confirm-btn { flex: 0 0 auto; }
 
