@@ -8,9 +8,9 @@ import type { Context } from '@deepseek-ai/cordis'
 
 export const HANDOFF_SKILL_NAME = 'context-redline-handoff'
 
-export const HANDOFF_SKILL_DESCRIPTION = 'Build both Context Redline handoff shapes from the current conversation: migration fields (first task + per-request runtime rule) and anchored fields (first task, goal, acceptance criteria, discipline), with mandatory task decomposition and review gates.'
+export const HANDOFF_SKILL_DESCRIPTION = 'Build both Context Redline handoff shapes from the current conversation: migration fields (first task + per-request runtime rule) and anchored fields (first task, goal, acceptance criteria, discipline), plus the optional Goal Guard package (auditable task list, plan file, evaluator choice), with mandatory task decomposition and review gates.'
 
-export const HANDOFF_SKILL_WHEN_TO_USE = 'Use when a conversation is long or drifting, when the user asks how to continue without losing the goal, or before opening a fresh anchored conversation with Context Redline.'
+export const HANDOFF_SKILL_WHEN_TO_USE = 'Use when a conversation is long or drifting, when the user asks how to continue without losing the goal, before opening a fresh anchored conversation with Context Redline, or when the user asks about the Goal Guard, a task list for it, its evaluator, or its plan file.'
 
 export const HANDOFF_SKILL_CONTENT = `# 上下文交接卡
 
@@ -81,16 +81,21 @@ export const HANDOFF_SKILL_CONTENT = `# 上下文交接卡
 （先拆任务并每任务派子会话；主会话只规划/分派/审查，不直接开发；不得单会话连续做多个里程碑；即使我说“过程中不用确认”，拆分与审查不取消；有头 UAT 到无问题；出错继续；每轮读计划；证据真实；不扩范围）
 \`\`\`
 
-### 任务清单（启用「目标守卫」时）
+### 目标守卫（勾选后单独贴这一段）
+
+只在用户要启用「目标守卫」时给；不启用就跳过，不要让用户多填。
 
 \`\`\`text
 T1 | M0 工具链与骨架 | 断网构建；typecheck；healthz
 T2 | M1 场景与移动 | 60fps；移动端摇杆；缓存纠错
 \`\`\`
 
-每行格式：\`任务ID | 任务标题 | 验收项（用分号分隔）\`。一个里程碑至少一个任务；任务 ID 用字母开头，不能重复。
-
-用户如果只说“三段”，仍保留四个标签：把「首条任务」和「目标」一起当作“任务目标”给出，方便直接粘贴。
+- 每行格式：\`任务ID | 任务标题 | 验收项（用分号分隔）\`；一个里程碑至少一个任务，任务 ID 字母开头、不能重复。
+- 验收必须“离开这段对话也能判”：评估器只看冻结目标卡 + 当前任务 + 该任务开始后的有界产出（最近几条助手正文、工具名、主会话写/执行与子会话计数），看不到完整历史。所以每条验收要写成命令、文件、可观察结果或明确的产物清单；不要写“体验良好”“按预期完成”这类只能由在场的人判断的话。
+- 计划文件：对话里如果已经有明确的计划文件路径，就在交接卡里写出这个相对路径，并说明“守卫会把它的 hash 和目标卡一起冻结；文件改了会被记为阻塞（0.9.0 只记录、不阻断）”。没有就写“不填”加一句理由，不要编一个不存在的路径。
+- 评估模型：默认「跟随主会话」就够；想要第二意见时建议在界面上另选一个模型，但**不要编造 provider/model 名称**，只说“建议另选一个模型”，具体由用户在界面里选。
+- 0.9.0 只观察：判定和纠正建议只写进守卫卡，不拦工具、不 steer、也不替用户结束轮次。不要向用户承诺“会自动拦住”。
+- 用户如果只说“三段”，仍保留四个字段：把「首条任务」和「目标」一起当作“任务目标”给出，方便直接粘贴。
 
 ## 两种场景怎么写
 
@@ -117,6 +122,8 @@ T2 | M1 场景与移动 | 60fps；移动端摇杆；缓存纠错
 - 每条验收能不能被第三个人独立检查？
 - 纪律有没有覆盖这次对话已经出现过的失败模式（跑偏、跳验收、假完成、上下文丢失）？
 - 纪律有没有写明“先拆任务、每个任务派子会话、主会话只规划/分派/审查”？
+- 任务清单的每条验收，评估器只看目标卡、当前任务和有界产出就能判定吗？判不了就改成命令 / 文件 / 可观察结果。
+- 计划文件是真的在对话里出现过路径吗？没有就写“不填”，不要编。
 - 有没有一条路径会让一个会话连续做完多个里程碑？有就判不合格。
 - UI 改动有没有有头 UAT 与复测证据；非 UI 改动有没有写“无需 UAT”的理由？
 - 路径、命令、版本是否真实来自对话或用户？不确定就标“未验证”，不要编。
@@ -125,7 +132,7 @@ T2 | M1 场景与移动 | 60fps；移动端摇杆；缓存纠错
 ## 最后一行
 
 - 情况 A：粘贴「首条任务」+「锚点」，锚点模式选「每轮运行时规则」；最终发送全文由插件拼接。
-- 情况 B：粘贴到「新建带规则的对话」的对应字段；如果要启用「目标守卫」，再把「任务清单」粘贴到守卫输入框。
+- 情况 B：把四个字段粘贴到「新建带规则的对话」；如果勾选「目标守卫」，再把「目标守卫」那段的任务清单贴进守卫输入框，并按对话里的实际情况选评估模型 / 填计划文件。
 `
 
 export interface HandoffSkillRegistration {
