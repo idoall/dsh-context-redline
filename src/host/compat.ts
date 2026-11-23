@@ -1,7 +1,7 @@
 /**
  * Session-projection unit contract compatibility layer.
  *
- * Supported harness baseline (see README.md): DSH 0.2.2-rc.1.
+ * Supported harness baseline (see README.md): DSH 0.2.3-alpha.2.
  * The session-projection registry drives the unit
  * contract (introduced in dsh 0.1.1-rc.1, replacing the pre-0.1.1
  * `{ schema, view }` shape): the real projection units emit only the modern

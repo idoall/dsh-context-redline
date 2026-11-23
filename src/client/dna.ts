@@ -34,8 +34,14 @@ export type DnaItem =
 
 export function dnaOf(view: Assembled): DnaItem[] {
   const items: DnaItem[] = []
-  if (view.system !== null) {
-    items.push({ key: 'sys', cat: 'system', tokens: view.system.tokens, time: view.system.time })
+  // One band for the prompt in force: every surviving system message is
+  // concatenated into the request, so the band carries their SUM (the head's
+  // time marks where the prompt started; section updates extend it).
+  const systems = view.systems
+  if (systems.length > 0) {
+    let tokens = 0
+    for (const node of systems) tokens += node.tokens
+    items.push({ key: 'sys', cat: 'system', tokens, time: systems[0].time })
   }
   if (view.header !== null) {
     for (const tool of view.header.tools) {

@@ -60,7 +60,7 @@ describe('system/message — the system prompt as a surface node', () => {
       { type: 'system/message', seq: 1, time: 1000, data: { message: { content: text(prompt) } }, surfaceOp: 'append' },
       { type: 'system/message', seq: 2, time: 2000, data: { message: { content: [] } }, surfaceOp: 'append' },
     ])
-    assert.equal(state.systemTokens, estimateSystemContent(text(prompt)), 'the last NONEMPTY node stays effective')
+    assert.equal(state.systemTokens, estimateSystemContent(text(prompt)), 'the dormant node adds nothing')
     assert.equal(state.systems?.length, 2)
     assert.equal(state.systems?.[1].tokens, 0)
   })
@@ -98,8 +98,15 @@ describe('system/message — the system prompt as a surface node', () => {
       { type: 'system/message', seq: 5, time: 5000, data: { message: { content: text('later prompt') } }, surfaceOp: 'append' },
       { type: 'system/message', seq: 8, time: 8000, data: { message: { content: text('q') } }, surfaceOp: { op: 'replace', startSeq: 2, endSeq: 2 } },
     ])
-    assert.deepEqual(state.systems?.map(n => n.seq), [1, 5, 8], 'only the claimed node left the list')
-    assert.equal(state.systemTokens, estimateSystemContent(text('q')), 'the newest nonempty node is effective')
+    // The replacing node takes the replaced node's POSITION (the harness surface
+    // rule; a head rewrite must stay first, an emptied update keeps its slot).
+    assert.deepEqual(state.systems?.map(n => n.seq), [1, 8, 5], 'only the claimed node left the list')
+    // Every surviving system message is concatenated into the request, so the
+    // price is their SUM (the harness's own token-meter rule), not the newest.
+    assert.equal(
+      state.systemTokens,
+      estimateSystemContent(text('earlier')) + estimateSystemContent(text('later prompt')) + estimateSystemContent(text('q')),
+    )
   })
 
   test('a system/message expires an armed shadow claim (the shadow-price protocol)', () => {
@@ -116,15 +123,17 @@ describe('system/message — the system prompt as a surface node', () => {
     assert.deepEqual(state.surface.map(n => n.seq), [1, 4], 'the stale claim no longer removes node 1')
   })
 
-  test('the live node list is bounded (a hostile log cannot grow the state)', () => {
+  test('the live node list keeps every surviving message and sums them', () => {
+    // The list is bounded by the surviving system messages, not by steps:
+    // dropping an older node would silently undercount a prompt the model
+    // still reads (DSH's token meter keeps the same shape).
     const events: TimelineEvent[] = []
     for (let i = 1; i <= 12; i++) {
       events.push({ type: 'system/message', seq: i, time: i * 1000, data: { message: { content: text('p' + String(i)) } }, surfaceOp: 'append' })
     }
     const { state } = driveTimeline(events)
-    assert.equal(state.systems?.length, 8)
-    assert.deepEqual(state.systems?.map(n => n.seq), [5, 6, 7, 8, 9, 10, 11, 12])
-    assert.equal(state.systemTokens, estimateSystemContent(text('p12')))
+    assert.deepEqual(state.systems?.map(n => n.seq), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+    assert.equal(state.systemTokens, (state.systems ?? []).reduce((sum, node) => sum + node.tokens, 0))
   })
 
   test('a replacement arriving before any system node starts the list', () => {

@@ -10,7 +10,7 @@ import type { Assembled } from '../../src/client/assemble'
 import type { HeaderRecord, HeaderTool, SurfaceNode, SystemPromptNode } from '../../src/shared/types'
 
 function asm(over: Partial<Assembled>): Assembled {
-  return { live: true, header: null, system: null, nodes: [], missingLive: 0, approximate: false, ...over }
+  return { live: true, header: null, systems: [], nodes: [], missingLive: 0, approximate: false, ...over }
 }
 
 function header(over: Partial<HeaderRecord>): HeaderRecord {
@@ -36,7 +36,7 @@ describe('dnaOf', () => {
 
   test('the system prompt leads, then the header epoch\'s tool schemas in producer order', () => {
     const items = dnaOf(asm({
-      system: system(),
+      systems: [system()],
       header: header({ tools: [tool('bash', 30), tool('write', 20)] }),
       nodes: [node({ seq: 1 })],
     }))
@@ -70,11 +70,18 @@ describe('dnaOf', () => {
     // refreshed epoch's seq lands AFTER every message already in context — epoch-seq ordering parked the system/tools
     // bands behind the tool results those very schemas describe.
     const items = dnaOf(asm({
-      system: system({ seq: 50 }),
+      systems: [system({ seq: 50 })],
       header: header({ seq: 50, tools: [tool('bash', 30)] }),
       nodes: [node({ seq: 3 }), node({ seq: 20, cat: 'tool' }), node({ seq: 60, cat: 'assistant' })],
     }))
     assert.deepEqual(items.map(i => i.key), ['sys', 'tool:bash', 'n3', 'n20', 'n60'])
+  })
+
+  test('the system band sums every surviving message (head plus section updates)', () => {
+    const items = dnaOf(asm({ systems: [system({ seq: 3, tokens: 100 }), system({ seq: 9, tokens: 40, time: 9500 })] }))
+    assert.deepEqual(items.map(i => i.cat), ['system'])
+    assert.equal(items[0].tokens, 140, 'the request concatenates all surviving system messages')
+    assert.equal(items[0].time, 9000, 'the band is anchored at the head that opened the prompt')
   })
 
   test('zero-token items keep their band (the bar drops zero widths, the reading order stays truthful)', () => {

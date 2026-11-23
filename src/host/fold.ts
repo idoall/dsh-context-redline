@@ -71,13 +71,15 @@ export interface TimelineState {
   sums: Record<Category, number>
   systemTokens: number
   /**
-   * The live system-prompt nodes, oldest first — a log's `system/message`
-   * surface nodes. `systemTokens` is the LAST entry with tokens > 0 (the
-   * harness's own "last nonempty surviving system" rule), so an empty dormant
-   * node keeps its position without clearing the prompt. Bounded by
-   * SYSTEM_NODES_MAX. ABSENT on rows folded before this field existed — the
-   * wire then serves no `systems` and the client falls back to the header
-   * epoch's own envelope figure.
+   * The live system-prompt nodes, in surface order — a log's `system/message`
+   * surface nodes. `systemTokens` is their SUM (the harness's own pricing
+   * rule: every surviving system message is concatenated into the request),
+   * so a section update adds to the prompt instead of replacing it and an
+   * empty dormant node contributes zero without clearing the list. The list
+   * is bounded by the SURVIVING system messages, not by steps (the harness's
+   * token meter keeps the same shape). ABSENT on rows folded before this
+   * field existed — the wire then serves no `systems` and the client falls
+   * back to the header epoch's own envelope figure.
    */
   systems?: SystemPromptNode[]
   toolsTokens: number
@@ -352,26 +354,58 @@ function bumpDetailRev(st: TimelineState): void {
 }
 
 /**
- * Bound on the live system-prompt nodes (TimelineState.systems). The
- * effective figure is the LAST nonempty node, so dropping the oldest can only
- * under-report a pathological log whose newest SYSTEM_NODES_MAX nodes are all
- * empty while an older one still carried text.
+ * The live system-prompt price: the SUM of every surviving `system/message`
+ * node.
+ *
+ * The rule is the harness's own: `dsh-token-meter` prices context by summing
+ * its surviving system nodes, and the request serialization concatenates
+ * every surviving system message into the model's system prompt. Since DSH
+ * 0.2.3-alpha.1 a later `system/message` carries SECTION UPDATES (the changed
+ * sections plus their notices), not a whole prompt, so "the last nonempty
+ * node" would report one section where the model reads the whole prompt.
+ * Pre-section logs carried whole prompts that replaced the head in place, so
+ * their list holds one nonempty node and the sum equals that node — the same
+ * figure as before.
  */
-const SYSTEM_NODES_MAX = 8
-
-/** The effective system-prompt price: the last nonempty node, else 0 (the harness's own rule). */
 function systemTokensOf(systems: readonly SystemPromptNode[]): number {
-  for (let i = systems.length - 1; i >= 0; i--) {
-    if (systems[i].tokens > 0) return systems[i].tokens
-  }
-  return 0
+  let total = 0
+  for (const node of systems) total += node.tokens
+  return total
 }
 
-/** Append one system-prompt node, bounding the list (see SYSTEM_NODES_MAX). */
-function pushSystem(st: TimelineState, node: SystemPromptNode): void {
-  const systems = [...(st.systems ?? []), node]
-  st.systems = systems.length > SYSTEM_NODES_MAX ? systems.slice(-SYSTEM_NODES_MAX) : systems
-  st.systemTokens = systemTokensOf(st.systems)
+/**
+ * Place one system-prompt node and re-price the list. A rewrite of ONE
+ * existing node keeps that node's position — the head rewrite must stay the
+ * first prompt of the surface, and an emptied update must keep its place at
+ * zero tokens rather than jumping to the end. Everything else appends; a
+ * multi-node range replacement drops the nodes it covers.
+ */
+function putSystem(st: TimelineState, node: SystemPromptNode, op: { start: number; end: number } | null): void {
+  const systems = st.systems ?? []
+  let next: SystemPromptNode[]
+  if (op !== null && op.start === op.end) {
+    const index = systems.findIndex(entry => entry.seq === op.start)
+    next = systems.slice()
+    if (index < 0) next.push(node)
+    else next[index] = node
+  } else if (op !== null) {
+    next = [...systems.filter(entry => entry.seq < op.start || entry.seq > op.end), node]
+  } else {
+    next = [...systems, node]
+  }
+  st.systems = next
+  st.systemTokens = systemTokensOf(next)
+}
+
+/** Drop the system nodes a compaction claim shadows and re-price the rest. */
+function removeShadowedSystems(st: TimelineState, shadowedSeqs: readonly number[]): void {
+  const systems = st.systems
+  if (systems === undefined || systems.length === 0) return
+  const shadowed = new Set(shadowedSeqs)
+  const kept = systems.filter(entry => !shadowed.has(entry.seq))
+  if (kept.length === systems.length) return
+  st.systems = kept
+  st.systemTokens = systemTokensOf(kept)
 }
 
 /**
@@ -607,6 +641,7 @@ function applySurface(
       // seqs postdate the range). Removing by seqs keeps our per-category
       // bookkeeping equal to the producer's total — a range-based removal
       // would leave those nodes behind and overcount.
+      removeShadowedSystems(st, shadowedSeqs)
       const removed = removeSurfaceSeqs(st, new Set(shadowedSeqs), ev.seq)
       st.sums[cat] += node.tokens
       st.surface.push(node)
@@ -923,13 +958,16 @@ export function applyTimeline(state: TimelineState, event: TimelineEvent, bounds
         // `sums` (that would double-count it against `systemTokens`).
         const s = ensure(['surface', 'sums', 'archived'])
         // Consume the armed shadow claim (the shadow-price protocol expires it
-        // on the next surface event) — a system node never carries one.
+        // on the next surface event) — a system node never carries one. A
+        // claim can still SHADOW system nodes (later section updates inside a
+        // compacted range): dsh-token-meter removes exactly those, and the
+        // surviving list must match or the sum overcounts.
+        const shadowedSeqs = s.pendingShadowedSeqs
         delete s.pendingShadowedSeqs
         delete s.pendingShadowEventSeq
+        if (shadowedSeqs !== undefined && shadowedSeqs.length > 0) removeShadowedSystems(s, shadowedSeqs)
         const op = replaceRangeOf(event.surfaceOp)
         if (op !== null) {
-          const systems = s.systems ?? []
-          s.systems = systems.filter(n => n.seq < op.start || n.seq > op.end)
           // Defensive: a replacement claiming ordinary surface nodes (never
           // produced by dsh's system-prompt projection) removes them too, so
           // the surface and its sums stay consistent with the claim.
@@ -939,7 +977,7 @@ export function applyTimeline(state: TimelineState, event: TimelineEvent, bounds
           }
           if (removeSurfaceSeqs(s, claimed, event.seq).length > 0) bumpDetailRev(s)
         }
-        pushSystem(s, { seq: event.seq, time: event.time, tokens: estimateSystemContent(messageOf(data)?.content) })
+        putSystem(s, { seq: event.seq, time: event.time, tokens: estimateSystemContent(messageOf(data)?.content) }, op)
         break
       }
       case 'request/context': {

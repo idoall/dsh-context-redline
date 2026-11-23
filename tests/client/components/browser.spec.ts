@@ -473,6 +473,31 @@ describe('ContextBrowser header epochs', () => {
     await m.unmount()
   })
 
+  test('the section-era prompt joins every surviving message, one read per node', async () => {
+    // DSH >= 0.2.3-alpha.1 writes section UPDATES as additional system
+    // messages and the request concatenates all of them: the row must show
+    // the head PLUS its updates, not just the newest fragment.
+    const data = tl({
+      current: { system: 40, tools: 0, user: 0, inject: 0, skill: 0, assistant: 0, tool: 0, total: 40 },
+      systems: [{ seq: 15, time: 1500, tokens: 30 }, { seq: 35, time: 3500, tokens: 10 }],
+    })
+    const calls: number[] = []
+    const fetchHeader = (seq: number): Promise<HeaderEpochContent | null> => {
+      calls.push(seq)
+      return Promise.resolve(seq === 15
+        ? { system: 'HEAD PROMPT', tools: [] }
+        : { system: 'SECTION UPDATE', tools: [] })
+    }
+    const m = await mount(h(Browser, props({ data, headers: null, fetchHeader })))
+    await click(catRow(m, 'system'))
+    await flush()
+    const body = text(query(m.container, '.redline-br-body'))
+    assert.ok(body.includes('HEAD PROMPT'), 'the head renders')
+    assert.ok(body.includes('SECTION UPDATE'), 'the update is part of the prompt in force')
+    assert.deepEqual(calls, [15, 35], 'one history read per surviving message')
+    await m.unmount()
+  })
+
   test('an epoch missing from the durable log degrades to the not-in-log note', async () => {
     const data = tl({ current: { system: 30, tools: 9, user: 0, inject: 0, skill: 0, assistant: 0, tool: 0, total: 39 } })
     const m = await mount(h(Browser, props({

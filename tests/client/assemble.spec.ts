@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
-import { assemble, headerAt, systemAt } from '../../src/client/assemble'
+import { assemble, headerAt, systemsAt } from '../../src/client/assemble'
 import type { ContextHeaders, ContextTimeline, HeaderRecord, SurfaceNode } from '../../src/shared/types'
 
 function node(seq: number, over: Partial<SurfaceNode> = {}): SurfaceNode {
@@ -136,38 +136,36 @@ describe('assemble approximate flag', () => {
   })
 })
 
-describe('systemAt — the system prompt in force', () => {
+describe('systemsAt — the system prompt in force', () => {
   const sys = (seq: number, tokens: number, time = seq * 100) => ({ seq, time, tokens })
 
-  test('the last nonempty live node wins, dormant empties are skipped', () => {
+  test('every surviving nonempty node is in force, in surface order', () => {
     const data = timeline({ systems: [sys(3, 10), sys(8, 0), sys(12, 20)] })
-    assert.deepEqual(systemAt(data, null, null), sys(12, 20))
-    // Only a dormant node after the last live one: the earlier prompt stands.
-    assert.deepEqual(systemAt(timeline({ systems: [sys(3, 10), sys(8, 0)] }), null, null), sys(3, 10))
+    assert.deepEqual(systemsAt(data, null, null), [sys(3, 10), sys(12, 20)], 'dormant nodes drop out')
   })
 
-  test('a step resolves the prompt logged before it', () => {
+  test('a step resolves only the messages logged before it', () => {
     const data = timeline({ systems: [sys(3, 10), sys(12, 20)] })
-    assert.deepEqual(systemAt(data, null, 12), sys(3, 10))
-    assert.deepEqual(systemAt(data, null, 13), sys(12, 20))
-    assert.equal(systemAt(data, null, 3), null, 'at the node itself the prompt is not yet in force')
+    assert.deepEqual(systemsAt(data, null, 12), [sys(3, 10)])
+    assert.deepEqual(systemsAt(data, null, 13), [sys(3, 10), sys(12, 20)])
+    assert.deepEqual(systemsAt(data, null, 3), [], 'at the node itself the prompt is not yet in force')
   })
 
-  test('a list holding only dormant nodes yields no prompt', () => {
-    assert.equal(systemAt(timeline({ systems: [sys(3, 0)] }), null, null), null)
+  test('a list holding only dormant nodes yields an empty prompt', () => {
+    assert.deepEqual(systemsAt(timeline({ systems: [sys(3, 0)] }), null, null), [])
   })
 
   test('rows folded before `systems` existed fall back to the header epoch', () => {
     const epoch: HeaderRecord = { seq: 15, time: 1500, systemTokens: 42, tools: [] }
-    assert.deepEqual(systemAt(timeline(), epoch, null), { seq: 15, time: 1500, tokens: 42 })
-    assert.deepEqual(systemAt(timeline({ systems: [] }), epoch, 20), { seq: 15, time: 1500, tokens: 42 })
-    assert.equal(systemAt(timeline(), { seq: 15, time: 1500, tools: [] }, null), null, 'an epoch without a price yields none')
-    assert.equal(systemAt(timeline(), null, null), null)
+    assert.deepEqual(systemsAt(timeline(), epoch, null), [{ seq: 15, time: 1500, tokens: 42 }])
+    assert.deepEqual(systemsAt(timeline({ systems: [] }), epoch, 20), [{ seq: 15, time: 1500, tokens: 42 }])
+    assert.deepEqual(systemsAt(timeline(), { seq: 15, time: 1500, tools: [] }, null), [], 'an epoch without a price yields none')
+    assert.deepEqual(systemsAt(timeline(), null, null), [])
   })
 
-  test('assemble exposes the resolved prompt', () => {
-    const data = timeline({ systems: [sys(3, 10)] })
-    assert.deepEqual(assemble(data, null, null).system, sys(3, 10))
-    assert.equal(assemble(timeline(), null, null).system, null)
+  test('assemble exposes the resolved prompt list', () => {
+    const data = timeline({ systems: [sys(3, 10), sys(6, 5)] })
+    assert.deepEqual(assemble(data, null, null).systems, [sys(3, 10), sys(6, 5)])
+    assert.deepEqual(assemble(timeline(), null, null).systems, [])
   })
 })

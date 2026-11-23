@@ -23,11 +23,15 @@ export interface Assembled {
   /** The header epoch in force (null = headers projection absent or none yet). */
   header: HeaderRecord | null
   /**
-   * The system prompt in force at the shown step (null = none), resolved from
-   * the timeline's live `systems` nodes; on rows folded before that field
-   * existed the header epoch's own envelope figure stands in.
+   * The system prompt IN FORCE at the shown step, in surface order (empty =
+   * none), resolved from the timeline's live `systems` nodes; on rows folded
+   * before that field existed the header epoch's own envelope figure stands
+   * in as one node. Since DSH 0.2.3-alpha.1 a later `system/message` carries
+   * SECTION UPDATES and the harness concatenates EVERY surviving system
+   * message into the request, so the prompt in force is a list whose price is
+   * the sum of its nodes — never just the newest one.
    */
-  system: SystemPromptNode | null
+  systems: SystemPromptNode[]
   /** The assembled surface messages, in seq order. */
   nodes: SurfaceNode[]
   /** Live nodes outside the served window that are also part of the context. */
@@ -47,31 +51,27 @@ export function headerAt(headers: ContextHeaders | null, seq: number | null): He
 }
 
 /**
- * The system prompt in force at `seq` (null = none) — the LAST live system
- * node at or before it carrying tokens, which is exactly the host fold's
- * "last nonempty surviving system" rule and therefore agrees with the
- * per-step `system` figure the fold recorded. Rows folded before `systems`
+ * The system prompt in force at `seq` (empty = none): every surviving
+ * nonempty system node at or before it, in surface order. The harness
+ * concatenates all surviving system messages into the request and prices
+ * them by summing their nodes (`dsh-token-meter`), so a step after a section
+ * update reads the head PLUS the updates. Rows folded before `systems`
  * existed carry none; the header epoch's own figure stands in for them (the
  * legacy wire shape older plugin builds served — current epochs fold
  * metadata-only, so the fallback only ever fires on those cached rows).
  */
-export function systemAt(
+export function systemsAt(
   data: ContextTimeline,
   header: HeaderRecord | null,
   seq: number | null,
-): SystemPromptNode | null {
+): SystemPromptNode[] {
   const systems = data.systems
   if (systems !== undefined && systems.length > 0) {
-    for (let i = systems.length - 1; i >= 0; i--) {
-      const node = systems[i]
-      if (node.tokens <= 0) continue
-      if (seq === null || node.seq < seq) return node
-    }
-    return null
+    return systems.filter(node => node.tokens > 0 && (seq === null || node.seq < seq))
   }
   return header !== null && header.systemTokens !== undefined
-    ? { seq: header.seq, time: header.time, tokens: header.systemTokens }
-    : null
+    ? [{ seq: header.seq, time: header.time, tokens: header.systemTokens }]
+    : []
 }
 
 export function assemble(data: ContextTimeline, headers: ContextHeaders | null, seq: number | null): Assembled {
@@ -106,7 +106,7 @@ export function assemble(data: ContextTimeline, headers: ContextHeaders | null, 
     && seq < data.archiveFloor
 
   const header = headerAt(headers, seq)
-  return { live, header, system: systemAt(data, header, seq), nodes, missingLive, approximate }
+  return { live, header, systems: systemsAt(data, header, seq), nodes, missingLive, approximate }
 }
 
 /** 「当前这一步」的读数：统计卡那 3 格 + `本步可见 N 条 · ≈X tokens`（`docs/10` M4-07）。 */

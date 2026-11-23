@@ -18,7 +18,7 @@ import type { RedlineRow } from '../redlineChannel'
 import type { RedlineDraftController } from '../redlineDrafts'
 import { makeNodeText } from './nodes'
 import { turnStepsOf } from './trendChart'
-import { fetchMissNote, useFetchOnMiss } from './fetchOnMiss'
+import { fetchMissNote, useFetchMany, useFetchOnMiss } from './fetchOnMiss'
 import { imageRefOf, makeImageCard } from './images'
 import type { ImageKit } from './images'
 import { makeRichText } from './richText'
@@ -587,7 +587,7 @@ function nodeNameOf(n: SurfaceNode): string {
 }
 
 function countOf(asm: Assembled, byCat: Partial<Record<Category, SurfaceNode[]>>, c: string): number {
-  if (c === 'system') return asm.system !== null ? 1 : 0
+  if (c === 'system') return asm.systems.length > 0 ? 1 : 0
   if (c === 'tools') return asm.header !== null ? asm.header.tools.length : 0
   return byCat[c as Category]?.length ?? 0
 }
@@ -743,8 +743,16 @@ export function makeContextBrowser(
     // the same fetcher. Content caches per seq — history is immutable.
     const fetchHeader = props.fetchHeader
     const headerSeq = view.header !== null ? view.header.seq : null
-    const systemSeq = view.system !== null ? view.system.seq : null
-    const contentSeq = openCat === 'system' ? systemSeq : openCat === 'tools' ? headerSeq : null
+    // The system prompt in force is every surviving system message (the head
+    // plus section updates), so its TEXT needs one read per node — the same
+    // fetcher, cached per seq. The tool schemas still read one epoch.
+    const systemSeqs = useMemo(() => view.systems.map(node => node.seq), [view.systems])
+    const systemEpoch = useFetchMany(
+      openCat === 'system' ? systemSeqs : [],
+      fetchHeader,
+      'dsh-context-redline: header content fetch failed',
+    )
+    const contentSeq = openCat === 'tools' ? headerSeq : null
     const epoch = useFetchOnMiss(
       contentSeq,
       fetchHeader,
@@ -753,6 +761,11 @@ export function makeContextBrowser(
     const headerContent = epoch.values
     // The note a not-yet-loaded epoch section shows, per fetch state (fetchOnMiss.tsx).
     const headerNote = fetchMissNote(t, fetchHeader, epoch.state, epoch.retry, 'browser.headerMetaOnly')
+    const systemText = systemSeqs
+      .map(seq => systemEpoch.values.get(seq)?.system)
+      .filter((text): text is string => text !== undefined && text !== '')
+      .join('\n\n')
+    const systemNote = fetchMissNote(t, fetchHeader, systemEpoch.state, systemEpoch.retry, 'browser.headerMetaOnly')
 
     const breakdown = req !== null ? req : data.current
     const parts = partsOf(breakdown)
@@ -854,7 +867,7 @@ export function makeContextBrowser(
     // one click lands on the content directly (the lone prompt / tool schema /
     // surface node).
     const singleKeyOf = (c: string): string | null => {
-      if (c === 'system') return view.system !== null ? 'sys' : null
+      if (c === 'system') return view.systems.length > 0 ? 'sys' : null
       if (c === 'tools') {
         const tools = view.header?.tools
         return tools !== undefined && tools.length === 1 ? 'tool:' + tools[0].name : null
@@ -1033,17 +1046,20 @@ export function makeContextBrowser(
         // when there is no header epoch at all (the openable guard above), so
         // the note names the missing PROJECTION — no headers service versus
         // headers that carried no epoch yet.
-        const sys = view.system
-        if (sys === null) {
+        if (view.systems.length === 0) {
           return <div className="redline-br-note">{t(headers === null ? 'browser.noHeader' : 'browser.noEpoch')}</div>
         }
-        const content = headerContent.get(sys.seq)
-        // Metadata-only until the prompt's event resolves (fetched when the
-        // section opens; the note names the state).
-        if (content === undefined) return <div className="redline-br-note">{headerNote}</div>
-        if (content.system === undefined) return <div className="redline-br-note">{t('browser.noSystem')}</div>
-        return elemRow('sys', null, content.system.replace(/\s+/g, ' ').trim().slice(0, 80), breakdown.system, undefined,
-          <TextSection label={catLabel('system')} text={content.system} rich={rich} lines={lineLabel} />)
+        // Metadata-only until every surviving message's event resolves
+        // (fetched when the section opens; the note names the state). Once
+        // every event landed without text, the epoch genuinely carried no
+        // prompt — a different fact from "still reading".
+        const systemLoaded = systemSeqs.every(seq => systemEpoch.values.has(seq))
+        if (systemText === '') return <div className="redline-br-note">{systemLoaded ? t('browser.noSystem') : systemNote}</div>
+        return elemRow('sys', null, systemText.replace(/\s+/g, ' ').trim().slice(0, 80), breakdown.system, undefined,
+          <>
+            <TextSection label={catLabel('system')} text={systemText} rich={rich} lines={lineLabel} />
+            {systemEpoch.state === 'idle' ? null : <div className="redline-br-note">{systemNote}</div>}
+          </>)
       }
       if (c === 'tools') {
         if (view.header === null) return <div className="redline-br-note">{t(headers === null ? 'browser.noHeader' : 'browser.noEpoch')}</div>

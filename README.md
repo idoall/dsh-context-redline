@@ -20,7 +20,7 @@
 
 > A DeepSeek Harness community plugin. It does not modify DSH source or rewrite the source session log.
 >
-> **Version `0.8.2` — supports DSH `>=0.2.2-rc.5 <0.3.0-0`.** Built and regression-tested against `0.2.2-rc.5`; Node.js `>=24.9.0` is required. DSH `0.3.0` prereleases are excluded.
+> **Version `0.8.3` — supports DSH `>=0.2.3-alpha.2 <0.3.0-0`.** Built and regression-tested against `0.2.3-alpha.2`; Node.js `^24.22.3 || >=26.13.1` is required. DSH `0.3.0` prereleases are excluded.
 
 Edits stay local until confirmation. The plugin then opens a zero-history ordinary session in the current workspace and sends the exact final message you approved. When the task finishes, its bound result returns verbatim to the source session.
 
@@ -62,15 +62,15 @@ Edits stay local until confirmation. The plugin then opens a zero-history ordina
 
 ## Install
 
-Requires DeepSeek Harness `0.2.2-rc.5` or a newer supported `0.2.x`, plus Node.js `24.9+`. Older DSH installations should stay on plugin `0.1.2` until upgrading DSH.
+Requires DeepSeek Harness `0.2.3-alpha.2` or a newer supported `0.2.x`, plus Node.js `24.22.3+` (or `26.13.1+` on the 26.x line). Older DSH installations should stay on plugin `0.8.2` until upgrading DSH.
 
 Install or upgrade to this exact release:
 
 ```sh
-dsh plugin --profile web add dsh-context-redline@0.8.2
+dsh plugin --profile web add dsh-context-redline@0.8.3
 ```
 
-This patch fixes the DNA switch state: opening DNA from the Context browser now also parks the trend at Total, so the Delta segment no longer looks selected while the chart plots total. It keeps the trend DNA mode, duration overlay, anchored conversation, both anchor modes and the DSH 0.2.2-rc.5 compatibility fixes. The runtime rule is opt-in, shown verbatim in confirmation, frozen in the ledger, and registered through `systemPrompt.context` for the carrier only; it is not a preset system prompt or a hidden injection. Unaccepted diagnostics and carrier-seed experiments are not included. Automated tests do not constitute production visual or real-session acceptance.
+This patch tracks the DSH 0.2.3-alpha.2 section-era system prompt. Since `0.2.3-alpha.1` a later `system/message` carries section UPDATES and the harness concatenates every surviving system message into the request, so the Context browser now prices the system prompt as the SUM of its surviving messages (matching DSH's own context breakdown) and shows the head prompt plus its updates in order, instead of displaying a section as if it were the whole prompt. The verified baseline, dependency floors and Node.js requirement move with the host (`^24.22.3 || >=26.13.1`), and `ctx.sessionQuery.inspectSession` — removed in this release — is confirmed unused. It keeps the trend DNA mode, duration overlay, anchored conversation, both anchor modes and the runtime rule (opt-in, shown verbatim in confirmation, frozen in the ledger, registered through `systemPrompt.context` for the carrier only; never a preset system prompt or a hidden injection). Unaccepted diagnostics and carrier-seed experiments are not included. Automated tests do not constitute production visual or real-session acceptance.
 
 Local development:
 

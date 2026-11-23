@@ -16,6 +16,7 @@ import {
   header,
   planMode,
   requestContext,
+  systemMessage,
   toolCall,
   toolResult,
   userMessage,
@@ -761,5 +762,58 @@ describe('hostile events', () => {
     // The text block still prices; the junk blocks cost overhead only.
     assert.ok(state.sums.user > 0)
     assertPlainJson(state)
+  })
+})
+
+// The section-era system prompt (DSH >= 0.2.3-alpha.1): a later
+// `system/message` carries SECTION UPDATES, and the harness concatenates
+// every surviving system message into the request — its own token meter
+// prices context by SUMMING the surviving system nodes. The fold must follow
+// that rule, or one plan-mode toggle would collapse the figure to a single
+// section.
+describe('system/message — the live system prompt', () => {
+  const priceOf = (systems: readonly { tokens: number }[] | undefined): number =>
+    (systems ?? []).reduce((sum, node) => sum + node.tokens, 0)
+
+  test('a section update ADDS its price instead of replacing the prompt', () => {
+    const { state } = driveTimeline([
+      systemMessage(2, { content: text('H'.repeat(400)) }),
+      systemMessage(6, { content: text('U'.repeat(40)) }),
+    ])
+    assert.deepEqual(state.systems?.map(n => n.seq), [2, 6], 'both messages survive')
+    assert.ok((state.systems?.[1]?.tokens ?? 0) > 0)
+    assert.equal(state.systemTokens, priceOf(state.systems), 'the delta adds to the prompt price')
+    assert.ok(state.systemTokens > (state.systems?.[0]?.tokens ?? 0), 'strictly more than the head alone')
+  })
+
+  test('a head rewrite keeps the head FIRST, and an emptied update prices at zero in place', () => {
+    const { state } = driveTimeline([
+      systemMessage(2, { content: text('head') }),
+      systemMessage(6, { content: text('update') }),
+      systemMessage(9, { content: text('rewritten head'), surfaceOp: { op: 'replace', startSeq: 2, endSeq: 2 } }),
+      systemMessage(10, { content: [], surfaceOp: { op: 'replace', startSeq: 6, endSeq: 6 } }),
+    ])
+    assert.deepEqual(state.systems?.map(n => n.seq), [9, 10], 'the rewrite takes the head POSITION')
+    assert.equal(state.systems?.[1]?.tokens, 0, 'an emptied update keeps its node at zero')
+    assert.equal(state.systemTokens, state.systems?.[0]?.tokens, 'a zero-token update adds nothing')
+  })
+
+  test('a long run of updates is retained, not truncated to eight nodes', () => {
+    const events: TimelineEvent[] = [systemMessage(1, { content: text('head') })]
+    for (let i = 0; i < 10; i++) events.push(systemMessage(10 + i, { content: text('update ' + String(i)) }))
+    const { state } = driveTimeline(events)
+    assert.equal(state.systems?.length, 11, 'no bound may silently drop live prompt text')
+    assert.equal(state.systemTokens, priceOf(state.systems))
+  })
+
+  test('a compaction claim also removes the system nodes it shadows', () => {
+    const { state } = driveTimeline([
+      systemMessage(2, { content: text('head') }),
+      systemMessage(6, { content: text('update inside the compacted range') }),
+      compaction(7, 'summary', { shadowedRange: { start: 6, end: 6 }, shadowedSeqs: [6], shadowedTokenCount: 9 }),
+      userMessage(8, text('the summary marker'), null, { surfaceOp: { op: 'replace', startSeq: 6, endSeq: 6 } }),
+    ])
+    assert.deepEqual(state.systems?.map(n => n.seq), [2], 'the shadowed update leaves the live list')
+    assert.equal(state.systemTokens, state.systems?.[0]?.tokens)
   })
 })

@@ -434,7 +434,13 @@ export function createContextTimelineDefinition(config: Config, slim: () => bool
     // and the step-wait/approval/request-back-pointer slots joined the state —
     // the trend chart's duration overlay. Requests folded before it can never
     // gain the figure later, so cached rows refold from the durable log.
-    stateVersion: 24,
+    // 25 (2026-11-23): the system-prompt price became the SUM of every
+    // surviving `system/message` node (the host's own rule now that DSH
+    // 0.2.3-alpha.1 writes section updates), and a compaction claim drops the
+    // system nodes it shadows. A row folded under the old "last nonempty
+    // node" rule keeps a wrong figure until it refolds, so cached rows are
+    // invalidated here.
+    stateVersion: 25,
   }
   return definition
 }

@@ -50,9 +50,9 @@ describe('createContextTimelineDefinition', () => {
   test('carries the supported projection contract on one unit', () => {
     const def = createContextTimelineDefinition({}, () => false)
     assert.equal(def.key, 'redlineTimeline')
-    // 24（2026-11-22）：请求记录新增 activeMs（趋势时长曲线），状态新增 stepWaits /
-    // stepApprovals / stepRequestSeq；缓存行必须重 fold 才能补回时长。
-    assert.equal(def.stateVersion, 24)
+    // 25（2026-11-23）：系统提示词改为“所有幸存 system/message 之和”，压缩遮蔽的
+    // 系统消息同步移出；旧缓存行按旧规则记的数值是错的，必须重 fold。
+    assert.equal(def.stateVersion, 25)
     assert.equal(typeof def.init, 'function')
     assert.equal(typeof def.apply, 'function')
     // The supported registry contract: stateSchema + a REQUIRED wire block.

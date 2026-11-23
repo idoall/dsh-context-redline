@@ -13,14 +13,14 @@ const pkg = JSON.parse(read('package.json')) as {
 
 describe('release metadata stays synchronized', () => {
   test('publishes a fresh patch with the current DSH and Node baseline', () => {
-    assert.equal(pkg.version, '0.8.2')
-    assert.equal(BASELINE_DSH_VERSION, '0.2.2-rc.5')
-    assert.equal(pkg.engines.dsh, '>=0.2.2-rc.5 <0.3.0-0')
-    assert.equal(pkg.engines.node, '>=24.9.0')
-    assert.equal(meetsBaseline('0.2.2-rc.5'), true)
-    assert.equal(meetsBaseline('0.2.2-rc.4'), false)
+    assert.equal(pkg.version, '0.8.3')
+    assert.equal(BASELINE_DSH_VERSION, '0.2.3-alpha.2')
+    assert.equal(pkg.engines.dsh, '>=0.2.3-alpha.2 <0.3.0-0')
+    assert.equal(pkg.engines.node, '^24.22.3 || >=26.13.1')
+    assert.equal(meetsBaseline('0.2.3-alpha.2'), true)
+    assert.equal(meetsBaseline('0.2.2-rc.5'), false)
+    assert.equal(meetsBaseline('0.2.3-alpha.1'), false)
     assert.equal(meetsBaseline('0.2.2-alpha.3'), false)
-    assert.equal(meetsBaseline('0.2.1-rc.5'), false)
     for (const [name, version] of Object.entries(pkg.devDependencies)) {
       if (name.startsWith('@deepseek-ai/dsh-')) assert.equal(version, BASELINE_DSH_VERSION, name)
     }
@@ -32,13 +32,13 @@ describe('release metadata stays synchronized', () => {
   test('both READMEs and release notes name the same package, runtime and version', () => {
     for (const file of ['README.md', 'README.zh.md', `docs/releases/v${pkg.version}.md`]) {
       const text = read(file)
-      for (const expected of [pkg.version, pkg.engines.dsh, '24.9', `dsh-context-redline@${pkg.version}`]) {
+      for (const expected of [pkg.version, pkg.engines.dsh, '24.22.3', `dsh-context-redline@${pkg.version}`]) {
         assert.ok(text.includes(expected), `${file} is missing ${expected}`)
       }
     }
     const notes = read(`docs/releases/v${pkg.version}.md`)
     for (const locale of ['cn', 'en']) assert.ok(notes.includes(`<h3 id="${locale}-v${pkg.version}">`))
-    assert.ok(read('CHANGELOG.md').includes(`## [${pkg.version}] — 2026-11-22`))
+    assert.ok(read('CHANGELOG.md').includes(`## [${pkg.version}] — 2026-11-23`))
     assert.ok(!read('CHANGELOG.md').includes('Unreleased'))
   })
 

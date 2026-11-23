@@ -127,6 +127,11 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 
 - Make the optional handoff skill require a task list, one subagent per task, and main-session review only; no single-session multi-milestone path.
 
+### DSH 0.2.3-alpha.2 compatibility (0.8.3, 2026-11-23)
+
+- Move the verified baseline, dependency floors and Node.js requirement to DSH 0.2.3-alpha.2 (`^24.22.3 || >=26.13.1`); the removed `ctx.sessionQuery.inspectSession` is unused here.
+- Follow the host's section-era system prompt: the fold sums every surviving `system/message` node and removes the ones a compaction claim shadows; the Context browser and the DNA strip show the head prompt plus its section updates, matching the host's own `contextBreakdown`.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.
