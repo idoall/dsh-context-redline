@@ -68,6 +68,7 @@ import { originsFileName, parseOrigins } from '../shared/redline-origins'
 import { captureEventSourceSnapshot, eventSourceKeyOf, type CapturedEventSource, type SurfaceSnapshotEvent } from '../shared/redline-source'
 import { buildManifest, serializeManifestDelivery, stableFingerprint, type ManifestCandidate } from '../redline/manifest'
 import { anchorRequestFingerprint, anchorTitle, composeAnchor, type AnchorDraft } from '../shared/redline-anchor'
+import { guardHashOf, loadGuardState, parseGuardTasks, readPlanPreview, setGuardPaused as setLiveGuardPaused, type GuardState } from './goal-guard'
 import {
   authorizeCarrier,
   createCarrierPreview,
@@ -599,6 +600,14 @@ const anchorPlan: RedlineOpHandler = async ({ ctx, call }) => {
   const resolved = await resolveAnchorSource(ctx, sessionId)
   if (!resolved.ok) return resolved.envelope
   const { config, workspaceId } = resolved.source
+  const guard = call.guard !== null && typeof call.guard === 'object'
+    ? call.guard as { readonly tasks?: unknown; readonly planPath?: unknown }
+    : undefined
+  const guardTasks = typeof guard?.tasks === 'string' ? guard.tasks : ''
+  const parsedGuardTasks = guardTasks === '' ? null : parseGuardTasks(guardTasks)
+  const planPath = typeof guard?.planPath === 'string' ? guard.planPath.trim() : ''
+  const plan = planPath === '' ? null : await readPlanPreview(resolved.source.cwd, planPath)
+  if (planPath !== '' && plan === null) return fail(REDLINE_ERROR.badRequest, 'plan file is unreadable')
   return redlineOk({
     snapshot: composed.text,
     snapshotFingerprint: composed.fingerprint,
@@ -611,6 +620,15 @@ const anchorPlan: RedlineOpHandler = async ({ ctx, call }) => {
       model: config.model,
       ...(config.reasoningEffort.startsWith('not-') ? {} : { reasoningEffort: config.reasoningEffort }),
     },
+    ...(parsedGuardTasks === null ? {} : {
+      guard: {
+        hash: guardHashOf({ goal: draft.goal, acceptance: draft.acceptance, discipline: draft.discipline, tasks: guardTasks, planPath: plan?.path ?? '', planHash: plan?.hash ?? '' }),
+        taskCount: parsedGuardTasks.length,
+        ...(plan === null ? {} : {
+          plan: { path: plan.path, hash: plan.hash, bytes: plan.bytes, lines: plan.lines, headings: plan.headings },
+        }),
+      },
+    }),
   })
 }
 
@@ -656,6 +674,25 @@ const anchorStart: RedlineOpHandler = async ({ ctx, call }) => {
   }
   const ids = anchoredIds(operationId)
   const title = anchorTitle(draft)
+  const guard = call.guard !== null && typeof call.guard === 'object'
+    ? call.guard as {
+      readonly tasks?: unknown
+      readonly dryRun?: unknown
+      readonly evaluator?: unknown
+      readonly planPath?: unknown
+      readonly planHash?: unknown
+    }
+    : undefined
+  const guardTasks = typeof guard?.tasks === 'string' ? guard.tasks : ''
+  const guardEvaluator = guard?.evaluator !== null && typeof guard?.evaluator === 'object'
+    ? guard.evaluator as { readonly provider?: unknown; readonly model?: unknown }
+    : undefined
+  const guardPlanPath = typeof guard?.planPath === 'string' ? guard.planPath.trim() : ''
+  const guardPlan = guardPlanPath === '' ? null : await readPlanPreview(cwd, guardPlanPath)
+  if (guardPlanPath !== '' && guardPlan === null) return fail(REDLINE_ERROR.badRequest, 'plan file is unreadable')
+  if (guardPlan !== null && typeof guard?.planHash === 'string' && guard.planHash !== guardPlan.hash) {
+    return fail(REDLINE_ERROR.badRequest, 'plan file changed since preview')
+  }
   const control = carrierControl(ctx)
   const result = await control.start({
     carrierId: ids.sessionId,
@@ -671,6 +708,16 @@ const anchorStart: RedlineOpHandler = async ({ ctx, call }) => {
     promptRequestId: ids.promptRequestId,
     promptText: draft.task.trim(),
     runtimeAnchor: composed.text,
+    ...(guardTasks === '' ? {} : {
+      guard: {
+        goal: draft.goal, acceptance: draft.acceptance, discipline: draft.discipline, tasks: guardTasks,
+        ...(guardPlan === null ? {} : { planPath: guardPlan.path, planHash: guardPlan.hash }),
+        ...(guard?.dryRun === true ? { dryRun: true } : {}),
+        ...(typeof guardEvaluator?.provider === 'string' && typeof guardEvaluator.model === 'string'
+          ? { evaluator: { provider: guardEvaluator.provider, model: guardEvaluator.model } }
+          : {}),
+      },
+    }),
   })
   if (!result.ok) return fail(REDLINE_ERROR.internal, `anchor start held: ${result.cause}`)
   return redlineOk({
@@ -1202,6 +1249,25 @@ const readOrigins: RedlineOpHandler = async ({ ctx, call }) => {
   return redlineOk({ records: parsed.records })
 }
 
+
+/** Goal Guard status for one session; `null` means the guard is off. */
+const readGuard: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  return redlineOk(await loadGuardState(ctx, sessionId))
+}
+
+/** Pause or resume the guard without touching the main session log. */
+async function setGuardPaused(ctx: Context, call: RedlineCall, paused: boolean): Promise<RedlineEnvelope<GuardState | null>> {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const state = await setLiveGuardPaused(ctx, sessionId, paused)
+  return redlineOk(state)
+}
+
+const pauseGuard: RedlineOpHandler = async ({ ctx, call }) => await setGuardPaused(ctx, call, true)
+const resumeGuard: RedlineOpHandler = async ({ ctx, call }) => await setGuardPaused(ctx, call, false)
+
 /**
  * The op table. M2's entries; M3/M5 add theirs here and nowhere else.
  */
@@ -1222,6 +1288,9 @@ const OPS = new Map<string, RedlineOpHandler>([
   ['carrier.models', readCarrierModels],
   ['anchor.plan', anchorPlan],
   ['anchor.start', anchorStart],
+  ['guard.status', readGuard],
+  ['guard.pause', pauseGuard],
+  ['guard.resume', resumeGuard],
 ])
 
 /** One JSON reply on the channel. `no-store` matches every other plugin route. */

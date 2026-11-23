@@ -166,6 +166,14 @@ export interface AnchorInput {
   readonly goal: string
   readonly acceptance: string
   readonly discipline: string
+  /** Opt-in Goal Guard: one `T1 | title | acceptance` line per task. */
+  readonly guard?: {
+    readonly tasks: string
+    readonly dryRun?: boolean
+    readonly evaluator?: { readonly provider: string; readonly model: string }
+    readonly planPath?: string
+    readonly planHash?: string
+  }
 }
 
 export interface AnchorPlan {
@@ -176,6 +184,18 @@ export interface AnchorPlan {
   readonly title: string
   readonly workspaceId: string
   readonly config?: { agentPreset: string; provider: string; model: string; reasoningEffort?: string }
+  /** Present when a valid task list would enable the Goal Guard. */
+  readonly guard?: {
+    readonly hash: string
+    readonly taskCount: number
+    readonly plan?: {
+      readonly path: string
+      readonly hash: string
+      readonly bytes: number
+      readonly lines: number
+      readonly headings: readonly string[]
+    }
+  }
 }
 
 export interface AnchorStarted {
@@ -184,6 +204,67 @@ export interface AnchorStarted {
   readonly mode: 'created' | 'resumed' | 'live'
   readonly delivery: 'sent' | 'already-present'
   readonly messageId: string
+}
+
+
+/** A guarded session's progress, mirroring the host store. */
+export interface GuardTaskStatus {
+  readonly id: string
+  readonly title: string
+  readonly acceptance: readonly string[]
+  readonly status: 'pending' | 'active' | 'passed' | 'failed' | 'blocked'
+  readonly attempts: number
+}
+
+export interface GuardStatus {
+  readonly sessionId: string
+  readonly goal: string
+  readonly acceptance: string
+  readonly discipline: string
+  readonly tasks: readonly GuardTaskStatus[]
+  readonly current: number
+  readonly verdict: 'pass' | 'fail' | 'insufficient' | 'blocked' | null
+  readonly correction: string
+  readonly steers: number
+  readonly blocked: boolean
+  readonly complete: boolean
+  readonly paused: boolean
+  readonly dryRun: boolean
+  readonly evaluatorProvider?: string
+  readonly evaluatorModel?: string
+  readonly lastEval?: {
+    readonly verdict: string
+    readonly model: string
+    readonly latencyMs: number
+    readonly inputTokens: number
+    readonly outputTokens: number
+    readonly at: number
+  }
+}
+
+/** Read the guard status; `null` means this session has no guard. */
+export async function readGuardStatus(sessionId: string): Promise<RedlineResult<GuardStatus | null>> {
+  const answer = await call<GuardStatus | null>({ op: 'guard.status', sessionId })
+  if (!answer.ok) return answer
+  const value = answer.value as unknown
+  if (value === null || typeof value !== 'object') return { ok: true, value: null }
+  const bag = value as { tasks?: unknown; goal?: unknown }
+  if (!Array.isArray(bag.tasks) || typeof bag.goal !== 'string') return { ok: true, value: null }
+  return { ok: true, value: value as GuardStatus }
+}
+
+async function setGuardPaused(sessionId: string, paused: boolean): Promise<RedlineResult<GuardStatus | null>> {
+  return await call<GuardStatus | null>({ op: paused ? 'guard.pause' : 'guard.resume', sessionId })
+}
+
+/** Pause the guard for one session (no tool denial, no steering). */
+export async function pauseGuard(sessionId: string): Promise<RedlineResult<GuardStatus | null>> {
+  return await setGuardPaused(sessionId, true)
+}
+
+/** Resume the guard for one session. */
+export async function resumeGuard(sessionId: string): Promise<RedlineResult<GuardStatus | null>> {
+  return await setGuardPaused(sessionId, false)
 }
 
 /** Read-only preview of one anchored conversation; creates nothing. */

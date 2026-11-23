@@ -136,6 +136,10 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 
 - Replace the Client half's bare `crypto.randomUUID` call with a three-arm mint (native → `getRandomValues` → `Math.random`) so the anchored-conversation card renders on plain-HTTP DSH origins, which are not secure contexts; the operation id keeps the UUID v4 shape.
 
+### Goal Guard observe-only beta (0.9.0, 2026-11-23)
+
+- Add a per-session, opt-in goal audit: a frozen goal-card hash, a task ledger, an independent evaluator call through `llm.prepareCall`, a guard status card and pause/resume ops. 0.9.0 records verdicts and correction suggestions only — no tool denial and no steering; the blocking path stays behind an explicit seed flag for a later version.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

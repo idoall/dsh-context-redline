@@ -602,6 +602,44 @@ describe('锚定会话（0.4.0）', () => {
   })
 })
 
+describe('目标守卫（0.9.0 只观察）', () => {
+  test('开启目标守卫时固定以「只观察」发起（0.9.0 不拦截）', async () => {
+    const starts: unknown[][] = []
+    const m = await open({
+      startAnchor: (...args) => {
+        starts.push(args)
+        return Promise.resolve({
+          ok: true as const,
+          value: { sessionId: 'session-guard-observe', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+        })
+      },
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    const setValue = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setValue('[data-redline-anchor-task]', '任务 A')
+    await setValue('[data-redline-anchor-acceptance]', '验收 A')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-guard]').click() })
+    await setValue('[data-redline-anchor-guard-tasks]', 'T1 | one | e1')
+    assert.ok(query(modal, '[data-redline-anchor-guard-observe]'), '只观察的说明可见')
+    assert.equal(queryAll(modal, '[data-redline-anchor-guard-dry]').length, 0, '0.9.0 不提供拦截开关')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    assert.equal(starts.length, 1)
+    const guard = (starts[0]?.[1] as { guard?: { dryRun?: boolean, tasks?: string } }).guard
+    assert.equal(guard?.dryRun, true, '守卫永远以只观察发起')
+    assert.equal(guard?.tasks, 'T1 | one | e1')
+    await m.unmount()
+  })
+})
+
 describe('锚定会话弹窗底栏间距（0.4.1 回归）', () => {
   test('底栏是 flex 且有 10px 间距，说明文字与按钮之间留出空隙', () => {
     const css = readFileSync(join(process.cwd(), 'src/client/styles/childCard.css'), 'utf8')

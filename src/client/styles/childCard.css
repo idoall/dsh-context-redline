@@ -179,3 +179,14 @@
 }
 .redline-modal-card[data-redline-anchor-modal] .redline-confirm-scope { margin-right: auto; padding-right: 10px; }
 .redline-modal-card[data-redline-anchor-modal] .redline-confirm-btn { flex: 0 0 auto; }
+
+/* Goal Guard options inside the anchor dialog: dry-run + evaluator route. */
+.redline-anchor-guard-options { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 6px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.redline-anchor-guard-options label { display: inline-flex; align-items: center; gap: 4px; }
+.redline-anchor-guard-options select { max-width: 220px; font: inherit; }
+
+/* Goal Guard plan file: a path input plus the read-only preview headings. */
+.redline-anchor-guard-plan { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.redline-anchor-guard-plan input { flex: 1 1 220px; min-width: 0; font: inherit; }
+.redline-anchor-plan-preview { margin-top: 6px; font-size: 11px; }
+.redline-anchor-plan-preview pre { max-height: 140px; overflow: auto; margin: 4px 0 0; white-space: pre-wrap; color: var(--dsw-alias-label-secondary); }

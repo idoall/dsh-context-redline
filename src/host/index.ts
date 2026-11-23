@@ -34,6 +34,7 @@ import { createFallbackActivityDefinition, createFallbackHeadersDefinition, crea
 import { createContextHeadersDefinition } from './headers'
 import { watchRedlineChannel } from './redline-channel'
 import { registerHandoffSkill } from './handoff-skill'
+import { watchGoalGuards } from './goal-guard'
 import { watchCarrierRecovery } from './redline-carrier-recovery'
 import { watchStepIdentity } from './stepIdentity'
 import { createContextTimelineDefinition } from './timeline'
@@ -60,6 +61,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // on BOTH sides of it: it owns its own namespaced route and depends on no
   // projection generation, so a below-baseline harness must not lose it.
   watchCarrierRecovery(ctx)
+  watchGoalGuards(ctx)
   watchRedlineChannel(ctx)
   // The DeepSeek platform balance route (balance.ts): independent of the
   // projection generations, so it arms on either side of the baseline gate —

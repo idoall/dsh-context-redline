@@ -20,7 +20,7 @@
 
 > A DeepSeek Harness community plugin. It does not modify DSH source or rewrite the source session log.
 >
-> **Version `0.8.4` — supports DSH `>=0.2.3-alpha.2 <0.3.0-0`.** Built and regression-tested against `0.2.3-alpha.2`; Node.js `^24.22.3 || >=26.13.1` is required. DSH `0.3.0` prereleases are excluded.
+> **Version `0.9.0` — supports DSH `>=0.2.3-alpha.2 <0.3.0-0`.** Built and regression-tested against `0.2.3-alpha.2`; Node.js `^24.22.3 || >=26.13.1` is required. DSH `0.3.0` prereleases are excluded.
 
 Edits stay local until confirmation. The plugin then opens a zero-history ordinary session in the current workspace and sends the exact final message you approved. When the task finishes, its bound result returns verbatim to the source session.
 
@@ -38,6 +38,7 @@ Edits stay local until confirmation. The plugin then opens a zero-history ordina
 - **Authoritative final message.** The confirmation textarea is the exact first user message written to the new session.
 - **Handoff skill.** The plugin contributes a runtime skill, `context-redline-handoff`: it reads the current conversation and outputs both handoff shapes — the migration fields (first task + per-request rule anchor) and the anchored conversation fields (first task, goal, acceptance criteria, discipline), with mandatory task decomposition, role separation, and conditional headed UAT.
 - **Anchored conversation without migration.** Starts an independent root conversation from a task plus a frozen runtime snapshot of goal, acceptance criteria and discipline. Nothing is copied from the current session and no result is returned to it.
+- **Goal Guard (0.9 beta, observe only).** An anchored conversation can opt into a per-session guard: the goal, acceptance, discipline and a task list are frozen into one hash, and after each turn an independent evaluator (its own model call, optionally on another route) judges the current task against the frozen card and records a verdict plus a correction suggestion on the guard card. In 0.9.0 it never blocks a tool and never steers the session; blocking is a later version. The evaluator sees only the frozen card, the current task and a bounded excerpt of what the session produced since that task started — never the full history.
 - **DNA fingerprint mode.** The trend bars can switch to a per-item gradient in the model’s read order; the browser’s DNA switch and the trend switch move together. DNA currently forces total semantics.
 - **Trend duration overlay.** Each trend bar carries its step’s active time as a curve read off the right-hand axis; turn mode sums the turn’s steps. The Adaptive and Duration modifiers share one compact toggle group, and the old focused-category subtitle is gone.
 - **Anchor with two modes.** An optional short anchor, written by you, can be repeated at the start and end of the first message, or supplied as a per-request runtime rule. The runtime mode uses DSH's runtime-context snapshot: unchanged text is not rewritten, and after compaction it is re-declared with a supersession notice. Neither mode touches the preset-owned system prompt or the source session.
@@ -62,15 +63,15 @@ Edits stay local until confirmation. The plugin then opens a zero-history ordina
 
 ## Install
 
-Requires DeepSeek Harness `0.2.3-alpha.2` or a newer supported `0.2.x`, plus Node.js `24.22.3+` (or `26.13.1+` on the 26.x line). Older DSH installations should stay on plugin `0.8.2` until upgrading DSH.
+Requires DeepSeek Harness `0.2.3-alpha.2` or a newer supported `0.2.x`, plus Node.js `24.22.3+` (or `26.13.1+` on the 26.x line). Older DSH installations should stay on plugin `0.8.4` until upgrading DSH.
 
 Install or upgrade to this exact release:
 
 ```sh
-dsh plugin --profile web add dsh-context-redline@0.8.4
+dsh plugin --profile web add dsh-context-redline@0.9.0
 ```
 
-This patch fixes a crash on plain-HTTP deployments: `crypto.randomUUID` only exists in a secure context, so opening the Context Redline tab over `http://<lan-ip>:<port>` threw `crypto.randomUUID is not a function` when the anchored-conversation card minted its operation id. The id now comes from `crypto.getRandomValues` (with a `Math.random` last resort) and keeps the UUID v4 shape, so the tab renders and the anchored conversation starts on insecure origins too. It keeps the DSH 0.2.3-alpha.2 section-era system prompt. Since `0.2.3-alpha.1` a later `system/message` carries section UPDATES and the harness concatenates every surviving system message into the request, so the Context browser now prices the system prompt as the SUM of its surviving messages (matching DSH's own context breakdown) and shows the head prompt plus its updates in order, instead of displaying a section as if it were the whole prompt. The verified baseline, dependency floors and Node.js requirement move with the host (`^24.22.3 || >=26.13.1`), and `ctx.sessionQuery.inspectSession` — removed in this release — is confirmed unused. It keeps the trend DNA mode, duration overlay, anchored conversation, both anchor modes and the runtime rule (opt-in, shown verbatim in confirmation, frozen in the ledger, registered through `systemPrompt.context` for the carrier only; never a preset system prompt or a hidden injection). Unaccepted diagnostics and carrier-seed experiments are not included. Automated tests do not constitute production visual or real-session acceptance.
+This release adds **Goal Guard 0.9.0, an observe-only beta**. When you open an anchored conversation you can paste a task list (`T1 | title | acceptance` per line), optionally pick an evaluator route and a plan file whose hash is frozen with the goal card. After each turn the plugin audits the current task with one independent model call — it sees only the frozen card, that task and a bounded excerpt of what the session produced since the task started — and records a verdict (`pass` / `fail` / `insufficient` / `blocked`), the evidence it used, and a correction suggestion on the guard card, together with the evaluator's model, latency and tokens. In 0.9.0 the guard is strictly observational: it never blocks a tool, never steers the session, and never ends a turn; the goal hash, the task ledger, the plan-file hash check and the blocking path stay in the code for the next version. A guard exists only for the session it was enabled on; its state lives under `$DSH_HOME/dsh-context-redline/guard/`. The source session is never rewritten, no preset system prompt or tool definition is touched, and the evaluator route is a separate model call that can use a different provider/model. Automated tests do not constitute production visual or real-session acceptance.
 
 Local development:
 
@@ -97,7 +98,7 @@ Uninstalling does not automatically delete local drafts and operation ledgers un
 3. Choose **Open ordinary new session**.
 4. If you are not sure what to fill, run the `context-redline-handoff` skill first; it recommends migration or a fresh anchored conversation and outputs the matching fields. The snapshot is frozen before creation and re-declared after compaction.
 5. In the migration flow, enter the task; optionally add a short anchor (keywords or hard constraints) and choose **first message** or **runtime rule**, then finish the exact final message.
-6. Choose a model; keep effort at **Use model default** unless needed.
+6. Choose a model; keep effort at **Use model default** unless needed. Optionally enable **Goal Guard (beta, observe only)**: paste the task list, pick an evaluator model if you want a second opinion, and name a plan file if the goal needs one.
 7. Confirm creation and open the new session from the left sidebar.
 8. In the migration flow, the bound result returns automatically after completion.
 
@@ -116,6 +117,7 @@ See the [user guide](https://github.com/idoall/dsh-context-redline/blob/main/doc
 - System prompts and tool schemas come from the target preset; migrated prose never pretends to alter those layers.
 - Tool results require a matching call identity.
 - No history/version UI, rollback, compaction, team task board, or session deletion UI.
+- Goal Guard 0.9.0 is observe-only: it records verdicts and correction suggestions but blocks nothing and steers nobody. Blocking is a later version.
 - The plugin provides lock-scoped idempotence and recovery; it does not claim platform-native exactly-once delivery.
 
 ## Development

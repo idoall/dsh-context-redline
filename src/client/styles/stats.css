@@ -40,3 +40,16 @@
  */
 .redline-stat-hint { margin-left: 6px; font-size: 11px; font-weight: 400; opacity: 0.72; }
 .redline-bmeta { margin-left: auto; font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; opacity: 0.72; }
+
+/* Goal Guard card: per-session progress, verdict and the pause/resume switch. */
+.redline-guard-card { border-color: var(--dsw-alias-brand-primary); }
+.redline-guard-current { font-size: 12px; font-weight: 600; margin: 2px 0 6px; }
+.redline-guard-tasks { display: flex; flex-wrap: wrap; gap: 4px; }
+.redline-guard-task { font-size: 10px; line-height: 16px; padding: 1px 6px; border-radius: 999px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); }
+.redline-guard-passed { color: var(--dsw-alias-state-success-primary); }
+.redline-guard-active { color: var(--dsw-alias-brand-primary); }
+.redline-guard-failed, .redline-guard-blocked { color: var(--dsw-alias-state-error-primary); }
+.redline-guard-verdict { margin-top: 6px; font-size: 11px; }
+.redline-guard-correction { color: var(--dsw-alias-state-warn-primary); }
+.redline-guard-eval { margin-top: 2px; font-size: 10px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
+.redline-guard-toggle { margin-left: auto; }

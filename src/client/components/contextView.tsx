@@ -18,6 +18,7 @@ import type { ContextSettings } from '../settings'
 import type { ViewKit } from '../viewkit'
 import { makeContextBrowser } from './browser'
 import { useRedlineDrafts } from '../redlineDrafts'
+import { pauseGuard, readGuardStatus, resumeGuard, type GuardStatus } from '../redlineChannel'
 import { useChildSessions } from '../childSessions'
 import { makeChildCard } from './childCard'
 import { makeEventList } from './events'
@@ -96,6 +97,8 @@ export function makeContextView(
     // one switch, both cards move. It forces total semantics (the bands are the
     // composition), so turning it on parks the Total/Delta switch at total.
     const [dna, setDna] = useState(false)
+    const [guard, setGuard] = useState<GuardStatus | null>(null)
+    const [guardBusy, setGuardBusy] = useState(false)
     // One handler for both DNA switches: opening DNA from the browser must also
     // park the trend's Total/Delta switch at Total, or the chart plots total
     // while the Delta segment still looks selected.
@@ -221,6 +224,63 @@ export function makeContextView(
       () => (dna && data !== null ? displayRequests.map(req => trendBandsOf(assemble(data, headers, req.seq))) : null),
       [dna, data, headers, displayRequests],
     )
+
+    // Goal Guard status: a per-session polling read; a session without a guard
+    // answers `null` and renders no card, so ordinary conversations stay untouched.
+    useEffect(() => {
+      if (typeof sessionId !== 'string' || sessionId === '') { setGuard(null); return }
+      let cancelled = false
+      const load = (): void => {
+        void readGuardStatus(sessionId).then((answer) => {
+          if (!cancelled && answer.ok) setGuard(answer.value)
+        })
+      }
+      load()
+      const timer = setInterval(load, 3000)
+      return () => { cancelled = true; clearInterval(timer) }
+    }, [sessionId])
+
+    const toggleGuard = (): void => {
+      if (guard === null || guardBusy) return
+      setGuardBusy(true)
+      const action = guard.paused ? resumeGuard : pauseGuard
+      void action(guard.sessionId).then((answer) => {
+        setGuardBusy(false)
+        if (answer.ok) setGuard(answer.value)
+      })
+    }
+
+    const guardCard = guard === null ? null : (() => {
+      const passed = guard.tasks.filter(task => task.status === 'passed').length
+      const current = guard.current < guard.tasks.length ? guard.tasks[guard.current] : null
+      return h('div', { className: 'redline-card redline-guard-card', 'data-redline-guard-card': '1' },
+        h('div', { className: 'redline-card-title' },
+          h('span', { className: 'redline-card-title-text' }, t('guard.title')),
+          h('span', { className: 'redline-card-scale' },
+            guard.dryRun ? t('guard.dryRun') : guard.paused ? t('guard.paused') : t('guard.progress', { done: passed, total: guard.tasks.length })),
+          h('button', {
+            type: 'button', className: 'redline-gran-btn redline-guard-toggle', disabled: guardBusy,
+            'data-redline-guard-toggle': '1', onClick: toggleGuard,
+          }, guard.paused ? t('guard.resume') : t('guard.pause')),
+        ),
+        h('div', { className: 'redline-guard-current' },
+          current === null
+            ? t('guard.allDone')
+            : t('guard.current', { id: current.id, title: current.title })),
+        h('div', { className: 'redline-guard-tasks' }, guard.tasks.map(task =>
+          h('span', { key: task.id, className: `redline-guard-task redline-guard-${task.status}` }, `${task.id} ${task.status}`))),
+        guard.verdict === null ? null : h('div', { className: 'redline-guard-verdict' },
+          t('guard.verdict', { verdict: guard.verdict }),
+          guard.correction === '' ? null : h('span', { className: 'redline-guard-correction' }, ' · ' + guard.correction)),
+        guard.lastEval === undefined ? null : h('div', { className: 'redline-guard-eval' },
+          t('guard.lastEval', {
+            model: guard.lastEval.model,
+            ms: guard.lastEval.latencyMs,
+            input: guard.lastEval.inputTokens,
+            output: guard.lastEval.outputTokens,
+          })),
+      )
+    })()
 
     // Chat → Context jump, leg 1: pick up the assistant-action relay's request for this session —
     // once per mount, and again on every later record (the sidebar landing keeps this view mounted
@@ -494,6 +554,7 @@ export function makeContextView(
             会被拉成三大行，既不像 demo 也浪费首屏。右侧栏面板（窄列）不放它（`docs/03` R5.1）。 */}
         <div className="redline-masonry">
           <div className="redline-masonry-col">
+            {guardCard}
             {inSidebar ? null : (
               <StatsContext stats={stepStats} turn={activeReq?.turn} step={activeReq?.step}
                 live={activeReq === null} ready={source.detailState === 'ready' || source.detailState === 'legacy'} />

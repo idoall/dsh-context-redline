@@ -219,6 +219,10 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
   const [goalDirty, setGoalDirty] = useState(false)
   const [acceptance, setAcceptance] = useState('')
   const [discipline, setDiscipline] = useState(DEFAULT_DISCIPLINE)
+  const [guardEnabled, setGuardEnabled] = useState(false)
+  const [guardTasks, setGuardTasks] = useState('')
+  const [guardEvalRoute, setGuardEvalRoute] = useState('')
+  const [guardPlanPath, setGuardPlanPath] = useState('')
   const [plan, setPlan] = useState<AnchorPlan | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<{ code: string; message: string } | null>(null)
@@ -226,7 +230,9 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
   const [effort, setEffort] = useState('')
   const operationId = useRef<string>(randomUuid())
   const generation = useRef(0)
-  const valid = [task, goal, acceptance, discipline].every(value => value.trim() !== '')
+  const guardLines = guardTasks.split(/\r?\n/).map(line => line.trim()).filter(line => line !== '')
+  const guardValid = !guardEnabled || (guardLines.length > 0 && guardLines.every(line => line.split('|').filter(part => part.trim() !== '').length >= 2))
+  const valid = [task, goal, acceptance, discipline].every(value => value.trim() !== '') && guardValid
 
   useEffect(() => {
     if (!props.open) return
@@ -235,6 +241,10 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
     setGoalDirty(false)
     setAcceptance('')
     setDiscipline(DEFAULT_DISCIPLINE)
+    setGuardEnabled(false)
+    setGuardTasks('')
+    setGuardEvalRoute('')
+    setGuardPlanPath('')
     setPlan(null)
     setBusy(false)
     setError(null)
@@ -249,7 +259,20 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
     const mine = generation.current
     const timer = setTimeout(() => {
       void (async () => {
-        const answer = await props.planAnchor({ task, goal, acceptance, discipline })
+        const guardInput = guardEnabled ? {
+          guard: {
+            tasks: guardTasks,
+            // 0.9.0 is observe-only: the guard records verdicts and corrections
+            // but never blocks a tool or steers the session. Blocking ships in
+            // a later version once observation looks right in real sessions.
+            dryRun: true,
+            ...(guardEvalRoute === '' ? {} : {
+              evaluator: JSON.parse(guardEvalRoute) as { provider: string; model: string },
+            }),
+            ...(guardPlanPath.trim() === '' ? {} : { planPath: guardPlanPath.trim() }),
+          },
+        } : {}
+        const answer = await props.planAnchor({ task, goal, acceptance, discipline, ...guardInput })
         if (generation.current !== mine) return
         if (!answer.ok) { setError({ code: answer.code, message: answer.message }); setPlan(null); return }
         setError(null)
@@ -260,7 +283,10 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
       })()
     }, 220)
     return () => { clearTimeout(timer) }
-  }, [props.open, valid, task, goal, acceptance, discipline, props.planAnchor])
+  }, [
+    props.open, valid, task, goal, acceptance, discipline, guardEnabled, guardTasks,
+    guardEvalRoute, guardPlanPath, props.planAnchor,
+  ])
 
   const currentConfig = plan?.config
   const catalog = props.models
@@ -285,7 +311,20 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
       ...(effort === '' ? {} : { reasoningEffort: effort }),
     }
     void (async () => {
-      const answer = await props.startAnchor(operationId.current, { task, goal, acceptance, discipline },
+      const guardInput = guardEnabled ? {
+        guard: {
+          tasks: guardTasks,
+          dryRun: true,
+          ...(guardEvalRoute === '' ? {} : {
+            evaluator: JSON.parse(guardEvalRoute) as { provider: string; model: string },
+          }),
+          ...(guardPlanPath.trim() === '' ? {} : {
+            planPath: guardPlanPath.trim(),
+            ...(plan.guard?.plan === undefined ? {} : { planHash: plan.guard.plan.hash }),
+          }),
+        },
+      } : {}
+      const answer = await props.startAnchor(operationId.current, { task, goal, acceptance, discipline, ...guardInput },
         frozen.snapshotFingerprint, frozen.requestFingerprint, config)
       setBusy(false)
       if (!answer.ok) { setError({ code: answer.code, message: answer.message }); return }
@@ -348,8 +387,50 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
           rows: 5, 'data-redline-anchor-discipline': '1', placeholder: t('anchor.disciplinePlaceholder'),
           value: discipline, onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setDiscipline(event.target.value) },
         })),
+      h('label', { className: 'redline-confirm-task' },
+        h('span', { className: 'redline-confirm-task-label' },
+          h('input', {
+            type: 'checkbox', 'data-redline-anchor-guard': '1', checked: guardEnabled,
+            onChange: (event: ChangeEvent<HTMLInputElement>) => { setGuardEnabled(event.target.checked) },
+          }), ' ', t('anchor.guardLabel')),
+        h('span', { className: 'redline-confirm-task-hint' }, t('anchor.guardHint')),
+        guardEnabled
+          ? h('textarea', {
+            rows: 5, 'data-redline-anchor-guard-tasks': '1', placeholder: t('anchor.guardPlaceholder'),
+            value: guardTasks, onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setGuardTasks(event.target.value) },
+          })
+          : null,
+        guardEnabled
+          ? h('span', { className: 'redline-anchor-guard-options' },
+            h('span', { 'data-redline-anchor-guard-observe': '1' }, t('anchor.guardDryRun')),
+            h('select', {
+              'data-redline-anchor-guard-evaluator': '1', value: guardEvalRoute,
+              onChange: (event: ChangeEvent<HTMLSelectElement>) => { setGuardEvalRoute(event.target.value) },
+            },
+            h('option', { value: '' }, t('anchor.guardEvaluatorSame')),
+            models.map(model => h('option', {
+              key: `${model.provider}/${model.model}`, value: JSON.stringify({ provider: model.provider, model: model.model }),
+            }, `${model.providerName} / ${model.modelName}`))),
+          )
+          : null,
+        guardEnabled
+          ? h('label', { className: 'redline-anchor-guard-plan' },
+            h('span', null, t('anchor.guardPlan')),
+            h('input', {
+              type: 'text', 'data-redline-anchor-guard-plan': '1', placeholder: 'docs/plan.md',
+              value: guardPlanPath, onChange: (event: ChangeEvent<HTMLInputElement>) => { setGuardPlanPath(event.target.value) },
+            }))
+          : null),
       h('div', { className: 'redline-anchor-snapshot' },
         h('div', { className: 'redline-anchor-snapshot-head' }, t('anchor.snapshot')),
+        plan?.guard === undefined ? null : h('div', { className: 'redline-anchor-guard-hash', 'data-redline-anchor-guard-hash': '1' },
+          t('anchor.guardHash', { hash: plan.guard.hash.slice(0, 12), n: plan.guard.taskCount })),
+        plan?.guard?.plan === undefined ? null : h('details', { className: 'redline-anchor-plan-preview', 'data-redline-anchor-plan-preview': '1' },
+          h('summary', null, t('anchor.guardPlanPreview', {
+            path: plan.guard.plan.path.split('/').slice(-2).join('/'), lines: plan.guard.plan.lines,
+            hash: plan.guard.plan.hash.slice(0, 12),
+          })),
+          h('pre', null, plan.guard.plan.headings.slice(0, 12).join('\n') || t('anchor.guardPlanEmpty'))),
         h('pre', {
           'data-redline-anchor-snapshot': '1',
           'data-redline-anchor-snapshot-fingerprint': plan?.snapshotFingerprint ?? '',

@@ -2,6 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { attachGoalGuard, createGuardState, loadGuardState, type GuardSeed } from './goal-guard'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { currentModelSelection, type RedlineModelAgent } from './redline-model-selection'
 import { RUNTIME_ANCHOR_NAME, RUNTIME_ANCHOR_ORDER } from '../shared/redline-carrier'
@@ -71,6 +72,8 @@ export interface CarrierSessionRequest {
   readonly promptText: string
   /** Opt-in runtime rule re-asserted after compaction; never part of the first message. */
   readonly runtimeAnchor?: string
+  /** Opt-in Goal Guard: frozen task list and the three anchor fields. */
+  readonly guard?: GuardSeed
 }
 
 export interface CarrierReturnRequest {
@@ -253,6 +256,13 @@ export function createRedlineSessionControl(
     if (request.runtimeAnchor !== undefined && typeof hostSystemPrompt?.context !== 'function') {
       return { ok: false, state: 'unknown', cause: 'runtime-context-unavailable' }
     }
+    if (request.guard !== undefined) {
+      const existing = await loadGuardState(ctx as never, request.carrierId)
+      if (existing === null) {
+        const created = await createGuardState(ctx as never, request.carrierId, request.guard)
+        if (created === null) return { ok: false, state: 'unknown', cause: 'guard-tasks-invalid' }
+      }
+    }
 
     if (agent === undefined) {
       try {
@@ -269,7 +279,7 @@ export function createRedlineSessionControl(
         const preset = await ctx.agentPresets.resolve(request.agentPreset)
         if (preset.broken !== undefined) return { ok: false, state: 'unknown', cause: `preset-broken:${preset.broken}` }
       }
-      const setup = async (agentCtx: unknown): Promise<void> => {
+      const setup = async (agentCtx: unknown, agent: unknown): Promise<void> => {
         await ctx.agentPresets.mount(agentCtx, request.agentPreset)
         if (request.runtimeAnchor !== undefined) {
           const systemPrompt = systemPromptFace((agentCtx as { get?: (name: string) => unknown }).get?.('systemPrompt')
@@ -282,6 +292,9 @@ export function createRedlineSessionControl(
             interpolate: false,
             required: true,
           })
+        }
+        if (request.guard !== undefined) {
+          await attachGoalGuard(ctx as never, agentCtx as never, agent as never, request.carrierId)
         }
       }
       let handle: CarrierAgentHandle
