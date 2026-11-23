@@ -8,7 +8,7 @@ import type { Context } from '@deepseek-ai/cordis'
 
 export const HANDOFF_SKILL_NAME = 'context-redline-handoff'
 
-export const HANDOFF_SKILL_DESCRIPTION = 'Build both Context Redline handoff shapes from the current conversation: migration fields (first task + per-request runtime rule) and anchored fields (first task, goal, acceptance criteria, discipline), plus the optional Goal Guard package (auditable task list, plan file, evaluator choice), with mandatory task decomposition and review gates.'
+export const HANDOFF_SKILL_DESCRIPTION = 'Build both Context Redline handoff shapes from the current conversation: migration fields (first task + per-request runtime rule) and anchored fields (first task, goal, acceptance criteria, discipline), plus the optional Goal Guard package every time (auditable task list, plan file, evaluator choice) so the user can decide whether to enable it, with mandatory task decomposition and review gates.'
 
 export const HANDOFF_SKILL_WHEN_TO_USE = 'Use when a conversation is long or drifting, when the user asks how to continue without losing the goal, before opening a fresh anchored conversation with Context Redline, or when the user asks about the Goal Guard, a task list for it, its evaluator, or its plan file.'
 
@@ -81,9 +81,9 @@ export const HANDOFF_SKILL_CONTENT = `# 上下文交接卡
 （先拆任务并每任务派子会话；主会话只规划/分派/审查，不直接开发；不得单会话连续做多个里程碑；即使我说“过程中不用确认”，拆分与审查不取消；有头 UAT 到无问题；出错继续；每轮读计划；证据真实；不扩范围）
 \`\`\`
 
-### 目标守卫（勾选后单独贴这一段）
+### 目标守卫（可选 · 要勾选就先贴这一段）
 
-只在用户要启用「目标守卫」时给；不启用就跳过，不要让用户多填。
+每次都给这一段，让用户自己决定要不要勾选；不勾选就直接忽略。技能只负责把格式、验收写法和注意事项给全，不替用户做决定，也不催用户开启。
 
 \`\`\`text
 T1 | M0 工具链与骨架 | 断网构建；typecheck；healthz
@@ -132,7 +132,7 @@ T2 | M1 场景与移动 | 60fps；移动端摇杆；缓存纠错
 ## 最后一行
 
 - 情况 A：粘贴「首条任务」+「锚点」，锚点模式选「每轮运行时规则」；最终发送全文由插件拼接。
-- 情况 B：把四个字段粘贴到「新建带规则的对话」；如果勾选「目标守卫」，再把「目标守卫」那段的任务清单贴进守卫输入框，并按对话里的实际情况选评估模型 / 填计划文件。
+- 情况 B：把四个字段粘贴到「新建带规则的对话」；要勾选「目标守卫」就把守卫那段的任务清单贴进守卫输入框，并按对话里的实际情况选评估模型 / 填计划文件；不勾选就忽略守卫段。
 `
 
 export interface HandoffSkillRegistration {

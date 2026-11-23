@@ -20,7 +20,7 @@
 
 > A DeepSeek Harness community plugin. It does not modify DSH source or rewrite the source session log.
 >
-> **Version `0.9.1` — supports DSH `>=0.2.3-alpha.2 <0.3.0-0`.** Built and regression-tested against `0.2.3-alpha.2`; Node.js `^24.22.3 || >=26.13.1` is required. DSH `0.3.0` prereleases are excluded.
+> **Version `0.9.2` — supports DSH `>=0.2.3-alpha.2 <0.3.0-0`.** Built and regression-tested against `0.2.3-alpha.2`; Node.js `^24.22.3 || >=26.13.1` is required. DSH `0.3.0` prereleases are excluded.
 
 Edits stay local until confirmation. The plugin then opens a zero-history ordinary session in the current workspace and sends the exact final message you approved. When the task finishes, its bound result returns verbatim to the source session.
 
@@ -36,7 +36,7 @@ Edits stay local until confirmation. The plugin then opens a zero-history ordina
 - **Local redlining.** Edit user messages, injected/skill material, assistant migration copies, and paired tool results.
 - **Reversible deletion.** Delete means “do not migrate this identity”; the source log remains append-only.
 - **Authoritative final message.** The confirmation textarea is the exact first user message written to the new session.
-- **Handoff skill.** The plugin contributes a runtime skill, `context-redline-handoff`: it reads the current conversation and outputs both handoff shapes — the migration fields (first task + per-request rule anchor) and the anchored conversation fields (first task, goal, acceptance criteria, discipline), with mandatory task decomposition, role separation, and conditional headed UAT. When the anchored conversation will enable the Goal Guard, it also emits a ready-to-paste guard block: a task list whose acceptance items the independent evaluator can judge without the conversation, the plan-file path (or an explicit “leave it empty”), and the evaluator choice — never inventing provider/model names.
+- **Handoff skill.** The plugin contributes a runtime skill, `context-redline-handoff`: it reads the current conversation and outputs both handoff shapes — the migration fields (first task + per-request rule anchor) and the anchored conversation fields (first task, goal, acceptance criteria, discipline), with mandatory task decomposition, role separation, and conditional headed UAT. It also always emits the optional Goal Guard block, so the user decides whether to check it: a task list whose acceptance items the independent evaluator can judge without the conversation, the plan-file path (or an explicit “leave it empty”), and the evaluator choice — never inventing provider/model names.
 - **Anchored conversation without migration.** Starts an independent root conversation from a task plus a frozen runtime snapshot of goal, acceptance criteria and discipline. Nothing is copied from the current session and no result is returned to it.
 - **Goal Guard (0.9 beta, observe only).** An anchored conversation can opt into a per-session guard: the goal, acceptance, discipline and a task list are frozen into one hash, and after each turn an independent evaluator (its own model call, optionally on another route) judges the current task against the frozen card and records a verdict plus a correction suggestion on the guard card. In 0.9.0 it never blocks a tool and never steers the session; blocking is a later version. The evaluator sees only the frozen card, the current task and a bounded excerpt of what the session produced since that task started — never the full history.
 - **DNA fingerprint mode.** The trend bars can switch to a per-item gradient in the model’s read order; the browser’s DNA switch and the trend switch move together. DNA currently forces total semantics.
@@ -68,10 +68,10 @@ Requires DeepSeek Harness `0.2.3-alpha.2` or a newer supported `0.2.x`, plus Nod
 Install or upgrade to this exact release:
 
 ```sh
-dsh plugin --profile web add dsh-context-redline@0.9.1
+dsh plugin --profile web add dsh-context-redline@0.9.2
 ```
 
-This release completes the Goal Guard story in the handoff skill. `context-redline-handoff` now emits the **whole guard package** for an anchored conversation, derived from the conversation itself: the task list (with acceptance items an independent evaluator can judge without the history), whether a plan file exists and which path to freeze, and the evaluator choice — while explicitly refusing to invent provider/model names, and telling the user the guard is observe-only in 0.9.x. It keeps 0.9.0's guard behaviour unchanged: a frozen goal card, a task ledger, one independent evaluator call per turn, a guard card with verdict/correction/evaluator cost and pause/resume; no tool blocking, no steering, no turn stopping. Automated tests do not constitute production visual or real-session acceptance.
+This release makes the optional Goal Guard block a standard part of every handoff card. The skill no longer waits for an explicit “enable the guard” request: it always emits the guard block — task list with acceptance the independent evaluator can judge, the plan-file choice, the evaluator choice, and the observe-only note — and the user simply ignores it when they do not want the guard. Output is only text: nothing is enabled by printing it, and the guard still starts only when the box is checked. Automated tests do not constitute production visual or real-session acceptance.
 
 Local development:
 

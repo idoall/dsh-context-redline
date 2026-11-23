@@ -1,5 +1,15 @@
 # 更新日志 / Changelog
 
+## [0.9.2] — 2026-11-23
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.3-alpha.2 <0.3.0-0`; verified with `0.2.3-alpha.2`. Node.js `^24.22.3 || >=26.13.1`.
+
+### 变更 / Changed
+
+- `context-redline-handoff` 每次都输出可选的「目标守卫」段，不再等用户先说要开守卫；不勾选就忽略。技能只给格式与提醒，不替用户做决定也不催开启。
+- 守卫段内容不变：可被独立评估器判定的任务清单、计划文件（无明确路径就写“不填”）、评估模型（不编造 provider/model 名称）、0.9.x 只观察说明。
+- 输出只是文字，不会因为打印而启用守卫；守卫仍然只在勾选后创建。
+
 ## [0.9.1] — 2026-11-23
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.3-alpha.2 <0.3.0-0`; verified with `0.2.3-alpha.2`. Node.js `^24.22.3 || >=26.13.1`.

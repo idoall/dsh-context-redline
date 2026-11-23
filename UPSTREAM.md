@@ -144,6 +144,10 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 
 - Extend the handoff skill to emit the complete Goal Guard package derived from the conversation (auditable task list, plan-file path or an explicit empty choice, evaluator choice without inventing routes) and to trigger on guard questions. Guard behaviour is unchanged.
 
+### Always-offer guard block (0.9.2, 2026-11-23)
+
+- The handoff skill always emits the optional Goal Guard block instead of waiting for an explicit request; printing the block enables nothing, and the user still decides whether to check the box.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.
