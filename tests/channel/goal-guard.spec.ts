@@ -187,6 +187,99 @@ describe('goal guard core (0.9.0)', () => {
     assert.deepEqual(seeds, [], 'observe-only: no steering')
   })
 
+  test('observe mode evaluates even when the main session wrote its own records', async () => {
+    const home = await tempHome()
+    const events = [
+      { seq: 1, type: 'tool/call', data: { name: 'write', arguments: '{"file_path":"/w/reports/review/T1.md"}' } },
+      { seq: 2, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: 'wrote the review record' }] } } },
+      { seq: 3, type: 'tool/call', data: { name: 'subagent' } },
+    ]
+    let seenOptions: Record<string, unknown> | undefined
+    const ctx = {
+      get(name: string) {
+        if (name === 'dshHomePath') return () => home
+        if (name === 'sessionQuery') return { readSession: async () => ({ events }) }
+        if (name === 'llm') {
+          return {
+            prepareCall: async () => ({
+              config: { provider: 'p', model: 'm', temperature: 0, maxTokens: 2500 },
+              stream: (options: Record<string, unknown>) => {
+                seenOptions = options
+                return (async function* () {
+                  const state = await loadGuardState(ctx as never, 'session-guard-observe-writes')
+                  const payload = JSON.stringify({
+                    goal_hash: state?.goalHash, verdict: 'pass',
+                    criteria: [{ id: 'e1', status: 'met', why: 'review record written' }],
+                    violations: [], missing: [], correction: '', next_action: 'continue',
+                  })
+                  yield { type: 'text-delta', index: 0, text: payload }
+                  yield { type: 'block-end', index: 0, block: { type: 'text', text: payload } }
+                })()
+              },
+            }),
+          }
+        }
+        return undefined
+      },
+    }
+    await createGuardState(ctx as never, 'session-guard-observe-writes', {
+      goal: 'g', acceptance: 'a', discipline: 'd', tasks: 'T1 | one | e1\nT2 | two | e2',
+    })
+    let stopping: (() => void | Promise<void>) | undefined
+    const agent = { id: 'session-guard-observe-writes', model: { current: () => ({ provider: 'p', model: 'm' }) }, steer: () => {} }
+    const agentCtx = {
+      get(name: string) { if (name === 'systemPrompt') return { context: () => {} }; return undefined },
+      on(name: string, fn: () => void | Promise<void>) { if (name === 'agent/turn-stopping') stopping = fn },
+    }
+    await attachGoalGuard(ctx as never, agentCtx as never, agent as never, 'session-guard-observe-writes')
+    await stopping?.()
+
+    const after = await loadGuardState(ctx as never, 'session-guard-observe-writes')
+    assert.equal(after?.verdict, 'pass', 'the evaluator judged the writes acceptable')
+    assert.equal(after?.current, 1, 'a pass advances the ledger instead of pinning it')
+    assert.equal(after?.tasks[0]?.status, 'passed')
+    assert.equal(after?.lastEval?.model, 'p/m')
+    assert.equal(after?.lastAudit?.ran, true)
+    const prompt = String((seenOptions?.messages as { content: { text: string }[] }[])[0]?.content[0]?.text)
+    assert.match(prompt, /reports\/review\/T1\.md/, 'the evaluator receives the write PATHS, not just a count')
+  })
+
+  test('the short anchor is injected at the head and the tail of every prompt', async () => {
+    const home = await tempHome()
+    const ctx = fakeCtx(home) as never
+    await createGuardState(ctx, 'session-guard-anchor', {
+      goal: 'ship the thing', acceptance: 'it works', discipline: 'stay in scope', tasks: 'T1 | one | e1',
+    })
+    const registrations: { name: string, order: number, text: string }[] = []
+    const agentCtx = {
+      get(name: string) {
+        if (name === 'systemPrompt') {
+          return {
+            context(input: { name: string, order: number, text: () => string }) {
+              registrations.push({ name: input.name, order: input.order, text: input.text() })
+            },
+          }
+        }
+        return undefined
+      },
+      on() {},
+    }
+    await attachGoalGuard(ctx, agentCtx as never, { id: 'session-guard-anchor' } as never, 'session-guard-anchor')
+    const names = registrations.map(item => item.name)
+    assert.deepEqual(names, ['redline:goal-guard', 'redline:goal-guard-head', 'redline:goal-guard-tail'])
+    const head = registrations[1]
+    const tail = registrations[2]
+    assert.equal(head.order, 90)
+    assert.equal(tail.order, 900)
+    for (const anchor of [head, tail]) {
+      assert.match(anchor.text, /目标守卫 · 锚点/)
+      assert.match(anchor.text, /当前任务：T1 \| one/)
+      assert.match(anchor.text, /硬规则：/)
+      assert.match(anchor.text, /停止条件：/)
+      assert.ok(anchor.text.length < 1200, 'the anchor stays short on purpose')
+    }
+  })
+
   test('attaches only to the guarded agent and denies direct writes and premature completion', async () => {
     const home = await tempHome()
     const ctx = fakeCtx(home) as never

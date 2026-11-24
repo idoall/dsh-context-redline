@@ -156,6 +156,10 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 
 - Separate main-session review from user approval in the handoff skill: the main session reviews a task and continues, a milestone earns one report, and “no confirmation during the process” moves the single report to the end. Only a goal/acceptance change, a broken premise, an irreversible side effect, or a safety conflict stops the run; a checklist item catches cards that turn review into per-task approval.
 
+### Guard observe-mode evaluation and head/tail anchors (0.9.5, 2026-11-24)
+
+- Observe mode evaluates every turn instead of short-circuiting on a tool-name count, and passes the main session write PATHS to the evaluator; a pass advances the ledger, and the card reports when an audit did not run. Adds a short invariant block injected at the head (order 90) and tail (order 900) of every prompt beside the full card, refreshed from live state.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

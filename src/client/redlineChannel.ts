@@ -232,6 +232,11 @@ export interface GuardStatus {
   readonly dryRun: boolean
   readonly evaluatorProvider?: string
   readonly evaluatorModel?: string
+  readonly lastAudit?: {
+    readonly at: number
+    readonly ran: boolean
+    readonly note: string
+  }
   readonly lastEval?: {
     readonly verdict: string
     readonly model: string

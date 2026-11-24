@@ -272,6 +272,9 @@ export function makeContextView(
         guard.verdict === null ? null : h('div', { className: 'redline-guard-verdict' },
           t('guard.verdict', { verdict: guard.verdict }),
           guard.correction === '' ? null : h('span', { className: 'redline-guard-correction' }, ' · ' + guard.correction)),
+        guard.lastAudit !== undefined && !guard.lastAudit.ran
+          ? h('div', { className: 'redline-guard-eval' }, t('guard.notEvaluated', { note: guard.lastAudit.note }))
+          : null,
         guard.lastEval === undefined ? null : h('div', { className: 'redline-guard-eval' },
           t('guard.lastEval', {
             model: guard.lastEval.model,
