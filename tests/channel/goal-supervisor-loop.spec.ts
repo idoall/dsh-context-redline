@@ -1422,4 +1422,89 @@ describe('goal-supervisor residue outside the finishing scope', () => {
     assert.equal(afterT4.tasks[3]?.status, 'BLOCKED', 'the stale residue must not excuse the deletion')
     assert.match(afterT4.tasks[3]?.blocked?.reason ?? '', /scope 外改动/)
   })
+
+  test('preparing the next task file early is not blamed on the running task', async () => {
+    const cwd = await repo()
+    const runId = (await prepareGuardRun(cwd, {
+      goal: 'g', acceptance: 'a', discipline: 'd',
+      tasks: 'T1 | 一 | 文件存在 | src/a.ts\nT2 | 二 | 文件存在 | src/b.ts',
+      // sequential: T2 is not in this turn's batch, so it is not a "sibling" —
+      // but its scope is still a declared claim on src/b.ts.
+      parallel: 1,
+      enforcement: 'enforce',
+      scopes: { T1: ['src/a.ts'], T2: ['src/b.ts'] },
+      probes: [{ id: 'P1', taskId: 'T1', weight: 'light', spec: { kind: 'file_exists', path: 'src/a.ts' }, enabled: true }],
+    })).runId
+    await mkdir(join(cwd, 'src'), { recursive: true })
+    await writeFile(join(cwd, 'src/a.ts'), 'a')
+    // The agent also prepares T2's file in the same turn.
+    await writeFile(join(cwd, 'src/b.ts'), 'b')
+    const attached = await attachSupervisor({ ...deps(cwd, runId, {}), cwd, runId } as never)
+    await attached.handler()
+
+    const state = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+    assert.equal(state.tasks[0]?.status, 'DONE', 'a later task\'s declared file is not this task\'s violation')
+    const events = (await readFile(join(cwd, 'docs/guard', runId, 'state.jsonl'), 'utf8')).trim().split('\n')
+      .map(line => JSON.parse(line) as { type: string })
+    assert.ok(!events.some(event => event.type === 'scope.violation'))
+  })
+
+  test('modifying a FINISHED task file is still a violation', async () => {
+    const cwd = await repo()
+    const runId = (await prepareGuardRun(cwd, {
+      goal: 'g', acceptance: 'a', discipline: 'd',
+      tasks: 'T1 | 一 | 文件存在 | src/a.ts\nT2 | 二 | 文件存在 | src/b.ts',
+      parallel: 1,
+      enforcement: 'enforce',
+      scopes: { T1: ['src/a.ts'], T2: ['src/b.ts'] },
+      probes: [
+        { id: 'P1', taskId: 'T1', weight: 'light', spec: { kind: 'file_exists', path: 'src/a.ts' }, enabled: true },
+        { id: 'P2', taskId: 'T2', weight: 'light', spec: { kind: 'file_exists', path: 'src/b.ts' }, enabled: true },
+      ],
+    })).runId
+    await mkdir(join(cwd, 'src'), { recursive: true })
+    await writeFile(join(cwd, 'src/a.ts'), 'a')
+    const attached = await attachSupervisor({ ...deps(cwd, runId, {}), cwd, runId } as never)
+    await attached.handler()
+    // T2 now runs and stomps on T1's finished file.
+    await writeFile(join(cwd, 'src/b.ts'), 'b')
+    await writeFile(join(cwd, 'src/a.ts'), 'tampered')
+    await attached.handler()
+
+    const state = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+    assert.equal(state.tasks[1]?.status, 'BLOCKED', 'a DONE task\'s file is not a free pass')
+    assert.match(state.tasks[1]?.blocked?.reason ?? '', /scope 外改动/)
+  })
+
+  test('a task a rollback reopened owns its files again even without a base commit', async () => {
+    const cwd = await repo()
+    const runId = (await prepareGuardRun(cwd, {
+      goal: 'g', acceptance: 'a', discipline: 'd',
+      tasks: 'T1 | 一 | 文件存在 | a.ts\nT2 | 二 | 文件存在 | b.ts',
+      parallel: 1,
+      enforcement: 'enforce',
+      scopes: { T1: ['a.ts'], T2: ['b.ts'] },
+      probes: [{ id: 'P1', taskId: 'T1', weight: 'light', spec: { kind: 'file_exists', path: 'a.ts' }, enabled: true }],
+    })).runId
+    const tasksPath = join(cwd, 'docs', 'guard', runId, 'tasks.json')
+    const state = JSON.parse(await readFile(tasksPath, 'utf8')) as GuardState
+    // A ledger a rollback edited: T2 is back to TODO, and this workspace has no
+    // commit to advance it to, so it has no baseCommit. It still owns b.ts.
+    await writeFile(tasksPath, JSON.stringify({
+      ...state,
+      tasks: [
+        state.tasks[0],
+        { ...state.tasks[1]!, status: 'TODO', reopenedAt: Date.now(), scope: ['b.ts'] },
+      ],
+      activeTaskIds: [],
+    }, null, 2), 'utf8')
+    await writeFile(join(cwd, 'a.ts'), 'a')
+    await writeFile(join(cwd, 'b.ts'), 'stomped by the retry')
+    const attached = await attachSupervisor({ ...deps(cwd, runId, {}), cwd, runId } as never)
+    await attached.handler()
+
+    const after = JSON.parse(await readFile(tasksPath, 'utf8')) as GuardState
+    assert.equal(after.tasks[0]?.status, 'BLOCKED', 'a reopened task is not an excuse')
+    assert.match(after.tasks[0]?.blocked?.reason ?? '', /scope 外改动/)
+  })
 })

@@ -112,4 +112,20 @@ describe('goal-supervisor anchor completion claims', () => {
     assert.ok(!text.includes('全部完成'), text)
     assert.match(text, /进度：1\/2/)
   })
+
+  test('a pending task declares its scope, and the rules forbid stopping to ask', () => {
+    const only = state().tasks[0]
+    assert.ok(only !== undefined)
+    const pending = { ...only, id: 'T2', title: '后面那条', status: 'TODO' as const, scope: ['src/b.ts'] }
+    const text = renderAnchor(state({ tasks: [{ ...only, scope: ['src/a.ts'] }, pending] }))
+    // The running task may not write src/b.ts, and it can only know that if the
+    // anchor says whose file it is.
+    assert.match(text, /其他任务 scope（不是你的）：T2 src\/b\.ts/)
+    // A finished task's scope is closed, not an invitation.
+    const finished = { ...pending, status: 'DONE' as const }
+    const afterDone = renderAnchor(state({ tasks: [{ ...only, scope: ['src/a.ts'] }, finished] }))
+    assert.ok(!afterDone.includes('其他任务 scope'), 'a DONE scope is not listed')
+    // The rule the user keeps asking for: no mid-run confirmation.
+    assert.match(text, /不要中途向用户提问/)
+  })
 })

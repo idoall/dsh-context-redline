@@ -922,8 +922,24 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
   const siblingScopes = state.tasks
     .filter(item => item.id !== task.id && batchIds.includes(item.id))
     .map(item => item.scope)
+  // A task that has not started yet still DECLARED its files. An agent that
+  // prepares the next task's file in the same turn is not writing out of scope —
+  // that path is the next task's business, and its own audit will judge it. A
+  // DONE task's scope is deliberately NOT excused: touching finished work is a
+  // real violation.
+  // `reopenedAt` matters: a task a rollback put back to TODO owns its files again,
+  // so a sibling retry must not be excused for touching them.
+  const upcomingScopes = state.tasks
+    .filter(item => item.id !== task.id
+      && item.status === 'TODO'
+      && item.baseCommit === undefined
+      && item.reopenedAt === undefined
+      && item.scope.length > 0)
+    .map(item => item.scope)
   const withSiblingsExcluded = (path: string): boolean =>
-    !pathInScope(path, liveTask.scope) && !siblingScopes.some(scope => pathInScope(path, scope))
+    !pathInScope(path, liveTask.scope)
+    && !siblingScopes.some(scope => pathInScope(path, scope))
+    && !upcomingScopes.some(scope => pathInScope(path, scope))
 
   if (allRequiredPass) {
     const scopeHash = await scopeFingerprint(deps, state, guardDir, liveTask)

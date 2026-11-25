@@ -13,7 +13,8 @@ import type { GuardTask, GuardState } from './schema'
 /** Hard budget per side; the block is re-read on every step, so it stays short. */
 export const ANCHOR_BUDGET_BYTES = 2048
 
-const RULES = '硬规则：主会话只规划/分派/审查，不直接写业务代码、不执行命令（写自己的计划/审查记录除外）；只改本任务 scope 内的文件；不扩范围。'
+const RULES = '硬规则：主会话只规划/分派/审查，不直接写业务代码、不执行命令（写自己的计划/审查记录除外）；只改本任务 scope 内的文件；不扩范围；'
+  + '不要中途向用户提问、也不要逐任务等确认 —— 遇到阻塞就把原因写进 tasks/<ID>/notes.md 后停下，全部结束后一次性汇报。'
 const STOP = '停止条件：目标或验收要改；实测前提被打破；不可逆或外部副作用；安全或合规冲突。'
 
 function clipBytes(text: string, maxBytes: number): string {
@@ -90,6 +91,13 @@ function buildBody(state: GuardState): BuiltBody {
     // or the model is told to stop on a run that is waiting for a human.
     const allDone = state.tasks.every(task => task.status === 'DONE')
     taskBlock.push(allDone ? '当前任务：（全部完成）' : '当前任务：（已阻塞，等待人工介入）')
+  }
+  // A later task's declared scope is not free to write, and the running task
+  // cannot know that unless it is shown. Finished scopes are omitted: they are
+  // closed, not an invitation.
+  const upcoming = state.tasks.filter(item => item.status === 'TODO' && item.scope.length > 0)
+  if (upcoming.length > 0) {
+    taskBlock.push(`其他任务 scope（不是你的）：${upcoming.map(item => `${item.id} ${item.scope.join('、')}`).join('；')}`)
   }
   const taskRaw = taskBlock.join('\n')
   const taskText = room > 16 ? clipBytes(taskRaw, room) : ''
