@@ -436,6 +436,7 @@ export async function rollbackRun(request: RollbackRequest): Promise<RollbackOut
         probeResults: {},
         lastEvalAt: undefined,
         lastEvalScopeHash: undefined,
+        evalUnavailableStreak: undefined,
         // Keep the offset at the current end of notes.md: the guidance skeleton
         // (and anything already written) must not read as a fresh declaration.
         lastEvalOffset: notesLength,

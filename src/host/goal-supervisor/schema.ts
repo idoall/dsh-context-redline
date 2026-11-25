@@ -123,6 +123,8 @@ export interface GuardTask {
   readonly lastEvalScopeHash?: string
   /** JS string offset of notes.md at the last evaluation, for new-completion detection. */
   readonly lastEvalOffset?: number
+  /** Consecutive evaluator outages (`unavailable`); cleared on any real verdict or rollback. */
+  readonly evalUnavailableStreak?: number
 }
 
 export interface SmokeCommand {
@@ -283,7 +285,8 @@ export type GuardEvent =
   | { readonly type: 'anchor.truncated'; readonly at: number; readonly side: 'head' | 'tail'; readonly originalBytes: number; readonly keptBytes: number }
   | { readonly type: 'task.started'; readonly at: number; readonly taskId: string; readonly baseCommit?: string }
   | { readonly type: 'probe.run'; readonly at: number; readonly taskId: string; readonly probeId: string; readonly weight: 'light' | 'heavy'; readonly result: ProbeResult; readonly sha256?: string }
-  | { readonly type: 'eval.done'; readonly at: number; readonly taskId: string; readonly verdict: Verdict; readonly model: string; readonly latencyMs: number }
+  | { readonly type: 'eval.done'; readonly at: number; readonly taskId: string; readonly verdict: Verdict; readonly model: string; readonly latencyMs: number; readonly reason?: string }
+  | { readonly type: 'eval.unavailable'; readonly at: number; readonly taskId: string; readonly reason: string; readonly model: string; readonly latencyMs: number; readonly streak: number }
   | { readonly type: 'progress.eval'; readonly at: number; readonly taskId: string; readonly verdict: ProgressEvalVerdict; readonly signature: string; readonly exemptionCount: number }
   | { readonly type: 'scope.violation'; readonly at: number; readonly taskId: string; readonly paths: readonly string[]; readonly enforcement: EnforcementMode }
   | { readonly type: 'scope.request' | 'scope.approved' | 'scope.rejected'; readonly at: number; readonly requestId: string; readonly taskId: string; readonly paths: readonly string[]; readonly by?: 'adjudicator' | 'human' }

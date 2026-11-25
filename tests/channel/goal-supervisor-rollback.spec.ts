@@ -671,6 +671,7 @@ describe('goal-supervisor rollback retry', () => {
           ...state.tasks[1]!, status: 'BLOCKED',
           attempts,
           probeResults: { P1: { result: 'fail' as const, at: 1 } },
+          evalUnavailableStreak: 3,
           lastEvalAt: 1, lastEvalScopeHash: 'old-hash',
           blocked: { reason: '达到 50 次上限', next: '回退', remainingCandidates: [], at: Date.now() },
         },
@@ -686,6 +687,7 @@ describe('goal-supervisor rollback retry', () => {
     assert.deepEqual(reopened?.attempts, [], 'the attempt budget is fresh again')
     assert.deepEqual(reopened?.probeResults, {}, 'stale probe verdicts do not survive the reopen')
     assert.equal(reopened?.lastEvalScopeHash, undefined)
+    assert.equal(reopened?.evalUnavailableStreak, undefined, 'evaluator outage streak clears on reopen')
   })
 
   test('a BLOCKED task wins over an IN_PROGRESS sibling', async () => {

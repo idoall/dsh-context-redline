@@ -128,4 +128,31 @@ describe('goal-supervisor anchor completion claims', () => {
     // The rule the user keeps asking for: no mid-run confirmation.
     assert.match(text, /不要中途向用户提问/)
   })
+
+  test('does not list the currently starting TODO task under other tasks scope', () => {
+    const first = state().tasks[0]!
+    const turnOne = state({
+      tasks: [
+        { ...first, id: 'T1', status: 'TODO', scope: ['src/a.ts'] },
+        { ...first, id: 'T2', title: '后面那条', status: 'TODO', scope: ['src/b.ts'] },
+      ],
+      activeTaskIds: [],
+    })
+    const textOne = renderAnchor(turnOne)
+    assert.match(textOne, /当前任务：T1/)
+    assert.match(textOne, /本任务 scope：src\/a\.ts/)
+    assert.match(textOne, /其他任务 scope（不是你的）：T2 src\/b\.ts/)
+    assert.ok(!/其他任务 scope（不是你的）：[^\n]*T1/.test(textOne), `T1 must not be listed as another task: ${textOne}`)
+
+    const transition = state({
+      tasks: [
+        { ...first, id: 'T1', status: 'DONE', scope: ['src/a.ts'] },
+        { ...first, id: 'T2', title: '后面那条', status: 'TODO', scope: ['src/b.ts'] },
+      ],
+      activeTaskIds: [],
+    })
+    const textTwo = renderAnchor(transition)
+    assert.match(textTwo, /当前任务：T2/)
+    assert.ok(!textTwo.includes('其他任务 scope'), `T2 is the active task, not another task: ${textTwo}`)
+  })
 })

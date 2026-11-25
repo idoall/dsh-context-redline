@@ -1507,4 +1507,284 @@ describe('goal-supervisor residue outside the finishing scope', () => {
     assert.equal(after.tasks[0]?.status, 'BLOCKED', 'a reopened task is not an excuse')
     assert.match(after.tasks[0]?.blocked?.reason ?? '', /scope 外改动/)
   })
+
+  test('a committed write to a future task scope is NOT excused in enforce mode', async () => {
+    const cwd = await repo()
+    const runId = (await prepareGuardRun(cwd, {
+      goal: 'g', acceptance: 'a', discipline: 'd',
+      tasks: 'T1 | 一 | 文件存在 | src/a.ts\nT2 | 二 | 文件存在 | src/b.ts',
+      parallel: 1,
+      enforcement: 'enforce',
+      scopes: { T1: ['src/a.ts'], T2: ['src/b.ts'] },
+      probes: [{ id: 'P1', taskId: 'T1', weight: 'light', spec: { kind: 'file_exists', path: 'src/a.ts' }, enabled: true }],
+    })).runId
+    const attached = await attachSupervisor({ ...deps(cwd, runId, {}), cwd, runId } as never)
+    // Turn 1: start T1 and record its baseCommit while probe fails.
+    await attached.handler()
+    await mkdir(join(cwd, 'src'), { recursive: true })
+    await writeFile(join(cwd, 'src/a.ts'), 'a')
+    // A subagent commits T2's file while T1 is running: letting T1 tag above it
+    // would move T2's baseCommit past src/b.ts and break T2's audit/rollback.
+    await writeFile(join(cwd, 'src/b.ts'), 'committed early')
+    await run('git', ['add', 'src/b.ts'], { cwd })
+    await run('git', ['commit', '-qm', 'subagent committed T2 file'], { cwd })
+    await attached.handler()
+
+    const state = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+    assert.equal(state.tasks[0]?.status, 'BLOCKED', 'a committed future-task file must block T1')
+    assert.match(state.tasks[0]?.blocked?.reason ?? '', /scope 外改动/)
+  })
+})
+
+describe('goal-supervisor evaluator reliability and evidence', () => {
+  test('evaluator outage does not burn attempts or cursors, resets on recovery, and blocks after 3 consecutive outages', async () => {
+    const cwd = await repo()
+    const runId = (await prepareGuardRun(cwd, {
+      goal: 'g', acceptance: 'a', discipline: 'd',
+      tasks: 'T1 | 一 | 文件存在 | src/a.ts',
+      scopes: { T1: ['src/a.ts'] },
+      probes: [{ id: 'P1', taskId: 'T1', weight: 'light', spec: { kind: 'file_exists', path: 'src/a.ts' }, enabled: true }],
+    })).runId
+    await mkdir(join(cwd, 'src'), { recursive: true })
+    await writeFile(join(cwd, 'src/a.ts'), 'export const a = 1\n')
+    const notesPath = join(cwd, 'docs/guard', runId, 'tasks/T1/notes.md')
+    const initial = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+    const initialOffset = initial.tasks[0]?.lastEvalOffset ?? 0
+    await writeFile(notesPath, `${await readFile(notesPath, 'utf8')}\n## 完成声明\n完成 T1\n`, 'utf8')
+
+    let call = 0
+    const base = deps(cwd, runId, {})
+    const flaky = {
+      ...base,
+      ctx: {
+        get(name: string) {
+          if (name !== 'llm') return base.ctx.get(name)
+          return {
+            prepareCall: async () => {
+              call += 1
+              if (call <= 2) throw new Error('gateway timeout 504')
+              const tasks = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+              const payload = JSON.stringify({
+                goal_hash: tasks.goalHash, verdict: 'pass', criteria: [], violations: [], missing: [], correction: '', next_action: 'continue',
+              })
+              return {
+                config: { provider: 'p', model: 'm', temperature: 0, maxTokens: 4000 },
+                stream: () => (async function* () {
+                  yield { type: 'text-delta', index: 0, text: payload }
+                  yield { type: 'block-end', index: 0, block: { type: 'text', text: payload } }
+                })(),
+              }
+            },
+          }
+        },
+      },
+    }
+    const attached = await attachSupervisor({ ...flaky, cwd, runId } as never)
+    // Outage #1 and #2: no attempt consumed, cursors untouched, streak increments.
+    await attached.handler()
+    let after = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+    assert.equal(after.tasks[0]?.status, 'IN_PROGRESS')
+    assert.equal(after.tasks[0]?.attempts.length, 0, 'outage must not consume attempts')
+    assert.equal(after.tasks[0]?.lastEvalScopeHash, undefined, 'outage must not advance scope hash')
+    assert.equal(after.tasks[0]?.lastEvalOffset, initialOffset, 'outage must not consume completion note offset')
+    assert.equal(after.tasks[0]?.evalUnavailableStreak, 1)
+
+    await attached.handler()
+    after = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+    assert.equal(after.tasks[0]?.evalUnavailableStreak, 2)
+    assert.equal(after.tasks[0]?.attempts.length, 0)
+
+    // Turn 3 recovers: task completes and streak resets.
+    await attached.handler()
+    after = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+    assert.equal(after.tasks[0]?.status, 'DONE')
+    assert.equal(after.tasks[0]?.evalUnavailableStreak, undefined)
+
+    const events = (await readFile(join(cwd, 'docs/guard', runId, 'state.jsonl'), 'utf8')).trim().split('\n')
+      .map(line => JSON.parse(line) as { type: string; reason?: string; streak?: number })
+    const outages = events.filter(event => event.type === 'eval.unavailable')
+    assert.equal(outages.length, 2)
+    assert.equal(outages[0]?.streak, 1)
+    assert.match(outages[0]?.reason ?? '', /gateway timeout 504/)
+
+    // Now test 3 consecutive outages blocking with a clear reason.
+    const cwd2 = await repo()
+    const runId2 = (await prepareGuardRun(cwd2, {
+      goal: 'g', acceptance: 'a', discipline: 'd',
+      tasks: 'T1 | 一 | 文件存在 | src/a.ts',
+      scopes: { T1: ['src/a.ts'] },
+      probes: [{ id: 'P1', taskId: 'T1', weight: 'light', spec: { kind: 'file_exists', path: 'src/a.ts' }, enabled: true }],
+    })).runId
+    await mkdir(join(cwd2, 'src'), { recursive: true })
+    await writeFile(join(cwd2, 'src/a.ts'), 'a')
+    const base2 = deps(cwd2, runId2, {})
+    const alwaysDown = {
+      ...base2,
+      ctx: {
+        get(name: string) {
+          if (name === 'llm') return { prepareCall: async () => { throw new Error('connection refused') } }
+          return base2.ctx.get(name)
+        },
+      },
+    }
+    const attached2 = await attachSupervisor({ ...alwaysDown, cwd: cwd2, runId: runId2 } as never)
+    await attached2.handler()
+    await attached2.handler()
+    await attached2.handler()
+    const blocked = JSON.parse(await readFile(join(cwd2, 'docs/guard', runId2, 'tasks.json'), 'utf8')) as GuardState
+    assert.equal(blocked.tasks[0]?.status, 'BLOCKED')
+    assert.equal(blocked.tasks[0]?.attempts.length, 0)
+    assert.match(blocked.tasks[0]?.blocked?.reason ?? '', /评估器连续 3 次不可用/)
+    assert.match(blocked.tasks[0]?.blocked?.reason ?? '', /connection refused/)
+  })
+
+  test('goal hash mismatch blocks immediately instead of retrying as an outage', async () => {
+    const cwd = await repo()
+    const runId = (await prepareGuardRun(cwd, {
+      goal: 'g', acceptance: 'a', discipline: 'd',
+      tasks: 'T1 | 一 | 文件存在 | a.ts',
+      scopes: { T1: ['a.ts'] },
+      probes: [{ id: 'P1', taskId: 'T1', weight: 'light', spec: { kind: 'file_exists', path: 'a.ts' }, enabled: true }],
+    })).runId
+    await writeFile(join(cwd, 'a.ts'), 'ok')
+    const base = deps(cwd, runId, {})
+    const wrongHash = {
+      ...base,
+      ctx: {
+        get(name: string) {
+          if (name !== 'llm') return base.ctx.get(name)
+          const payload = JSON.stringify({ goal_hash: 'tampered', verdict: 'pass', criteria: [], violations: [], missing: [], correction: '', next_action: 'continue' })
+          return {
+            prepareCall: async () => ({
+              config: { provider: 'p', model: 'm', temperature: 0, maxTokens: 4000 },
+              stream: () => (async function* () {
+                yield { type: 'text-delta', index: 0, text: payload }
+                yield { type: 'block-end', index: 0, block: { type: 'text', text: payload } }
+              })(),
+            }),
+          }
+        },
+      },
+    }
+    const attached = await attachSupervisor({ ...wrongHash, cwd, runId } as never)
+    await attached.handler()
+    const state = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+    assert.equal(state.tasks[0]?.status, 'BLOCKED', 'integrity mismatch must block on the first hit')
+    assert.match(state.tasks[0]?.blocked?.reason ?? '', /目标 hash 不匹配/)
+    const events = (await readFile(join(cwd, 'docs/guard', runId, 'state.jsonl'), 'utf8')).trim().split('\n')
+      .map(line => JSON.parse(line) as { type: string; reason?: string })
+    assert.ok(events.some(event => event.type === 'eval.done' && /目标 hash 不匹配/.test(event.reason ?? '')))
+  })
+
+  test('alternating fail and insufficient verdicts on an unchanged workspace still converge via progress evaluation', async () => {
+    const cwd = await repo()
+    const runId = (await prepareGuardRun(cwd, {
+      goal: 'g', acceptance: 'a', discipline: 'd',
+      tasks: 'T1 | 一 | 文件存在 | a.ts',
+      scopes: { T1: ['a.ts'] },
+      probes: [{ id: 'P1', taskId: 'T1', weight: 'light', spec: { kind: 'file_exists', path: 'a.ts' }, enabled: true }],
+    })).runId
+    await writeFile(join(cwd, 'a.ts'), 'same content')
+    const notesPath = join(cwd, 'docs/guard', runId, 'tasks/T1/notes.md')
+    const replies = [
+      { verdict: 'insufficient', missing: ['缺证据 A'], correction: '措辞一' },
+      { verdict: 'fail', violations: [{ type: 'quality', why: '未达标 B' }], missing: [], correction: '措辞二' },
+      { verdict: 'insufficient', missing: ['缺证据 C'], correction: '措辞三' },
+    ]
+    let evalCalls = 0
+    let progressCalls = 0
+    const base = deps(cwd, runId, {})
+    const oscillating = {
+      ...base,
+      ctx: {
+        get(name: string) {
+          if (name !== 'llm') return base.ctx.get(name)
+          return {
+            prepareCall: async (config: Record<string, unknown>) => ({
+              config: { provider: 'p', model: 'm', temperature: 0, maxTokens: config.maxTokens },
+              stream: () => (async function* () {
+                const tasks = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+                let payload: string
+                if (config.maxTokens === 800) {
+                  progressCalls += 1
+                  payload = JSON.stringify({ verdict: 'spinning', reason: 'unchanged tree oscillating' })
+                } else {
+                  const reply = replies[evalCalls] ?? replies.at(-1)!
+                  evalCalls += 1
+                  payload = JSON.stringify({
+                    goal_hash: tasks.goalHash, criteria: [], violations: [], ...reply, next_action: 'retry',
+                  })
+                }
+                yield { type: 'text-delta', index: 0, text: payload }
+                yield { type: 'block-end', index: 0, block: { type: 'text', text: payload } }
+              })(),
+            }),
+          }
+        },
+      },
+    }
+    const attached = await attachSupervisor({ ...oscillating, cwd, runId } as never)
+    for (let turn = 0; turn < 3; turn += 1) {
+      await writeFile(notesPath, `${await readFile(notesPath, 'utf8')}\n## 完成声明\n轮次 ${turn + 1}\n`, 'utf8')
+      await attached.handler()
+    }
+    assert.equal(evalCalls, 3)
+    assert.equal(progressCalls, 1, 'state-based signature must converge despite alternating verdicts and wording')
+    const state = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+    assert.equal(state.tasks[0]?.status, 'BLOCKED')
+    assert.match(state.tasks[0]?.blocked?.reason ?? '', /打转/)
+    const events = (await readFile(join(cwd, 'docs/guard', runId, 'state.jsonl'), 'utf8')).trim().split('\n')
+      .map(line => JSON.parse(line) as { type: string; reason?: string })
+    const evalEvents = events.filter(event => event.type === 'eval.done')
+    assert.equal(evalEvents.length, 3)
+    assert.match(evalEvents[0]?.reason ?? '', /缺证据 A/)
+    assert.match(evalEvents[1]?.reason ?? '', /未达标 B/)
+    assert.match(evalEvents[2]?.reason ?? '', /缺证据 C/)
+  })
+
+  test('auditTask passes deterministic probe specs, in-scope diff excerpt, and notes to the evaluator', async () => {
+    const cwd = await repo()
+    const runId = (await prepareGuardRun(cwd, {
+      goal: 'g', acceptance: 'a', discipline: 'd',
+      tasks: 'T1 | 加 multiply | 文件含 multiply | src/math.ts',
+      scopes: { T1: ['src/math.ts'] },
+      probes: [{ id: 'C1', taskId: 'T1', weight: 'light', spec: { kind: 'file_exists', path: 'src/math.ts' }, enabled: true }],
+    })).runId
+    await mkdir(join(cwd, 'src'), { recursive: true })
+    await writeFile(join(cwd, 'src/math.ts'), 'export function multiply(a: number, b: number) { return a * b }\n')
+    const notesPath = join(cwd, 'docs/guard', runId, 'tasks/T1/notes.md')
+    await writeFile(notesPath, `${await readFile(notesPath, 'utf8')}\n## 完成声明\n已经实现 multiply\n`, 'utf8')
+
+    let capturedPrompt = ''
+    const base = deps(cwd, runId, {})
+    const capturing = {
+      ...base,
+      ctx: {
+        get(name: string) {
+          if (name !== 'llm') return base.ctx.get(name)
+          return {
+            prepareCall: async () => ({
+              config: { provider: 'p', model: 'm', temperature: 0, maxTokens: 4000 },
+              stream: (options: { messages?: readonly { content?: readonly { text?: string }[] }[] }) => {
+                capturedPrompt = options.messages?.[0]?.content?.[0]?.text ?? ''
+                return (async function* () {
+                  const tasks = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+                  const payload = JSON.stringify({
+                    goal_hash: tasks.goalHash, verdict: 'pass', criteria: [], violations: [], missing: [], correction: '', next_action: 'continue',
+                  })
+                  yield { type: 'text-delta', index: 0, text: payload }
+                  yield { type: 'block-end', index: 0, block: { type: 'text', text: payload } }
+                })()
+              },
+            }),
+          }
+        },
+      },
+    }
+    const attached = await attachSupervisor({ ...capturing, cwd, runId } as never)
+    await attached.handler()
+    assert.match(capturedPrompt, /file_exists: src\/math\.ts/)
+    assert.match(capturedPrompt, /export function multiply/)
+    assert.match(capturedPrompt, /已经实现 multiply/)
+  })
 })

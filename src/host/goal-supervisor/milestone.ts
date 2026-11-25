@@ -16,6 +16,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GuardState, GuardTask, Verdict } from './schema'
+import { configureLowestReasoning } from './evaluator'
 import type { GuardStore } from './store'
 
 export interface MilestoneVerdict {
@@ -104,7 +105,11 @@ function parseVerdict(raw: string, keys: readonly string[]): MilestoneVerdict | 
 }
 
 interface Callable {
-  readonly prepareCall?: (config: Record<string, unknown>, signal?: AbortSignal) => Promise<{
+  readonly prepareCall?: (
+    config: Record<string, unknown>,
+    signal?: AbortSignal,
+    configure?: (controls: Record<string, unknown>, model: Record<string, unknown>) => Record<string, unknown>,
+  ) => Promise<{
     config: Record<string, unknown>
     stream(options: Record<string, unknown>): AsyncIterable<unknown>
   }>
@@ -121,7 +126,7 @@ async function callModel(
 ): Promise<string | null> {
   const deadline = AbortSignal.timeout(30_000)
   try {
-    const prepared = await llm.prepareCall?.({ provider, model, maxTokens, temperature: 0 }, deadline)
+    const prepared = await llm.prepareCall?.({ provider, model, maxTokens, temperature: 0 }, deadline, configureLowestReasoning)
     if (prepared === undefined) return null
     const assembler = new BlockAssembler()
     for await (const chunk of prepared.stream({

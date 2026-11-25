@@ -94,8 +94,14 @@ function buildBody(state: GuardState): BuiltBody {
   }
   // A later task's declared scope is not free to write, and the running task
   // cannot know that unless it is shown. Finished scopes are omitted: they are
-  // closed, not an invitation.
-  const upcoming = state.tasks.filter(item => item.status === 'TODO' && item.scope.length > 0)
+  // closed, not an invitation. Exclude `tasks` themselves: before turn 1 ends,
+  // the starting task is still `TODO` in the ledger and must not be called
+  // "another task".
+  const runningIds = new Set(tasks.map(task => task.id))
+  const upcoming = state.tasks.filter(item =>
+    item.status === 'TODO'
+    && !runningIds.has(item.id)
+    && item.scope.length > 0)
   if (upcoming.length > 0) {
     taskBlock.push(`其他任务 scope（不是你的）：${upcoming.map(item => `${item.id} ${item.scope.join('、')}`).join('；')}`)
   }

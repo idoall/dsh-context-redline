@@ -19,13 +19,13 @@ import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { Attempt, EvidenceRef, GuardEvent, GuardState, GuardTask, ProbeResult, RollbackResidueEntry } from './schema'
+import type { Attempt, EvidenceRef, GuardEvent, GuardState, GuardTask, ProbeDef, ProbeResult, ProbeSpec, RollbackResidueEntry } from './schema'
 import { orderedByCompletion } from './schema'
-import { evaluateProgress, evaluateTask, type EvalCandidate } from './evaluator'
+import { evaluateProgress, evaluateTask, type EvalCandidate, type EvalProbeEvidence } from './evaluator'
 import { checkpointRefOf } from './create'
 import {
-  changedPaths, changedPathsSince, commitPaths, hasGit, hasRef, headBlob, headCommit, matchesBaseline,
-  pathInScope, resetPaths, revertCommit, scopesOverlap, tagCheckpoint,
+  changedPaths, changedPathsSince, commitPaths, committedPathsSince, hasGit, hasRef, headBlob, headCommit,
+  matchesBaseline, pathInScope, resetPaths, revertCommit, scopeDiffExcerpt, scopesOverlap, tagCheckpoint,
 } from './git'
 import { isNetworkUse, probeEnv, runProbe, runProbes, type ProbeOutcome } from './probes'
 import { processScopeRequests } from './scope'
@@ -40,6 +40,8 @@ export const ATTEMPT_LIMIT = 50
 export const EXEMPTION_LIMIT = 2
 /** Consecutive identical failures that trigger the light progress evaluation. */
 export const STREAK_LIMIT = 3
+/** Consecutive evaluator outages (`unavailable`) tolerated before blocking the task. */
+export const EVAL_UNAVAILABLE_LIMIT = 3
 const MIRROR_RETRY_MS = 60_000
 
 export interface LoopAgent {
@@ -151,6 +153,62 @@ async function candidateOf(ctx: LoopDeps['ctx'], sessionId: string): Promise<Eva
     tools: tools.slice(-20),
     writePaths: writePaths.slice(-10),
     subagents,
+  }
+}
+
+function describeProbeSpec(spec: ProbeSpec): string {
+  switch (spec.kind) {
+    case 'file_exists': return `file_exists: ${spec.path}`
+    case 'file_contains': return `file_contains: ${spec.path} /${spec.pattern}/${spec.flags ?? ''}`
+    case 'grep': return `grep: /${spec.pattern}/ in ${spec.paths.join(', ')}`
+    case 'number_gte': return spec.source.type === 'file'
+      ? `number_gte(${spec.threshold}): file ${spec.source.path}`
+      : `number_gte(${spec.threshold}): ${spec.source.cmd} ${spec.source.args.join(' ')}`
+    case 'command': return `command: ${spec.cmd}${spec.args.length === 0 ? '' : ` ${spec.args.join(' ')}`}`
+    case 'scan': return `scan(${spec.scanKind})${spec.paths === undefined ? '' : `: ${spec.paths.join(', ')}`}`
+  }
+}
+
+/**
+ * Assemble the bounded candidate + deterministic evidence the evaluator reads.
+ *
+ * Without probe definitions, in-scope diff and `notes.md`, the evaluator only
+ * sees `{ C1: 'pass' }` and the last three assistant replies, forcing it to
+ * answer `insufficient` even when the workspace satisfies every criterion.
+ */
+async function buildEvalCandidate(
+  deps: LoopDeps,
+  state: GuardState,
+  guardDir: string,
+  task: GuardTask,
+  probes: readonly ProbeDef[],
+  outcomes: Readonly<Record<string, { result: ProbeResult; detail: string } | undefined>>,
+): Promise<EvalCandidate> {
+  const base = await candidateOf(deps.ctx, deps.agent.id)
+  const probeEvidence: EvalProbeEvidence[] = probes.map((probe) => {
+    const outcome = outcomes[probe.id]
+    return {
+      id: probe.id,
+      weight: probe.weight,
+      spec: describeProbeSpec(probe.spec).slice(0, 200),
+      result: outcome?.result ?? 'unknown',
+      ...(outcome?.detail === undefined || outcome.detail === '' ? {} : { detail: outcome.detail.slice(0, 300) }),
+    }
+  })
+  const changed = (await taskPaths(deps, state, guardDir, task))
+    .filter(path => pathInScope(path, task.scope))
+    .sort()
+  const diffExcerpt = await scopeDiffExcerpt(deps.cwd, task.baseCommit, changed, 4000)
+  let notesExcerpt = ''
+  try {
+    notesExcerpt = (await readFile(deps.store.notesPath(task.id), 'utf8')).slice(-1500)
+  } catch { /* notes may be absent */ }
+  return {
+    ...base,
+    probes: probeEvidence,
+    changedPaths: changed.slice(0, 30),
+    ...(diffExcerpt === '' ? {} : { diffExcerpt }),
+    ...(notesExcerpt === '' ? {} : { notesExcerpt }),
   }
 }
 
@@ -923,12 +981,14 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
     .filter(item => item.id !== task.id && batchIds.includes(item.id))
     .map(item => item.scope)
   // A task that has not started yet still DECLARED its files. An agent that
-  // prepares the next task's file in the same turn is not writing out of scope —
-  // that path is the next task's business, and its own audit will judge it. A
-  // DONE task's scope is deliberately NOT excused: touching finished work is a
-  // real violation.
-  // `reopenedAt` matters: a task a rollback put back to TODO owns its files again,
-  // so a sibling retry must not be excused for touching them.
+  // prepares the next task's file in the worktree is not writing out of scope —
+  // that path is the next task's business, and its own audit will judge it.
+  // Deliberately NOT excused:
+  //   - a DONE task's scope (touching finished work is a real violation);
+  //   - a task a rollback put back to TODO (`reopenedAt` set);
+  //   - a path COMMITTED into `baseCommit..HEAD` for a future task: letting this
+  //     task tag above that commit would move the future task's `baseCommit`
+  //     past its own file and break its audit and rollback.
   const upcomingScopes = state.tasks
     .filter(item => item.id !== task.id
       && item.status === 'TODO'
@@ -936,10 +996,10 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
       && item.reopenedAt === undefined
       && item.scope.length > 0)
     .map(item => item.scope)
-  const withSiblingsExcluded = (path: string): boolean =>
+  const withSiblingsExcluded = (committedInRange: ReadonlySet<string>) => (path: string): boolean =>
     !pathInScope(path, liveTask.scope)
     && !siblingScopes.some(scope => pathInScope(path, scope))
-    && !upcomingScopes.some(scope => pathInScope(path, scope))
+    && (committedInRange.has(path) || !upcomingScopes.some(scope => pathInScope(path, scope)))
 
   if (allRequiredPass) {
     const scopeHash = await scopeFingerprint(deps, state, guardDir, liveTask)
@@ -981,13 +1041,62 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
     }
     const shouldEvaluate = scopeHash !== task.lastEvalScopeHash || completion.declared
     if (shouldEvaluate) {
-      const candidate = await candidateOf(deps.ctx, deps.agent.id)
+      const candidate = await buildEvalCandidate(deps, state, guardDir, liveTask, probes, outcomes)
       const evaluated = await evaluateTask(deps.ctx, deps.agent, state, liveTask, candidate)
-      events.push({ type: 'eval.done', at: Date.now(), taskId: task.id, verdict: evaluated.verdict, model: evaluated.model, latencyMs: evaluated.latencyMs })
+      if (evaluated.unavailable === true) {
+        const streak = (task.evalUnavailableStreak ?? 0) + 1
+        const reason = evaluated.reason ?? evaluated.missing.at(0) ?? '评估器不可用'
+        events.push({
+          type: 'eval.unavailable', at: Date.now(), taskId: task.id, reason,
+          model: evaluated.model, latencyMs: evaluated.latencyMs, streak,
+        })
+        // Outages never consume an attempt and never advance `lastEvalScopeHash`
+        // or `lastEvalOffset`, so the next turn retries cleanly on the same state.
+        const retrying: GuardState = {
+          ...state,
+          tasks: updateTask(state, task.id, {
+            evalUnavailableStreak: streak,
+            lastEvalScopeHash: task.lastEvalScopeHash,
+            lastEvalOffset: task.lastEvalOffset,
+          }),
+          updatedAt: Date.now(),
+        }
+        if (streak >= EVAL_UNAVAILABLE_LIMIT) {
+          return await blockTask(
+            deps, retrying, liveTask,
+            `评估器连续 ${EVAL_UNAVAILABLE_LIMIT} 次不可用：${reason}`,
+            '检查模型配置、网络或输出格式后回退重试',
+            events,
+          )
+        }
+        await deps.store.update(retrying, events)
+        return retrying
+      }
+      events.push({
+        type: 'eval.done', at: Date.now(), taskId: task.id, verdict: evaluated.verdict,
+        model: evaluated.model, latencyMs: evaluated.latencyMs,
+        ...(evaluated.reason === undefined ? {} : { reason: evaluated.reason }),
+      })
+      if (evaluated.goalHashMismatch === true) {
+        const cleared: GuardState = {
+          ...state,
+          tasks: updateTask(state, task.id, { evalUnavailableStreak: undefined, lastEvalAt: Date.now() }),
+          updatedAt: Date.now(),
+        }
+        return await blockTask(
+          deps, cleared, liveTask,
+          evaluated.reason ?? '目标 hash 不匹配',
+          '目标卡被改过或评估器看错了目标；停下来等用户确认',
+          events,
+        )
+      }
       if (evaluated.verdict === 'pass') {
         const changedAll = await taskPaths(deps, state, guardDir, liveTask)
+        const committedInRange = liveTask.baseCommit === undefined
+          ? new Set<string>()
+          : new Set(await committedPathsSince(deps.cwd, liveTask.baseCommit, guardDir, { runId: deps.runId, taskId: task.id }))
         const changed = changedAll.filter(path => pathInScope(path, liveTask.scope))
-        const outside = changedAll.filter(withSiblingsExcluded)
+        const outside = changedAll.filter(withSiblingsExcluded(committedInRange))
         if (outside.length > 0) {
           events.push({ type: 'scope.violation', at: Date.now(), taskId: task.id, paths: outside, enforcement: state.enforcement })
           if (state.enforcement === 'enforce') {
@@ -1019,6 +1128,7 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
             // The task's work is committed again, so nothing it left in the
             // worktree still needs to be excluded from a sibling's audit.
             rollbackResidue: undefined,
+            evalUnavailableStreak: undefined,
             lastEvalScopeHash: scopeHash, lastEvalAt: Date.now(),
             lastEvalOffset: completion.offset,
           }),
@@ -1035,7 +1145,7 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
         const rollbackState: GuardState = {
           ...state,
           tasks: updateTask(state, task.id, {
-            status: 'IN_PROGRESS', lastEvalAt: Date.now(),
+            status: 'IN_PROGRESS', lastEvalAt: Date.now(), evalUnavailableStreak: undefined,
           }),
           status: 'active',
           updatedAt: Date.now(),
@@ -1044,21 +1154,25 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
         await deps.store.update(doneState, events)
         return await finishTask(deps, doneState, rollbackState, { ...liveTask, checkpointRef }, changed, allDone)
       }
-      // A failing/insufficient verdict goes through the same three-strike progress
-      // evaluation as a failing probe: otherwise an evaluator outage burns all
-      // 50 attempts before anyone looks at it.
-      const signature = digest(JSON.stringify({ eval: evaluated.verdict, correction: evaluated.correction }))
+      // State-based signature: omit model phrasing (`correction`) and verdict
+      // wobble (`fail` vs `insufficient`), so an unchanged workspace oscillating
+      // between non-pass verdicts converges through `progressDecision` instead
+      // of resetting the streak forever.
+      const vector = probeVector(task, results)
+      const signature = digest(JSON.stringify({ kind: 'eval-not-pass', scopeHash, probeVector: vector }))
+      const failureDetail = evaluated.reason ?? evaluated.correction
       const baseAttempt: Attempt = {
         index: nextAttemptIndex(task), at: Date.now(), signature,
-        ...(evaluated.correction === '' ? {} : { failureFingerprint: digest(evaluated.correction) }),
-        probeVector: probeVector(task, results), evalVerdict: evaluated.verdict, evidenceIds: [],
+        ...(failureDetail === '' ? {} : { failureFingerprint: digest(failureDetail) }),
+        probeVector: vector, evalVerdict: evaluated.verdict, evidenceIds: [],
       }
       const decision = await progressDecision(deps, state, liveTask, signature, baseAttempt, events)
       const attempts = [...task.attempts, decision.attempt].slice(-20)
       const failed: GuardState = {
         ...state,
         tasks: updateTask(state, task.id, {
-          attempts, lastEvalAt: Date.now(), lastEvalScopeHash: scopeHash,
+          attempts, evalUnavailableStreak: undefined,
+          lastEvalAt: Date.now(), lastEvalScopeHash: scopeHash,
           lastEvalOffset: completion.offset,
         }),
         updatedAt: Date.now(),

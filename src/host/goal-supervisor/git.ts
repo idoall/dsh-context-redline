@@ -116,13 +116,21 @@ function ownCommitSubject(runId: string, taskId: string): string {
  *     commit subject names the task, so those commits are skipped unless they
  *     belong to the task being audited.
  */
-export async function changedPathsSince(
+/**
+ * Paths committed in `baseCommit..HEAD` (net), excluding sibling plugin commits.
+ *
+ * Kept separate from `changedPathsSince` so callers can tell committed changes
+ * from uncommitted worktree edits: a future `TODO` task's file committed during
+ * an earlier task would land below that task's `baseCommit` and break its audit
+ * and rollback, so it must never receive the uncommitted-worktree exemption.
+ */
+export async function committedPathsSince(
   cwd: string,
   baseCommit: string,
   guardDir: string,
   options?: ChangedSinceOptions,
 ): Promise<string[]> {
-  const paths = new Set(await changedPaths(cwd, guardDir))
+  const paths = new Set<string>()
   if (options === undefined) {
     const committed = await run(cwd, ['diff', '--name-only', '-z', '--no-renames', `${baseCommit}..HEAD`])
     if (committed.code === 0) {
@@ -140,7 +148,7 @@ export async function changedPathsSince(
   // and its `Revert` both mention it, yet nothing in HEAD differs any more.
   const net = new Set<string>()
   const netDiff = await run(cwd, ['diff', '--name-only', '-z', '--no-renames', `${baseCommit}..HEAD`])
-  if (netDiff.code !== 0) return [...paths]
+  if (netDiff.code !== 0) return []
   for (const path of netDiff.stdout.split('\u0000').filter(entry => entry !== '')) {
     if (!inGuardDir(path, guardDir)) net.add(path)
   }
@@ -168,6 +176,75 @@ export async function changedPathsSince(
     }
   }
   return [...paths]
+}
+
+export async function changedPathsSince(
+  cwd: string,
+  baseCommit: string,
+  guardDir: string,
+  options?: ChangedSinceOptions,
+): Promise<string[]> {
+  const paths = new Set(await changedPaths(cwd, guardDir))
+  for (const path of await committedPathsSince(cwd, baseCommit, guardDir, options)) {
+    paths.add(path)
+  }
+  return [...paths]
+}
+
+function clipUtf8(text: string, maxBytes: number): string {
+  if (Buffer.byteLength(text, 'utf8') <= maxBytes) return text
+  const suffix = '\n…(truncated)'
+  const budget = Math.max(0, maxBytes - Buffer.byteLength(suffix, 'utf8'))
+  let out = ''
+  let used = 0
+  for (const char of text) {
+    const size = Buffer.byteLength(char, 'utf8')
+    if (used + size > budget) break
+    out += char
+    used += size
+  }
+  return `${out}${suffix}`
+}
+
+/**
+ * Bounded excerpt of the task's in-scope changes for the independent evaluator.
+ *
+ * Uses `git diff` against `baseCommit` (or `HEAD`) for tracked edits and falls
+ * back to bounded file reads for untracked or non-git files. Never throws.
+ */
+export async function scopeDiffExcerpt(
+  cwd: string,
+  baseCommit: string | undefined,
+  paths: readonly string[],
+  maxBytes = 4000,
+): Promise<string> {
+  if (paths.length === 0 || maxBytes <= 0) return ''
+  const target = paths.slice(0, 20)
+  const sections: string[] = []
+  const covered = new Set<string>()
+  if (await hasGit(cwd)) {
+    const base = baseCommit ?? (await headCommit(cwd))
+    if (base !== null) {
+      const diff = await run(cwd, ['diff', '--no-color', '--no-ext-diff', base, '--', ...target])
+      if (diff.code === 0 && diff.stdout.trim() !== '') {
+        sections.push(diff.stdout.trim())
+        for (const line of diff.stdout.split('\n')) {
+          const match = /^diff --git a\/(.+) b\/(.+)$/.exec(line)
+          if (match?.[2] !== undefined) covered.add(match[2])
+        }
+      }
+    }
+  }
+  for (const path of target) {
+    if (covered.has(path)) continue
+    try {
+      const raw = await readFile(join(cwd, path))
+      if (raw.includes(0)) continue
+      const text = raw.toString('utf8').trimEnd()
+      if (text !== '') sections.push(`--- ${path} (untracked/new)\n${clipUtf8(text, 1500)}`)
+    } catch { /* deleted or unreadable */ }
+  }
+  return sections.length === 0 ? '' : clipUtf8(sections.join('\n\n'), maxBytes)
 }
 
 /**
