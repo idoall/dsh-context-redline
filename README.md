@@ -20,7 +20,7 @@
 
 > A DeepSeek Harness community plugin. It does not modify DSH source or rewrite the source session log.
 >
-> **Version `0.9.5` — supports DSH `>=0.2.3-alpha.2 <0.3.0-0`.** Built and regression-tested against `0.2.3-alpha.2`; Node.js `^24.22.3 || >=26.13.1` is required. DSH `0.3.0` prereleases are excluded.
+> **Version `0.10.0` — supports DSH `>=0.2.3-alpha.2 <0.3.0-0`.** Built and regression-tested against `0.2.3-alpha.2`; Node.js `^24.22.3 || >=26.13.1` is required. DSH `0.3.0` prereleases are excluded.
 
 Edits stay local until confirmation. The plugin then opens a zero-history ordinary session in the current workspace and sends the exact final message you approved. When the task finishes, its bound result returns verbatim to the source session.
 
@@ -39,6 +39,7 @@ Edits stay local until confirmation. The plugin then opens a zero-history ordina
 - **Handoff skill.** The plugin contributes a runtime skill, `context-redline-handoff`: it reads the current conversation and outputs both handoff shapes — the migration fields (first task + per-request rule anchor) and the anchored conversation fields (first task, goal, acceptance criteria, discipline), with mandatory task decomposition, role separation, and conditional headed UAT. It also always emits the optional Goal Guard block, so the user decides whether to check it: a task list whose acceptance items the independent evaluator can judge without the conversation, the plan-file path (or an explicit “leave it empty”), and the evaluator choice — never inventing provider/model names.
 - **Anchored conversation without migration.** Starts an independent root conversation from a task plus a frozen runtime snapshot of goal, acceptance criteria and discipline. Nothing is copied from the current session and no result is returned to it.
 - **Goal Guard (0.9 beta, observe only).** An anchored conversation can opt into a per-session guard: the goal, acceptance, discipline and a task list are frozen into one hash, and after each turn an independent evaluator (its own model call, optionally on another route) judges the current task against the frozen card and records a verdict plus a correction suggestion on the guard card. In 0.9.0 it never blocks a tool and never steers the session; blocking is a later version. The evaluator sees only the frozen card, the current task and a bounded excerpt of what the session produced since that task started — never the full history.
+- **Supervised runs (0.9 beta).** An anchored conversation can opt into a supervised run. The confirmed goal, acceptance criteria, discipline and task table freeze into the run directory (`docs/guard/<run-id>/`), where `tasks.json` is the only source of truth, `state.jsonl` is append-only and `TASKS.md` is the rendered page the human reads. After each turn the plugin audits the session: it runs the task's deterministic probes itself (the model never does), has an independent evaluator judge the task against the frozen card, and commits a passing task — exactly its declared paths plus the ledger — before tagging it `guard/<run-id>/<task>`. The head and tail anchors are re-rendered from the ledger every turn, so a compacted history cannot drift from the task actually running. Strict mode additionally denies writes outside the task's scope and every shell tool. A blocked task stops the run with its patch kept as evidence; rollback reopens the task and is a two-step confirmation. Known limits are documented rather than implied: parallel tasks share one run worktree, and the run is only as trustworthy as the probes you give it.
 - **DNA fingerprint mode.** The trend bars can switch to a per-item gradient in the model’s read order; the browser’s DNA switch and the trend switch move together. DNA currently forces total semantics.
 - **Trend duration overlay.** Each trend bar carries its step’s active time as a curve read off the right-hand axis; turn mode sums the turn’s steps. The Adaptive and Duration modifiers share one compact toggle group, and the old focused-category subtitle is gone.
 - **Anchor with two modes.** An optional short anchor, written by you, can be repeated at the start and end of the first message, or supplied as a per-request runtime rule. The runtime mode uses DSH's runtime-context snapshot: unchanged text is not rewritten, and after compaction it is re-declared with a supersession notice. Neither mode touches the preset-owned system prompt or the source session.
@@ -68,7 +69,7 @@ Requires DeepSeek Harness `0.2.3-alpha.2` or a newer supported `0.2.x`, plus Nod
 Install or upgrade to this exact release:
 
 ```sh
-dsh plugin --profile web add dsh-context-redline@0.9.5
+dsh plugin --profile web add dsh-context-redline@0.10.0
 ```
 
 This release makes the observe-only guard usable as a progress signal and adds the first short-anchor layer. The guard no longer short-circuits when the main session writes its own plan or review records: it always runs the evaluator, hands it the written paths (not just a tool count), records the verdict and advances the ledger on a pass. The guard card now says when an audit did not run and why, instead of showing a stale failure. On top of the full goal card, a SHORT invariant block is re-injected at the head and the tail of every prompt — goal hash, the current task and its acceptance, the hard rules and the stop conditions, refreshed from live state — so the rules that must not drift survive the context window and compaction. Guard behaviour is still observe-only.
@@ -117,7 +118,8 @@ See the [user guide](https://github.com/idoall/dsh-context-redline/blob/main/doc
 - System prompts and tool schemas come from the target preset; migrated prose never pretends to alter those layers.
 - Tool results require a matching call identity.
 - No history/version UI, rollback, compaction, team task board, or session deletion UI.
-- Goal Guard 0.9.0 is observe-only: it records verdicts and correction suggestions but blocks nothing and steers nobody. Blocking is a later version.
+- Goal Guard 0.9.0 is observe-only: it records verdicts and correction suggestions but blocks nothing and steers nobody.
+- A supervised run's strict mode is **opt-in and off by default**: only a confirmed strict run denies out-of-scope writes and shell tools; otherwise the run records verdicts and commits passing tasks without denying anything.
 - The plugin provides lock-scoped idempotence and recovery; it does not claim platform-native exactly-once delivery.
 
 ## Development
@@ -140,6 +142,7 @@ Pushing a `v*` tag runs the version and bilingual-release-note gate, tests, pack
 - [Context migration contract](https://github.com/idoall/dsh-context-redline/blob/main/docs/13-context-migration.md)
 - [System prompt and injection boundaries](https://github.com/idoall/dsh-context-redline/blob/main/docs/14-system-prompt-and-injection.md)
 - [Carrier lifecycle](https://github.com/idoall/dsh-context-redline/blob/main/docs/15-carrier-lifecycle.md)
+- [Goal supervisor design](https://github.com/idoall/dsh-context-redline/blob/main/docs/17-goal-supervisor-design.md)
 - [Upstream provenance and modifications](https://github.com/idoall/dsh-context-redline/blob/main/UPSTREAM.md)
 
 ## License
