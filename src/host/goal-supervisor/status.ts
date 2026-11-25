@@ -39,6 +39,9 @@ function summaryOf(runId: string, state: GuardState, meta: RunMeta, pendingReque
     pendingRequests,
     ...(state.goalBlocked === undefined ? {} : { blockedReason: state.goalBlocked }),
     ...(meta.setup.errorMessage === undefined ? {} : { setupError: `${meta.setup.failedStep ?? 'setup'}: ${meta.setup.errorMessage}` }),
+    ...(state.worktree.enabled && state.worktree.branch !== undefined
+      ? { worktreeBranch: state.worktree.branch }
+      : {}),
     ...(meta.mirror.issueUrl === undefined && meta.mirror.reason === undefined && meta.mirror.lastError === undefined
       ? {}
       : {

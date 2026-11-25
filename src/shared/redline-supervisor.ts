@@ -34,4 +34,9 @@ export interface SupervisorSummary {
    * live. The card still shows, but nothing here can be acted on.
    */
   readonly agentLive?: boolean
+  /**
+   * The branch an isolated run committed to. The merge is the human's job:
+   * nothing here merges it back, so the card has to name it.
+   */
+  readonly worktreeBranch?: string
 }

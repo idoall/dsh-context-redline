@@ -1016,6 +1016,17 @@ describe('ContextView — supervisor card', () => {
   const card = (container: ParentNode) => container.querySelector<HTMLElement>('[data-redline-supervisor-card]')
   const rollbackButton = (container: ParentNode) => container.querySelector('[data-redline-supervisor-rollback]') as HTMLElement | null
 
+  test('an isolated run names the branch a human still has to merge', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [] }
+    stubSupervisor(summaryOf({ worktreeBranch: 'guard/20261124-demo' }), calls)
+    const m = await mountRich('sv-supervisor-branch')
+    await until(() => card(m.container) !== null, 'the card appears')
+    const body = text(card(m.container) as HTMLElement)
+    // Nothing merges the branch back, so the card must not imply that it does.
+    assert.ok(body.includes(DICT_EN['supervisor.worktreeBranch'].replace('{branch}', 'guard/20261124-demo')))
+    await m.unmount()
+  })
+
   test('a run read from disk while the session is unloaded says so and blocks rollback', async () => {
     const calls: Calls = { supervisor: 0, rollback: [] }
     stubSupervisor(summaryOf({ agentLive: false }), calls)

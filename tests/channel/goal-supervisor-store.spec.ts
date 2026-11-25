@@ -227,4 +227,17 @@ describe('goal-supervisor run meta updates', () => {
     assert.equal(kept?.phase, 'ready')
     assert.equal((await store.readMeta())?.phase, 'ready')
   })
+
+  test('TASKS.md names the isolated branch, because nothing merges it back', () => {
+    const base = state()
+    const isolated = renderTasksMarkdown({
+      ...base,
+      worktree: { enabled: true, path: '/repo/.guard/worktrees/r1', branch: 'guard/r1' },
+    })
+    assert.match(isolated, /隔离分支：`guard\/r1`/)
+    assert.match(isolated, /不会自动合入/)
+    // An ordinary in-place run must not grow a line about a branch it never had.
+    const inPlace = renderTasksMarkdown({ ...base, worktree: { enabled: false } })
+    assert.ok(!inPlace.includes('隔离分支'))
+  })
 })

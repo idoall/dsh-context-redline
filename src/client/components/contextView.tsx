@@ -332,6 +332,12 @@ export function makeContextView(
             : t('supervisor.rollbackFailedDetail', { reason: supervisorError })),
         supervisor.mirror?.issueUrl === undefined ? null : h('div', { className: 'redline-guard-eval' },
           h('a', { href: supervisor.mirror.issueUrl, target: '_blank', rel: 'noreferrer' }, t('supervisor.mirror'))),
+        // An isolated run commits to its own branch and nothing merges it back,
+        // so the card has to name the branch a human still has to merge.
+        supervisor.worktreeBranch === undefined
+          ? null
+          : h('div', { className: 'redline-guard-eval', 'data-redline-supervisor-branch': '1' },
+            t('supervisor.worktreeBranch', { branch: supervisor.worktreeBranch })),
         // The run was read from disk because this session is not loaded: say so
         // instead of hiding the card, or a restart reads as "my run vanished".
         supervisor.agentLive === false

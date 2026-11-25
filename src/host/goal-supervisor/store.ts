@@ -65,6 +65,11 @@ export function renderTasksMarkdown(state: GuardState): string {
     `- 状态：${state.status}`,
     `- 并行：${state.parallel}`,
     `- 进度：${done}/${state.tasks.length} 已完成`,
+    // An isolated run commits to its own branch and NOTHING merges it back, so
+    // the page a human reads on disk has to name it.
+    ...(state.worktree.enabled && state.worktree.branch !== undefined
+      ? [`- 隔离分支：\`${state.worktree.branch}\`（提交在这个分支上，**不会自动合入**，需要手动 merge）`]
+      : []),
     '',
   ]
   for (const task of state.tasks) {

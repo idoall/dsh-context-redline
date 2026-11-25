@@ -102,4 +102,24 @@ describe('goal-supervisor status current task', () => {
     assert.equal(await recallSupervisorRun(null, 'session-x'), null)
     await rememberSupervisorRun(null, { sessionId: 'session-y', cwd: '/work', runId: 'r2' })
   })
+
+  test('an isolated run names its branch; an in-place run does not', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'guard-status-branch-'))
+    roots.push(cwd)
+    const runId = 'br'
+    const dir = join(cwd, 'docs', 'guard', runId)
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'run.json'), JSON.stringify(meta('session-br')), 'utf8')
+
+    // The branch lives on the ledger (`GuardState.worktree`), not on run.json.
+    await writeFile(join(dir, 'tasks.json'), JSON.stringify({
+      ...state(runId, 1),
+      worktree: { enabled: true, path: '/repo/.guard/worktrees/br', branch: `guard/${runId}` },
+    }), 'utf8')
+    assert.equal((await findSupervisorRun(cwd, 'session-br'))?.worktreeBranch, `guard/${runId}`)
+
+    // An in-place run has no branch to name.
+    await writeFile(join(dir, 'tasks.json'), JSON.stringify(state(runId, 2)), 'utf8')
+    assert.equal((await findSupervisorRun(cwd, 'session-br'))?.worktreeBranch, undefined)
+  })
 })

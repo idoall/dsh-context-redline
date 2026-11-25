@@ -371,6 +371,7 @@ B 内状态条：目标已创建 / 锚点已注入 / 守卫已挂载 / 首条消
 - 并行任务仍共享同一个 run worktree（互斥 scope + 逐任务 pathspec 提交 + 项目冒烟命令）；**per-task worktree 合入队列**尚未实现，要真正隔离每个任务需要把子会话的 cwd 指到各自的 worktree，属于下一阶段。并行默认仍建议 `parallel = 1`。
 - 镜像的真机结论：**GitLab（自建 `lionm4:30005`，`glab` 1.131.0）已跑通真实建单 + 评论并回读校验**（一次性私有项目，测完已删除）；**GitHub（`gh` 2.105.0）只验证到"认证 + argv 通过 + 目标仓库不存在时干净降级"**——当前 token 作用域 `gist/read:org/repo/workflow` 不含 `delete_repo`，无法建一次性仓库并清理，所以 GitHub 的成功写入路径要等你指定一个可以留一张 issue 的仓库。
 - 里程碑三审只在单元层验证过（3 审 + 裁决 + `review/round-<n>.md`），未在真机上跑过一整轮。
+- **独立 worktree 不会自动合入**（`worktree: true` 时 `createRunWorktree` 建 `.guard/worktrees/<runId>` 与分支 `guard/<runId>`，但代码里没有任何 merge 实现）。提交落在隔离分支上，需要人工 `git merge`。弹窗文案、`TASKS.md` 与督导卡都会点名该分支并写明「不会自动合入」，不再暗示自动合回。
 - 探针命令行按空白切分 argv、**不经过 shell**。已知偏差：要带空格或复杂参数时先包一层脚本再写进探针。
   这条约束现在**在建盘前强制**（`probes.ts:shellishProbeArg`）：参数以引号开头/结尾、引号个数为奇数、出现 `>(重定向)`/`|`/`;`/`&&` 作为独立 token、或含 `$( ` 时，`prepareGuardRun` 直接拒绝并指出是哪个参数。
   判定刻意放行「引号出现在参数内部」的写法（`node -e 'console.error("x")'` 是合法程序输入），只有「边缘引号或奇数引号」才算用户以为有 shell。
