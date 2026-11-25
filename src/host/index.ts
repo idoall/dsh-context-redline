@@ -35,6 +35,7 @@ import { createContextHeadersDefinition } from './headers'
 import { watchRedlineChannel } from './redline-channel'
 import { registerHandoffSkill } from './handoff-skill'
 import { watchGoalGuards } from './goal-guard'
+import { watchGoalSupervisors } from './goal-supervisor/attach'
 import { watchCarrierRecovery } from './redline-carrier-recovery'
 import { watchStepIdentity } from './stepIdentity'
 import { createContextTimelineDefinition } from './timeline'
@@ -62,6 +63,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // projection generation, so a below-baseline harness must not lose it.
   watchCarrierRecovery(ctx)
   watchGoalGuards(ctx)
+  // Cold start for supervised sessions: re-arm the anchors, the tool guard and
+  // the turn-stopping audit when a run's session is reopened in a new process.
+  watchGoalSupervisors(ctx as never)
   watchRedlineChannel(ctx)
   // The DeepSeek platform balance route (balance.ts): independent of the
   // projection generations, so it arms on either side of the baseline gate —

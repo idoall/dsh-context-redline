@@ -27,7 +27,7 @@
  * withdraws it), and a registry that rejects leaves the plugin otherwise intact.
  */
 
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
@@ -69,6 +69,13 @@ import { captureEventSourceSnapshot, eventSourceKeyOf, type CapturedEventSource,
 import { buildManifest, serializeManifestDelivery, stableFingerprint, type ManifestCandidate } from '../redline/manifest'
 import { anchorRequestFingerprint, anchorTitle, composeAnchor, type AnchorDraft } from '../shared/redline-anchor'
 import { guardHashOf, loadGuardState, parseGuardTasks, readPlanPreview, setGuardPaused as setLiveGuardPaused, type GuardState } from './goal-guard'
+import { markFirstMessageDelivered, prepareGuardRun } from './goal-supervisor/create'
+import { SAFE_RUN_ID as SAFE_RUN_ID_OF_RUN } from './goal-supervisor/run-id'
+import { findSupervisorRun } from './goal-supervisor/status'
+import { rollbackRun } from './goal-supervisor/rollback'
+import { isBroadScopePath, isSafeScopePath, normalizeScopePath } from './goal-supervisor/scope'
+import { attachedSupervisorFor, resumeSupervisorGoal, type SupervisorAgent } from './goal-supervisor/attach'
+import type { ProbeDef } from './goal-supervisor/schema'
 import {
   authorizeCarrier,
   createCarrierPreview,
@@ -483,6 +490,7 @@ interface CarrierSourceAgentFace extends RedlineModelAgent {
 
 interface CarrierWorkspaceRegistryFace {
   resolveByPath?(path: string): Promise<{ readonly id: string; readonly path: string } | undefined>
+  create?(path: string, title?: string): Promise<{ readonly id: string; readonly path: string }>
 }
 
 interface CarrierPlanValue {
@@ -528,6 +536,14 @@ function decodeCarrierConfirmation(raw: unknown): CarrierConfirmationToken | nul
 
 /** Optional human-written anchor: kept short, trimmed, and mirrored head+tail. */
 const CARRIER_ANCHOR_LIMIT = 2000
+
+/** A supervisor run id becomes a path segment; shared with the module that mints them. */
+const SAFE_RUN_ID = SAFE_RUN_ID_OF_RUN
+
+/** True for a run id the ledger and the filesystem can both accept. */
+function isSafeRunId(value: string): boolean {
+  return value !== '' && value.length <= 50 && SAFE_RUN_ID.test(value)
+}
 
 /** Read the optional anchor; `null` means an unusable value (bad request). */
 /** Deterministic identities for one anchored conversation request. */
@@ -579,6 +595,51 @@ async function resolveAnchorSource(
   return { ok: true, source: { agent, cwd, workspaceId: workspace.id, config } }
 }
 
+/**
+ * Resolve the supervisor worktree a new anchored session should run in.
+ *
+ * The only acceptable path is this run's own `<source>/.guard/worktrees/<run-id>`,
+ * compared after `realpath` so neither `..` nor a symlink can redirect the new
+ * session at an unrelated checkout. The worktree also needs its own workspace
+ * record: the session's `cwd` and its workspace path must agree, or
+ * `workspace.attachSession` refuses to list the conversation.
+ */
+async function resolveRunWorktree(
+  ctx: Context,
+  sourceCwd: string,
+  runId: string,
+  requested: string,
+): Promise<{ ok: true; path: string; workspaceId: string } | { ok: false; envelope: RedlineEnvelope<never> }> {
+  if (runId === '') return { ok: false, envelope: fail(REDLINE_ERROR.badRequest, 'worktree requires a supervisor run id') }
+  const expected = join(sourceCwd, '.guard', 'worktrees', runId)
+  let path = ''
+  try {
+    path = await realpath(requested)
+    if (path !== await realpath(expected)) {
+      return { ok: false, envelope: fail(REDLINE_ERROR.badRequest, 'worktree does not belong to this run') }
+    }
+    await access(join(path, '.git'))
+  } catch {
+    return { ok: false, envelope: fail(REDLINE_ERROR.badRequest, 'worktree is unavailable') }
+  }
+  const registry = ctx.get('workspaceRegistry') as CarrierWorkspaceRegistryFace | undefined
+  if (typeof registry?.resolveByPath !== 'function') {
+    return { ok: false, envelope: fail(REDLINE_ERROR.internal, 'workspace registry is unavailable') }
+  }
+  const existing = await registry.resolveByPath(path)
+  if (existing !== undefined) return { ok: true, path, workspaceId: existing.id }
+  if (typeof registry.create !== 'function') {
+    return { ok: false, envelope: fail(REDLINE_ERROR.internal, 'workspace registry cannot register the worktree') }
+  }
+  try {
+    const created = await registry.create(path, `guard ${runId}`)
+    return { ok: true, path, workspaceId: created.id }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown error'
+    return { ok: false, envelope: fail(REDLINE_ERROR.internal, `worktree workspace registration failed: ${message}`) }
+  }
+}
+
 /** Turn gate shared by the read-only plan and the write. */
 async function anchorGate(ctx: Context, sessionId: string): Promise<RedlineEnvelope<never> | null> {
   const turn = await turnStateOfSession(ctx, sessionId)
@@ -603,7 +664,12 @@ const anchorPlan: RedlineOpHandler = async ({ ctx, call }) => {
   const guard = call.guard !== null && typeof call.guard === 'object'
     ? call.guard as { readonly tasks?: unknown; readonly planPath?: unknown }
     : undefined
-  const guardTasks = typeof guard?.tasks === 'string' ? guard.tasks : ''
+  const guardTasks = typeof guard?.tasks === 'string' ? guard.tasks.trim() : ''
+  // Two guards on one session would double the anchors, the tool guard and the
+  // audit. The dialog enforces this too; the host must not depend on that.
+  if (guardTasks !== '' && typeof call.guardRunId === 'string' && call.guardRunId.trim() !== '') {
+    return fail(REDLINE_ERROR.badRequest, 'a supervisor run and a goal guard cannot both be attached')
+  }
   const parsedGuardTasks = guardTasks === '' ? null : parseGuardTasks(guardTasks)
   const planPath = typeof guard?.planPath === 'string' ? guard.planPath.trim() : ''
   const plan = planPath === '' ? null : await readPlanPreview(resolved.source.cwd, planPath)
@@ -647,7 +713,20 @@ const anchorStart: RedlineOpHandler = async ({ ctx, call }) => {
     || call.requestFingerprint !== anchorRequestFingerprint(draft)) return fail(REDLINE_ERROR.draftsChanged)
   const resolved = await resolveAnchorSource(ctx, sessionId)
   if (!resolved.ok) return resolved.envelope
-  const { config: baseConfig, cwd, workspaceId } = resolved.source
+  const { config: baseConfig, cwd: sourceCwd, workspaceId: sourceWorkspaceId } = resolved.source
+  const guardRunId = typeof call.guardRunId === 'string' ? call.guardRunId.trim() : ''
+  if (guardRunId !== '' && !isSafeRunId(guardRunId)) {
+    return fail(REDLINE_ERROR.badRequest, 'run id is invalid')
+  }
+  const requestedWorktree = typeof call.guardWorktreePath === 'string' ? call.guardWorktreePath.trim() : ''
+  let cwd = sourceCwd
+  let workspaceId = sourceWorkspaceId
+  if (requestedWorktree !== '') {
+    const worktree = await resolveRunWorktree(ctx, sourceCwd, guardRunId, requestedWorktree)
+    if (!worktree.ok) return worktree.envelope
+    cwd = worktree.path
+    workspaceId = worktree.workspaceId
+  }
   let config = baseConfig
   const requested = call.config !== null && typeof call.config === 'object'
     ? call.config as Record<string, unknown>
@@ -683,7 +762,12 @@ const anchorStart: RedlineOpHandler = async ({ ctx, call }) => {
       readonly planHash?: unknown
     }
     : undefined
-  const guardTasks = typeof guard?.tasks === 'string' ? guard.tasks : ''
+  const guardTasks = typeof guard?.tasks === 'string' ? guard.tasks.trim() : ''
+  // Two guards on one session would double the anchors, the tool guard and the
+  // audit. The dialog enforces this too; the host must not depend on that.
+  if (guardRunId !== '' && guardTasks !== '') {
+    return fail(REDLINE_ERROR.badRequest, 'a supervisor run and a goal guard cannot both be attached')
+  }
   const guardEvaluator = guard?.evaluator !== null && typeof guard?.evaluator === 'object'
     ? guard.evaluator as { readonly provider?: unknown; readonly model?: unknown }
     : undefined
@@ -708,6 +792,7 @@ const anchorStart: RedlineOpHandler = async ({ ctx, call }) => {
     promptRequestId: ids.promptRequestId,
     promptText: draft.task.trim(),
     runtimeAnchor: composed.text,
+    ...(guardRunId === '' ? {} : { guardRunId }),
     ...(guardTasks === '' ? {} : {
       guard: {
         goal: draft.goal, acceptance: draft.acceptance, discipline: draft.discipline, tasks: guardTasks,
@@ -720,6 +805,11 @@ const anchorStart: RedlineOpHandler = async ({ ctx, call }) => {
     }),
   })
   if (!result.ok) return fail(REDLINE_ERROR.internal, `anchor start held: ${result.cause}`)
+  if (guardRunId !== '') {
+    // The supervisor ledger says whether the first task ever arrived; a fire-and-
+    // forget write keeps the response fast while still recording it.
+    await markFirstMessageDelivered(cwd, guardRunId).catch(() => undefined)
+  }
   return redlineOk({
     sessionId: ids.sessionId,
     title,
@@ -1268,6 +1358,224 @@ async function setGuardPaused(ctx: Context, call: RedlineCall, paused: boolean):
 const pauseGuard: RedlineOpHandler = async ({ ctx, call }) => await setGuardPaused(ctx, call, true)
 const resumeGuard: RedlineOpHandler = async ({ ctx, call }) => await setGuardPaused(ctx, call, false)
 
+/** Read the supervisor-prepare fields; `null` means unusable. */
+function prepareInputOf(call: RedlineCall, draft: AnchorDraft) {
+  const tasks = typeof call.tasks === 'string' ? call.tasks : ''
+  if (tasks.trim() === '') return null
+  const parallel = typeof call.parallel === 'number' && Number.isFinite(call.parallel) ? call.parallel : undefined
+  const milestoneEvery = typeof call.milestoneEvery === 'number' && Number.isFinite(call.milestoneEvery)
+    ? call.milestoneEvery
+    : undefined
+  const runId = typeof call.runId === 'string' && call.runId.trim() !== '' ? call.runId.trim() : undefined
+  const scopes = scopesOf(call.scopes)
+  if (call.scopes !== undefined && scopes === undefined) return null
+  const probes = probesOf(call.probes)
+  if (call.probes !== undefined && probes === undefined) return null
+  return {
+    goal: draft.goal,
+    acceptance: draft.acceptance,
+    discipline: draft.discipline,
+    tasks,
+    ...(parallel === undefined ? {} : { parallel }),
+    ...(call.enforcement === 'enforce' ? { enforcement: 'enforce' as const } : {}),
+    ...(milestoneEvery === undefined ? {} : { milestoneEvery }),
+    ...(runId === undefined ? {} : { runId }),
+    ...(scopes === undefined ? {} : { scopes }),
+    ...(probes === undefined ? {} : { probes }),
+    ...(call.worktree === true ? { worktree: true } : {}),
+  }
+}
+
+const PROBE_KINDS = new Set(['file_exists', 'file_contains', 'grep', 'number_gte', 'command', 'scan'])
+/** Probe ids become an evidence file name, so they must be a safe segment. */
+const PROBE_ID = /^[A-Za-z0-9_-]{1,40}$/
+
+/** Validate the per-task scope map: `{ TASK: string[] }` with safe path entries. */
+function scopesOf(raw: unknown): Record<string, readonly string[]> | undefined {
+  if (raw === undefined) return undefined
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const scopes: Record<string, readonly string[]> = {}
+  for (const [taskId, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(taskId)) return undefined
+    if (!Array.isArray(value)) return undefined
+    const paths: string[] = []
+    for (const entry of value) {
+      // The same rules the ledger applies later: relative, no `..`, and never a
+      // blanket grant that would silently equal "no scope".
+      if (!isSafeScopePath(entry) || isBroadScopePath(entry) || entry.trim().length > 300) return undefined
+      // Persist the normalized form: the matcher compares against git-reported
+      // paths, and `././src/a.ts` / `src\\a.ts` never matched one.
+      paths.push(normalizeScopePath(entry))
+    }
+    scopes[taskId] = paths
+  }
+  return scopes
+}
+
+/** Required fields per probe kind; a probe that cannot run is refused up front. */
+function specOf(kind: string, spec: Record<string, unknown>): boolean {
+  const str = (value: unknown): boolean => typeof value === 'string' && value.trim() !== ''
+  const strList = (value: unknown): boolean => Array.isArray(value)
+    && value.length > 0 && value.every(entry => typeof entry === 'string' && entry.trim() !== '')
+  switch (kind) {
+    case 'file_exists': return str(spec.path)
+    case 'file_contains':
+      // `flags` feeds a RegExp; a number there would silently change the match.
+      return str(spec.path) && str(spec.pattern)
+        && (spec.flags === undefined || typeof spec.flags === 'string')
+    case 'grep': {
+      const expect = spec.expect
+      const minMatches = (expect as { minMatches?: unknown } | null)?.minMatches
+      const expectOk = expect === 'match' || expect === 'no_match'
+        || (expect !== null && typeof expect === 'object'
+          && typeof minMatches === 'number' && Number.isFinite(minMatches))
+      return str(spec.pattern) && strList(spec.paths) && expectOk
+    }
+    case 'number_gte': {
+      const source = spec.source
+      if (source === null || typeof source !== 'object') return false
+      const bag = source as Record<string, unknown>
+      const str2 = (value: unknown): boolean => typeof value === 'string' && value.trim() !== ''
+      const argsOk = Array.isArray(bag.args)
+        && (bag.args as unknown[]).every(entry => typeof entry === 'string')
+      const sourceOk = bag.type === 'file'
+        ? str2(bag.path) && (bag.pattern === undefined || typeof bag.pattern === 'string')
+        : bag.type === 'command' && str2(bag.cmd) && argsOk
+      return sourceOk && typeof spec.threshold === 'number' && Number.isFinite(spec.threshold)
+    }
+    case 'command':
+      return str(spec.cmd) && Array.isArray(spec.args)
+        && (spec.args as unknown[]).every(entry => typeof entry === 'string')
+        && (spec.cwd === undefined || (typeof spec.cwd === 'string' && !spec.cwd.startsWith('/')))
+        && (spec.expectExit === undefined || Number.isInteger(spec.expectExit))
+    case 'scan': {
+      const paths = spec.paths
+      // `paths` is optional, but a bare string would be iterated character by
+      // character by the scanner instead of being rejected here.
+      if (paths !== undefined && (!Array.isArray(paths) || !paths.every(entry => typeof entry === 'string'))) return false
+      return spec.scanKind === 'doclinks' || spec.scanKind === 'todo-tbd' || spec.scanKind === 'inline-code-path'
+    }
+    default: return false
+  }
+}
+
+/**
+ * Validate the probe list at the channel boundary.
+ *
+ * The dialog builds these objects, so a malformed entry means a version skew or
+ * a hand-written call. Rejecting the whole list beats writing half a probe file
+ * that a later audit would silently trust.
+ */
+function probesOf(raw: unknown): ProbeDef[] | undefined {
+  if (raw === undefined) return undefined
+  if (!Array.isArray(raw)) return undefined
+  const probes: ProbeDef[] = []
+  for (const item of raw) {
+    if (item === null || typeof item !== 'object') return undefined
+    const bag = item as Record<string, unknown>
+    if (typeof bag.id !== 'string' || !PROBE_ID.test(bag.id.trim())) return undefined
+    if (typeof bag.taskId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(bag.taskId.trim())) return undefined
+    if (bag.weight !== 'light' && bag.weight !== 'heavy') return undefined
+    if (bag.spec === null || typeof bag.spec !== 'object') return undefined
+    const spec = bag.spec as Record<string, unknown>
+    const kind = spec.kind
+    if (typeof kind !== 'string' || !PROBE_KINDS.has(kind)) return undefined
+    if (!specOf(kind, spec)) return undefined
+    // A zero or negative timeout means "no timeout" to `execFile`; refuse it.
+    const timeoutMs = typeof bag.timeoutMs === 'number' && Number.isFinite(bag.timeoutMs) && bag.timeoutMs >= 100
+      ? Math.min(bag.timeoutMs, 600_000)
+      : undefined
+    probes.push({
+      id: bag.id.trim(),
+      taskId: bag.taskId.trim(),
+      weight: bag.weight,
+      spec: bag.spec as ProbeDef['spec'],
+      enabled: bag.enabled !== false,
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    })
+  }
+  return probes
+}
+
+/** Step two of the anchor dialog: prepare the run directory before a session exists. */
+const guardPrepare: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const gate = await anchorGate(ctx, sessionId)
+  if (gate !== null) return gate
+  const draft = anchorDraftOf(call)
+  if (draft === null) return fail(REDLINE_ERROR.badRequest)
+  const input = prepareInputOf(call, draft)
+  if (input === null) return fail(REDLINE_ERROR.badRequest, 'prepare fields are invalid')
+  // A prepared supervisor run and a legacy goal guard cannot share one session:
+  // the dialog enforces it, and the host must not trust that.
+  const legacyGuard = call.guard !== null && typeof call.guard === 'object'
+    ? (call.guard as { readonly tasks?: unknown }).tasks
+    : undefined
+  if (typeof legacyGuard === 'string' && legacyGuard.trim() !== '') {
+    return fail(REDLINE_ERROR.badRequest, 'a supervisor run and a goal guard cannot both be attached')
+  }
+  const resolved = await resolveAnchorSource(ctx, sessionId)
+  if (!resolved.ok) return resolved.envelope
+  try {
+    const prepared = await withSessionLock(sessionId, async () => await prepareGuardRun(resolved.source.cwd, input))
+    return redlineOk({
+      runId: prepared.runId,
+      root: prepared.root,
+      files: prepared.files,
+      ...(prepared.worktreePath === undefined ? {} : { worktreePath: prepared.worktreePath }),
+    })
+  } catch (error) {
+    return fail(REDLINE_ERROR.badRequest, error instanceof Error ? error.message : 'run creation failed')
+  }
+}
+
+/** Roll one run back to its last checkpoint; requires an explicit confirm. */
+const guardRollback: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null || call.confirm !== 'rollback') return fail(REDLINE_ERROR.badRequest)
+  const runId = typeof call.runId === 'string' ? call.runId.trim() : ''
+  if (!isSafeRunId(runId)) return fail(REDLINE_ERROR.badRequest)
+  // Rolling back while a turn is open would race the in-flight tool writes and
+  // the audit that owns the same ledger.
+  const gate = await anchorGate(ctx, sessionId)
+  if (gate !== null) return gate
+  const agents = ctx.get('agents') as { get?(id: string): SupervisorAgent | undefined } | undefined
+  const agent = agents?.get?.(sessionId)
+  const cwd = agent?.session?.header?.cwd
+  if (agent === undefined || cwd === undefined) return fail(REDLINE_ERROR.notLive)
+  // The whole read → git → write-back transaction is serialized: two tabs (or a
+  // fast double retry) would otherwise run `git revert` and `store.update`
+  // concurrently and fight over `.git/index.lock` and the ledger.
+  const answer = await withSessionLock(sessionId, async () => {
+    const outcome = await rollbackRun({ cwd, runId, sessionId })
+    if (!outcome.ok) return fail(REDLINE_ERROR.badRequest, outcome.reason)
+    // The live attachment holds its own copy of the ledger; refresh it so the
+    // anchors and the tool guard see the reopened task immediately.
+    await attachedSupervisorFor(sessionId, runId)?.refresh().catch(() => undefined)
+    // A blocked/paused/completed goal would never drive the reopened task, so
+    // the host side is brought back in line with the ledger we just reset.
+    //
+    // The registry's EXACT live object is required: the goal service compares by
+    // reference (`ctx.agents.get(agent.id) !== agent`) and rejects a copy with
+    // GOAL_AGENT_NOT_LIVE, which would also flip the run to `setup-failed`.
+    await resumeSupervisorGoal({ ctx, agent, cwd, runId }).catch(() => false)
+    return redlineOk(await findSupervisorRun(cwd, sessionId))
+  })
+  return answer
+}
+
+/** Read-only supervisor summary for one session (null when it has no run). */
+const readSupervisor: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const agents = ctx.get('agents') as { get?(id: string): { readonly session?: { readonly header?: { readonly cwd?: string } } } | undefined } | undefined
+  const agent = agents?.get?.(sessionId)
+  const cwd = agent?.session?.header?.cwd
+  if (cwd === undefined) return fail(REDLINE_ERROR.notLive)
+  return redlineOk(await findSupervisorRun(cwd, sessionId))
+}
+
 /**
  * The op table. M2's entries; M3/M5 add theirs here and nowhere else.
  */
@@ -1288,6 +1596,9 @@ const OPS = new Map<string, RedlineOpHandler>([
   ['carrier.models', readCarrierModels],
   ['anchor.plan', anchorPlan],
   ['anchor.start', anchorStart],
+  ['guard.prepare', guardPrepare],
+  ['guard.supervisor', readSupervisor],
+  ['guard.rollback', guardRollback],
   ['guard.status', readGuard],
   ['guard.pause', pauseGuard],
   ['guard.resume', resumeGuard],

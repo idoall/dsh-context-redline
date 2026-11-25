@@ -3,6 +3,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { attachGoalGuard, createGuardState, loadGuardState, type GuardSeed } from './goal-guard'
+import { attachSupervisor, armSupervisorGoal } from './goal-supervisor/attach'
+import { markSetupFailed } from './goal-supervisor/create'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { currentModelSelection, type RedlineModelAgent } from './redline-model-selection'
 import { RUNTIME_ANCHOR_NAME, RUNTIME_ANCHOR_ORDER } from '../shared/redline-carrier'
@@ -74,6 +76,8 @@ export interface CarrierSessionRequest {
   readonly runtimeAnchor?: string
   /** Opt-in Goal Guard: frozen task list and the three anchor fields. */
   readonly guard?: GuardSeed
+  /** Prepared supervisor run id; when present the run directory already exists. */
+  readonly guardRunId?: string
 }
 
 export interface CarrierReturnRequest {
@@ -296,6 +300,23 @@ export function createRedlineSessionControl(
         if (request.guard !== undefined) {
           await attachGoalGuard(ctx as never, agentCtx as never, agent as never, request.carrierId)
         }
+        if (request.guardRunId !== undefined && request.guardRunId !== '') {
+          try {
+            await attachSupervisor({
+              ctx: ctx as never,
+              agentCtx: agentCtx as never,
+              agent: agent as never,
+              runId: request.guardRunId,
+              cwd: request.cwd,
+            })
+          } catch (error) {
+            // The run directory exists but cannot be mounted: record it before the
+            // session is created so the card can explain the failure.
+            const message = error instanceof Error ? error.message : 'supervisor attach failed'
+            await markSetupFailed(request.cwd, request.guardRunId, 'anchors', message).catch(() => undefined)
+            throw error
+          }
+        }
       }
       let handle: CarrierAgentHandle
       try {
@@ -316,6 +337,17 @@ export function createRedlineSessionControl(
       }
       handles.set(request.carrierId, handle)
       agent = handle.agent
+      // The goal service only accepts an agent that already entered the registry,
+      // which happens after `setup`. Arming here is the difference between a run
+      // that continues by itself and one that silently stalls on turn one.
+      if (request.guardRunId !== undefined && request.guardRunId !== '') {
+        await armSupervisorGoal({
+          ctx: ctx as never,
+          agent,
+          cwd: request.cwd,
+          runId: request.guardRunId,
+        })
+      }
     }
 
     const actual = currentModelSelection(agent)
