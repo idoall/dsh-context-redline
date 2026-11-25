@@ -26,7 +26,7 @@ import type { ViewKit } from '../viewkit'
 import { randomUuid } from '../ids'
 import type { ChildIndexRow, ChildRow } from '../childSessions'
 import type { ChildCapacity } from '../../shared/redline-capacity'
-import type { AnchorInput, AnchorPlan, AnchorStarted, CarrierAnchorMode, CarrierModelOption, ChildPlan, ChildStarted, RedlineResult } from '../redlineChannel'
+import type { AnchorInput, AnchorPlan, AnchorStarted, CarrierAnchorMode, CarrierModelOption, ChildPlan, ChildStarted, GuardPrepareInput, GuardPrepared, RedlineResult } from '../redlineChannel'
 
 export interface ChildCardProps {
   /** The parent session the panel is showing. */
@@ -60,6 +60,8 @@ export interface ChildCardProps {
   ) => Promise<RedlineResult<ChildStarted>>
   /** Read-only preview of one anchored conversation. */
   readonly planAnchor: (input: AnchorInput) => Promise<RedlineResult<AnchorPlan>>
+  /** Create the supervisor run directory (the dialog's step two). */
+  readonly prepareGuard: (input: GuardPrepareInput) => Promise<RedlineResult<GuardPrepared>>
   /** The second (and only other) session write: one anchored root conversation. */
   readonly startAnchor: (
     operationId: string,
@@ -200,6 +202,7 @@ interface AnchorDialogProps {
   readonly models: readonly CarrierModelOption[]
   readonly t: ViewKit['t']
   readonly planAnchor: ChildCardProps['planAnchor']
+  readonly prepareGuard: ChildCardProps['prepareGuard']
   readonly startAnchor: ChildCardProps['startAnchor']
   readonly openSession: (sessionId: string) => void
   readonly onClose: () => void
@@ -223,16 +226,59 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
   const [guardTasks, setGuardTasks] = useState('')
   const [guardEvalRoute, setGuardEvalRoute] = useState('')
   const [guardPlanPath, setGuardPlanPath] = useState('')
+  const [supervisorEnabled, setSupervisorEnabled] = useState(false)
+  const [supervisorTasks, setSupervisorTasks] = useState('')
+  const [supervisorWorktree, setSupervisorWorktree] = useState(false)
+  const [supervisorEnforce, setSupervisorEnforce] = useState(false)
+  const [supervisorProbes, setSupervisorProbes] = useState('')
+  const [stage, setStage] = useState<'idle' | 'preparing' | 'starting'>('idle')
+  const [prepared, setPrepared] = useState<{ runId: string; count: number; worktreePath?: string } | null>(null)
   const [plan, setPlan] = useState<AnchorPlan | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<{ code: string; message: string } | null>(null)
   const [route, setRoute] = useState('')
   const [effort, setEffort] = useState('')
   const operationId = useRef<string>(randomUuid())
+  // The prepared run id survives field edits so a retry rewrites the same run
+  // directory instead of leaving an orphan behind. It resets with the dialog.
+  const preparedRunId = useRef<string | null>(null)
   const generation = useRef(0)
   const guardLines = guardTasks.split(/\r?\n/).map(line => line.trim()).filter(line => line !== '')
   const guardValid = !guardEnabled || (guardLines.length > 0 && guardLines.every(line => line.split('|').filter(part => part.trim() !== '').length >= 2))
-  const valid = [task, goal, acceptance, discipline].every(value => value.trim() !== '') && guardValid
+  const supervisorLines = supervisorTasks.split(/\r?\n/).map(line => line.trim()).filter(line => line !== '')
+  // A task line must carry a non-empty id and title; an empty field is not a task.
+  // The id rule and the duplicate check mirror the host parser, so a typo is
+  // refused in the dialog instead of failing after the run directory exists.
+  const supervisorTaskIds = new Set<string>()
+  const supervisorTasksValid = supervisorLines.length > 0 && supervisorLines.every((line) => {
+    const parts = line.split('|').map(part => part.trim())
+    const id = parts[0] ?? ''
+    if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(id)) return false
+    if ((parts[1] ?? '') === '') return false
+    if (supervisorTaskIds.has(id)) return false
+    supervisorTaskIds.add(id)
+    return true
+  })
+  // Probe lines: `TASK | command args`. A malformed line — or one that names a
+  // task the table does not define — disables the button instead of being dropped
+  // silently (a dropped probe means the task runs with no deterministic gate).
+  const supervisorProbeParsed = supervisorProbes.split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line !== '')
+    .map((line) => {
+      const [taskId = '', ...command] = line.split('|')
+      const argv = command.join('|').trim().split(/\s+/).filter(token => token !== '')
+      const id = taskId.trim()
+      return {
+        id,
+        cmd: argv[0] ?? '',
+        args: argv.slice(1),
+        ok: id !== '' && argv.length > 0 && supervisorTaskIds.has(id),
+      }
+    })
+  const supervisorProbesValid = supervisorProbeParsed.every(probe => probe.ok)
+  const supervisorValid = !supervisorEnabled || (supervisorTasksValid && supervisorProbesValid)
+  const valid = [task, goal, acceptance, discipline].every(value => value.trim() !== '') && guardValid && supervisorValid
 
   useEffect(() => {
     if (!props.open) return
@@ -245,13 +291,41 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
     setGuardTasks('')
     setGuardEvalRoute('')
     setGuardPlanPath('')
+    setSupervisorEnabled(false)
+    setSupervisorTasks('')
+    setSupervisorWorktree(false)
+    setSupervisorEnforce(false)
+    setSupervisorProbes('')
+    setStage('idle')
+    setPrepared(null)
     setPlan(null)
     setBusy(false)
     setError(null)
     setRoute('')
     setEffort('')
+    preparedRunId.current = null
     operationId.current = randomUuid()
   }, [props.open])
+
+  // Any supervisor input change invalidates the prepared directory: the ledger
+  // must be rewritten from the card the human is actually looking at.
+  useEffect(() => {
+    setPrepared(null)
+  }, [task, goal, acceptance, discipline, supervisorTasks, supervisorWorktree, supervisorEnforce, supervisorProbes])
+
+  // The first token is the binary, the rest are argv — no shell, no quoting, one
+  // exit code-0 expectation. Invalid lines are reported through `supervisorValid`.
+  const supervisorProbeDefs = supervisorProbeParsed
+    .filter(probe => probe.ok)
+    .map((probe, index) => ({
+      id: `C${index + 1}`,
+      taskId: probe.id,
+      // A command probe is a real build/test run: heavy, so it only executes
+      // once the light probes pass or the model declares completion.
+      weight: 'heavy' as const,
+      spec: { kind: 'command' as const, cmd: probe.cmd, args: probe.args },
+      enabled: true,
+    }))
 
   useEffect(() => {
     if (!props.open || !valid) { setPlan(null); return }
@@ -305,12 +379,54 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
     const frozen = plan
     setBusy(true)
     setError(null)
+    setStage('idle')
+    // `prepared` is the state of a previous render; a first click must still be
+    // able to hand the freshly created worktree path to `startAnchor`.
+    let activeRun: { runId: string; worktreePath?: string } | null = prepared
+    setPrepared(null)
     const config = selectedModel === undefined ? undefined : {
       provider: selectedModel.provider,
       model: selectedModel.model,
       ...(effort === '' ? {} : { reasoningEffort: effort }),
     }
     void (async () => {
+      let guardRunId: string | undefined
+      if (supervisorEnabled) {
+        if (activeRun !== null) {
+          guardRunId = activeRun.runId
+        } else {
+          setStage('preparing')
+          const preparedAnswer = await props.prepareGuard({
+            task, goal, acceptance, discipline, tasks: supervisorTasks, worktree: supervisorWorktree,
+            ...(supervisorEnforce ? { enforcement: 'enforce' as const } : {}),
+            ...(supervisorProbeDefs.length === 0 ? {} : { probes: supervisorProbeDefs }),
+            ...(preparedRunId.current === null ? {} : { runId: preparedRunId.current }),
+          })
+          if (!preparedAnswer.ok) {
+            setBusy(false)
+            setStage('idle')
+            // A remembered run id that can no longer be prepared (it already
+            // owns a mounted session) must not trap every later retry. The
+            // operation id is reset with it: a fresh run id needs a fresh
+            // carrier id, or the retry resumes the half-created session and
+            // skips the supervisor mount entirely.
+            if (/already exists/i.test(preparedAnswer.message)) {
+              preparedRunId.current = null
+              operationId.current = randomUuid()
+            }
+            setError({ code: preparedAnswer.code, message: preparedAnswer.message })
+            return
+          }
+          preparedRunId.current = preparedAnswer.value.runId
+          guardRunId = preparedAnswer.value.runId
+          activeRun = {
+            runId: preparedAnswer.value.runId,
+            ...(preparedAnswer.value.worktreePath === undefined ? {} : { worktreePath: preparedAnswer.value.worktreePath }),
+          }
+          setPrepared({ ...activeRun, count: preparedAnswer.value.files.length })
+        }
+      }
+      setStage('starting')
       const guardInput = guardEnabled ? {
         guard: {
           tasks: guardTasks,
@@ -324,18 +440,32 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
           }),
         },
       } : {}
-      const answer = await props.startAnchor(operationId.current, { task, goal, acceptance, discipline, ...guardInput },
-        frozen.snapshotFingerprint, frozen.requestFingerprint, config)
+      const answer = await props.startAnchor(operationId.current, {
+        task, goal, acceptance, discipline, ...guardInput,
+        ...(guardRunId === undefined ? {} : { guardRunId }),
+        ...(activeRun?.worktreePath === undefined ? {} : { guardWorktreePath: activeRun.worktreePath }),
+      }, frozen.snapshotFingerprint, frozen.requestFingerprint, config)
       setBusy(false)
-      if (!answer.ok) { setError({ code: answer.code, message: answer.message }); return }
+      setStage('idle')
+      if (!answer.ok) {
+        const held = /already exists/i.test(answer.message) || /held: workspace/i.test(answer.message)
+        if (held) {
+          preparedRunId.current = null
+          operationId.current = randomUuid()
+        }
+        setError({ code: answer.code, message: answer.message })
+        return
+      }
       props.onClose()
       props.openSession(answer.value.sessionId)
     })()
   }
   const errKey = error === null ? null : `redline.err.${error.code.replace('redline/', '')}`
-  const errText = error === null ? null : error.code === 'redline/internal' && error.message !== ''
-    ? `${t(errKey ?? 'redline.err.internal')}：${error.message}`
-    : t(errKey ?? 'redline.err.internal')
+  // Every code carries its host-side detail; collapsing it to a generic line
+  // hides the one sentence that says what to fix.
+  const errText = error === null ? null : error.message === ''
+    ? t(errKey ?? 'redline.err.internal')
+    : `${t(errKey ?? 'redline.err.internal')}：${error.message}`
 
   if (!props.open) return null
   return h('div', {
@@ -350,7 +480,7 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
     ),
     h('div', { className: 'redline-confirm-body' },
       h('p', { className: 'redline-confirm-intro' }, t('anchor.intro')),
-      h('label', { className: 'redline-confirm-task' },
+      h('div', { className: 'redline-confirm-task' },
         h('span', { className: 'redline-confirm-task-label' }, t('anchor.taskLabel')),
         h('span', { className: 'redline-confirm-task-hint' }, t('anchor.taskHint')),
         h('textarea', {
@@ -361,7 +491,7 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
             if (!goalDirty) setGoal(value)
           },
         })),
-      h('label', { className: 'redline-confirm-task' },
+      h('div', { className: 'redline-confirm-task' },
         h('span', { className: 'redline-confirm-task-label' },
           t('anchor.goalLabel'), ' ',
           h('button', {
@@ -373,25 +503,29 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
           rows: 2, 'data-redline-anchor-goal': '1', value: goal,
           onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setGoalDirty(true); setGoal(event.target.value) },
         })),
-      h('label', { className: 'redline-confirm-task' },
+      h('div', { className: 'redline-confirm-task' },
         h('span', { className: 'redline-confirm-task-label' }, t('anchor.acceptanceLabel')),
         h('span', { className: 'redline-confirm-task-hint' }, t('anchor.acceptanceHint')),
         h('textarea', {
           rows: 3, 'data-redline-anchor-acceptance': '1', placeholder: t('anchor.acceptancePlaceholder'),
           value: acceptance, onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setAcceptance(event.target.value) },
         })),
-      h('label', { className: 'redline-confirm-task' },
+      h('div', { className: 'redline-confirm-task' },
         h('span', { className: 'redline-confirm-task-label' }, t('anchor.disciplineLabel')),
         h('span', { className: 'redline-confirm-task-hint' }, t('anchor.disciplineHint')),
         h('textarea', {
           rows: 5, 'data-redline-anchor-discipline': '1', placeholder: t('anchor.disciplinePlaceholder'),
           value: discipline, onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setDiscipline(event.target.value) },
         })),
-      h('label', { className: 'redline-confirm-task' },
+      h('div', { className: 'redline-confirm-task' },
         h('span', { className: 'redline-confirm-task-label' },
           h('input', {
             type: 'checkbox', 'data-redline-anchor-guard': '1', checked: guardEnabled,
-            onChange: (event: ChangeEvent<HTMLInputElement>) => { setGuardEnabled(event.target.checked) },
+            onChange: (event: ChangeEvent<HTMLInputElement>) => {
+              setGuardEnabled(event.target.checked)
+              // Two guards on one session would double the anchors and the audit.
+              if (event.target.checked) setSupervisorEnabled(false)
+            },
           }), ' ', t('anchor.guardLabel')),
         h('span', { className: 'redline-confirm-task-hint' }, t('anchor.guardHint')),
         guardEnabled
@@ -421,6 +555,45 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
               value: guardPlanPath, onChange: (event: ChangeEvent<HTMLInputElement>) => { setGuardPlanPath(event.target.value) },
             }))
           : null),
+      h('div', { className: 'redline-confirm-task' },
+        h('span', { className: 'redline-confirm-task-label' },
+          h('input', {
+            type: 'checkbox', 'data-redline-anchor-supervisor': '1', checked: supervisorEnabled,
+            onChange: (event: ChangeEvent<HTMLInputElement>) => {
+              setSupervisorEnabled(event.target.checked)
+              if (event.target.checked) setGuardEnabled(false)
+            },
+          }), ' ', t('anchor.supervisorLabel')),
+        h('span', { className: 'redline-confirm-task-hint' }, t('anchor.supervisorHint')),
+        supervisorEnabled
+          ? h('textarea', {
+            rows: 5, 'data-redline-anchor-supervisor-tasks': '1', placeholder: t('anchor.guardPlaceholder'),
+            value: supervisorTasks, onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setSupervisorTasks(event.target.value) },
+          })
+          : null,
+        supervisorEnabled
+          ? h('label', { className: 'redline-anchor-guard-plan' },
+            h('span', null, t('anchor.supervisorProbes')),
+            h('textarea', {
+              rows: 3, 'data-redline-anchor-supervisor-probes': '1',
+              placeholder: t('anchor.supervisorProbesPlaceholder'),
+              value: supervisorProbes, onChange: (event: ChangeEvent<HTMLTextAreaElement>) => { setSupervisorProbes(event.target.value) },
+            }),
+            h('span', { className: 'redline-confirm-task-hint' }, t('anchor.supervisorProbesHint')))
+          : null,
+        supervisorEnabled
+          ? h('span', { className: 'redline-anchor-guard-options' },
+            h('label', null,
+              h('input', {
+                type: 'checkbox', 'data-redline-anchor-supervisor-worktree': '1', checked: supervisorWorktree,
+                onChange: (event: ChangeEvent<HTMLInputElement>) => { setSupervisorWorktree(event.target.checked) },
+              }), ' ', t('anchor.supervisorWorktree')),
+            h('label', null,
+              h('input', {
+                type: 'checkbox', 'data-redline-anchor-supervisor-enforce': '1', checked: supervisorEnforce,
+                onChange: (event: ChangeEvent<HTMLInputElement>) => { setSupervisorEnforce(event.target.checked) },
+              }), ' ', t('anchor.supervisorEnforce')))
+          : null),
       h('div', { className: 'redline-anchor-snapshot' },
         h('div', { className: 'redline-anchor-snapshot-head' }, t('anchor.snapshot')),
         plan?.guard === undefined ? null : h('div', { className: 'redline-anchor-guard-hash', 'data-redline-anchor-guard-hash': '1' },
@@ -444,6 +617,18 @@ function AnchorDialog(props: AnchorDialogProps): ReactElement | null {
         onEffort: (next: string) => { setEffort(next) },
       }),
       errText !== null ? h('div', { className: 'redline-editor-err', role: 'alert' }, errText) : null,
+      stage === 'idle' && prepared === null ? null : h('div', {
+        className: 'redline-anchor-progress', 'data-redline-anchor-progress': '1',
+      },
+      h('div', null, `① ${t('anchor.stepCard')} ✓`),
+      h('div', null,
+        `② ${t('anchor.stepPrepare')} `,
+        stage === 'preparing'
+          ? `● ${t('anchor.preparing')}`
+          : prepared === null
+            ? '○'
+            : `✓ ${prepared.runId} · ${t('anchor.stepFiles', { count: prepared.count })}`),
+      stage === 'starting' ? h('div', null, t('anchor.stepEntering')) : null),
     ),
     h('div', { className: 'redline-modal-foot' },
       h('span', { className: 'redline-confirm-scope' }, t('anchor.scope')),
@@ -667,6 +852,7 @@ export function makeChildCard(kit: ViewKit): (props: ChildCardProps) => ReactEle
         models: props.models ?? [],
         t,
         planAnchor: props.planAnchor,
+        prepareGuard: props.prepareGuard,
         startAnchor: props.startAnchor,
         openSession: props.openSession,
         onClose: () => { setAnchorOpen(false) },

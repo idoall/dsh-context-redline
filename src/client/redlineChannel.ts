@@ -25,6 +25,7 @@ import type { ChildCapacity } from '../shared/redline-capacity'
 import type { OriginRecord } from '../shared/redline-origins'
 import type { DraftTable } from '../shared/redline-drafts'
 import type { TurnState } from '../shared/redline-turn'
+import type { SupervisorSummary } from '../shared/redline-supervisor'
 
 /** One row's complete content, as `node.read` answers it. */
 export interface RedlineRow {
@@ -166,6 +167,9 @@ export interface AnchorInput {
   readonly goal: string
   readonly acceptance: string
   readonly discipline: string
+  /** Prepared supervisor run id; the run directory already exists on disk. */
+  readonly guardRunId?: string
+  readonly guardWorktreePath?: string
   /** Opt-in Goal Guard: one `T1 | title | acceptance` line per task. */
   readonly guard?: {
     readonly tasks: string
@@ -275,6 +279,66 @@ export async function resumeGuard(sessionId: string): Promise<RedlineResult<Guar
 /** Read-only preview of one anchored conversation; creates nothing. */
 export async function planAnchor(sessionId: string, input: AnchorInput): Promise<RedlineResult<AnchorPlan>> {
   return await call<AnchorPlan>({ op: 'anchor.plan', sessionId, ...input })
+}
+
+/** One deterministic probe the plugin will run itself (never the model). */
+export interface GuardProbeInput {
+  readonly id: string
+  readonly taskId: string
+  readonly weight: 'light' | 'heavy'
+  readonly spec: {
+    readonly kind: 'command'
+    readonly cmd: string
+    readonly args: readonly string[]
+    readonly expectExit?: number
+  }
+  readonly enabled?: boolean
+}
+
+/** Step two of the anchor dialog: create the supervisor run directory. */
+export interface GuardPrepareInput {
+  readonly task: string
+  readonly goal: string
+  readonly acceptance: string
+  readonly discipline: string
+  /** Task table, one `ID | title | acceptance` line per task. */
+  readonly tasks: string
+  readonly parallel?: number
+  readonly worktree?: boolean
+  /** Strict mode: deny out-of-scope writes and shell tools. */
+  readonly enforcement?: 'enforce'
+  /** Retry target: rewrite this run directory instead of creating a new one. */
+  readonly runId?: string
+  /** Deterministic probes, executed by the plugin before any evaluation. */
+  readonly probes?: readonly GuardProbeInput[]
+}
+
+export interface GuardPrepared {
+  readonly runId: string
+  readonly root: string
+  readonly files: readonly string[]
+  readonly worktreePath?: string
+}
+
+export async function readSupervisor(sessionId: string): Promise<RedlineResult<SupervisorSummary | null>> {
+  const answer = await call<unknown>({ op: 'guard.supervisor', sessionId })
+  if (!answer.ok) return answer
+  const value = answer.value
+  if (value === null || typeof value !== 'object') return { ok: true, value: null }
+  const bag = value as { runId?: unknown; tasks?: unknown; done?: unknown; total?: unknown }
+  if (typeof bag.runId !== 'string' || !Array.isArray(bag.tasks)
+    || typeof bag.done !== 'number' || typeof bag.total !== 'number') {
+    return { ok: true, value: null }
+  }
+  return { ok: true, value: value as SupervisorSummary }
+}
+
+export async function rollbackSupervisor(sessionId: string, runId: string): Promise<RedlineResult<SupervisorSummary | null>> {
+  return await call<SupervisorSummary | null>({ op: 'guard.rollback', sessionId, runId, confirm: 'rollback' })
+}
+
+export async function prepareGuard(sessionId: string, input: GuardPrepareInput): Promise<RedlineResult<GuardPrepared>> {
+  return await call<GuardPrepared>({ op: 'guard.prepare', sessionId, ...input })
 }
 
 /** Create the anchored conversation after the human confirmation. */

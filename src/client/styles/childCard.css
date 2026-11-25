@@ -213,10 +213,16 @@
 /* Goal Guard options inside the anchor dialog: dry-run + evaluator route. */
 .redline-anchor-guard-options { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 6px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
 .redline-anchor-guard-options label { display: inline-flex; align-items: center; gap: 4px; }
+
+/* The dialog's two-step progress while a supervisor run is being prepared. */
+.redline-anchor-progress { margin-top: 10px; padding: 8px 10px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 8px; font-size: 12px; line-height: 1.7; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-1); }
 .redline-anchor-guard-options select { max-width: 220px; font: inherit; }
 
 /* Goal Guard plan file: a path input plus the read-only preview headings. */
 .redline-anchor-guard-plan { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
 .redline-anchor-guard-plan input { flex: 1 1 220px; min-width: 0; font: inherit; }
+
+/* Goal hash line inside the snapshot block: a readout, not an input. */
+.redline-anchor-guard-hash { margin-top: 6px; font-size: 11px; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; }
 .redline-anchor-plan-preview { margin-top: 6px; font-size: 11px; }
 .redline-anchor-plan-preview pre { max-height: 140px; overflow: auto; margin: 4px 0 0; white-space: pre-wrap; color: var(--dsw-alias-label-secondary); }

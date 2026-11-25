@@ -303,8 +303,14 @@ const dynamicOk = new Set()
 for (const path of walk(join(ROOT, 'src'))) {
   if (path.startsWith(STYLES) || !/\.tsx$/.test(path)) continue
   const text = readFileSync(path, 'utf8')
-  for (const m of text.matchAll(/className=(?:"([^"]*)"|\{([^}]*)\})/g)) {
-    const raw = m[1] ?? m[2] ?? ''
+  // 两种写法都要抓：JSX 的 `className="..."` 与 `h()` 的 `{ className: '...' }`。
+  // 只抓 JSX 会漏掉全部 createElement 组件（0.9.0 的督导卡就是这么漏出裸样式的）。
+  const rawClasses = []
+  for (const m of text.matchAll(/className=(?:"([^"]*)"|\{([^}]*)\})/g)) rawClasses.push(m[1] ?? m[2] ?? '')
+  for (const m of text.matchAll(/className:\s*(?:'([^']*)'|"([^"]*)"|\{([^}]*)\}|`([^`]*)`)/g)) {
+    rawClasses.push(m[1] ?? m[2] ?? m[3] ?? m[4] ?? '')
+  }
+  for (const raw of rawClasses) {
     for (const tok of raw.split(/[\s'"`+]+/)) {
       if (!/^[a-z]/.test(tok)) continue
       if (tok.startsWith('animate-redline-')) {
@@ -313,6 +319,7 @@ for (const path of walk(join(ROOT, 'src'))) {
         continue
       }
       if (!tok.startsWith('redline-')) continue
+      if (tok.includes('${')) { dynamicOk.add(tok.slice(0, tok.indexOf('${'))); continue }   // 动态拼：`redline-guard-${status}`
       if (tok.endsWith('-')) { dynamicOk.add(tok); continue }   // 动态拼：`redline-br-delta-${...}`
       usedClasses.add(tok)
     }

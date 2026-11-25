@@ -18,7 +18,8 @@ import type { ContextSettings } from '../settings'
 import type { ViewKit } from '../viewkit'
 import { makeContextBrowser } from './browser'
 import { useRedlineDrafts } from '../redlineDrafts'
-import { pauseGuard, readGuardStatus, resumeGuard, type GuardStatus } from '../redlineChannel'
+import { pauseGuard, readGuardStatus, readSupervisor, rollbackSupervisor, resumeGuard, type GuardStatus } from '../redlineChannel'
+import type { SupervisorSummary } from '../../shared/redline-supervisor'
 import { useChildSessions } from '../childSessions'
 import { makeChildCard } from './childCard'
 import { makeEventList } from './events'
@@ -98,6 +99,12 @@ export function makeContextView(
     // composition), so turning it on parks the Total/Delta switch at total.
     const [dna, setDna] = useState(false)
     const [guard, setGuard] = useState<GuardStatus | null>(null)
+    const [supervisor, setSupervisor] = useState<SupervisorSummary | null>(null)
+    const [supervisorBusy, setSupervisorBusy] = useState(false)
+    const [rollbackArmed, setRollbackArmed] = useState(false)
+    const [supervisorError, setSupervisorError] = useState<string | null>(null)
+    /** Bumped on every session change so a late rollback reply is dropped. */
+    const rollbackGeneration = useRef(0)
     const [guardBusy, setGuardBusy] = useState(false)
     // One handler for both DNA switches: opening DNA from the browser must also
     // park the trend's Total/Delta switch at Total, or the chart plots total
@@ -240,6 +247,30 @@ export function makeContextView(
       return () => { cancelled = true; clearInterval(timer) }
     }, [sessionId])
 
+    // Supervisor run status: same polling cadence as the legacy guard card.
+    useEffect(() => {
+      // A pending second click belongs to the session it was armed in, and so
+      // does the card: showing session A's run while session B is selected is
+      // worse than showing nothing.
+      setRollbackArmed(false)
+      setSupervisorError(null)
+      setSupervisor(null)
+      setSupervisorBusy(false)
+      rollbackGeneration.current += 1
+      if (typeof sessionId !== 'string' || sessionId === '') return
+      let cancelled = false
+      const load = (): void => {
+        void readSupervisor(sessionId).then((answer) => {
+          if (cancelled) return
+          // a refusal here is "this session has no live run", not an error to show
+          setSupervisor(answer.ok ? answer.value : null)
+        })
+      }
+      load()
+      const timer = setInterval(load, 3000)
+      return () => { cancelled = true; clearInterval(timer) }
+    }, [sessionId])
+
     const toggleGuard = (): void => {
       if (guard === null || guardBusy) return
       setGuardBusy(true)
@@ -249,6 +280,63 @@ export function makeContextView(
         if (answer.ok) setGuard(answer.value)
       })
     }
+
+    // Rollback is destructive (it reverts commits and restores the reopened
+    // task's scope to the checkpoint): arm on the first click, execute on the
+    // second, so a stray click never rewrites history.
+    const rollbackSupervisorRun = (): void => {
+      if (supervisor === null || supervisorBusy || typeof sessionId !== 'string' || sessionId === '') return
+      if (!rollbackArmed) { setRollbackArmed(true); return }
+      setRollbackArmed(false)
+      setSupervisorBusy(true)
+      setSupervisorError(null)
+      // A response that lands after the user switched sessions must not paint
+      // this session's result onto the next one.
+      const generation = rollbackGeneration.current
+      void rollbackSupervisor(sessionId, supervisor.runId).then((answer) => {
+        if (rollbackGeneration.current !== generation) return
+        setSupervisorBusy(false)
+        if (answer.ok) { setSupervisor(answer.value); return }
+        // A failed rollback is actionable: the host says which checkpoint or
+        // file is in the way, so surface it instead of going silent. Keep the raw
+        // message (an empty one must render the title alone, not the title twice);
+        // the localized template is applied at render time.
+        setSupervisorError(answer.message)
+      })
+    }
+
+    const supervisorCard = supervisor === null ? null : (() => {
+      const currentTask = supervisor.tasks.find(task => task.id === supervisor.currentTaskId)
+      const blocked = supervisor.tasks.find(task => task.status === 'BLOCKED')
+      return h('div', { className: 'redline-card redline-guard-card', 'data-redline-supervisor-card': '1' },
+        h('div', { className: 'redline-card-title' },
+          h('span', { className: 'redline-card-title-text' }, t('supervisor.title')),
+          h('span', { className: 'redline-card-scale' },
+            `${supervisor.done}/${supervisor.total} · ${t(`supervisor.status.${supervisor.status}`)}`)),
+        h('div', { className: 'redline-guard-current' }, t('supervisor.run', { runId: supervisor.runId })),
+        currentTask === undefined ? null : h('div', { className: 'redline-guard-current' },
+          t('supervisor.task', { id: currentTask.id, title: currentTask.title })),
+        blocked === undefined ? null : h('div', { className: 'redline-editor-err', role: 'alert' },
+          t('supervisor.blocked', { reason: blocked.blockedReason ?? '' })),
+        // A run-level block is the plugin telling the host goal to stop; without
+        // it on the card a stalled run looks identical to an idle one.
+        supervisor.blockedReason === undefined || blocked !== undefined
+          ? null
+          : h('div', { className: 'redline-guard-eval' }, t('supervisor.runBlocked', { reason: supervisor.blockedReason })),
+        supervisor.setupError === undefined
+          ? null
+          : h('div', { className: 'redline-editor-err', role: 'alert' }, t('supervisor.setupError', { reason: supervisor.setupError })),
+        supervisorError === null ? null : h('div', { className: 'redline-editor-err', role: 'alert' },
+          supervisorError.trim() === ''
+            ? t('supervisor.rollbackFailed')
+            : t('supervisor.rollbackFailedDetail', { reason: supervisorError })),
+        supervisor.mirror?.issueUrl === undefined ? null : h('div', { className: 'redline-guard-eval' },
+          h('a', { href: supervisor.mirror.issueUrl, target: '_blank', rel: 'noreferrer' }, t('supervisor.mirror'))),
+        supervisor.tasks.some(task => task.status !== 'TODO') ? h('button', {
+          type: 'button', className: 'redline-gran-btn', 'data-redline-supervisor-rollback': '1',
+          disabled: supervisorBusy, onClick: rollbackSupervisorRun,
+        }, rollbackArmed ? t('supervisor.rollbackArmed') : t('supervisor.rollback')) : null)
+    })()
 
     const guardCard = guard === null ? null : (() => {
       const passed = guard.tasks.filter(task => task.status === 'passed').length
@@ -558,6 +646,7 @@ export function makeContextView(
         <div className="redline-masonry">
           <div className="redline-masonry-col">
             {guardCard}
+            {supervisorCard}
             {inSidebar ? null : (
               <StatsContext stats={stepStats} turn={activeReq?.turn} step={activeReq?.step}
                 live={activeReq === null} ready={source.detailState === 'ready' || source.detailState === 'legacy'} />
@@ -604,6 +693,7 @@ export function makeContextView(
               plan={children.plan}
               start={children.start}
               planAnchor={children.planAnchor}
+              prepareGuard={children.prepareGuard}
               startAnchor={children.startAnchor}
               openSession={(id) => { openSessionVia(ctx, id) }}
             />
