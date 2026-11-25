@@ -1016,6 +1016,21 @@ describe('ContextView — supervisor card', () => {
   const card = (container: ParentNode) => container.querySelector<HTMLElement>('[data-redline-supervisor-card]')
   const rollbackButton = (container: ParentNode) => container.querySelector('[data-redline-supervisor-rollback]') as HTMLElement | null
 
+  test('a run read from disk while the session is unloaded says so and blocks rollback', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [] }
+    stubSupervisor(summaryOf({ agentLive: false }), calls)
+    const m = await mountRich('sv-supervisor-down')
+    await until(() => card(m.container) !== null, 'the card still renders instead of vanishing')
+    const body = text(card(m.container) as HTMLElement)
+    // Without the fallback the whole card disappeared on a restart and read as
+    // "my run is gone", while the ledger sat on disk the entire time.
+    assert.ok(body.includes(DICT_EN['supervisor.agentDown']))
+    const button = rollbackButton(m.container)
+    assert.ok(button !== null, 'the button is still shown, just not usable')
+    assert.equal(button.hasAttribute('disabled'), true)
+    await m.unmount()
+  })
+
   test('renders progress, the current task and the run id', async () => {
     const calls: Calls = { supervisor: 0, rollback: [] }
     stubSupervisor(summaryOf(), calls)

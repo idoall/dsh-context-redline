@@ -29,4 +29,9 @@ export interface SupervisorSummary {
     readonly lastError?: string
   }
   readonly updatedAt: number
+  /**
+   * False when the run was read from disk because the session's agent is not
+   * live. The card still shows, but nothing here can be acted on.
+   */
+  readonly agentLive?: boolean
 }

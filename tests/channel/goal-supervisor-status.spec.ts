@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, test } from 'vitest'
-import { findSupervisorRun } from '../../src/host/goal-supervisor/status'
+import { findSupervisorRun, recallSupervisorRun, rememberSupervisorRun } from '../../src/host/goal-supervisor/status'
 import { GUARD_SCHEMA_VERSION, type GuardState, type RunMeta } from '../../src/host/goal-supervisor/schema'
 
 const roots: string[] = []
@@ -88,5 +88,18 @@ describe('goal-supervisor status current task', () => {
 
     const summary = await findSupervisorRun(cwd, 'session-current')
     assert.equal(summary?.currentTaskId, 'T3', 'only a TODO whose dependencies are met can run now')
+  })
+
+  test('the mount index round-trips a run and survives a missing directory', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'guard-index-'))
+    const dir = join(home, 'supervisor')
+    await rememberSupervisorRun(dir, { sessionId: 'session-x', cwd: '/work/repo', runId: 'r1' })
+    const entry = await recallSupervisorRun(dir, 'session-x')
+    assert.equal(entry?.cwd, '/work/repo')
+    assert.equal(entry?.runId, 'r1')
+    // Unknown sessions and an unavailable home are both "no run", never a throw.
+    assert.equal(await recallSupervisorRun(dir, 'session-other'), null)
+    assert.equal(await recallSupervisorRun(null, 'session-x'), null)
+    await rememberSupervisorRun(null, { sessionId: 'session-y', cwd: '/work', runId: 'r2' })
   })
 })

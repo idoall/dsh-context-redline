@@ -19,6 +19,7 @@ import SessionStore from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { apply, inject, name } from '../../src/host/index'
 import { REDLINE_ERROR } from '../../src/shared/redline-errors'
+import { rememberSupervisorRun } from '../../src/host/goal-supervisor/status'
 import { REDLINE_CHANNEL_ROUTE } from '../../src/shared/redline-route'
 import { REDLINE_DATA_DIR_NAME } from '../../src/shared/redline-paths'
 import type { RunMeta } from '../../src/host/goal-supervisor/schema'
@@ -45,10 +46,14 @@ interface GoalsCalls {
 interface Ops {
   call: (body: Record<string, unknown>) => Promise<Record<string, unknown>>
   cwd: string
+  /** The fake harness home; the plugin data directory lives under it. */
+  home: string
   sessionId: string
   goals: GoalsCalls
   /** Switch the session's turn boundary (an open turn refuses writes). */
   setTurnOpen: (open: boolean) => void
+  /** Drop the agent from the registry, as a closed tab would. */
+  setAgentLive: (live: boolean) => void
   cleanup: () => void | Promise<void>
 }
 
@@ -90,7 +95,8 @@ async function boot(): Promise<Ops> {
     ctx,
     options: { provider: 'provider-a', model: 'model-a' },
   }
-  ctx.provide('agents', { get: (id: string) => (id === sessionId ? agent : undefined) })
+  let agentLive = true
+  ctx.provide('agents', { get: (id: string) => (agentLive && id === sessionId ? agent : undefined) })
   ctx.provide('agentPresets', { presetForSession: () => 'standard' })
   ctx.provide('workspaceRegistry', {
     async resolveByPath(path: string) { return { id: 'ws-1', path } },
@@ -117,9 +123,11 @@ async function boot(): Promise<Ops> {
 
   return {
     cwd,
+    home,
     sessionId,
     goals,
     setTurnOpen: (open: boolean) => { turnOpen = open },
+    setAgentLive: (live: boolean) => { agentLive = live },
     async call(body) {
       const response = await channel.fetch(new Request(`http://dsh.test${REDLINE_CHANNEL_ROUTE}`, {
         method: 'POST',
@@ -418,6 +426,41 @@ describe('guard.prepare scope normalization', () => {
         tasks: { scope: string[] }[]
       }
       assert.deepEqual(state.tasks[0]?.scope, ['src/a.ts', 'src/b.ts'])
+    } finally {
+      ops.cleanup()
+    }
+  })
+})
+
+describe('guard.supervisor when the session is not loaded', () => {
+  test('a remembered mount still renders, marked read-only, instead of vanishing', async () => {
+    const ops = await boot()
+    try {
+      const prepared = value(await ops.call({ op: 'guard.prepare', sessionId: ops.sessionId, ...prepareBody() }))
+      const root = String(prepared.root)
+      const runId = String(prepared.runId)
+      // Bind the run to this session the way a mount does, then remember where
+      // it lives — this is exactly what attachSupervisor writes on success.
+      const metaPath = join(root, 'run.json')
+      const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as RunMeta
+      writeFileSync(metaPath, JSON.stringify({ ...meta, phase: 'running', sessionId: ops.sessionId }), 'utf8')
+      await rememberSupervisorRun(join(ops.home, REDLINE_DATA_DIR_NAME, 'supervisor'), {
+        sessionId: ops.sessionId, cwd: ops.cwd, runId,
+      })
+
+      // The agent is gone: `agents.get` no longer resolves it. Before the fix the
+      // op answered notLive and the panel silently dropped the whole card.
+      ops.setAgentLive(false)
+      const summary = value(await ops.call({ op: 'guard.supervisor', sessionId: ops.sessionId }))
+      assert.equal(summary.runId, runId)
+      assert.equal(summary.agentLive, false)
+      assert.equal(summary.total, 1)
+
+      // A session that never had a run still answers notLive: the fallback must
+      // not invent a card for every ordinary conversation.
+      ops.setAgentLive(true)
+      const other = await ops.call({ op: 'guard.supervisor', sessionId: 'session-never-had-a-run' })
+      assert.equal(other.ok, false)
     } finally {
       ops.cleanup()
     }

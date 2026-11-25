@@ -71,7 +71,7 @@ import { anchorRequestFingerprint, anchorTitle, composeAnchor, type AnchorDraft 
 import { guardHashOf, loadGuardState, parseGuardTasks, readPlanPreview, setGuardPaused as setLiveGuardPaused, type GuardState } from './goal-guard'
 import { markFirstMessageDelivered, prepareGuardRun } from './goal-supervisor/create'
 import { SAFE_RUN_ID as SAFE_RUN_ID_OF_RUN } from './goal-supervisor/run-id'
-import { findSupervisorRun } from './goal-supervisor/status'
+import { findSupervisorRun, recallSupervisorRun } from './goal-supervisor/status'
 import { rollbackRun } from './goal-supervisor/rollback'
 import { isBroadScopePath, isSafeScopePath, normalizeScopePath } from './goal-supervisor/scope'
 import { attachedSupervisorFor, resumeSupervisorGoal, type SupervisorAgent } from './goal-supervisor/attach'
@@ -162,6 +162,12 @@ function dataDirOf(ctx: Context): string | null {
   } catch {
     return null
   }
+}
+
+/** The supervisor mount index directory, or null when the harness home is absent. */
+function supervisorIndexDirOf(ctx: Context): string | null {
+  const dir = dataDirOf(ctx)
+  return dir === null ? null : join(dir, 'supervisor')
 }
 
 /** Read a session's local edits. A missing file is an empty table; a corrupt one refuses loudly. */
@@ -1572,8 +1578,20 @@ const readSupervisor: RedlineOpHandler = async ({ ctx, call }) => {
   const agents = ctx.get('agents') as { get?(id: string): { readonly session?: { readonly header?: { readonly cwd?: string } } } | undefined } | undefined
   const agent = agents?.get?.(sessionId)
   const cwd = agent?.session?.header?.cwd
-  if (cwd === undefined) return fail(REDLINE_ERROR.notLive)
-  return redlineOk(await findSupervisorRun(cwd, sessionId))
+  if (cwd !== undefined) {
+    const summary = await findSupervisorRun(cwd, sessionId)
+    return redlineOk(summary === null ? null : { ...summary, agentLive: true })
+  }
+  // The agent is gone (tab closed, or the process restarted and has not
+  // re-attached this session yet). The run may still be on disk: answering
+  // `notLive` here made the whole card vanish with no explanation, which reads
+  // as "my run disappeared" even though the ledger was intact. Read the
+  // remembered mount instead and mark the card read-only.
+  const remembered = await recallSupervisorRun(supervisorIndexDirOf(ctx), sessionId)
+  if (remembered === null) return fail(REDLINE_ERROR.notLive)
+  const summary = await findSupervisorRun(remembered.cwd, sessionId)
+  if (summary === null) return fail(REDLINE_ERROR.notLive)
+  return redlineOk({ ...summary, agentLive: false })
 }
 
 /**

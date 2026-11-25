@@ -332,9 +332,15 @@ export function makeContextView(
             : t('supervisor.rollbackFailedDetail', { reason: supervisorError })),
         supervisor.mirror?.issueUrl === undefined ? null : h('div', { className: 'redline-guard-eval' },
           h('a', { href: supervisor.mirror.issueUrl, target: '_blank', rel: 'noreferrer' }, t('supervisor.mirror'))),
+        // The run was read from disk because this session is not loaded: say so
+        // instead of hiding the card, or a restart reads as "my run vanished".
+        supervisor.agentLive === false
+          ? h('div', { className: 'redline-guard-eval', role: 'status', 'data-redline-supervisor-down': '1' },
+            t('supervisor.agentDown'))
+          : null,
         supervisor.tasks.some(task => task.status !== 'TODO') ? h('button', {
           type: 'button', className: 'redline-gran-btn', 'data-redline-supervisor-rollback': '1',
-          disabled: supervisorBusy, onClick: rollbackSupervisorRun,
+          disabled: supervisorBusy || supervisor.agentLive === false, onClick: rollbackSupervisorRun,
         }, rollbackArmed ? t('supervisor.rollbackArmed') : t('supervisor.rollback')) : null)
     })()
 

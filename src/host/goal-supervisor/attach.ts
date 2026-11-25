@@ -20,9 +20,11 @@ import { readdir, readFile } from 'node:fs/promises'
 import type { GuardState, RunMeta } from './schema'
 import { renderAnchorDetailed } from './anchor'
 import { pathInScope } from './git'
+import { REDLINE_DATA_DIR_NAME } from '../../shared/redline-paths'
 import { auditTurn, runningTasks } from './loop'
 import { detectMirror, type MirrorConfig } from './mirror'
 import { GuardStore } from './store'
+import { rememberSupervisorRun } from './status'
 
 export const SUPERVISOR_ANCHOR_HEAD = 'redline:goal-supervisor-head'
 export const SUPERVISOR_ANCHOR_TAIL = 'redline:goal-supervisor-tail'
@@ -84,7 +86,7 @@ interface GoalsFace {
 }
 
 export interface SupervisorDeps {
-  readonly ctx: { get(name: string): GoalsFace | undefined }
+  readonly ctx: { get(name: string): GoalsFace | { (name: string): string } | undefined }
   readonly agentCtx: {
     get?(name: string): SystemPromptFace | undefined
     on?(name: string, handler: () => void | Promise<void>): unknown
@@ -144,12 +146,24 @@ export function forgetSessionAttachments(sessionId: string): void {
   }
 }
 
+/** The plugin's data directory, or null when the harness home is not composed. */
+function homeDirOf(ctx: SupervisorDeps['ctx']): string | null {
+  const home = ctx.get('dshHomePath')
+  if (typeof home !== 'function') return null
+  try {
+    return join(home(REDLINE_DATA_DIR_NAME), 'supervisor')
+  } catch {
+    return null
+  }
+}
+
 function systemPromptOf(agentCtx: SupervisorDeps['agentCtx']): SystemPromptFace | undefined {
   return agentCtx.get?.('systemPrompt')
 }
 
 function goalsOf(ctx: SupervisorDeps['ctx']): GoalsFace | undefined {
-  return ctx.get('goals')
+  const goals = ctx.get('goals')
+  return typeof goals === 'function' ? undefined : goals
 }
 
 /** Tool arguments are `unknown`; a JSON string is accepted defensively. */
@@ -391,6 +405,15 @@ export async function attachSupervisor(deps: SupervisorDeps): Promise<AttachedSu
       updatedAt: Date.now(),
     }))
   }
+
+  // Remember where this run lives, outside the repository. `guard.supervisor`
+  // needs a live agent to learn the workspace, so without this an ordinary
+  // restart made the whole card vanish while its ledger sat on disk.
+  await rememberSupervisorRun(homeDirOf(deps.ctx), {
+    sessionId: deps.agent.id,
+    cwd: deps.cwd,
+    runId: deps.runId,
+  })
 
   const handler = async (): Promise<void> => {
     const next = await auditTurn({ ctx: deps.ctx, agent: deps.agent, cwd: deps.cwd, runId: deps.runId, store, mirror })
