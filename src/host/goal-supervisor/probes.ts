@@ -86,6 +86,37 @@ export function isNetworkUse(cmd: string, args: readonly string[]): boolean {
 }
 
 /**
+ * The first probe argument that only makes sense to a SHELL, or `null`.
+ *
+ * A command probe is execFile-shaped: the line is split on whitespace and the
+ * tokens reach the binary verbatim, with no quoting, no pipes, no redirection.
+ * A human writing `grep -q "a b" file` gets the quotes kept as literal
+ * characters — the probe then never matches and the task can never pass, with
+ * nothing in the ledger saying why. Refuse it at creation time instead, where
+ * the message can name the offending token and the fix.
+ */
+export function shellishProbeArg(args: readonly string[]): string | null {
+  const QUOTES = ['"', "'", '`']
+  for (const arg of args) {
+    if (arg.includes('$(') || arg.includes('\n')) return arg
+    // Redirection: `>`, `>>`, `<`, `2>`, `2>&1`, `&>`.
+    if (/^\d?(?:>>?|<)$/.test(arg) || /^&>/.test(arg) || /^\d?>&\d$/.test(arg)) return arg
+    // Command separators, including the bare pipe a shell pipeline leaves behind.
+    if (arg === ';' || arg === '&&' || arg === '||' || arg === '|') return arg
+    // Quoting is the subtle one: quotes INSIDE an argument are ordinary program
+    // input (`node -e 'console.error("x")'` is valid JS), but a quote at either
+    // EDGE — or an odd number of them — only happens when a shell was expected
+    // to strip it. That argument then reaches the program with the quote kept.
+    for (const quote of QUOTES) {
+      const count = arg.split(quote).length - 1
+      if (count === 0) continue
+      if (arg.startsWith(quote) || arg.endsWith(quote) || count % 2 === 1) return arg
+    }
+  }
+  return null
+}
+
+/**
  * Resolve a declared path inside `cwd`; `null` when it escapes the workspace.
  * Both `..` traversal and absolute paths outside the workspace are refused.
  *

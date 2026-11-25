@@ -27,6 +27,7 @@ import type {
 import { buildRunId, SAFE_RUN_ID, sanitizeRefSegment } from './run-id'
 import { createRunWorktree, dirtyHashes, hasGit, headCommit, normalizeScopePath } from './git'
 import { isBroadScopePath, isSafeScopePath } from './scope'
+import { shellishProbeArg } from './probes'
 import { GuardStore } from './store'
 
 export interface PrepareRunInput {
@@ -239,6 +240,19 @@ export async function prepareGuardRun(cwd: string, input: PrepareRunInput): Prom
     // then pass on the evaluator alone. Refuse the run instead of losing a gate.
     if (!tasks.some(task => task.id === probe.taskId)) {
       throw new Error(`probe ${probe.id} names unknown task ${probe.taskId}`)
+    }
+    if (probe.spec.kind === 'command') {
+      // The dialog splits the line on whitespace, so a shell-shaped argument is
+      // always a misunderstanding: it would be passed through literally and the
+      // probe would fail forever with no explanation in the ledger.
+      const shellish = shellishProbeArg(probe.spec.args)
+      if (shellish !== null) {
+        throw new Error(
+          `probe ${probe.id} argument ${JSON.stringify(shellish)} needs a shell: `
+          + 'arguments are split on whitespace and run without a shell, so quotes, pipes and '
+          + 'redirection are passed through literally. Drop the quotes, or wrap the command in a script.',
+        )
+      }
     }
     const list = probeMap.get(probe.taskId) ?? []
     list.push(probe)

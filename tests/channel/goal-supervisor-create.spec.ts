@@ -317,4 +317,44 @@ describe('goal-supervisor first message marker', () => {
     assert.equal(merged.mirror.provider, 'github')
     assert.equal(merged.mirror.host, 'github.com')
   })
+
+  test('a probe that a shell would interpret is refused, with the offending token named', async () => {
+    const cwd = await workspace()
+    const probe = (args: readonly string[]) => ({
+      id: 'C1', taskId: 'T1', weight: 'heavy' as const,
+      spec: { kind: 'command' as const, cmd: 'grep', args }, enabled: true,
+    })
+    // The exact mistake a human makes: quoting a multi-word pattern.
+    await assert.rejects(() => prepareGuardRun(cwd, {
+      ...card, runId: 'probe-quoted', tasks: 'T1 | 一条 | 通过',
+      probes: [probe(['-q', '"export', 'function', 'multiply"', 'src/a.ts'])],
+    }), /needs a shell/)
+    // Redirection and a bare pipe are the same misunderstanding.
+    for (const args of [['-q', 'x', 'src/a.ts', '>', 'out.txt'], ['-q', 'x', 'src/a.ts', '|', 'wc', '-l']]) {
+      await assert.rejects(() => prepareGuardRun(cwd, {
+        ...card, runId: `probe-shell-${args.length}`, tasks: 'T1 | 一条 | 通过', probes: [probe(args)],
+      }), /needs a shell/)
+    }
+    // Quotes INSIDE an argument are program input (`node -e 'console.error("x")'`
+    // is valid JS), and a pipe inside one token is regex alternation. Both stay
+    // legal — only an edge or odd-count quote means a shell was expected.
+    const inline = await prepareGuardRun(cwd, {
+      ...card, runId: 'probe-inline-quotes', tasks: 'T1 | 一条 | 通过',
+      probes: [{
+        id: 'C2', taskId: 'T1', weight: 'light' as const, enabled: true,
+        spec: { kind: 'command' as const, cmd: process.execPath, args: ['-e', 'console.error("boom"); process.exit(3)'] },
+      }],
+    })
+    assert.ok(inline.runId !== '')
+    // A pipe INSIDE one token is a regex alternation, not a pipeline: still fine.
+    const ok = await prepareGuardRun(cwd, {
+      ...card, runId: 'probe-regex', tasks: 'T1 | 一条 | 通过',
+      probes: [probe(['-Eq', 'add|multiply', 'src/a.ts'])],
+    })
+    const state = await readJson<GuardState>(join(ok.root, 'probes', 'T1.json'))
+    assert.deepEqual(
+      (state as unknown as { probes: { spec: { args: string[] } }[] }).probes[0]?.spec.args,
+      ['-Eq', 'add|multiply', 'src/a.ts'],
+    )
+  })
 })
