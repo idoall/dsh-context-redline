@@ -8,9 +8,9 @@ import type { Context } from '@deepseek-ai/cordis'
 
 export const HANDOFF_SKILL_NAME = 'context-redline-handoff'
 
-export const HANDOFF_SKILL_DESCRIPTION = 'Build both Context Redline handoff shapes from the current conversation: migration fields (first task + per-request runtime rule) and anchored fields (first task, goal, acceptance criteria, discipline), plus the optional Goal Guard package every time (auditable task list, plan file, evaluator choice) so the user can decide whether to enable it, with mandatory task decomposition and review gates.'
+export const HANDOFF_SKILL_DESCRIPTION = 'Build both Context Redline handoff shapes from the current conversation: migration fields (first task + per-request runtime rule) and anchored fields (first task, goal, acceptance criteria, discipline), plus the optional Goal Guard package every time (auditable task list, plan file, evaluator choice) and the optional supervised-run table (four columns including a required scope, plus probe commands) so the user can decide which to enable, with mandatory task decomposition and review gates.'
 
-export const HANDOFF_SKILL_WHEN_TO_USE = 'Use when a conversation is long or drifting, when the user asks how to continue without losing the goal, before opening a fresh anchored conversation with Context Redline, or when the user asks about the Goal Guard, a task list for it, its evaluator, or its plan file.'
+export const HANDOFF_SKILL_WHEN_TO_USE = 'Use when a conversation is long or drifting, when the user asks how to continue without losing the goal, before opening a fresh anchored conversation with Context Redline, or when the user asks about the Goal Guard, a task list for it, its evaluator or plan file, the supervised run, its task table, or its probes.'
 
 export const HANDOFF_SKILL_CONTENT = `# 上下文交接卡
 
@@ -97,6 +97,29 @@ T2 | M1 场景与移动 | 60fps；移动端摇杆；缓存纠错
 - 0.9.0 只观察：判定和纠正建议只写进守卫卡，不拦工具、不 steer、也不替用户结束轮次。不要向用户承诺“会自动拦住”。
 - 用户如果只说“三段”，仍保留四个字段：把「首条任务」和「目标」一起当作“任务目标”给出，方便直接粘贴。
 
+### 督导运行（可选 · 要勾选就先贴这一段）
+
+督导运行会让插件自己推进：每个任务通过后**它自己提交、打 tag**，没有「只看不改」的档位。贴之前先确认：你愿意让这个仓库里出现 \`guard(<runId>): <任务> DONE\` 的提交和 \`guard/<runId>/<任务>\` 的 tag。有未提交改动先 \`git stash\`。
+
+\`\`\`text
+任务表（每行四段；scope 必填）
+T1 | 实测 1.6.82 基线与云端接入面 | evidence/baseline/m5/ 有文件；报告含版本原文与 sha256 | evidence/baseline/,docs/x9-1.6.82-baseline.md
+T2 | 静态差异与关键函数定位 | docs/x9-1.6.82-diff.md 存在且含旧→新地址映射 | docs/,evidence/dynamic/
+\`\`\`
+
+\`\`\`text
+探针（一行一条：任务ID | 命令）
+T1 | test -d evidence/baseline/m5
+T2 | grep -q 1.6.82 docs/x9-1.6.82-diff.md
+\`\`\`
+
+- 每行格式：\`任务ID | 标题 | 验收（分号分隔）| scope（逗号分隔的路径）\`。**scope 必填**，它是「这个任务允许改哪些文件」的白名单：写漏了，任务一碰别的文件就被判越界；宁可给一个目录，也不要留空。
+- 验收只写可判定项（文件在不在 / 命令退出码 / 报告含哪个字段）。督导的评估器能看到探针结果、scope 内的 diff 和 \`notes.md\`，但它不理解业务语义。
+- 探针按空白切分、**不经过 shell**：不要写引号、管道、重定向；要带空格就先包一个脚本。\`grep -q 关键字 路径\` 是最稳的写法。
+- 「严格模式」会拒绝主会话的越界写和一切 shell 类工具（只能派子会话干活）。第一次跑建议先不勾，看清它提交什么再开。
+- 不要勾「在独立 worktree 中运行」：它跑到 \`guard/<runId>\` 分支上，**不会自动合回**，要你手动 merge。
+- 一个任务一个里程碑；任务越大越容易因为「顺手改了 scope 外的文件」而被阻塞。
+
 ## 两种场景怎么写
 
 - **首条任务**：跨多个里程碑 / 交付物时，第一句必须是“先读计划，建立任务清单，把第一个任务派给子会话”；不要写“完成整个项目”，也不要直接让主会话开始写代码。
@@ -128,12 +151,14 @@ T2 | M1 场景与移动 | 60fps；移动端摇杆；缓存纠错
 - 有没有一条路径会让一个会话连续做完多个里程碑？有就判不合格。
 - UI 改动有没有有头 UAT 与复测证据；非 UI 改动有没有写“无需 UAT”的理由？
 - 路径、命令、版本是否真实来自对话或用户？不确定就标“未验证”，不要编。
+- 督导运行的任务表给了 scope 吗？每个任务的 scope 覆盖它真要改的文件了吗（给目录比留空安全）？
 - 情况 A 的锚点控制在 2000 字符内；情况 B 每段也尽量控制在 2000 字符内（运行时规则每请求可见，越短越稳）。
 
 ## 最后一行
 
 - 情况 A：粘贴「首条任务」+「锚点」，锚点模式选「每轮运行时规则」；最终发送全文由插件拼接。
 - 情况 B：把四个字段粘贴到「新建带规则的对话」；要勾选「目标守卫」就把守卫那段的任务清单贴进守卫输入框，并按对话里的实际情况选评估模型 / 填计划文件；不勾选就忽略守卫段。
+- 督导运行：把「任务表」贴进任务表输入框、「探针」贴进探针输入框，再按上面的注意事项勾选严格模式 / worktree。任务表是四列（含 scope），不能拿旧守卫的三列任务清单直接替代。
 `
 
 export interface HandoffSkillRegistration {
