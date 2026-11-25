@@ -965,3 +965,198 @@ describe('ContextView — DNA mode (0.6.0)', () => {
     await m.unmount()
   })
 })
+
+// ── 督导状态卡（0.9.0 Goal Supervisor）────────────────────────────────────────
+// 这张卡完全由 `guard.supervisor` 的轮询结果驱动，回退是两段确认。之前它没有任何
+// 测试；这里钉住「渲染 / 两段确认 / 换会话复位 / 失败可见」四条。
+describe('ContextView — supervisor card', () => {
+  interface Calls { supervisor: number, rollback: { runId?: string }[] }
+
+  /** Route the plugin channel by op; `guard.rollback` records its arguments. */
+  function stubSupervisor(summary: Record<string, unknown> | null, calls: Calls, rollbackReply?: Record<string, unknown>): void {
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string, runId?: string }
+      if (body.op === 'guard.supervisor') {
+        calls.supervisor += 1
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summary }) } as Response)
+      }
+      if (body.op === 'guard.rollback') {
+        calls.rollback.push({ runId: body.runId })
+        if (rollbackReply !== undefined) {
+          return Promise.resolve({ ok: true, json: async () => rollbackReply } as Response)
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { ...summary, status: 'active' } }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+  }
+
+  function summaryOf(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      runId: '20261124-demo',
+      phase: 'running',
+      status: 'active',
+      goal: '把目标漂移修好',
+      parallel: 1,
+      enforcement: 'warn-only',
+      done: 1,
+      total: 3,
+      currentTaskId: 'T2',
+      tasks: [
+        { id: 'T1', title: '落盘', status: 'DONE' },
+        { id: 'T2', title: '收尾', status: 'IN_PROGRESS' },
+        { id: 'T3', title: '回归', status: 'TODO' },
+      ],
+      pendingRequests: 0,
+      updatedAt: T0,
+      ...over,
+    }
+  }
+
+  const card = (container: ParentNode) => container.querySelector<HTMLElement>('[data-redline-supervisor-card]')
+  const rollbackButton = (container: ParentNode) => container.querySelector('[data-redline-supervisor-rollback]') as HTMLElement | null
+
+  test('renders progress, the current task and the run id', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [] }
+    stubSupervisor(summaryOf(), calls)
+    const m = await mountRich('sv-supervisor')
+    await until(() => card(m.container) !== null, 'the supervisor card appears')
+    const body = text(card(m.container) as HTMLElement)
+    assert.ok(body.includes(DICT_EN['supervisor.title']))
+    assert.ok(body.includes('1/3'), 'progress reads done/total')
+    assert.ok(body.includes(DICT_EN['supervisor.task'].replace('{id}', 'T2').replace('{title}', '收尾')))
+    assert.ok(body.includes('20261124-demo'))
+    assert.ok(calls.supervisor >= 1)
+    await m.unmount()
+  })
+
+  test('a blocked task shows its reason', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [] }
+    stubSupervisor(summaryOf({
+      currentTaskId: 'T3',
+      tasks: [
+        { id: 'T1', title: '落盘', status: 'DONE' },
+        { id: 'T3', title: '回归', status: 'BLOCKED', blockedReason: 'scope 外改动' },
+      ],
+    }), calls)
+    const m = await mountRich('sv-supervisor-blocked')
+    await until(() => card(m.container) !== null, 'the supervisor card appears')
+    assert.ok(text(card(m.container) as HTMLElement).includes('scope 外改动'))
+    await m.unmount()
+  })
+
+  test('rollback is two clicks: the first only arms, the second sends confirm', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [] }
+    stubSupervisor(summaryOf(), calls)
+    const m = await mountRich('sv-supervisor-rollback')
+    await until(() => rollbackButton(m.container) !== null, 'the rollback button appears')
+    const button = rollbackButton(m.container) as HTMLButtonElement
+    assert.equal(text(button), DICT_EN['supervisor.rollback'])
+    await click(button)
+    assert.equal(text(rollbackButton(m.container) as HTMLElement), DICT_EN['supervisor.rollbackArmed'])
+    assert.deepEqual(calls.rollback, [], 'one click never rewrites history')
+    await click(rollbackButton(m.container) as HTMLElement)
+    await until(() => calls.rollback.length > 0, 'the second click issues the rollback')
+    assert.deepEqual(calls.rollback, [{ runId: '20261124-demo' }])
+    await m.unmount()
+  })
+
+  test('switching sessions clears a pending confirmation', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [] }
+    stubSupervisor(summaryOf(), calls)
+    const View = makeView(new TestClientCtx())
+    const m = await mount(h(View, { sessionId: 'sv-a', useProjection: projectionsFor(richTimeline()) }))
+    await until(() => rollbackButton(m.container) !== null, 'the rollback button appears')
+    await click(rollbackButton(m.container) as HTMLElement)
+    assert.equal(text(rollbackButton(m.container) as HTMLElement), DICT_EN['supervisor.rollbackArmed'])
+    // A new session must not inherit the armed state: one click there may only arm.
+    await m.update(h(View, { sessionId: 'sv-b', useProjection: projectionsFor(richTimeline()) }))
+    await until(() => rollbackButton(m.container) !== null, 'the card returns for the new session')
+    assert.equal(text(rollbackButton(m.container) as HTMLElement), DICT_EN['supervisor.rollback'], 'armed state was reset')
+    await m.unmount()
+  })
+
+  test('a rollback reply that lands after a session switch is dropped', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [] }
+    let resolveRollback: ((response: Response) => void) | undefined
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        calls.supervisor += 1
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summaryOf() }) } as Response)
+      }
+      if (body.op === 'guard.rollback') {
+        calls.rollback.push({})
+        // Hold the reply: the user switches sessions before the host answers.
+        return new Promise<Response>((resolve) => { resolveRollback = resolve })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const View = makeView(new TestClientCtx())
+    const m = await mount(h(View, { sessionId: 'sv-gen-a', useProjection: projectionsFor(richTimeline()) }))
+    await until(() => rollbackButton(m.container) !== null, 'the rollback button appears')
+    await click(rollbackButton(m.container) as HTMLElement)
+    await click(rollbackButton(m.container) as HTMLElement)
+    await until(() => calls.rollback.length === 1, 'the rollback request is in flight')
+
+    await m.update(h(View, { sessionId: 'sv-gen-b', useProjection: projectionsFor(richTimeline()) }))
+    await until(() => rollbackButton(m.container) !== null, 'the card returns for the new session')
+    // The late reply is a failure from session A; session B must not show it.
+    await act(async () => {
+      resolveRollback?.({ ok: true, json: async () => ({ ok: false, error: { code: 'redline/bad-request', message: 'stale session A error' } }) } as Response)
+    })
+    await flush()
+    const body = text(card(m.container) as HTMLElement)
+    assert.ok(!body.includes('stale session A error'), 'the stale generation is discarded')
+    assert.ok(!body.includes(DICT_EN['supervisor.rollbackFailed']), 'no error line is painted on the new session')
+    await m.unmount()
+  })
+
+  test('a failed rollback shows the host reason instead of going silent', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [] }
+    // The failure envelope is `{ ok: false, error: { code, message } }`.
+    stubSupervisor(summaryOf(), calls, {
+      ok: false, error: { code: 'redline/bad-request', message: 'checkpoint 已存在' },
+    })
+    const m = await mountRich('sv-supervisor-fail')
+    await until(() => rollbackButton(m.container) !== null, 'the rollback button appears')
+    await click(rollbackButton(m.container) as HTMLElement)
+    await click(rollbackButton(m.container) as HTMLElement)
+    await until(() => text(card(m.container) as HTMLElement).includes('checkpoint 已存在'), 'the failure is surfaced')
+    await m.unmount()
+  })
+
+  // Round-11 P2-3: storing the title as the "message" made an empty host message
+  // render `Rollback failed：Rollback failed`, and the separator was a hard-coded
+  // full-width colon in the English UI.
+  test('an empty failure message renders the title once, with no separator', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [] }
+    stubSupervisor(summaryOf(), calls, { ok: false, error: { code: 'redline/bad-request', message: '' } })
+    const m = await mountRich('sv-supervisor-empty-fail')
+    await until(() => rollbackButton(m.container) !== null, 'the rollback button appears')
+    await click(rollbackButton(m.container) as HTMLElement)
+    await click(rollbackButton(m.container) as HTMLElement)
+    await until(() => text(card(m.container) as HTMLElement).includes(DICT_EN['supervisor.rollbackFailed']), 'the failure line appears')
+    const body = text(card(m.container) as HTMLElement)
+    const occurrences = body.split(DICT_EN['supervisor.rollbackFailed']).length - 1
+    assert.equal(occurrences, 1, `the title is rendered exactly once: ${JSON.stringify(body)}`)
+    assert.ok(!body.includes('：'), `no dangling separator: ${JSON.stringify(body)}`)
+    await m.unmount()
+  })
+
+  test('a failure reason is joined through the localized template', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [] }
+    stubSupervisor(summaryOf(), calls, {
+      ok: false, error: { code: 'redline/bad-request', message: 'checkpoint 已存在' },
+    })
+    const m = await mountRich('sv-supervisor-template-fail')
+    await until(() => rollbackButton(m.container) !== null, 'the rollback button appears')
+    await click(rollbackButton(m.container) as HTMLElement)
+    await click(rollbackButton(m.container) as HTMLElement)
+    const expected = DICT_EN['supervisor.rollbackFailedDetail'].replace('{reason}', 'checkpoint 已存在')
+    await until(() => text(card(m.container) as HTMLElement).includes(expected), `the template is used: ${expected}`)
+    const body = text(card(m.container) as HTMLElement)
+    assert.ok(!body.includes('：'), `the English UI carries no full-width colon: ${JSON.stringify(body)}`)
+    await m.unmount()
+  })
+})

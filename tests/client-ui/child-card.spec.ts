@@ -553,6 +553,219 @@ describe('锚定会话（0.4.0）', () => {
     await m.unmount()
   })
 
+  test('督导运行：先建记录目录（两步进度），再带着 runId 创建会话', async () => {
+    const prepared: { tasks?: string }[] = []
+    const starts: unknown[][] = []
+    let finishPrepare: ((value: { ok: true, value: { runId: string, root: string, files: string[] } }) => void) | undefined
+    const m = await open({
+      prepareGuard: (input) => {
+        prepared.push({ tasks: input.tasks })
+        return new Promise(resolve => { finishPrepare = resolve })
+      },
+      startAnchor: (...args) => {
+        starts.push(args)
+        return Promise.resolve({
+          ok: true as const,
+          value: { sessionId: 'session-supervised', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+        })
+      },
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    const setValue = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setValue('[data-redline-anchor-task]', '任务 A')
+    await setValue('[data-redline-anchor-acceptance]', '验收 A')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]').click() })
+    await setValue('[data-redline-anchor-supervisor-tasks]', 'T1 | 落盘 | 文件存在')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    const progress = query<HTMLElement>(modal, '[data-redline-anchor-progress]')
+    assert.ok(progress, '创建过程中出现两步进度')
+    assert.ok(text(progress).includes(DICT_EN['anchor.stepCard']))
+    assert.ok(text(progress).includes(DICT_EN['anchor.stepPrepare']))
+    assert.deepEqual(prepared, [{ tasks: 'T1 | 落盘 | 文件存在' }])
+
+    await act(async () => {
+      finishPrepare?.({
+        ok: true,
+        value: { runId: '20261124-督导', root: '/tmp/run', files: ['tasks.json', 'TASKS.md', 'tasks/T1/notes.md'] },
+      })
+      await new Promise(resolve => setTimeout(resolve, 20))
+    })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    assert.equal(starts.length, 1)
+    const input = starts[0]?.[1] as { guardRunId?: string }
+    assert.equal(input.guardRunId, '20261124-督导')
+    await m.unmount()
+  })
+
+  test('督导运行：勾选独立 worktree 后首次点击就把 worktreePath 交给宿主（闭包不得读旧 state）', async () => {
+    const prepared: { tasks?: string, worktree?: boolean, runId?: string }[] = []
+    const starts: unknown[][] = []
+    const m = await open({
+      prepareGuard: (input) => {
+        prepared.push({
+          tasks: input.tasks,
+          ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
+          ...(input.runId === undefined ? {} : { runId: input.runId }),
+        })
+        return Promise.resolve({
+          ok: true as const,
+          value: {
+            runId: '20261124-worktree',
+            root: '/repo/.guard/worktrees/20261124-worktree',
+            files: ['tasks.json'],
+            worktreePath: '/repo/.guard/worktrees/20261124-worktree',
+          },
+        })
+      },
+      startAnchor: (...args) => {
+        starts.push(args)
+        return Promise.resolve({
+          ok: true as const,
+          value: { sessionId: 'session-worktree', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+        })
+      },
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    const setValue = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setValue('[data-redline-anchor-task]', '任务 A')
+    await setValue('[data-redline-anchor-acceptance]', '验收 A')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]').click() })
+    await setValue('[data-redline-anchor-supervisor-tasks]', 'T1 | 落盘 | 文件存在')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor-worktree]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+
+    assert.deepEqual(prepared, [{ tasks: 'T1 | 落盘 | 文件存在', worktree: true }])
+    assert.equal(starts.length, 1)
+    const input = starts[0]?.[1] as { guardRunId?: string, guardWorktreePath?: string }
+    assert.equal(input.guardRunId, '20261124-worktree')
+    assert.equal(input.guardWorktreePath, '/repo/.guard/worktrees/20261124-worktree', '第一次点击就必须带上 worktree 路径')
+    await m.unmount()
+  })
+
+  test('督导运行：探针行被解析成插件自己运行的命令探针', async () => {
+    const prepared: { probes?: readonly { id: string, taskId: string, spec: { kind: string, cmd: string, args: readonly string[] } }[] }[] = []
+    const m = await open({
+      prepareGuard: (input) => {
+        prepared.push({ ...(input.probes === undefined ? {} : { probes: input.probes as never }) })
+        return Promise.resolve({
+          ok: true as const,
+          value: { runId: '20261124-probe', root: '/tmp/run', files: ['tasks.json'] },
+        })
+      },
+      startAnchor: () => Promise.resolve({
+        ok: true as const,
+        value: { sessionId: 'session-probe', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+      }),
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    const setArea = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    const setProbes = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setArea('[data-redline-anchor-task]', '任务 A')
+    await setArea('[data-redline-anchor-acceptance]', '验收 A')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]').click() })
+    await setArea('[data-redline-anchor-supervisor-tasks]', 'T1 | 落盘 | 文件存在')
+    await setProbes('[data-redline-anchor-supervisor-probes]', 'T1 | pnpm test -- --run')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    assert.equal(prepared.length, 1)
+    const probes = prepared[0]?.probes ?? []
+    assert.equal(probes.length, 1)
+    assert.equal(probes[0]?.taskId, 'T1')
+    assert.equal(probes[0]?.spec.kind, 'command')
+    assert.equal(probes[0]?.spec.cmd, 'pnpm')
+    assert.deepEqual(probes[0]?.spec.args, ['test', '--', '--run'])
+    await m.unmount()
+  })
+
+  test('督导运行：改动任务表会让已建目录失效，重试时用同一 runId 重写台账', async () => {
+    const prepared: { runId?: string, tasks?: string }[] = []
+    let attempt = 0
+    const m = await open({
+      prepareGuard: (input) => {
+        prepared.push({ tasks: input.tasks, ...(input.runId === undefined ? {} : { runId: input.runId }) })
+        return Promise.resolve({
+          ok: true as const,
+          value: { runId: '20261124-retry', root: '/tmp/run', files: ['tasks.json'] },
+        })
+      },
+      startAnchor: () => {
+        attempt += 1
+        if (attempt === 1) return Promise.resolve({ ok: false as const, code: 'redline/internal', message: '宿主炸了' })
+        return Promise.resolve({
+          ok: true as const,
+          value: { sessionId: 'session-retry', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+        })
+      },
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    const setValue = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setValue('[data-redline-anchor-task]', '任务 A')
+    await setValue('[data-redline-anchor-acceptance]', '验收 A')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]').click() })
+    await setValue('[data-redline-anchor-supervisor-tasks]', 'T1 | 落盘 | 文件存在')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    assert.match(text(modal), /宿主炸了/, '失败原因照原文展示')
+
+    // Edit the task table, then retry: the run must be re-prepared with the SAME
+    // run id so no orphan directory is left behind.
+    await setValue('[data-redline-anchor-supervisor-tasks]', 'T2 | 换一条 | 通过')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+
+    assert.deepEqual(prepared, [
+      { tasks: 'T1 | 落盘 | 文件存在' },
+      { tasks: 'T2 | 换一条 | 通过', runId: '20261124-retry' },
+    ])
+    await m.unmount()
+  })
+
   test('不安全上下文（http 局域网地址）不崩溃：缺少 randomUUID 时仍能渲染并发起', async () => {
     // 真机回归：DSH 以 http://<局域网IP>:<端口> 打开时不是 secure context，
     // crypto.randomUUID 为 undefined，卡片一渲染就抛
@@ -670,5 +883,53 @@ describe('锚定会话弹窗底栏间距（0.4.1 回归）', () => {
     const scope = /\.redline-modal-card\[data-redline-anchor-modal\] \.redline-confirm-scope\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
     assert.match(scope, /margin-right:\s*auto/)
     assert.match(scope, /padding-right:\s*10px/)
+  })
+
+  test('督导运行：探针行写错（缺任务 ID / 任务不存在）时按钮禁用，而不是静默丢弃', async () => {
+    const prepared: unknown[] = []
+    const m = await open({
+      prepareGuard: (input) => {
+        prepared.push(input)
+        return Promise.resolve({ ok: true as const, value: { runId: 'r-p', root: '/tmp/r', files: [] } })
+      },
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    const setArea = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setArea('[data-redline-anchor-task]', '任务 A')
+    await setArea('[data-redline-anchor-acceptance]', '验收 A')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]').click() })
+    await setArea('[data-redline-anchor-supervisor-tasks]', 'T1 | 落盘 | 文件存在')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    const confirm = (): HTMLButtonElement => query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]')
+
+    // A line without a task id is not a probe: the button must refuse to submit.
+    await setArea('[data-redline-anchor-supervisor-probes]', 'pnpm test')
+    await act(async () => {})
+    assert.equal(confirm().disabled, true, 'a probe line without a task id disables the confirm')
+    // A probe for a task the table does not define is refused too.
+    await setArea('[data-redline-anchor-supervisor-probes]', 'T9 | pnpm test')
+    await act(async () => {})
+    assert.equal(confirm().disabled, true, 'a probe for an unknown task disables the confirm')
+    // A well-formed line enables it again and is sent as a heavy command probe.
+    await setArea('[data-redline-anchor-supervisor-probes]', 'T1 | pnpm test -- --run')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    assert.equal(confirm().disabled, false)
+    await act(async () => { confirm().click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    const input = prepared[0] as { probes?: readonly { taskId: string, weight: string, spec: { cmd: string, args: readonly string[] } }[] }
+    assert.equal(input.probes?.length, 1)
+    assert.equal(input.probes?.[0]?.taskId, 'T1')
+    assert.equal(input.probes?.[0]?.weight, 'heavy', 'command probes are the expensive tier')
+    assert.equal(input.probes?.[0]?.spec.cmd, 'pnpm')
+    assert.deepEqual(input.probes?.[0]?.spec.args, ['test', '--', '--run'])
+    await m.unmount()
   })
 })
