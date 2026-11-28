@@ -2,7 +2,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { attachGoalGuard, createGuardState, loadGuardState, type GuardSeed } from './goal-guard'
+import { attachSupervisor, armSupervisorGoal } from './goal-supervisor/attach'
+import { markSetupFailed } from './goal-supervisor/create'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { currentModelSelection, type RedlineModelAgent } from './redline-model-selection'
 import { RUNTIME_ANCHOR_NAME, RUNTIME_ANCHOR_ORDER } from '../shared/redline-carrier'
@@ -48,6 +49,16 @@ export interface CarrierSessionControlContext {
   readonly workspaceRegistry: { get(id: string): { readonly path?: string; attachSession(id: string): Promise<void> } | undefined }
   readonly sessionTitle: { rename(session: unknown, title: string): unknown }
   readonly sessions: { flush(session: unknown): Promise<boolean> }
+  /**
+   * Host service that moves one live Session's effective directory. A supervisor
+   * worktree is entered through it: the header keeps naming the source project,
+   * which is what DSH matches against a workspace path when it groups the
+   * sidebar. Optional because an older composition mounts no such service.
+   */
+  readonly workingDirectory?: {
+    get?(session: unknown): unknown
+    set?(agent: unknown, path: string, signal?: AbortSignal): Promise<unknown>
+  }
   /** Present on the Host context; the carrier setup registers its opt-in runtime rule there. */
   readonly get?: (name: string) => unknown
   readonly systemPrompt?: {
@@ -63,17 +74,33 @@ export interface CarrierSessionControlContext {
 
 export interface CarrierSessionRequest {
   readonly carrierId: string
+  /** Effective directory the session works in: the run worktree for a supervised run. */
   readonly cwd: string
   readonly agentPreset: string
   readonly agentOptions: CarrierAgentOptions
-  readonly workspaceId: string
+  /**
+   * Workspace the new session belongs to. DSH ties a session to a workspace only
+   * when their paths match exactly, so a supervisor worktree run is created with
+   * its SOURCE project as the header directory (and is grouped there) and then
+   * moved into the worktree through `workingDirectory.set`.
+   */
+  readonly workspaceId?: string
+  /**
+   * Directory recorded in the session header — its DSH workspace and sidebar
+   * group. Present only when {@link cwd} is a supervisor worktree: the header
+   * names the source project while the session actually works in the run
+   * checkout.
+   */
+  readonly projectCwd?: string
   readonly title: string
   readonly promptRequestId: string
   readonly promptText: string
   /** Opt-in runtime rule re-asserted after compaction; never part of the first message. */
   readonly runtimeAnchor?: string
-  /** Opt-in Goal Guard: frozen task list and the three anchor fields. */
-  readonly guard?: GuardSeed
+  /** Prepared supervisor run id; when present the run directory already exists. */
+  readonly guardRunId?: string
+  /** Optional explicit permission preset applied to the newly created session. */
+  readonly permissionPreset?: 'danger-full-access'
 }
 
 export interface CarrierReturnRequest {
@@ -256,12 +283,15 @@ export function createRedlineSessionControl(
     if (request.runtimeAnchor !== undefined && typeof hostSystemPrompt?.context !== 'function') {
       return { ok: false, state: 'unknown', cause: 'runtime-context-unavailable' }
     }
-    if (request.guard !== undefined) {
-      const existing = await loadGuardState(ctx as never, request.carrierId)
-      if (existing === null) {
-        const created = await createGuardState(ctx as never, request.carrierId, request.guard)
-        if (created === null) return { ok: false, state: 'unknown', cause: 'guard-tasks-invalid' }
-      }
+    // A run worktree is entered through the Host directory move, never by making
+    // the header (and therefore the sidebar group) point at the checkout. Refuse
+    // BEFORE creating anything when that service is missing: an ungrouped orphan
+    // session is worse than an actionable failure.
+    const projectCwd = typeof request.projectCwd === 'string' && request.projectCwd !== '' && request.projectCwd !== request.cwd
+      ? request.projectCwd
+      : undefined
+    if (projectCwd !== undefined && typeof ctx.workingDirectory?.set !== 'function') {
+      return { ok: false, state: 'unknown', cause: 'working-directory-unavailable' }
     }
 
     if (agent === undefined) {
@@ -293,8 +323,22 @@ export function createRedlineSessionControl(
             required: true,
           })
         }
-        if (request.guard !== undefined) {
-          await attachGoalGuard(ctx as never, agentCtx as never, agent as never, request.carrierId)
+        if (request.guardRunId !== undefined && request.guardRunId !== '') {
+          try {
+            await attachSupervisor({
+              ctx: ctx as never,
+              agentCtx: agentCtx as never,
+              agent: agent as never,
+              runId: request.guardRunId,
+              cwd: request.cwd,
+            })
+          } catch (error) {
+            // The run directory exists but cannot be mounted: record it before the
+            // session is created so the card can explain the failure.
+            const message = error instanceof Error ? error.message : 'supervisor attach failed'
+            await markSetupFailed(request.cwd, request.guardRunId, 'anchors', message).catch(() => undefined)
+            throw error
+          }
         }
       }
       let handle: CarrierAgentHandle
@@ -302,7 +346,9 @@ export function createRedlineSessionControl(
         handle = mode === 'created'
           ? await ctx.agents.create({
             sessionId: SessionId(request.carrierId),
-            meta: { cwd: request.cwd, agentPreset: request.agentPreset },
+            // The header names the project the run belongs to; the run worktree
+            // is entered right below, once the agent is live.
+            meta: { cwd: projectCwd ?? request.cwd, agentPreset: request.agentPreset },
             agentOptions: request.agentOptions,
             setup,
           })
@@ -318,6 +364,31 @@ export function createRedlineSessionControl(
       agent = handle.agent
     }
 
+    // Move the live session into its run worktree. The committed change is
+    // durable (`workspace-root/change`), so a resumed run stays in its checkout,
+    // and the header keeps the source project: the sidebar group does not move.
+    // It runs before the first message so turn 1 already sees the run directory.
+    if (projectCwd !== undefined && ctx.workingDirectory?.set !== undefined) {
+      try {
+        await ctx.workingDirectory.set(agent, request.cwd)
+      } catch (error) {
+        return { ok: false, state: 'unknown', cause: `working-directory-failed:${failureCause(error)}` }
+      }
+    }
+
+    // Arm the supervisor goal only AFTER the user's first task message is
+    // queued/confirmed so `goals.create` does not open turn 1 ahead of the
+    // first message and strand it in `next-turn`.
+    const armIfSupervised = async (): Promise<void> => {
+      if (request.guardRunId === undefined || request.guardRunId === '') return
+      await armSupervisorGoal({
+        ctx: ctx as never,
+        agent,
+        cwd: request.cwd,
+        runId: request.guardRunId,
+      })
+    }
+
     const actual = currentModelSelection(agent)
     if (actual === undefined || actual.provider !== request.agentOptions.provider || actual.model !== request.agentOptions.model
       || actual.reasoningEffort !== request.agentOptions.reasoningEffort
@@ -329,13 +400,29 @@ export function createRedlineSessionControl(
       return { ok: false, state: 'unknown', cause: 'carrier-preset-mismatch' }
     }
 
-    const workspace = ctx.workspaceRegistry.get(request.workspaceId)
-    if (workspace === undefined) return { ok: false, state: 'unknown', cause: 'workspace-not-found' }
-    if (workspace.path !== undefined && workspace.path !== request.cwd) {
-      return { ok: false, state: 'unknown', cause: 'workspace-path-mismatch' }
+    if (request.workspaceId !== undefined && request.workspaceId !== '') {
+      const workspace = ctx.workspaceRegistry.get(request.workspaceId)
+      if (workspace === undefined) return { ok: false, state: 'unknown', cause: 'workspace-not-found' }
+      // Membership is validated against the HEADER directory: the account is
+      // recorded by project, not by the checkout the run currently works in.
+      if (workspace.path !== undefined && workspace.path !== (projectCwd ?? request.cwd)) {
+        return { ok: false, state: 'unknown', cause: 'workspace-path-mismatch' }
+      }
+      try { await workspace.attachSession(SessionId(request.carrierId)) } catch (error) {
+        return { ok: false, state: 'unknown', cause: `workspace-attach-failed:${request.carrierId}:${failureCause(error)}` }
+      }
     }
-    try { await workspace.attachSession(SessionId(request.carrierId)) } catch (error) {
-      return { ok: false, state: 'unknown', cause: `workspace-attach-failed:${request.carrierId}:${failureCause(error)}` }
+
+    if (request.permissionPreset !== undefined) {
+      const presets = ctx.get?.('permissionPresets') as { set?(session: unknown, preset: string): void } | undefined
+      if (typeof presets?.set !== 'function') {
+        return { ok: false, state: 'unknown', cause: 'permission-preset-unavailable' }
+      }
+      try {
+        presets.set(agent.session, request.permissionPreset)
+      } catch (error) {
+        return { ok: false, state: 'unknown', cause: `permission-preset-failed:${failureCause(error)}` }
+      }
     }
 
     let titleStatus: 'succeeded' | 'failed' = 'succeeded'
@@ -349,6 +436,7 @@ export function createRedlineSessionControl(
     const persisted = coldMatch(before, request.promptRequestId, request.promptText)
     if (persisted.kind === 'conflict') return { ok: false, state: 'unknown', cause: 'prompt-request-id-content-conflict' }
     if (persisted.kind === 'exact') {
+      await armIfSupervised()
       return { ok: true, mode, delivery: 'already-present', messageId: persisted.id, flushed: false, titleStatus }
     }
     const queued = inboxMatch(agent, request.promptRequestId, request.promptText)
@@ -358,6 +446,7 @@ export function createRedlineSessionControl(
       if (!flushed) return { ok: false, state: 'unknown', cause: 'prompt-flush-unconfirmed' }
       const cold = await coldMatchWithRetry(ctx, request.carrierId, request.promptRequestId, request.promptText, coldDelays, coldSleep)
       if (cold.kind !== 'exact') return { ok: false, state: 'unknown', cause: cold.kind === 'conflict' ? 'prompt-request-id-content-conflict' : 'prompt-not-persisted' }
+      await armIfSupervised()
       return { ok: true, mode, delivery: 'already-present', messageId: cold.id, flushed: true, titleStatus }
     }
 
@@ -370,6 +459,7 @@ export function createRedlineSessionControl(
     if (!flushed) return { ok: false, state: 'unknown', cause: 'prompt-flush-unconfirmed' }
     const cold = await coldMatchWithRetry(ctx, request.carrierId, request.promptRequestId, request.promptText, coldDelays, coldSleep)
     if (cold.kind !== 'exact') return { ok: false, state: 'unknown', cause: cold.kind === 'conflict' ? 'prompt-request-id-content-conflict' : 'prompt-not-persisted' }
+    await armIfSupervised()
     return { ok: true, mode, delivery: 'sent', messageId: cold.id, flushed, titleStatus }
   })
 
@@ -441,6 +531,7 @@ export function contextCarrierServices(ctx: Context): CarrierSessionControlConte
   const sessionTitle = service(ctx, 'sessionTitle')
   const sessions = service(ctx, 'sessions')
   const systemPrompt = service(ctx, 'systemPrompt')
+  const workingDirectory = service(ctx, 'workingDirectory')
   if (agents === undefined || agentPresets === undefined || sessionQuery === undefined
     || workspaceRegistry === undefined || sessionTitle === undefined || sessions === undefined) {
     throw new Error('carrier services are not composed')
@@ -454,6 +545,9 @@ export function contextCarrierServices(ctx: Context): CarrierSessionControlConte
     sessions: sessions as CarrierSessionControlContext['sessions'],
     get: (name: string) => service(ctx, name),
     ...(systemPrompt === undefined ? {} : { systemPrompt: systemPrompt as CarrierSessionControlContext['systemPrompt'] }),
+    ...(workingDirectory === undefined
+      ? {}
+      : { workingDirectory: workingDirectory as CarrierSessionControlContext['workingDirectory'] }),
   }
 }
 

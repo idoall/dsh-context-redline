@@ -112,6 +112,10 @@
 .redline-confirm-summary strong { color: var(--dsw-alias-label-primary); }
 .redline-confirm-task { display: flex; flex-direction: column; margin: 11px 0 0; padding: 10px 11px 11px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover-solid); }
 .redline-confirm-task-label { font-size: 12px; font-weight: 650; line-height: 1.45; color: var(--dsw-alias-label-primary); }
+
+/* The supervisor toggle: the whole label line is the hit area, not just the box. */
+.redline-anchor-toggle { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.redline-anchor-toggle input[type='checkbox'] { margin: 0; flex: 0 0 auto; cursor: pointer; }
 .redline-confirm-task-hint { margin: 3px 0 8px; font-size: 11px; line-height: 1.45; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
 .redline-confirm-task textarea { width: 100%; box-sizing: border-box; min-width: 0; min-height: 38px; padding: 7px 9px; font: inherit; font-size: 12.5px; line-height: 1.55; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l4); border-radius: 6px; outline: none; resize: vertical; }
 .redline-confirm-task textarea::placeholder { color: var(--dsw-alias-label-caption); }
@@ -121,6 +125,7 @@
 .redline-confirm-mode-btn:disabled { opacity: .45; cursor: not-allowed; }
 .redline-confirm-mode-on { color: var(--dsw-alias-label-primary); border-color: var(--dsw-alias-label-tertiary); background: var(--dsw-alias-interactive-bg-hover-accent); }
 .redline-picker-bar { display: flex; align-items: center; width: fit-content; max-width: 100%; height: 32px; margin-top: 11px; padding: 2px; border: 1px solid var(--dsw-alias-border-l1); border-radius: var(--dsw-radius-sm, 6px); background: var(--dsw-alias-bg-layer-1); }
+.redline-picker-bar-compact { margin-top: 0; }
 .redline-picker-trigger { display: flex; align-items: center; gap: 4px; min-width: 0; max-width: min(330px, 52vw); height: 28px; padding: 0 5px 0 8px; border: none; border-radius: var(--dsw-radius-sm, 6px); outline: none; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 13px; line-height: 20px; cursor: pointer; }
 .redline-picker-trigger:hover:not(:disabled), .redline-picker-trigger:focus-visible { background: var(--dsw-alias-interactive-bg-hover); }
 .redline-picker-trigger:focus-visible { box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); }
@@ -210,13 +215,23 @@
 .redline-modal-card[data-redline-anchor-modal] .redline-confirm-scope { margin-right: auto; padding-right: 10px; }
 .redline-modal-card[data-redline-anchor-modal] .redline-confirm-btn { flex: 0 0 auto; }
 
-/* Goal Guard options inside the anchor dialog: dry-run + evaluator route. */
-.redline-anchor-guard-options { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 6px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
-.redline-anchor-guard-options label { display: inline-flex; align-items: center; gap: 4px; }
-.redline-anchor-guard-options select { max-width: 220px; font: inherit; }
+/* Structured option card inside the anchor dialog (supervisor options and session runtime settings). */
+.redline-guard-panel { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding: 11px 12px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); }
+.redline-guard-row { display: flex; align-items: center; justify-content: space-between; gap: 10px 14px; flex-wrap: wrap; }
+.redline-guard-row-meta { display: flex; flex-direction: column; gap: 2px; flex: 1 1 200px; min-width: 0; }
+.redline-guard-row-title { display: block; font-size: 12px; font-weight: 600; line-height: 1.4; color: var(--dsw-alias-label-primary); }
+.redline-guard-row-hint { display: block; font-size: 11px; line-height: 1.45; color: var(--dsw-alias-label-tertiary); overflow-wrap: anywhere; }
+.redline-guard-checks { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--dsw-alias-border-l1); }
+.redline-guard-check { display: flex; width: 100%; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.45; color: var(--dsw-alias-label-primary); cursor: pointer; }
+.redline-guard-check input[type='checkbox'] { margin: 2px 0 0; flex: 0 0 auto; cursor: pointer; }
+.redline-guard-check-text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
 
-/* Goal Guard plan file: a path input plus the read-only preview headings. */
+/* Read-only run directory: the probes and every relative path of the new run
+   resolve against it, so the dialog shows it before the human confirms. */
+.redline-guard-run-dir { flex: 0 1 auto; max-width: 100%; padding: 3px 8px; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; line-height: 1.5; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-1); overflow-wrap: anywhere; }
+
+/* The dialog's two-step progress while a supervisor run is being prepared. */
+.redline-anchor-progress { margin-top: 10px; padding: 8px 10px; border: 1px dashed var(--dsw-alias-border-l2); border-radius: 8px; font-size: 12px; line-height: 1.7; color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-1); }
+
+/* Supervisor probe block inside the anchor dialog. */
 .redline-anchor-guard-plan { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: 11px; color: var(--dsw-alias-label-secondary); }
-.redline-anchor-guard-plan input { flex: 1 1 220px; min-width: 0; font: inherit; }
-.redline-anchor-plan-preview { margin-top: 6px; font-size: 11px; }
-.redline-anchor-plan-preview pre { max-height: 140px; overflow: auto; margin: 4px 0 0; white-space: pre-wrap; color: var(--dsw-alias-label-secondary); }

@@ -160,6 +160,10 @@ New Host modules under `src/host/redline-*` and pure modules under `src/redline`
 
 - Observe mode evaluates every turn instead of short-circuiting on a tool-name count, and passes the main session write PATHS to the evaluator; a pass advances the ledger, and the card reports when an audit did not run. Adds a short invariant block injected at the head (order 90) and tail (order 900) of every prompt beside the full card, refreshed from live state.
 
+### Supervised runs (0.10.0, 2026-11-25)
+
+- Adds a second, separate opt-in layer beside the observe-only goal guard: a supervised run whose confirmed card freezes into a run directory, whose deterministic probes the plugin runs itself, whose independent evaluator judges each task, and whose passing tasks are committed with exactly their declared paths and tagged. Strict mode (out-of-scope write denial plus shell-tool denial) is a per-run human choice and is never a default; the 0.9.0 guard stays observe-only. Rollback, scope change requests, milestone review and an optional remote mirror are part of the same layer.
+
 ### Tests and tooling
 
 The fork adds independent edit/channel/client logic/client UI lanes, namespace and CSS isolation checks, i18n orphan detection, demo rendering checks, release readiness checks, and a consolidated release gate.

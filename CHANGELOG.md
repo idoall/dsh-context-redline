@@ -1,5 +1,23 @@
 # 更新日志 / Changelog
 
+## [0.10.0] — 2026-11-25
+
+**兼容性 / Compatibility:** DeepSeek Harness `>=0.2.3-alpha.2 <0.3.0-0`; verified with `0.2.3-alpha.2`. Node.js `^24.22.3 || >=26.13.1`.
+
+### 新增 / Added
+
+- **督导运行（0.10.0，独立可选，永不默认开启）**：锚定会话在确认目标卡时可再选一层自动推进。目标 / 验收 / 纪律 / 任务表冻结进 `docs/guard/<run-id>/`，`tasks.json` 是唯一事实源、`state.jsonl` 只追加、`TASKS.md` 是人读的渲染、`run.json` 记挂载身份与镜像状态。
+- **每轮审计**：在 `agent/turn-stopping` 里由插件自己跑该任务的确定性探针（轻 / 重两档，永远不由模型执行），再由独立评估器按冻结目标卡判定；通过后只提交该任务声明的路径加台账，并打 tag `guard/<run-id>/<task>`。
+- **严格模式（默认关闭）**：勾选确认后拒绝 scope 外写入与一切 shell 类工具（含 `terminal_*`），路径判定带 `realpath` 与大小写核对。
+- **回退**：任务阻塞时保留补丁作为证据；回退重开该任务、结算与兄弟任务的残留，并在重写历史后推进该任务的基线。
+- **可见进度**：Context 页新增督导卡（进度 / 当前任务 / 阻塞原因 / 挂载失败 / 镜像 issue），回退为两段确认，切换会话复位。
+- **可选**：独立 worktree、`gh`/`glab` 镜像、每 N 个任务一次的里程碑三审。
+
+### 边界 / Boundaries
+
+- 并行任务共享同一个 run worktree（per-task worktree 需要平台为子会话提供单独 cwd，目前没有）；工作区内软链在严格模式下一律拒绝；没有 `doneOrder` 的旧台账在其回退会跨过兄弟检查点时选择拒绝并提示人工。详见 `docs/17-goal-supervisor-design.md`。
+- 自动化回归、构建与包检查不等于生产界面人工验收；未执行生产重启或安装，真机端到端尚未执行。
+
 ## [0.9.5] — 2026-11-24
 
 **兼容性 / Compatibility:** DeepSeek Harness `>=0.2.3-alpha.2 <0.3.0-0`; verified with `0.2.3-alpha.2`. Node.js `^24.22.3 || >=26.13.1`.

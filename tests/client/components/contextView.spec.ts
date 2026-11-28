@@ -965,3 +965,1247 @@ describe('ContextView — DNA mode (0.6.0)', () => {
     await m.unmount()
   })
 })
+
+// ── 督导状态卡（0.9.0 Goal Supervisor）────────────────────────────────────────
+// 这张卡完全由 `guard.supervisor` 的轮询结果驱动，回退是两段确认。之前它没有任何
+// 测试；这里钉住「渲染 / 两段确认 / 换会话复位 / 失败可见」四条。
+describe('ContextView — supervisor card', () => {
+  interface Calls {
+    supervisor: number
+    rollback: { runId?: string }[]
+    resume: { runId?: string }[]
+    switch?: { runId?: string, role?: string }[]
+  }
+
+  /** Route the plugin channel by op; `guard.rollback` records its arguments. */
+  function stubSupervisor(summary: Record<string, unknown> | null, calls: Calls, rollbackReply?: Record<string, unknown>): void {
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string, runId?: string }
+      if (body.op === 'guard.supervisor') {
+        calls.supervisor += 1
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summary }) } as Response)
+      }
+      if (body.op === 'guard.switch') {
+        const bag = body as { runId?: string, role?: string }
+        ;(calls.switch ??= []).push({ runId: bag.runId, role: bag.role })
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { ...summary, status: 'active', blockedReason: undefined } }) } as Response)
+      }
+      if (body.op === 'guard.continue') {
+        calls.resume.push({ runId: body.runId })
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { ...summary, status: 'active', blockedReason: undefined } }) } as Response)
+      }
+      if (body.op === 'guard.rollback') {
+        calls.rollback.push({ runId: body.runId })
+        if (rollbackReply !== undefined) {
+          return Promise.resolve({ ok: true, json: async () => rollbackReply } as Response)
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { ...summary, status: 'active' } }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+  }
+
+  function summaryOf(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      runId: '20261124-demo',
+      phase: 'running',
+      status: 'active',
+      goal: '把目标漂移修好',
+      parallel: 1,
+      enforcement: 'warn-only',
+      done: 1,
+      total: 3,
+      currentTaskId: 'T2',
+      tasks: [
+        { id: 'T1', title: '落盘', status: 'DONE' },
+        { id: 'T2', title: '收尾', status: 'IN_PROGRESS' },
+        { id: 'T3', title: '回归', status: 'TODO' },
+      ],
+      pendingRequests: 0,
+      updatedAt: T0,
+      ...over,
+    }
+  }
+
+  const card = (container: ParentNode) => container.querySelector<HTMLElement>('[data-redline-supervisor-card]')
+  const rollbackButton = (container: ParentNode) => container.querySelector('[data-redline-supervisor-rollback]') as HTMLElement | null
+
+  test('an isolated run names the branch a human still has to merge', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf({ worktreeBranch: 'guard/20261124-demo' }), calls)
+    const m = await mountRich('sv-supervisor-branch')
+    await until(() => card(m.container) !== null, 'the card appears')
+    const body = text(card(m.container) as HTMLElement)
+    // Nothing merges the branch back, so the card must not imply that it does.
+    assert.ok(body.includes(DICT_EN['supervisor.worktreeBranch'].replace('{branch}', 'guard/20261124-demo')))
+    await m.unmount()
+  })
+
+  test('a run read from disk while the session is unloaded says so and blocks rollback', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf({ agentLive: false }), calls)
+    const m = await mountRich('sv-supervisor-down')
+    await until(() => card(m.container) !== null, 'the card still renders instead of vanishing')
+    const body = text(card(m.container) as HTMLElement)
+    // Without the fallback the whole card disappeared on a restart and read as
+    // "my run is gone", while the ledger sat on disk the entire time.
+    assert.ok(body.includes(DICT_EN['supervisor.agentDown']))
+    const button = rollbackButton(m.container)
+    assert.ok(button !== null, 'the button is still shown, just not usable')
+    assert.equal(button.hasAttribute('disabled'), true)
+    await m.unmount()
+  })
+
+  test('a CLI-bridge executor says its subagents stay inside the CLI', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf({ executorModel: 'antigravity/gemini-4-neon (high)' }), calls)
+    const m = await mountRich('sv-supervisor-agy-exec')
+    await until(() => card(m.container) !== null, 'the card appears')
+    const note = card(m.container)?.querySelector<HTMLElement>('[data-redline-supervisor-executor-bridge]') ?? null
+    assert.ok(note !== null, 'the bridge note is shown')
+    assert.ok(text(note).includes(DICT_EN['supervisor.executorBridgeWarn']))
+    await m.unmount()
+  })
+
+  test('renders progress, the current task and the run id', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf(), calls)
+    const m = await mountRich('sv-supervisor')
+    await until(() => card(m.container) !== null, 'the supervisor card appears')
+    const body = text(card(m.container) as HTMLElement)
+    assert.ok(body.includes(DICT_EN['supervisor.title']))
+    assert.ok(body.includes('1/3'), 'progress reads done/total')
+    assert.ok(body.includes(DICT_EN['supervisor.task'].replace('{id}', 'T2').replace('{title}', '收尾')))
+    assert.ok(body.includes('20261124-demo'))
+    assert.ok(calls.supervisor >= 1)
+    await m.unmount()
+  })
+
+  test('a blocked task shows its reason', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf({
+      currentTaskId: 'T3',
+      tasks: [
+        { id: 'T1', title: '落盘', status: 'DONE' },
+        { id: 'T3', title: '回归', status: 'BLOCKED', blockedReason: 'scope 外改动' },
+      ],
+    }), calls)
+    const m = await mountRich('sv-supervisor-blocked')
+    await until(() => card(m.container) !== null, 'the supervisor card appears')
+    assert.ok(text(card(m.container) as HTMLElement).includes('scope 外改动'))
+    await m.unmount()
+  })
+
+  test('a blocked run offers one-click continue that keeps the task in place', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf({
+      status: 'blocked',
+      blockedReason: 'T2 已阻塞：评估器连续 3 次不可用（EMPTY_RESPONSE）',
+      currentTaskId: 'T2',
+      tasks: [
+        { id: 'T1', title: '落盘', status: 'DONE' },
+        { id: 'T2', title: '收尾', status: 'BLOCKED', blockedReason: '评估器连续 3 次不可用（EMPTY_RESPONSE）' },
+      ],
+    }), calls)
+    const m = await mountRich('sv-supervisor-continue')
+    await until(() => m.container.querySelector('[data-redline-supervisor-resume]') !== null, 'the continue button appears')
+    const button = m.container.querySelector('[data-redline-supervisor-resume]') as HTMLButtonElement
+    assert.equal(text(button), DICT_EN['supervisor.resume'])
+    await click(button)
+    await until(() => calls.resume.length > 0, 'the click calls guard.continue')
+    assert.deepEqual(calls.resume, [{ runId: '20261124-demo' }])
+    // Unlike rollback this is not destructive, so a single click is enough.
+    assert.deepEqual(calls.rollback, [], 'continue never rolls the task back')
+    await m.unmount()
+  })
+
+  test('shows the configured routes and offers the fallback switch on a blocked run', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf({
+      status: 'blocked',
+      blockedReason: '评估器连续 3 次不可用（EMPTY_RESPONSE）',
+      currentTaskId: 'T2',
+      tasks: [{ id: 'T2', title: '收尾', status: 'BLOCKED', blockedReason: '评估器连续 3 次不可用' }],
+      executorModel: 'antigravity/gemini-4-neon (high)',
+      activeExecutorModel: 'dimagent-oauth/deepseek-v4.1-flash (max)',
+      evaluatorModel: 'dimagent-oauth/deepseek-v4.1-flash',
+      evaluatorFallbackModel: 'dimagent-oauth/kimi-k3',
+      visualWitness: true,
+    }), calls)
+    const m = await mountRich('sv-supervisor-routes')
+    await until(() => card(m.container) !== null, 'the card appears')
+    const body = text(card(m.container) as HTMLElement)
+    assert.ok(body.includes(DICT_EN['supervisor.executor'].replace('{model}', 'antigravity/gemini-4-neon (high)')))
+    assert.ok(body.includes(DICT_EN['supervisor.activeExecutor'].replace('{model}', 'dimagent-oauth/deepseek-v4.1-flash (max)')))
+    assert.ok(body.includes(DICT_EN['supervisor.evaluatorFallback'].replace('{model}', 'dimagent-oauth/kimi-k3')))
+    assert.ok(body.includes(DICT_EN['supervisor.visual']))
+
+    const switchEval = m.container.querySelector('[data-redline-supervisor-switch-evaluator]') as HTMLButtonElement | null
+    assert.ok(switchEval !== null, 'evaluator fallback switch is offered')
+    await click(switchEval)
+    await until(() => (calls.switch?.length ?? 0) > 0, 'guard.switch is called')
+    assert.deepEqual(calls.switch, [{ runId: '20261124-demo', role: 'evaluator' }])
+    await m.unmount()
+  })
+
+  test('a failed continue is not labelled as a failed rollback', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        calls.supervisor += 1
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summaryOf({ status: 'blocked', blockedReason: '评估器不可用' }) }) } as Response)
+      }
+      if (body.op === 'guard.continue') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: false, error: { code: 'redline/bad-request', message: 'run 当前没有被阻断' } }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-continue-fail')
+    await until(() => m.container.querySelector('[data-redline-supervisor-resume]') !== null, 'the continue button appears')
+    await click(m.container.querySelector('[data-redline-supervisor-resume]') as HTMLElement)
+    const expected = DICT_EN['supervisor.actionFailedDetail']
+      .replace('{action}', DICT_EN['supervisor.resumeFailed'])
+      .replace('{reason}', 'run 当前没有被阻断')
+    await until(() => text(card(m.container) as HTMLElement).includes(expected), `the continue failure is named: ${expected}`)
+    assert.ok(!text(card(m.container) as HTMLElement).includes(DICT_EN['supervisor.rollbackFailed']))
+    await m.unmount()
+  })
+
+  test('a blocked run with no configured fallback can still pick a judge and continue', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    const switched: { role?: string, route?: { provider?: string, model?: string } }[] = []
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string, role?: string, route?: { provider?: string, model?: string } }
+      if (body.op === 'guard.supervisor') {
+        calls.supervisor += 1
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summaryOf({ status: 'blocked', blockedReason: '评估器不可用' }) }) } as Response)
+      }
+      if (body.op === 'carrier.models') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { models: [
+          { provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'kimi-k3', modelName: 'Kimi K3', efforts: [] },
+        ] } }) } as Response)
+      }
+      if (body.op === 'guard.switch') {
+        switched.push({ role: body.role, route: body.route })
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { ...summaryOf(), status: 'active', blockedReason: undefined } }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-pick-judge')
+    const select = await (async () => {
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        const found = m.container.querySelector<HTMLSelectElement>('[data-redline-supervisor-switch-target]')
+        if (found !== null) return found
+        await new Promise(resolve => setTimeout(resolve, 20))
+      }
+      return null
+    })()
+    assert.ok(select !== null, 'the explicit judge picker appears')
+    const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+    await act(async () => {
+      setter?.call(select, 'dimagent-oauth/kimi-k3')
+      select?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const apply = m.container.querySelector('[data-redline-supervisor-switch-apply]') as HTMLButtonElement
+    await act(async () => { apply.click() })
+    await until(() => switched.length > 0, 'guard.switch is called')
+    assert.deepEqual(switched[0], { role: 'evaluator', route: { provider: 'dimagent-oauth', model: 'kimi-k3' } })
+    await m.unmount()
+  })
+
+  test('a task that becomes BLOCKED mid-run loads the explicit judge picker while the run stays active', async () => {
+    // The run status stays `active`; only one task flips to BLOCKED. The old
+    // dependency list watched `supervisor?.status`, so the catalog was never
+    // loaded for exactly this case.
+    const polls: (() => void)[] = []
+    const realSetInterval = globalThis.setInterval
+    vi.spyOn(globalThis, 'setInterval').mockImplementation(((fn: () => void, delay?: number) => {
+      if (delay === 3000) {
+        // Capture the supervisor poll so the test drives the second tick itself.
+        polls.push(fn)
+        return 0
+      }
+      return realSetInterval.call(globalThis, fn, delay)
+    }) as unknown as typeof setInterval)
+    let blocked = false
+    const modelReads: string[] = []
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ok: true,
+            value: summaryOf({
+              status: 'active',
+              evaluatorFallbackModel: 'dimagent-oauth/kimi-k3',
+              tasks: blocked
+                ? [
+                  { id: 'T1', title: '落盘', status: 'DONE' },
+                  { id: 'T2', title: '收尾', status: 'BLOCKED', blockedReason: '评估器不可用' },
+                ]
+                : [
+                  { id: 'T1', title: '落盘', status: 'DONE' },
+                  { id: 'T2', title: '收尾', status: 'IN_PROGRESS' },
+                ],
+            }),
+          }),
+        } as Response)
+      }
+      if (body.op === 'carrier.models') {
+        modelReads.push('carrier.models')
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { models: [
+          { provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'kimi-k3', modelName: 'Kimi K3', efforts: [] },
+        ] } }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const View = makeView(new TestClientCtx())
+    const m = await mount(h(View, { sessionId: 'sv-supervisor-midblock', useProjection: projectionsFor(richTimeline()) }))
+    await flush()
+    await until(() => card(m.container) !== null, 'the supervisor card appears')
+    assert.equal(m.container.querySelector('[data-redline-supervisor-switch-target]'), null, 'active run without a block shows no picker')
+    // The child card also reads the catalog once on mount; only a NEW read after
+    // the task flips to BLOCKED proves the supervisor effect re-ran.
+    const baseline = modelReads.length
+
+    blocked = true
+    await act(async () => { polls.at(-1)?.() })
+    await until(() => m.container.querySelector('[data-redline-supervisor-switch-target]') !== null, 'the picker appears once a task is blocked')
+    assert.ok(modelReads.length > baseline, 'the catalog is read again for the mid-run block')
+    await m.unmount()
+    vi.restoreAllMocks()
+  })
+
+  test('a blocked run with a configured fallback still offers the explicit judge picker', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        calls.supervisor += 1
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summaryOf({
+          status: 'blocked',
+          blockedReason: '评估器不可用',
+          evaluatorFallbackModel: 'dimagent-oauth/kimi-k3',
+          visualWitness: false,
+        }) }) } as Response)
+      }
+      if (body.op === 'carrier.models') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { models: [
+          { provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'kimi-k3', modelName: 'Kimi K3', efforts: [] },
+        ] } }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-fallback-picker')
+    await until(() => m.container.querySelector('[data-redline-supervisor-switch-target]') !== null,
+      'a configured fallback must not hide the explicit picker: it may be the unusable route itself')
+    await m.unmount()
+  })
+
+  test('the explicit judge picker submits the chosen reasoning level', async () => {
+    const switched: { role?: string, route?: { provider?: string, model?: string, reasoningEffort?: string } }[] = []
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string, role?: string, route?: { provider?: string, model?: string, reasoningEffort?: string } }
+      if (body.op === 'guard.supervisor') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summaryOf({ status: 'blocked', blockedReason: '评估器不可用' }) }) } as Response)
+      }
+      if (body.op === 'carrier.models') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { models: [
+          {
+            provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'kimi-k3', modelName: 'Kimi K3',
+            efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }],
+          },
+        ] } }) } as Response)
+      }
+      if (body.op === 'guard.switch') {
+        switched.push({ role: body.role, route: body.route })
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { ...summaryOf(), status: 'active', blockedReason: undefined } }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-pick-effort')
+    const select = await (async () => {
+      for (let attempt = 0; attempt < 60; attempt += 1) {
+        const found = m.container.querySelector<HTMLSelectElement>('[data-redline-supervisor-switch-target]')
+        if (found !== null) return found
+        await new Promise(resolve => setTimeout(resolve, 20))
+      }
+      return null
+    })()
+    assert.ok(select !== null)
+    const setValue = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+    await act(async () => {
+      setValue?.call(select, 'dimagent-oauth/kimi-k3')
+      select?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const effort = m.container.querySelector<HTMLSelectElement>('[data-redline-supervisor-switch-effort]')
+    assert.ok(effort !== null, 'a model with efforts offers a level selector')
+    await act(async () => {
+      setValue?.call(effort, 'high')
+      effort?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const apply = m.container.querySelector('[data-redline-supervisor-switch-apply]') as HTMLButtonElement
+    await act(async () => { apply.click() })
+    await until(() => switched.length > 0, 'guard.switch is called')
+    assert.deepEqual(switched[0], {
+      role: 'evaluator',
+      route: { provider: 'dimagent-oauth', model: 'kimi-k3', reasoningEffort: 'high' },
+    })
+    await m.unmount()
+  })
+
+  test('rollback is two clicks: the first only arms, the second sends confirm', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf(), calls)
+    const m = await mountRich('sv-supervisor-rollback')
+    await until(() => rollbackButton(m.container) !== null, 'the rollback button appears')
+    const button = rollbackButton(m.container) as HTMLButtonElement
+    assert.equal(text(button), DICT_EN['supervisor.rollback'])
+    await click(button)
+    assert.equal(text(rollbackButton(m.container) as HTMLElement), DICT_EN['supervisor.rollbackArmed'])
+    assert.deepEqual(calls.rollback, [], 'one click never rewrites history')
+    await click(rollbackButton(m.container) as HTMLElement)
+    await until(() => calls.rollback.length > 0, 'the second click issues the rollback')
+    assert.deepEqual(calls.rollback, [{ runId: '20261124-demo' }])
+    await m.unmount()
+  })
+
+  test('switching sessions clears a pending confirmation', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf(), calls)
+    const View = makeView(new TestClientCtx())
+    const m = await mount(h(View, { sessionId: 'sv-a', useProjection: projectionsFor(richTimeline()) }))
+    await until(() => rollbackButton(m.container) !== null, 'the rollback button appears')
+    await click(rollbackButton(m.container) as HTMLElement)
+    assert.equal(text(rollbackButton(m.container) as HTMLElement), DICT_EN['supervisor.rollbackArmed'])
+    // A new session must not inherit the armed state: one click there may only arm.
+    await m.update(h(View, { sessionId: 'sv-b', useProjection: projectionsFor(richTimeline()) }))
+    await until(() => rollbackButton(m.container) !== null, 'the card returns for the new session')
+    assert.equal(text(rollbackButton(m.container) as HTMLElement), DICT_EN['supervisor.rollback'], 'armed state was reset')
+    await m.unmount()
+  })
+
+  test('a rollback reply that lands after a session switch is dropped', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    let resolveRollback: ((response: Response) => void) | undefined
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        calls.supervisor += 1
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summaryOf() }) } as Response)
+      }
+      if (body.op === 'guard.rollback') {
+        calls.rollback.push({})
+        // Hold the reply: the user switches sessions before the host answers.
+        return new Promise<Response>((resolve) => { resolveRollback = resolve })
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const View = makeView(new TestClientCtx())
+    const m = await mount(h(View, { sessionId: 'sv-gen-a', useProjection: projectionsFor(richTimeline()) }))
+    await until(() => rollbackButton(m.container) !== null, 'the rollback button appears')
+    await click(rollbackButton(m.container) as HTMLElement)
+    await click(rollbackButton(m.container) as HTMLElement)
+    await until(() => calls.rollback.length === 1, 'the rollback request is in flight')
+
+    await m.update(h(View, { sessionId: 'sv-gen-b', useProjection: projectionsFor(richTimeline()) }))
+    await until(() => rollbackButton(m.container) !== null, 'the card returns for the new session')
+    // The late reply is a failure from session A; session B must not show it.
+    await act(async () => {
+      resolveRollback?.({ ok: true, json: async () => ({ ok: false, error: { code: 'redline/bad-request', message: 'stale session A error' } }) } as Response)
+    })
+    await flush()
+    const body = text(card(m.container) as HTMLElement)
+    assert.ok(!body.includes('stale session A error'), 'the stale generation is discarded')
+    assert.ok(!body.includes(DICT_EN['supervisor.rollbackFailed']), 'no error line is painted on the new session')
+    await m.unmount()
+  })
+
+  test('a failed rollback shows the host reason instead of going silent', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    // The failure envelope is `{ ok: false, error: { code, message } }`.
+    stubSupervisor(summaryOf(), calls, {
+      ok: false, error: { code: 'redline/bad-request', message: 'checkpoint 已存在' },
+    })
+    const m = await mountRich('sv-supervisor-fail')
+    await until(() => rollbackButton(m.container) !== null, 'the rollback button appears')
+    await click(rollbackButton(m.container) as HTMLElement)
+    await click(rollbackButton(m.container) as HTMLElement)
+    await until(() => text(card(m.container) as HTMLElement).includes('checkpoint 已存在'), 'the failure is surfaced')
+    await m.unmount()
+  })
+
+  // Round-11 P2-3: storing the title as the "message" made an empty host message
+  // render `Rollback failed：Rollback failed`, and the separator was a hard-coded
+  // full-width colon in the English UI.
+  test('an empty failure message renders the title once, with no separator', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf(), calls, { ok: false, error: { code: 'redline/bad-request', message: '' } })
+    const m = await mountRich('sv-supervisor-empty-fail')
+    await until(() => rollbackButton(m.container) !== null, 'the rollback button appears')
+    await click(rollbackButton(m.container) as HTMLElement)
+    await click(rollbackButton(m.container) as HTMLElement)
+    await until(() => text(card(m.container) as HTMLElement).includes(DICT_EN['supervisor.rollbackFailed']), 'the failure line appears')
+    const body = text(card(m.container) as HTMLElement)
+    const occurrences = body.split(DICT_EN['supervisor.rollbackFailed']).length - 1
+    assert.equal(occurrences, 1, `the title is rendered exactly once: ${JSON.stringify(body)}`)
+    assert.ok(!body.includes('：'), `no dangling separator: ${JSON.stringify(body)}`)
+    await m.unmount()
+  })
+
+  test('a failure reason is joined through the localized template', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf(), calls, {
+      ok: false, error: { code: 'redline/bad-request', message: 'checkpoint 已存在' },
+    })
+    const m = await mountRich('sv-supervisor-template-fail')
+    await until(() => rollbackButton(m.container) !== null, 'the rollback button appears')
+    await click(rollbackButton(m.container) as HTMLElement)
+    await click(rollbackButton(m.container) as HTMLElement)
+    const expected = DICT_EN['supervisor.actionFailedDetail']
+      .replace('{action}', DICT_EN['supervisor.rollbackFailed'])
+      .replace('{reason}', 'checkpoint 已存在')
+    await until(() => text(card(m.container) as HTMLElement).includes(expected), `the template is used: ${expected}`)
+    const body = text(card(m.container) as HTMLElement)
+    assert.ok(!body.includes('：'), `the English UI carries no full-width colon: ${JSON.stringify(body)}`)
+    await m.unmount()
+  })
+
+  test('a run-level blockedReason with no BLOCKED task still loads the judge picker', async () => {
+    // A legacy `settle` block left the ledger `active` with `goalBlocked` and no
+    // BLOCKED row. Watching only the task status left the picker empty exactly
+    // when the run-level reason was the only block on record.
+    const modelReads = { count: 0 }
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          ok: true,
+          value: summaryOf({
+            status: 'active',
+            blockedReason: 'T2 已阻塞：评估器不可用',
+            tasks: [
+              { id: 'T1', title: '落盘', status: 'DONE' },
+              { id: 'T2', title: '收尾', status: 'IN_PROGRESS' },
+            ],
+          }),
+        }) } as Response)
+      }
+      if (body.op === 'carrier.models') {
+        modelReads.count += 1
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { models: [
+          { provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'kimi-k3', modelName: 'Kimi K3', efforts: [] },
+        ] } }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-run-block-only')
+    await until(() => m.container.querySelector('[data-redline-supervisor-switch-target]') !== null,
+      'the judge picker loads for a run-level block without a BLOCKED task')
+    assert.ok(modelReads.count >= 1)
+    await m.unmount()
+  })
+
+  test('an unloaded session never loads the catalog and disables the picker once the agent drops', async () => {
+    const polls: (() => void)[] = []
+    const realSetInterval = globalThis.setInterval
+    vi.spyOn(globalThis, 'setInterval').mockImplementation(((fn: () => void, delay?: number) => {
+      if (delay === 3000) {
+        polls.push(fn)
+        return 0
+      }
+      return realSetInterval.call(globalThis, fn, delay)
+    }) as unknown as typeof setInterval)
+    let live = true
+    let modelReads = 0
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summaryOf({
+          status: 'blocked',
+          blockedReason: '评估器不可用',
+          ...(live ? {} : { agentLive: false }),
+          evaluatorFallbackModel: 'dimagent-oauth/kimi-k3',
+        }) }) } as Response)
+      }
+      if (body.op === 'carrier.models') {
+        modelReads += 1
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { models: [
+          { provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'kimi-k3', modelName: 'Kimi K3', efforts: [] },
+        ] } }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const View = makeView(new TestClientCtx())
+    const m = await mount(h(View, { sessionId: 'sv-supervisor-agent-down', useProjection: projectionsFor(richTimeline()) }))
+    await until(() => m.container.querySelector('[data-redline-supervisor-switch-target]') !== null, 'the picker appears while live')
+    const target = m.container.querySelector<HTMLSelectElement>('[data-redline-supervisor-switch-target]')
+    assert.equal(target?.disabled, false)
+    const baseline = modelReads
+
+    live = false
+    await act(async () => { polls.at(-1)?.() })
+    await until(() => m.container.querySelector('[data-redline-supervisor-switch-target]')?.hasAttribute('disabled') === true,
+      'the picker is disabled once the session is unloaded')
+    assert.equal(modelReads, baseline, 'an unloaded session does not load the model catalog')
+    await m.unmount()
+    vi.restoreAllMocks()
+  })
+
+  test('hides a fallback switch once that role already runs on its fallback', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf({
+      status: 'blocked',
+      blockedReason: '评估器不可用',
+      evaluatorModel: 'p/judge',
+      evaluatorFallbackModel: 'p/judge',
+      executorModel: 'p/coder',
+      executorFallbackModel: 'p/coder-fallback',
+      activeExecutorModel: 'p/coder-fallback',
+    }), calls)
+    const m = await mountRich('sv-supervisor-on-fallback')
+    await until(() => card(m.container) !== null, 'the card appears')
+    assert.equal(m.container.querySelector('[data-redline-supervisor-switch-evaluator]'), null,
+      'switching to the evaluator fallback is a no-op once it is already active')
+    assert.equal(m.container.querySelector('[data-redline-supervisor-switch-executor]'), null,
+      'switching to the executor fallback is a no-op once it is already active')
+    assert.ok(m.container.querySelector('[data-redline-supervisor-resume]') !== null, 'continue stays available')
+    await m.unmount()
+  })
+
+  test('a continue whose host goal was not re-armed keeps warning after the poll', async () => {
+    const polls: (() => void)[] = []
+    const realSetInterval = globalThis.setInterval
+    vi.spyOn(globalThis, 'setInterval').mockImplementation(((fn: () => void, delay?: number) => {
+      if (delay === 3000) {
+        polls.push(fn)
+        return 0
+      }
+      return realSetInterval.call(globalThis, fn, delay)
+    }) as unknown as typeof setInterval)
+    const blockedSummary = {
+      status: 'blocked',
+      blockedReason: '评估器不可用',
+      tasks: [
+        { id: 'T1', title: '落盘', status: 'DONE' },
+        { id: 'T2', title: '收尾', status: 'BLOCKED', blockedReason: '评估器不可用' },
+      ],
+    }
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summaryOf(blockedSummary) }) } as Response)
+      }
+      if (body.op === 'guard.continue') {
+        // The ledger is open again, but the host goal refused to re-arm.
+        return Promise.resolve({ ok: true, json: async () => ({
+          ok: true, value: { ...summaryOf({ ...blockedSummary, status: 'active', blockedReason: undefined }), goalResumed: false },
+        }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-goal-not-resumed')
+    await until(() => m.container.querySelector('[data-redline-supervisor-resume]') !== null, 'the continue button appears')
+    await click(m.container.querySelector('[data-redline-supervisor-resume]') as HTMLElement)
+    await until(() => text(card(m.container) as HTMLElement).includes(DICT_EN['supervisor.goalNotResumed']),
+      'the card names the un-resumed host goal')
+    // The 3-second poll replaces the summary with the disk snapshot; the warning
+    // is an ACTION result and must survive that replacement.
+    await act(async () => { polls.at(-1)?.() })
+    await flush()
+    assert.ok(text(card(m.container) as HTMLElement).includes(DICT_EN['supervisor.goalNotResumed']))
+    assert.ok(!text(card(m.container) as HTMLElement).includes(DICT_EN['supervisor.switchFailed']),
+      'the continue failure label must not be reused')
+    await m.unmount()
+    vi.restoreAllMocks()
+  })
+
+  test('a switch that woke the ledger but not the host goal keeps warning after the poll', async () => {
+    const polls: (() => void)[] = []
+    const realSetInterval = globalThis.setInterval
+    vi.spyOn(globalThis, 'setInterval').mockImplementation(((fn: () => void, delay?: number) => {
+      if (delay === 3000) {
+        polls.push(fn)
+        return 0
+      }
+      return realSetInterval.call(globalThis, fn, delay)
+    }) as unknown as typeof setInterval)
+    const blockedSummary = summaryOf({
+      status: 'blocked',
+      blockedReason: '评估器不可用',
+      evaluatorFallbackModel: 'p/judge-fb',
+      tasks: [{ id: 'T1', title: '落盘', status: 'DONE' }, { id: 'T2', title: '收尾', status: 'BLOCKED', blockedReason: '评估器不可用' }],
+    })
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: blockedSummary }) } as Response)
+      }
+      if (body.op === 'guard.switch') {
+        // The ledger reopened but the host goal hit its round cap.
+        return Promise.resolve({ ok: true, json: async () => ({
+          ok: true, value: { ...summaryOf({ status: 'active', blockedReason: undefined, evaluatorFallbackModel: 'p/judge-fb' }), goalResumed: false },
+        }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-switch-goal-not-resumed')
+    await until(() => m.container.querySelector('[data-redline-supervisor-switch-evaluator]') !== null, 'the fallback switch appears')
+    await click(m.container.querySelector('[data-redline-supervisor-switch-evaluator]') as HTMLElement)
+    await until(() => text(card(m.container) as HTMLElement).includes(DICT_EN['supervisor.goalNotResumed']),
+      'the switch reply names the un-resumed host goal')
+    await act(async () => { polls.at(-1)?.() })
+    await flush()
+    assert.ok(text(card(m.container) as HTMLElement).includes(DICT_EN['supervisor.goalNotResumed']))
+    await m.unmount()
+    vi.restoreAllMocks()
+  })
+
+  test('a switch whose resume half was refused says so without calling the switch failed', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        calls.supervisor += 1
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summaryOf({
+          status: 'blocked',
+          blockedReason: '里程碑审阅未通过（第 1 轮）',
+          evaluatorFallbackModel: 'p/judge-fb',
+          tasks: [{ id: 'T1', title: '落盘', status: 'DONE' }, { id: 'T2', title: '收尾', status: 'TODO' }],
+        }) }) } as Response)
+      }
+      if (body.op === 'guard.switch') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          ok: true,
+          value: {
+            ...summaryOf({ status: 'blocked', blockedReason: '里程碑审阅未通过（第 1 轮）', evaluatorFallbackModel: 'p/judge-fb' }),
+            resumeRefused: '里程碑审阅未通过：请先回退并重开相关任务修复缺陷，不能直接继续',
+          },
+        }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-resume-refused')
+    await until(() => m.container.querySelector('[data-redline-supervisor-switch-evaluator]') !== null, 'the fallback switch appears')
+    await click(m.container.querySelector('[data-redline-supervisor-switch-evaluator]') as HTMLElement)
+    const expected = DICT_EN['supervisor.resumeRefused'].replace('{reason}', '里程碑审阅未通过：请先回退并重开相关任务修复缺陷，不能直接继续')
+    await until(() => text(card(m.container) as HTMLElement).includes(expected), `the refusal is named: ${expected}`)
+    const body = text(card(m.container) as HTMLElement)
+    assert.ok(!body.includes(DICT_EN['supervisor.switchFailed']), 'a committed switch is not reported as a failed switch')
+    await m.unmount()
+  })
+
+  test('a run-level blocked status with no BLOCKED row still renders the action row', async () => {
+    // `blockedRun` already treated this as blocked for the catalog loader, but
+    // the action row keyed off blockedReason/BLOCKED only, so resume and
+    // rollback disappeared exactly when the run-level block was the only one.
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf({
+      status: 'blocked',
+      tasks: [{ id: 'T1', title: '落盘', status: 'DONE' }, { id: 'T2', title: '收尾', status: 'TODO' }],
+    }), calls)
+    const m = await mountRich('sv-supervisor-status-blocked-only')
+    await until(() => m.container.querySelector('[data-redline-supervisor-resume]') !== null,
+      'the resume button renders for a status-only block')
+    assert.ok(rollbackButton(m.container) !== null, 'rollback stays available')
+    await m.unmount()
+  })
+
+  test('an initially unloaded session never loads the model catalog', async () => {
+    let modelReads = 0
+    let resolveSupervisor: ((response: Response) => void) | undefined
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        // Hold the FIRST summary so the child card's own catalog read (which is
+        // unrelated to the supervisor) lands before the agent-down answer does:
+        // any later read is the supervisor effect's.
+        return new Promise<Response>((resolve) => { resolveSupervisor = resolve })
+      }
+      if (body.op === 'carrier.models') {
+        modelReads += 1
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { models: [] } }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-initially-down')
+    await until(() => modelReads >= 1, 'the child-card catalog read happens on mount')
+    const baseline = modelReads
+    await act(async () => {
+      resolveSupervisor?.({ ok: true, json: async () => ({ ok: true, value: summaryOf({
+        status: 'blocked',
+        blockedReason: '评估器不可用',
+        agentLive: false,
+        evaluatorFallbackModel: 'p/judge-fb',
+      }) }) } as Response)
+    })
+    await until(() => card(m.container) !== null, 'the read-only card appears')
+    await flush()
+    assert.equal(modelReads, baseline, 'a run read from disk has no live target to switch')
+    assert.equal(m.container.querySelector('[data-redline-supervisor-switch-target]'), null)
+    await m.unmount()
+  })
+
+  test('switching sessions drops the previous run model catalog instead of keeping it', async () => {
+    let modelCalls = 0
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summaryOf({
+          status: 'blocked',
+          blockedReason: '评估器不可用',
+        }) }) } as Response)
+      }
+      if (body.op === 'carrier.models') {
+        modelCalls += 1
+        // The child card and the supervisor effect each read the catalog on
+        // mount. From the session switch onward the new catalog never answers:
+        // any rendered option would be the previous session's stale list.
+        if (modelCalls <= 2) {
+          return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: { models: [
+            { provider: 'p', providerName: 'P', model: 'old-judge', modelName: 'Old Judge', efforts: [] },
+          ] } }) } as Response)
+        }
+        return new Promise<Response>(() => {})
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const View = makeView(new TestClientCtx())
+    const m = await mount(h(View, { sessionId: 'sv-catalog-a', useProjection: projectionsFor(richTimeline()) }))
+    await until(() => m.container.querySelector('[data-redline-supervisor-switch-target]') !== null, 'the first catalog loads')
+    const firstOptions = [...m.container.querySelectorAll('[data-redline-supervisor-switch-target] option')].map(option => text(option as HTMLElement))
+    assert.ok(firstOptions.includes('p/old-judge'))
+    await m.update(h(View, { sessionId: 'sv-catalog-b', useProjection: projectionsFor(richTimeline()) }))
+    await flush()
+    assert.equal(m.container.querySelector('[data-redline-supervisor-switch-target]'), null,
+      'the previous session\'s catalog is not offered before the new one answers')
+    await m.unmount()
+  })
+
+  test('renders the dedicated evaluator model when configured and omits it when unset', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    stubSupervisor(summaryOf({ evaluatorModel: 'anthropic/claude-sonnet' }), calls)
+    const m = await mountRich('sv-supervisor-eval')
+    await until(() => card(m.container) !== null, 'the card appears')
+    const line = card(m.container)?.querySelector<HTMLElement>('[data-redline-supervisor-evaluator]') ?? null
+    assert.ok(line !== null, 'evaluator line is shown when dedicated model is set')
+    assert.equal(text(line), DICT_EN['supervisor.evaluator'].replace('{model}', 'anthropic/claude-sonnet'))
+    await m.unmount()
+
+    stubSupervisor(summaryOf(), calls)
+    const m2 = await mountRich('sv-supervisor-eval-default')
+    await until(() => card(m2.container) !== null, 'the card appears')
+    assert.equal(card(m2.container)?.querySelector('[data-redline-supervisor-evaluator]'), null)
+    await m2.unmount()
+  })
+
+  /** Capture the 3-second supervisor poll so a test can drive the next tick itself. */
+  function capturePolls(): (() => void)[] {
+    const polls: (() => void)[] = []
+    const realSetInterval = globalThis.setInterval
+    vi.spyOn(globalThis, 'setInterval').mockImplementation(((fn: () => void, delay?: number) => {
+      if (delay === 3000) {
+        polls.push(fn)
+        return 0
+      }
+      return realSetInterval.call(globalThis, fn, delay)
+    }) as unknown as typeof setInterval)
+    return polls
+  }
+
+  test('a run-level milestone block is not hidden by a blocked sibling with a different reason', async () => {
+    const calls: Calls = { supervisor: 0, rollback: [], resume: [] }
+    const milestone = '里程碑审阅未通过（第 1 轮）：见 review/round-1.md'
+    stubSupervisor(summaryOf({
+      status: 'blocked',
+      blockedReason: milestone,
+      tasks: [
+        { id: 'T1', title: '一', status: 'BLOCKED', blockedReason: '评估器不可用' },
+        { id: 'T2', title: '二', status: 'DONE' },
+      ],
+    }), calls)
+    const m = await mountRich('sv-supervisor-two-block-reasons')
+    await until(() => card(m.container) !== null, 'the card appears')
+    const body = text(card(m.container) as HTMLElement)
+    assert.ok(body.includes(DICT_EN['supervisor.blocked'].replace('{reason}', '评估器不可用')),
+      'the task-level block is named')
+    // The milestone gate is a RUN-level fact: hiding it because a different task
+    // is blocked made the safety gate look like an ordinary task stall.
+    assert.ok(body.includes(DICT_EN['supervisor.runBlocked'].replace('{reason}', milestone)),
+      'the run-level milestone block is not hidden by the task block')
+    await m.unmount()
+  })
+
+  test('a refused resume notice survives the poll that replaces the summary', async () => {
+    const polls = capturePolls()
+    const blockedSummary = summaryOf({
+      status: 'blocked',
+      blockedReason: '评估器不可用',
+      evaluatorFallbackModel: 'p/judge-fb',
+      tasks: [
+        { id: 'T1', title: '落盘', status: 'DONE' },
+        { id: 'T2', title: '收尾', status: 'BLOCKED', blockedReason: '评估器不可用' },
+      ],
+    })
+    const refusal = '里程碑审阅未通过：请先回退并重开相关任务修复缺陷，不能直接继续'
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: blockedSummary }) } as Response)
+      }
+      if (body.op === 'guard.switch') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          ok: true,
+          value: { ...summaryOf({
+            status: 'blocked',
+            blockedReason: '评估器不可用',
+            evaluatorFallbackModel: 'p/judge-fb',
+            tasks: [
+              { id: 'T1', title: '落盘', status: 'DONE' },
+              { id: 'T2', title: '收尾', status: 'BLOCKED', blockedReason: '评估器不可用' },
+            ],
+          }), resumeRefused: refusal },
+        }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-refusal-survives-poll')
+    await until(() => m.container.querySelector('[data-redline-supervisor-switch-evaluator]') !== null,
+      'the fallback switch appears')
+    await click(m.container.querySelector('[data-redline-supervisor-switch-evaluator]') as HTMLElement)
+    await until(() => m.container.querySelector('[data-redline-supervisor-resume-refused]') !== null,
+      'the refusal is named')
+    // The poll replaces `supervisor` with the disk snapshot, which does not carry
+    // an action-only refusal; dropping the standalone state would make the notice
+    // flash for one reply and then vanish.
+    await act(async () => { polls.at(-1)?.() })
+    await flush()
+    const notice = m.container.querySelector('[data-redline-supervisor-resume-refused]')
+    assert.ok(notice !== null, 'the refusal survives the poll')
+    assert.ok(text(notice as HTMLElement).includes(refusal))
+    await m.unmount()
+  })
+
+  test('a run that finishes clears the stale action warning on the next poll', async () => {
+    const polls = capturePolls()
+    let completed = false
+    const refusal = '里程碑审阅未通过：请先回退并重开相关任务修复缺陷，不能直接继续'
+    const blockedSummary = summaryOf({
+      status: 'blocked',
+      blockedReason: '评估器不可用',
+      evaluatorFallbackModel: 'p/judge-fb',
+      tasks: [
+        { id: 'T1', title: '落盘', status: 'DONE' },
+        { id: 'T2', title: '收尾', status: 'BLOCKED', blockedReason: '评估器不可用' },
+      ],
+    })
+    const completedSummary = summaryOf({
+      status: 'completed',
+      done: 3,
+      blockedReason: undefined,
+      tasks: [
+        { id: 'T1', title: '一', status: 'DONE' },
+        { id: 'T2', title: '二', status: 'DONE' },
+        { id: 'T3', title: '三', status: 'DONE' },
+      ],
+    })
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: completed ? completedSummary : blockedSummary }) } as Response)
+      }
+      if (body.op === 'guard.switch') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          ok: true,
+          value: {
+            // Same `done` as the completed snapshot below: only `status` may
+            // prove the notices stale, or deleting the completed branch would
+            // still pass through the done-increase comparison.
+            ...summaryOf({ status: 'active', done: 3, blockedReason: undefined, evaluatorFallbackModel: 'p/judge-fb' }),
+            goalResumed: false,
+            resumeRefused: refusal,
+          },
+        }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-completed-clears-hint')
+    await until(() => m.container.querySelector('[data-redline-supervisor-switch-evaluator]') !== null,
+      'the fallback switch appears')
+    await click(m.container.querySelector('[data-redline-supervisor-switch-evaluator]') as HTMLElement)
+    await until(() => m.container.querySelector('[data-redline-supervisor-goal-resume]') !== null,
+      'the action warning is shown')
+    assert.ok(m.container.querySelector('[data-redline-supervisor-resume-refused]') !== null)
+    completed = true
+    await act(async () => { polls.at(-1)?.() })
+    await flush()
+    // A finished run cannot have a pending "the goal was not re-armed" or
+    // "resume was refused" condition: both are stale action results.
+    assert.equal(m.container.querySelector('[data-redline-supervisor-goal-resume]') === null, true,
+      'a completed run clears the stale goal warning')
+    assert.equal(m.container.querySelector('[data-redline-supervisor-resume-refused]') === null, true,
+      'a completed run clears the stale refusal')
+    await m.unmount()
+  })
+
+  test('a run that advanced to another task clears the stale action warning', async () => {
+    const polls = capturePolls()
+    let advanced = false
+    const blockedSummary = summaryOf({ status: 'blocked', blockedReason: '评估器不可用' })
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          ok: true,
+          value: advanced
+            ? summaryOf({ status: 'active', done: 2, blockedReason: undefined })
+            : blockedSummary,
+        }) } as Response)
+      }
+      if (body.op === 'guard.continue') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          ok: true, value: { ...summaryOf({ status: 'active', done: 1, blockedReason: undefined }), goalResumed: false },
+        }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-advanced-clears-hint')
+    await until(() => m.container.querySelector('[data-redline-supervisor-resume]') !== null, 'the continue button appears')
+    await click(m.container.querySelector('[data-redline-supervisor-resume]') as HTMLElement)
+    await until(() => m.container.querySelector('[data-redline-supervisor-goal-resume]') !== null,
+      'the action warning is shown')
+    advanced = true
+    await act(async () => { polls.at(-1)?.() })
+    await flush()
+    assert.equal(m.container.querySelector('[data-redline-supervisor-goal-resume]') === null, true,
+      'a run that moved on clears the old warning')
+    await m.unmount()
+  })
+
+  test('a stale in-flight poll cannot overwrite a newer action result', async () => {
+    const polls = capturePolls()
+    const oldSummary = summaryOf({ status: 'active', done: 2 })
+    // The rollback reopens a task (done 1) and its goal could not be re-armed.
+    const rollbackReply = { ...summaryOf({ status: 'active', done: 1 }), goalResumed: false }
+    let holdPoll = false
+    let resolvePoll: ((response: Response) => void) | undefined
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        if (holdPoll) {
+          // Read before the action, answered after it: the classic stale read.
+          return new Promise<Response>((resolve) => { resolvePoll = resolve })
+        }
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: oldSummary }) } as Response)
+      }
+      if (body.op === 'guard.rollback') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: rollbackReply }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-stale-poll')
+    await until(() => rollbackButton(m.container) !== null, 'the rollback button appears')
+    holdPoll = true
+    await act(async () => { polls.at(-1)?.() })
+    await flush()
+    await click(rollbackButton(m.container) as HTMLElement)
+    await click(rollbackButton(m.container) as HTMLElement)
+    await until(() => m.container.querySelector('[data-redline-supervisor-goal-resume]') !== null,
+      'the rollback warning is shown')
+    assert.ok(text(card(m.container) as HTMLElement).includes('1/3'), 'the card shows the action snapshot')
+    // The held answer lands AFTER the action reply. Its larger `done` looks like
+    // progress, but it is older than the result already on screen.
+    await act(async () => {
+      resolvePoll?.({ ok: true, json: async () => ({ ok: true, value: oldSummary }) } as Response)
+    })
+    await flush()
+    assert.ok(m.container.querySelector('[data-redline-supervisor-goal-resume]') !== null,
+      'a stale poll does not clear the fresh action warning')
+    assert.ok(text(card(m.container) as HTMLElement).includes('1/3'),
+      'the stale poll does not overwrite the card with the pre-action snapshot')
+    await m.unmount()
+  })
+
+  test('a poll that shows the run unblocked clears a stale resume refusal', async () => {
+    const polls = capturePolls()
+    let unblocked = false
+    const refusal = '里程碑审阅未通过：请先回退并重开相关任务修复缺陷，不能直接继续'
+    const blockedSummary = summaryOf({
+      status: 'blocked',
+      blockedReason: '评估器不可用',
+      evaluatorFallbackModel: 'p/judge-fb',
+      tasks: [
+        { id: 'T1', title: '落盘', status: 'DONE' },
+        { id: 'T2', title: '收尾', status: 'BLOCKED', blockedReason: '评估器不可用' },
+      ],
+    })
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          ok: true,
+          value: unblocked
+            // Another tab resumed the run: same `done`, block cleared.
+            ? summaryOf({ status: 'active', done: 1, blockedReason: undefined })
+            : blockedSummary,
+        }) } as Response)
+      }
+      if (body.op === 'guard.switch') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          ok: true,
+          value: { ...blockedSummary, resumeRefused: refusal },
+        }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-external-unblock')
+    await until(() => m.container.querySelector('[data-redline-supervisor-switch-evaluator]') !== null,
+      'the fallback switch appears')
+    await click(m.container.querySelector('[data-redline-supervisor-switch-evaluator]') as HTMLElement)
+    await until(() => m.container.querySelector('[data-redline-supervisor-resume-refused]') !== null,
+      'the refusal is named')
+    unblocked = true
+    await act(async () => { polls.at(-1)?.() })
+    await flush()
+    // The refusal described a blocked run; a poll that shows it unblocked proves
+    // the notice stale even though `done` did not move.
+    assert.equal(m.container.querySelector('[data-redline-supervisor-resume-refused]') === null, true,
+      'an externally resumed run clears the stale refusal')
+    await m.unmount()
+  })
+
+  test('a failed second action does not show the previous action refusal', async () => {
+    const refusal = '里程碑审阅未通过：请先回退并重开相关任务修复缺陷，不能直接继续'
+    const blockedSummary = summaryOf({
+      status: 'blocked',
+      blockedReason: '评估器不可用',
+      evaluatorFallbackModel: 'p/judge-fb',
+      tasks: [
+        { id: 'T1', title: '落盘', status: 'DONE' },
+        { id: 'T2', title: '收尾', status: 'BLOCKED', blockedReason: '评估器不可用' },
+      ],
+    })
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: blockedSummary }) } as Response)
+      }
+      if (body.op === 'guard.switch') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          ok: true,
+          value: { ...summaryOf({ status: 'blocked', blockedReason: '评估器不可用', evaluatorFallbackModel: 'p/judge-fb' }), resumeRefused: refusal },
+        }) } as Response)
+      }
+      if (body.op === 'guard.continue') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          ok: false, error: { code: 'redline/bad-request', message: '恢复失败：测试原因' },
+        }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+    const m = await mountRich('sv-supervisor-stale-refusal-cleared')
+    await until(() => m.container.querySelector('[data-redline-supervisor-switch-evaluator]') !== null,
+      'the fallback switch appears')
+    await click(m.container.querySelector('[data-redline-supervisor-switch-evaluator]') as HTMLElement)
+    await until(() => m.container.querySelector('[data-redline-supervisor-resume-refused]') !== null,
+      'the refusal is named')
+    await click(m.container.querySelector('[data-redline-supervisor-resume]') as HTMLElement)
+    await until(() => text(card(m.container) as HTMLElement).includes('恢复失败：测试原因'),
+      'the second action failure is named')
+    // The old refusal belongs to the previous action; showing it beside a new
+    // error would describe two different outcomes at once.
+    assert.equal(m.container.querySelector('[data-redline-supervisor-resume-refused]') === null, true,
+      'the previous refusal is cleared when the next action starts')
+    await m.unmount()
+  })
+})
+
+// 台账和宿主 goal 会脱节：round-limit 停掉宿主目标后 tasks.json 仍写 active，
+// 旧卡片于是永远显示「进行中」。这里钉住「宿主停摆要如实显示 + 继续按钮可用」。
+describe('ContextView — supervisor host goal', () => {
+  function stubHostGoal(summary: Record<string, unknown>, calls: { resume: number }): void {
+    vi.stubGlobal('fetch', (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { op?: string }
+      if (body.op === 'guard.supervisor') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summary }) } as Response)
+      }
+      if (body.op === 'guard.continue') {
+        calls.resume += 1
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true, value: summary }) } as Response)
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ ok: false, code: 'redline/unknown-op', message: String(body.op) }) } as Response)
+    })
+  }
+
+  const summary = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    runId: '20261128-zens',
+    phase: 'running',
+    status: 'active',
+    goal: '把目标漂移修好',
+    parallel: 1,
+    enforcement: 'warn-only',
+    done: 0,
+    total: 15,
+    currentTaskId: 'V5-A',
+    tasks: [{ id: 'V5-A', title: '共享协议', status: 'IN_PROGRESS' }],
+    pendingRequests: 0,
+    updatedAt: T0,
+    ...over,
+  })
+
+  test('a round-limit block on the host goal is shown instead of "running"', async () => {
+    const calls = { resume: 0 }
+    stubHostGoal(summary({
+      hostGoal: {
+        phase: 'blocked',
+        activation: 'disarmed',
+        roundsStarted: 256,
+        maxGoalRounds: 256,
+        blockedCode: 'round-limit',
+        blockedMessage: 'Goal reached its configured limit of 256 rounds.',
+      },
+    }), calls)
+    const m = await mountRich('sv-host-goal-blocked')
+    await until(() => m.container.querySelector('[data-redline-supervisor-card]') !== null, 'the card appears')
+    const cardText = text(m.container.querySelector('[data-redline-supervisor-card]') as HTMLElement)
+    assert.ok(cardText.includes(DICT_EN['supervisor.status.blocked']), 'the chip reads blocked, not running')
+    assert.ok(!cardText.includes(DICT_EN['supervisor.status.active']), 'the dead run is never labelled running')
+    const note = m.container.querySelector('[data-redline-supervisor-host-goal]') as HTMLElement | null
+    assert.ok(note !== null, 'the host-goal row is rendered')
+    assert.ok(text(note).includes('round-limit'))
+    const resume = m.container.querySelector('[data-redline-supervisor-resume]') as HTMLButtonElement | null
+    assert.ok(resume !== null, 'continue is offered for a stopped host goal')
+    await click(resume)
+    await until(() => calls.resume === 1, 'the click calls guard.continue')
+    await m.unmount()
+  })
+
+  test('a disarmed host goal reads as paused and shows its round consumption', async () => {
+    const calls = { resume: 0 }
+    stubHostGoal(summary({
+      hostGoal: { phase: 'active', activation: 'disarmed', roundsStarted: 12, maxGoalRounds: 2000 },
+    }), calls)
+    const m = await mountRich('sv-host-goal-disarmed')
+    await until(() => m.container.querySelector('[data-redline-supervisor-card]') !== null, 'the card appears')
+    const cardText = text(m.container.querySelector('[data-redline-supervisor-card]') as HTMLElement)
+    assert.ok(cardText.includes(DICT_EN['supervisor.status.paused']), 'a disarmed goal is not "running"')
+    const expected = DICT_EN['supervisor.hostGoalStopped'].replace('{rounds}', '（12/2000）')
+    assert.ok(cardText.includes(expected), `the round usage is named: ${expected}`)
+    await m.unmount()
+  })
+
+  test('a live armed host goal keeps the ordinary running card', async () => {
+    const calls = { resume: 0 }
+    stubHostGoal(summary({
+      hostGoal: { phase: 'active', activation: 'armed', roundsStarted: 12, maxGoalRounds: 2000 },
+    }), calls)
+    const m = await mountRich('sv-host-goal-armed')
+    await until(() => m.container.querySelector('[data-redline-supervisor-card]') !== null, 'the card appears')
+    const cardText = text(m.container.querySelector('[data-redline-supervisor-card]') as HTMLElement)
+    assert.ok(cardText.includes(DICT_EN['supervisor.status.active']))
+    assert.equal(m.container.querySelector('[data-redline-supervisor-host-goal]'), null, 'no warning row for a healthy goal')
+    await m.unmount()
+  })
+})

@@ -106,6 +106,9 @@
 /* 「不可编辑」的状态说明（轮次未闭合 / 不在本进程）：不是报错，所以不用红字 */
 .redline-editor-blocked { font-size: 11px; color: var(--dsw-alias-label-secondary); }
 .redline-editor-err { font-size: 11px; color: var(--ds-color-red, #e5484d); }
+/* 弹窗里紧贴输入框的行内校验：留 5px 呼吸，别让红字贴在框边上。 */
+.redline-editor-err[data-redline-supervisor-tasks-err],
+.redline-editor-err[data-redline-supervisor-probes-err] { margin-top: 5px; }
 .redline-editor-actions { display: flex; align-items: center; gap: 8px; }
 /* 字段的「去向」标记（docs/03 R3.3.2）：只写本地 vs 会进会话，一眼可分。
    同样是**信息型**：虚线 + `title`，不给「?」光标（理由同 `.redline-chip-soft`）。 */

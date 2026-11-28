@@ -27,12 +27,13 @@
  * withdraws it), and a registry that rejects leaves the plugin otherwise intact.
  */
 
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import { currentModelSelection, type RedlineModelAgent } from './redline-model-selection'
 import { REDLINE_ERROR, REDLINE_ERROR_MESSAGE, isRedlineErrorCode } from '../shared/redline-errors'
+import type { SupervisorSummary } from '../shared/redline-supervisor'
 import {
   REDLINE_CHANNEL_ROUTE,
   asRedlineCall,
@@ -68,7 +69,18 @@ import { originsFileName, parseOrigins } from '../shared/redline-origins'
 import { captureEventSourceSnapshot, eventSourceKeyOf, type CapturedEventSource, type SurfaceSnapshotEvent } from '../shared/redline-source'
 import { buildManifest, serializeManifestDelivery, stableFingerprint, type ManifestCandidate } from '../redline/manifest'
 import { anchorRequestFingerprint, anchorTitle, composeAnchor, type AnchorDraft } from '../shared/redline-anchor'
-import { guardHashOf, loadGuardState, parseGuardTasks, readPlanPreview, setGuardPaused as setLiveGuardPaused, type GuardState } from './goal-guard'
+import { markFirstMessageDelivered, prepareGuardRun, recordActiveExecutor } from './goal-supervisor/create'
+import { effectiveCwdOf } from './effective-cwd'
+import { repoFacts } from './goal-supervisor/git'
+import { SAFE_RUN_ID as SAFE_RUN_ID_OF_RUN } from './goal-supervisor/run-id'
+import { routeLabel } from './goal-supervisor/evaluator'
+import { findSupervisorRun, recallSupervisorRun } from './goal-supervisor/status'
+import { rollbackRun } from './goal-supervisor/rollback'
+import { canResume, resumeBlockedRun } from './goal-supervisor/loop'
+import { GuardStore } from './goal-supervisor/store'
+import { isBroadScopePath, isSafeScopePath, normalizeScopePath } from './goal-supervisor/scope'
+import { attachedSupervisorFor, resumeSupervisorGoal, type SupervisorAgent } from './goal-supervisor/attach'
+import type { ProbeDef } from './goal-supervisor/schema'
 import {
   authorizeCarrier,
   createCarrierPreview,
@@ -155,6 +167,12 @@ function dataDirOf(ctx: Context): string | null {
   } catch {
     return null
   }
+}
+
+/** The supervisor mount index directory, or null when the harness home is absent. */
+function supervisorIndexDirOf(ctx: Context): string | null {
+  const dir = dataDirOf(ctx)
+  return dir === null ? null : join(dir, 'supervisor')
 }
 
 /** Read a session's local edits. A missing file is an empty table; a corrupt one refuses loudly. */
@@ -529,6 +547,14 @@ function decodeCarrierConfirmation(raw: unknown): CarrierConfirmationToken | nul
 /** Optional human-written anchor: kept short, trimmed, and mirrored head+tail. */
 const CARRIER_ANCHOR_LIMIT = 2000
 
+/** A supervisor run id becomes a path segment; shared with the module that mints them. */
+const SAFE_RUN_ID = SAFE_RUN_ID_OF_RUN
+
+/** True for a run id the ledger and the filesystem can both accept. */
+function isSafeRunId(value: string): boolean {
+  return value !== '' && value.length <= 50 && SAFE_RUN_ID.test(value)
+}
+
 /** Read the optional anchor; `null` means an unusable value (bad request). */
 /** Deterministic identities for one anchored conversation request. */
 function anchoredIds(operationId: string) {
@@ -557,6 +583,22 @@ interface AnchorSource {
   readonly config: CarrierConfirmedConfig
 }
 
+/** True when `cwd` points at one of this plugin's ungrouped supervisor worktrees. */
+function isSupervisorWorktreeCwd(cwd: string): boolean {
+  return /[\\/]\.guard[\\/]worktrees[\\/][^\\/]+[\\/]?$/.test(cwd)
+}
+
+/** Fail clearly when the source session has no registered DSH workspace. */
+function missingSourceWorkspaceError(cwd: string): RedlineEnvelope<never> {
+  if (isSupervisorWorktreeCwd(cwd)) {
+    return fail(
+      REDLINE_ERROR.badRequest,
+      'source session runs in an ungrouped worktree; switch to the main workspace session to start a new conversation',
+    )
+  }
+  return fail(REDLINE_ERROR.internal, 'source workspace is unavailable')
+}
+
 /** Resolve the source session's config/workspace without reading or writing its context. */
 async function resolveAnchorSource(
   ctx: Context,
@@ -575,7 +617,7 @@ async function resolveAnchorSource(
     return { ok: false, envelope: fail(REDLINE_ERROR.internal, 'workspace registry is unavailable') }
   }
   const workspace = await registry.resolveByPath(cwd)
-  if (workspace === undefined) return { ok: false, envelope: fail(REDLINE_ERROR.internal, 'source workspace is unavailable') }
+  if (workspace === undefined) return { ok: false, envelope: missingSourceWorkspaceError(cwd) }
   return { ok: true, source: { agent, cwd, workspaceId: workspace.id, config } }
 }
 
@@ -584,6 +626,33 @@ async function anchorGate(ctx: Context, sessionId: string): Promise<RedlineEnvel
   const turn = await turnStateOfSession(ctx, sessionId)
   if (!turn.known) return fail(REDLINE_ERROR.notLive)
   if (turn.open) return fail(REDLINE_ERROR.turnOpen)
+  return null
+}
+
+/**
+ * Refuse a guard write whose run record belongs to another session.
+ *
+ * `guard.rollback` already checked this; `continue` / `switch` did not, so a
+ * mistyped run id let one session edit another session's ledger while acting on
+ * its own agent and goal. Called INSIDE the session lock: the record can be
+ * bound between the outer read and the write.
+ */
+async function ownershipGate(store: GuardStore, sessionId: string): Promise<RedlineEnvelope<never> | null> {
+  let meta: Awaited<ReturnType<GuardStore['readMeta']>>
+  try {
+    meta = await store.readMeta()
+  } catch (error) {
+    return fail(REDLINE_ERROR.internal, error instanceof Error ? error.message : 'run meta is unreadable')
+  }
+  // A missing record is NOT "no owner": the caller is about to write a ledger
+  // it cannot attribute. Passing here let `guard.switch` persist a route into a
+  // run whose mount record was gone.
+  if (meta === null) {
+    return fail(REDLINE_ERROR.badRequest, '运行记录缺失：run.json 不存在或已被删除，已拒绝写入')
+  }
+  if (meta.sessionId !== undefined && meta.sessionId !== sessionId) {
+    return fail(REDLINE_ERROR.badRequest, '归属不符：该 run 属于另一个会话，已拒绝写入')
+  }
   return null
 }
 
@@ -599,36 +668,23 @@ const anchorPlan: RedlineOpHandler = async ({ ctx, call }) => {
   try { composed = composeAnchor(draft) } catch { return fail(REDLINE_ERROR.badRequest, 'anchor fields are incomplete') }
   const resolved = await resolveAnchorSource(ctx, sessionId)
   if (!resolved.ok) return resolved.envelope
-  const { config, workspaceId } = resolved.source
-  const guard = call.guard !== null && typeof call.guard === 'object'
-    ? call.guard as { readonly tasks?: unknown; readonly planPath?: unknown }
-    : undefined
-  const guardTasks = typeof guard?.tasks === 'string' ? guard.tasks : ''
-  const parsedGuardTasks = guardTasks === '' ? null : parseGuardTasks(guardTasks)
-  const planPath = typeof guard?.planPath === 'string' ? guard.planPath.trim() : ''
-  const plan = planPath === '' ? null : await readPlanPreview(resolved.source.cwd, planPath)
-  if (planPath !== '' && plan === null) return fail(REDLINE_ERROR.badRequest, 'plan file is unreadable')
+  const { config, cwd, workspaceId } = resolved.source
   return redlineOk({
     snapshot: composed.text,
     snapshotFingerprint: composed.fingerprint,
     requestFingerprint: anchorRequestFingerprint(draft),
     title: anchorTitle(draft),
     workspaceId,
+    // The dialog shows this read-only: the probes and every relative path of
+    // the new run resolve against it, so a handoff written for another repo is
+    // visible before the human confirms instead of after the first probe fails.
+    cwd,
     config: {
       agentPreset: config.agentPreset,
       provider: config.provider,
       model: config.model,
       ...(config.reasoningEffort.startsWith('not-') ? {} : { reasoningEffort: config.reasoningEffort }),
     },
-    ...(parsedGuardTasks === null ? {} : {
-      guard: {
-        hash: guardHashOf({ goal: draft.goal, acceptance: draft.acceptance, discipline: draft.discipline, tasks: guardTasks, planPath: plan?.path ?? '', planHash: plan?.hash ?? '' }),
-        taskCount: parsedGuardTasks.length,
-        ...(plan === null ? {} : {
-          plan: { path: plan.path, hash: plan.hash, bytes: plan.bytes, lines: plan.lines, headings: plan.headings },
-        }),
-      },
-    }),
   })
 }
 
@@ -647,7 +703,73 @@ const anchorStart: RedlineOpHandler = async ({ ctx, call }) => {
     || call.requestFingerprint !== anchorRequestFingerprint(draft)) return fail(REDLINE_ERROR.draftsChanged)
   const resolved = await resolveAnchorSource(ctx, sessionId)
   if (!resolved.ok) return resolved.envelope
-  const { config: baseConfig, cwd, workspaceId } = resolved.source
+  const { config: baseConfig, cwd: sourceCwd, workspaceId: sourceWorkspaceId } = resolved.source
+  const guardRunId = typeof call.guardRunId === 'string' ? call.guardRunId.trim() : ''
+  if (guardRunId !== '' && !isSafeRunId(guardRunId)) {
+    return fail(REDLINE_ERROR.badRequest, 'run id is invalid')
+  }
+  const requestedWorktree = typeof call.guardWorktreePath === 'string' ? call.guardWorktreePath.trim() : ''
+  let runCwd = ''
+  if (requestedWorktree !== '') {
+    if (guardRunId === '') return fail(REDLINE_ERROR.badRequest, 'worktree requires a supervisor run id')
+    // Only this run's own worktree, compared after `realpath`, so neither `..`
+    // nor a symlink can point the new session at an unrelated checkout.
+    const expected = join(sourceCwd, '.guard', 'worktrees', guardRunId)
+    try {
+      const resolvedWorktree = await realpath(requestedWorktree)
+      const resolvedExpected = await realpath(expected)
+      if (resolvedWorktree !== resolvedExpected) {
+        return fail(REDLINE_ERROR.badRequest, 'worktree does not belong to this run')
+      }
+      await access(join(resolvedWorktree, '.git'))
+      await access(join(resolvedWorktree, 'docs', 'guard', guardRunId))
+    } catch {
+      return fail(REDLINE_ERROR.badRequest, 'worktree is unavailable')
+    }
+    // Always store the canonical path under `sourceCwd` rather than raw client spelling.
+    runCwd = expected
+  }
+  const rawPermission = call.permissionPreset
+  if (rawPermission !== undefined && rawPermission !== 'danger-full-access') {
+    return fail(REDLINE_ERROR.badRequest, 'permission preset is invalid')
+  }
+  const permissionPreset = rawPermission === 'danger-full-access' ? rawPermission : undefined
+  // A worktree run keeps its own checkout. It never gets a workspace of its own:
+  // the header stays on the source project (which is what DSH groups the sidebar
+  // by) and only the effective directory moves — see the `projectCwd` field.
+  if (runCwd === '' && guardRunId !== '') {
+    // Check both checkout roots when `guardWorktreePath` is omitted: a stale
+    // worktree must never silently hijack a main-workspace run, and a fallback
+    // candidate must pass the same `.git` + realpath boundary check.
+    let hasSourceLedger = true
+    try { await access(join(sourceCwd, 'docs', 'guard', guardRunId)) } catch { hasSourceLedger = false }
+    const worktreesRoot = join(sourceCwd, '.guard', 'worktrees')
+    const candidate = join(worktreesRoot, guardRunId)
+    let hasWorktreeLedger = false
+    try {
+      const resolvedRoot = await realpath(worktreesRoot)
+      const resolvedCandidate = await realpath(candidate)
+      if (resolvedCandidate === join(resolvedRoot, guardRunId)) {
+        await access(join(resolvedCandidate, '.git'))
+        await access(join(resolvedCandidate, 'docs', 'guard', guardRunId))
+        hasWorktreeLedger = true
+      }
+    } catch { /* not a valid worktree run */ }
+    if (hasSourceLedger && hasWorktreeLedger) {
+      return fail(REDLINE_ERROR.badRequest, 'supervisor run exists in both workspace and worktree; specify guardWorktreePath')
+    }
+    if (!hasSourceLedger && !hasWorktreeLedger) {
+      return fail(REDLINE_ERROR.badRequest, 'supervisor run is missing')
+    }
+    if (hasWorktreeLedger) runCwd = candidate
+  }
+  const cwd = runCwd === '' ? sourceCwd : runCwd
+  // A worktree run keeps the SOURCE project as its header directory: DSH groups
+  // the sidebar by `header.cwd === workspace.path`, and the plugin must never
+  // register the run directory as a workspace of its own. The session is moved
+  // into the checkout through the Host working-directory service instead, so it
+  // stays grouped under the project the run belongs to.
+  const workspaceId = sourceWorkspaceId
   let config = baseConfig
   const requested = call.config !== null && typeof call.config === 'object'
     ? call.config as Record<string, unknown>
@@ -674,26 +796,36 @@ const anchorStart: RedlineOpHandler = async ({ ctx, call }) => {
   }
   const ids = anchoredIds(operationId)
   const title = anchorTitle(draft)
-  const guard = call.guard !== null && typeof call.guard === 'object'
-    ? call.guard as {
-      readonly tasks?: unknown
-      readonly dryRun?: unknown
-      readonly evaluator?: unknown
-      readonly planPath?: unknown
-      readonly planHash?: unknown
-    }
-    : undefined
-  const guardTasks = typeof guard?.tasks === 'string' ? guard.tasks : ''
-  const guardEvaluator = guard?.evaluator !== null && typeof guard?.evaluator === 'object'
-    ? guard.evaluator as { readonly provider?: unknown; readonly model?: unknown }
-    : undefined
-  const guardPlanPath = typeof guard?.planPath === 'string' ? guard.planPath.trim() : ''
-  const guardPlan = guardPlanPath === '' ? null : await readPlanPreview(cwd, guardPlanPath)
-  if (guardPlanPath !== '' && guardPlan === null) return fail(REDLINE_ERROR.badRequest, 'plan file is unreadable')
-  if (guardPlan !== null && typeof guard?.planHash === 'string' && guard.planHash !== guardPlan.hash) {
-    return fail(REDLINE_ERROR.badRequest, 'plan file changed since preview')
-  }
   const control = carrierControl(ctx)
+  if (guardRunId !== '') {
+    // Validate the run BEFORE touching its ledger: a missing record, a run
+    // already mounted by another session, or a finished run must not have its
+    // `activeExecutor` rewritten by a start that will then fail (or by a second
+    // start reusing the id). A retry of THIS operation is allowed: its
+    // deterministic carrier id is exactly what the run was bound to.
+    const store = new GuardStore(join(cwd, 'docs', 'guard', guardRunId))
+    let meta: Awaited<ReturnType<GuardStore['readMeta']>>
+    try {
+      meta = await store.readMeta()
+    } catch (error) {
+      return fail(REDLINE_ERROR.internal, error instanceof Error ? error.message : 'run meta is unreadable')
+    }
+    if (meta === null) return fail(REDLINE_ERROR.badRequest, 'supervisor run is missing')
+    if (meta.sessionId !== undefined && meta.sessionId !== ids.sessionId) {
+      return fail(REDLINE_ERROR.badRequest, 'supervisor run is already mounted by another session; refusing to reuse it')
+    }
+    if (meta.sessionId === undefined && meta.phase !== 'ready' && meta.phase !== 'setup-failed') {
+      return fail(REDLINE_ERROR.badRequest, `supervisor run is not startable (phase: ${meta.phase})`)
+    }
+    // Freeze the route BEFORE the session exists. The first turn's audit reads
+    // `run.json` and writes the ledger back; recording this after `start()`
+    // raced that audit, which could erase `activeExecutor` with its own snapshot.
+    await recordActiveExecutor(cwd, guardRunId, {
+      provider: config.provider,
+      model: config.model,
+      ...(config.reasoningEffort.startsWith('not-') ? {} : { reasoningEffort: config.reasoningEffort }),
+    }).catch(() => undefined)
+  }
   const result = await control.start({
     carrierId: ids.sessionId,
     cwd,
@@ -704,22 +836,20 @@ const anchorStart: RedlineOpHandler = async ({ ctx, call }) => {
       ...(config.reasoningEffort.startsWith('not-') ? {} : { reasoningEffort: config.reasoningEffort }),
     },
     workspaceId,
+    ...(runCwd === '' ? {} : { projectCwd: sourceCwd }),
     title,
     promptRequestId: ids.promptRequestId,
     promptText: draft.task.trim(),
     runtimeAnchor: composed.text,
-    ...(guardTasks === '' ? {} : {
-      guard: {
-        goal: draft.goal, acceptance: draft.acceptance, discipline: draft.discipline, tasks: guardTasks,
-        ...(guardPlan === null ? {} : { planPath: guardPlan.path, planHash: guardPlan.hash }),
-        ...(guard?.dryRun === true ? { dryRun: true } : {}),
-        ...(typeof guardEvaluator?.provider === 'string' && typeof guardEvaluator.model === 'string'
-          ? { evaluator: { provider: guardEvaluator.provider, model: guardEvaluator.model } }
-          : {}),
-      },
-    }),
+    ...(guardRunId === '' ? {} : { guardRunId }),
+    ...(permissionPreset === undefined ? {} : { permissionPreset }),
   })
   if (!result.ok) return fail(REDLINE_ERROR.internal, `anchor start held: ${result.cause}`)
+  if (guardRunId !== '') {
+    // The supervisor ledger says whether the first task ever arrived; a fire-and-
+    // forget write keeps the response fast while still recording it.
+    await markFirstMessageDelivered(cwd, guardRunId).catch(() => undefined)
+  }
   return redlineOk({
     sessionId: ids.sessionId,
     title,
@@ -878,7 +1008,7 @@ async function prepareCarrierPlan(
   const registry = ctx.get('workspaceRegistry') as CarrierWorkspaceRegistryFace | undefined
   if (typeof registry?.resolveByPath !== 'function') return fail(REDLINE_ERROR.internal, 'workspace registry is unavailable')
   const workspace = await registry.resolveByPath(cwd)
-  if (workspace === undefined) return fail(REDLINE_ERROR.internal, 'source workspace is unavailable')
+  if (workspace === undefined) return missingSourceWorkspaceError(cwd)
   const ids = fixedCarrierIds(operationId)
   const executionInput: CarrierExecutionInput = {
     deliveryContent: prompt,
@@ -1173,6 +1303,8 @@ interface CarrierLlmDirectoryFace {
       readonly efforts: readonly { readonly id: string; readonly name: string }[]
       readonly defaultEffort?: string
     }
+    /** Declared input modalities; absent means "unknown", not "text only". */
+    readonly inputModalities?: readonly string[]
   }>
 }
 
@@ -1250,23 +1382,682 @@ const readOrigins: RedlineOpHandler = async ({ ctx, call }) => {
 }
 
 
-/** Goal Guard status for one session; `null` means the guard is off. */
-const readGuard: RedlineOpHandler = async ({ ctx, call }) => {
-  const sessionId = sessionIdOf(call)
-  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
-  return redlineOk(await loadGuardState(ctx, sessionId))
+/** Validate an optional dedicated evaluator model route `{ provider, model, reasoningEffort? }`. */
+function evaluatorOf(
+  raw: unknown,
+): { readonly provider: string; readonly model: string; readonly reasoningEffort?: string } | null | undefined {
+  if (raw === undefined) return undefined
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const bag = raw as { readonly provider?: unknown; readonly model?: unknown; readonly reasoningEffort?: unknown }
+  const provider = typeof bag.provider === 'string' ? bag.provider.trim() : ''
+  const model = typeof bag.model === 'string' ? bag.model.trim() : ''
+  if (provider === '' || model === '' || provider.length > 120 || model.length > 200) return null
+  if (bag.reasoningEffort !== undefined && typeof bag.reasoningEffort !== 'string') return null
+  const reasoningEffort = typeof bag.reasoningEffort === 'string' ? bag.reasoningEffort.trim() : ''
+  if (reasoningEffort.length > 64) return null
+  return {
+    provider,
+    model,
+    ...(reasoningEffort === '' ? {} : { reasoningEffort }),
+  }
 }
 
-/** Pause or resume the guard without touching the main session log. */
-async function setGuardPaused(ctx: Context, call: RedlineCall, paused: boolean): Promise<RedlineEnvelope<GuardState | null>> {
-  const sessionId = sessionIdOf(call)
-  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
-  const state = await setLiveGuardPaused(ctx, sessionId, paused)
-  return redlineOk(state)
+/** Read the supervisor-prepare fields; `null` means unusable. */
+function prepareInputOf(call: RedlineCall, draft: AnchorDraft) {
+  const tasks = typeof call.tasks === 'string' ? call.tasks : ''
+  if (tasks.trim() === '') return null
+  const parallel = typeof call.parallel === 'number' && Number.isFinite(call.parallel) ? call.parallel : undefined
+  const milestoneEvery = typeof call.milestoneEvery === 'number' && Number.isFinite(call.milestoneEvery)
+    ? call.milestoneEvery
+    : undefined
+  const runId = typeof call.runId === 'string' && call.runId.trim() !== '' ? call.runId.trim() : undefined
+  const scopes = scopesOf(call.scopes)
+  if (call.scopes !== undefined && scopes === undefined) return null
+  const probes = probesOf(call.probes)
+  if (call.probes !== undefined && probes === undefined) return null
+  const evaluator = evaluatorOf(call.evaluator)
+  if (evaluator === null) return null
+  const evaluatorFallback = evaluatorOf(call.evaluatorFallback)
+  if (evaluatorFallback === null) return null
+  const executor = evaluatorOf(call.executor)
+  if (executor === null) return null
+  const executorFallback = evaluatorOf(call.executorFallback)
+  if (executorFallback === null) return null
+  const visual = visualOf(call.visual)
+  if (visual === null) return null
+  return {
+    goal: draft.goal,
+    acceptance: draft.acceptance,
+    discipline: draft.discipline,
+    tasks,
+    ...(parallel === undefined ? {} : { parallel }),
+    ...(call.enforcement === 'enforce' ? { enforcement: 'enforce' as const } : {}),
+    ...(milestoneEvery === undefined ? {} : { milestoneEvery }),
+    ...(runId === undefined ? {} : { runId }),
+    ...(scopes === undefined ? {} : { scopes }),
+    ...(probes === undefined ? {} : { probes }),
+    ...(evaluator === undefined ? {} : { evaluator }),
+    ...(evaluatorFallback === undefined ? {} : { evaluatorFallback }),
+    ...(executor === undefined ? {} : { executor }),
+    ...(executorFallback === undefined ? {} : { executorFallback }),
+    ...(visual === undefined ? {} : { visual }),
+    ...(call.worktree === true ? { worktree: true } : {}),
+  }
 }
 
-const pauseGuard: RedlineOpHandler = async ({ ctx, call }) => await setGuardPaused(ctx, call, true)
-const resumeGuard: RedlineOpHandler = async ({ ctx, call }) => await setGuardPaused(ctx, call, false)
+/** One validated route the user chose in the dialog. */
+type RouteChoice = { readonly provider: string; readonly model: string; readonly reasoningEffort?: string }
+
+/** Visual-evidence config from the dialog; `null` means unusable. */
+function visualOf(raw: unknown): { enabled: true; route?: RouteChoice; fallback?: RouteChoice } | undefined | null {
+  if (raw === undefined) return undefined
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null
+  const bag = raw as { readonly enabled?: unknown; readonly route?: unknown; readonly fallback?: unknown }
+  if (bag.enabled !== true) return undefined
+  const route = evaluatorOf(bag.route)
+  if (route === null) return null
+  const fallback = evaluatorOf(bag.fallback)
+  if (fallback === null) return null
+  return {
+    enabled: true,
+    ...(route === undefined ? {} : { route }),
+    ...(fallback === undefined ? {} : { fallback }),
+  }
+}
+
+const PROBE_KINDS = new Set(['file_exists', 'file_contains', 'grep', 'number_gte', 'command', 'scan'])
+/** Probe ids become an evidence file name, so they must be a safe segment. */
+const PROBE_ID = /^[A-Za-z0-9_-]{1,40}$/
+
+/** Validate the per-task scope map: `{ TASK: string[] }` with safe path entries. */
+function scopesOf(raw: unknown): Record<string, readonly string[]> | undefined {
+  if (raw === undefined) return undefined
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const scopes: Record<string, readonly string[]> = {}
+  for (const [taskId, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(taskId)) return undefined
+    if (!Array.isArray(value)) return undefined
+    const paths: string[] = []
+    for (const entry of value) {
+      // The same rules the ledger applies later: relative, no `..`, and never a
+      // blanket grant that would silently equal "no scope".
+      if (!isSafeScopePath(entry) || isBroadScopePath(entry) || entry.trim().length > 300) return undefined
+      // Persist the normalized form: the matcher compares against git-reported
+      // paths, and `././src/a.ts` / `src\\a.ts` never matched one.
+      paths.push(normalizeScopePath(entry))
+    }
+    scopes[taskId] = paths
+  }
+  return scopes
+}
+
+/** Required fields per probe kind; a probe that cannot run is refused up front. */
+function specOf(kind: string, spec: Record<string, unknown>): boolean {
+  const str = (value: unknown): boolean => typeof value === 'string' && value.trim() !== ''
+  const strList = (value: unknown): boolean => Array.isArray(value)
+    && value.length > 0 && value.every(entry => typeof entry === 'string' && entry.trim() !== '')
+  switch (kind) {
+    case 'file_exists': return str(spec.path)
+    case 'file_contains':
+      // `flags` feeds a RegExp; a number there would silently change the match.
+      return str(spec.path) && str(spec.pattern)
+        && (spec.flags === undefined || typeof spec.flags === 'string')
+    case 'grep': {
+      const expect = spec.expect
+      const minMatches = (expect as { minMatches?: unknown } | null)?.minMatches
+      const expectOk = expect === 'match' || expect === 'no_match'
+        || (expect !== null && typeof expect === 'object'
+          && typeof minMatches === 'number' && Number.isFinite(minMatches))
+      return str(spec.pattern) && strList(spec.paths) && expectOk
+    }
+    case 'number_gte': {
+      const source = spec.source
+      if (source === null || typeof source !== 'object') return false
+      const bag = source as Record<string, unknown>
+      const str2 = (value: unknown): boolean => typeof value === 'string' && value.trim() !== ''
+      const argsOk = Array.isArray(bag.args)
+        && (bag.args as unknown[]).every(entry => typeof entry === 'string')
+      const sourceOk = bag.type === 'file'
+        ? str2(bag.path) && (bag.pattern === undefined || typeof bag.pattern === 'string')
+        : bag.type === 'command' && str2(bag.cmd) && argsOk
+      return sourceOk && typeof spec.threshold === 'number' && Number.isFinite(spec.threshold)
+    }
+    case 'command':
+      return str(spec.cmd) && Array.isArray(spec.args)
+        && (spec.args as unknown[]).every(entry => typeof entry === 'string')
+        && (spec.cwd === undefined || (typeof spec.cwd === 'string' && !spec.cwd.startsWith('/')))
+        && (spec.expectExit === undefined || Number.isInteger(spec.expectExit))
+    case 'scan': {
+      const paths = spec.paths
+      // `paths` is optional, but a bare string would be iterated character by
+      // character by the scanner instead of being rejected here.
+      if (paths !== undefined && (!Array.isArray(paths) || !paths.every(entry => typeof entry === 'string'))) return false
+      return spec.scanKind === 'doclinks' || spec.scanKind === 'todo-tbd' || spec.scanKind === 'inline-code-path'
+    }
+    default: return false
+  }
+}
+
+/**
+ * Validate the probe list at the channel boundary.
+ *
+ * The dialog builds these objects, so a malformed entry means a version skew or
+ * a hand-written call. Rejecting the whole list beats writing half a probe file
+ * that a later audit would silently trust.
+ */
+function probesOf(raw: unknown): ProbeDef[] | undefined {
+  if (raw === undefined) return undefined
+  if (!Array.isArray(raw)) return undefined
+  const probes: ProbeDef[] = []
+  for (const item of raw) {
+    if (item === null || typeof item !== 'object') return undefined
+    const bag = item as Record<string, unknown>
+    if (typeof bag.id !== 'string' || !PROBE_ID.test(bag.id.trim())) return undefined
+    if (typeof bag.taskId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(bag.taskId.trim())) return undefined
+    if (bag.weight !== 'light' && bag.weight !== 'heavy') return undefined
+    if (bag.spec === null || typeof bag.spec !== 'object') return undefined
+    const spec = bag.spec as Record<string, unknown>
+    const kind = spec.kind
+    if (typeof kind !== 'string' || !PROBE_KINDS.has(kind)) return undefined
+    if (!specOf(kind, spec)) return undefined
+    // A zero or negative timeout means "no timeout" to `execFile`; refuse it.
+    const timeoutMs = typeof bag.timeoutMs === 'number' && Number.isFinite(bag.timeoutMs) && bag.timeoutMs >= 100
+      ? Math.min(bag.timeoutMs, 600_000)
+      : undefined
+    probes.push({
+      id: bag.id.trim(),
+      taskId: bag.taskId.trim(),
+      weight: bag.weight,
+      spec: bag.spec as ProbeDef['spec'],
+      enabled: bag.enabled !== false,
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    })
+  }
+  return probes
+}
+
+/** Validate every model route the prepare payload names; `null` means OK. */
+async function validatePrepareRoutes(ctx: Context, input: {
+  readonly evaluator?: RouteChoice
+  readonly evaluatorFallback?: RouteChoice
+  readonly executor?: RouteChoice
+  readonly executorFallback?: RouteChoice
+  readonly visual?: { readonly route?: RouteChoice; readonly fallback?: RouteChoice }
+}, sessionRoute?: RouteChoice): Promise<string | null> {
+  const llm = ctx.get('llm') as CarrierLlmDirectoryFace | undefined
+  if (typeof llm?.resolveModelInfo !== 'function') return null
+  // The witness follows the evaluator unless it names its own route, and the
+  // evaluator itself follows the executor when unset — which, when the dialog
+  // named neither, is the SOURCE SESSION's model. The effective route is what
+  // must declare image input; skipping the session arm let a text-only session
+  // model be chosen as an imageless witness.
+  const visualPrimary = input.visual?.route ?? input.evaluator ?? input.executor ?? sessionRoute
+  const visualFallback = input.visual?.fallback
+  const routes: {
+    readonly label: string
+    readonly route?: RouteChoice
+    readonly image?: boolean
+  }[] = [
+    { label: 'evaluator', route: input.evaluator },
+    { label: 'evaluator fallback', route: input.evaluatorFallback },
+    { label: 'executor', route: input.executor },
+    { label: 'executor fallback', route: input.executorFallback },
+    ...(input.visual === undefined ? [] : [
+      { label: 'visual witness', route: visualPrimary, image: true },
+      { label: 'visual witness fallback', route: visualFallback, image: true },
+    ]),
+  ]
+  for (const entry of routes) {
+    if (entry.route === undefined) continue
+    let info: Awaited<ReturnType<CarrierLlmDirectoryFace['resolveModelInfo']>>
+    try {
+      info = await llm.resolveModelInfo(entry.route.provider, entry.route.model)
+    } catch {
+      return `selected ${entry.label} model is unavailable`
+    }
+    const effort = entry.route.reasoningEffort
+    if (effort !== undefined && !info.reasoning?.efforts.some(level => level.id === effort)) {
+      return `selected ${entry.label} reasoning effort is unavailable`
+    }
+    // Declared modalities are authoritative when the adapter lists them: a
+    // text-only witness would fail at request time with UNSUPPORTED_CONTENT.
+    if (entry.image === true && info.inputModalities !== undefined && !info.inputModalities.includes('image')) {
+      return 'selected visual witness model does not declare image input'
+    }
+  }
+  return null
+}
+
+/** Step two of the anchor dialog: prepare the run directory before a session exists. */
+const guardPrepare: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const gate = await anchorGate(ctx, sessionId)
+  if (gate !== null) return gate
+  const draft = anchorDraftOf(call)
+  if (draft === null) return fail(REDLINE_ERROR.badRequest)
+  const input = prepareInputOf(call, draft)
+  if (input === null) return fail(REDLINE_ERROR.badRequest, 'prepare fields are invalid')
+  const resolved = await resolveAnchorSource(ctx, sessionId)
+  if (!resolved.ok) return resolved.envelope
+  // The source session's own model is the witness's last fallback, so it must
+  // be resolved BEFORE validation: the modality check has to see it.
+  const sourceConfig = resolved.source.config
+  const sessionRoute: RouteChoice = {
+    provider: sourceConfig.provider,
+    model: sourceConfig.model,
+    ...(sourceConfig.reasoningEffort.startsWith('not-') ? {} : { reasoningEffort: sourceConfig.reasoningEffort }),
+  }
+  // Every configured route is validated up front: a wrong provider, model or
+  // reasoning level must fail in the dialog, not on the first audit turn.
+  const invalid = await validatePrepareRoutes(ctx, input, sessionRoute)
+  if (invalid !== null) return fail(REDLINE_ERROR.badRequest, invalid)
+  try {
+    const prepared = await withSessionLock(sessionId, async () => await prepareGuardRun(resolved.source.cwd, input))
+    return redlineOk({
+      runId: prepared.runId,
+      root: prepared.root,
+      files: prepared.files,
+      ...(prepared.worktreePath === undefined ? {} : { worktreePath: prepared.worktreePath }),
+    })
+  } catch (error) {
+    return fail(REDLINE_ERROR.badRequest, error instanceof Error ? error.message : 'run creation failed')
+  }
+}
+
+/** Roll one run back to its last checkpoint; requires an explicit confirm. */
+const guardRollback: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null || call.confirm !== 'rollback') return fail(REDLINE_ERROR.badRequest)
+  const runId = typeof call.runId === 'string' ? call.runId.trim() : ''
+  if (!isSafeRunId(runId)) return fail(REDLINE_ERROR.badRequest)
+  // Rolling back while a turn is open would race the in-flight tool writes and
+  // the audit that owns the same ledger.
+  const gate = await anchorGate(ctx, sessionId)
+  if (gate !== null) return gate
+  const agents = ctx.get('agents') as { get?(id: string): SupervisorAgent | undefined } | undefined
+  const agent = agents?.get?.(sessionId)
+  const headerCwd = agent?.session?.header?.cwd
+  if (agent === undefined || headerCwd === undefined) return fail(REDLINE_ERROR.notLive)
+  // The ledger lives in the directory the run actually works in; for a worktree
+  // run the header still names the source project, which holds no ledger at all.
+  const cwd = effectiveCwdOf(ctx, agent.session, headerCwd)
+  // The whole read → git → write-back transaction is serialized: two tabs (or a
+  // fast double retry) would otherwise run `git revert` and `store.update`
+  // concurrently and fight over `.git/index.lock` and the ledger.
+  const answer = await withSessionLock(sessionId, async () => {
+    // The outer gate ran before this call queued behind another write; a new
+    // turn can open while it waits. Re-check under the lock (as `guard.switch`
+    // already did), or the rollback would race a live turn's tool writes.
+    const gateInside = await anchorGate(ctx, sessionId)
+    if (gateInside !== null) return gateInside
+    const owner = await ownershipGate(new GuardStore(join(cwd, 'docs', 'guard', runId)), sessionId)
+    if (owner !== null) return owner
+    const outcome = await rollbackRun({ cwd, runId, sessionId })
+    if (!outcome.ok) return fail(REDLINE_ERROR.badRequest, outcome.reason)
+    // The live attachment holds its own copy of the ledger; refresh it so the
+    // anchors and the tool guard see the reopened task immediately.
+    await attachedSupervisorFor(sessionId, runId)?.refresh().catch(() => undefined)
+    // Only a ledger that actually came back `active` may wake the host goal. A
+    // sibling-only rollback keeps the milestone gate (`status:'blocked'` +
+    // `goalBlocked`), and resuming there would drive turns that `auditTurn`
+    // refuses to supervise. That case also gets NO `goalResumed` field: the gate
+    // is deliberate, so a `false` here would paint a fake "not resumed" warning.
+    const rolledBack = await new GuardStore(join(cwd, 'docs', 'guard', runId)).readState()
+    const resumable = rolledBack !== null && rolledBack.status === 'active' && rolledBack.goalBlocked === undefined
+    //
+    // The registry's EXACT live object is required: the goal service compares by
+    // reference (`ctx.agents.get(agent.id) !== agent`) and rejects a copy with
+    // GOAL_AGENT_NOT_LIVE, which would also flip the run to `setup-failed`.
+    const goalResumed = resumable
+      ? await resumeSupervisorGoal({ ctx, agent, cwd, runId }).catch(() => false)
+      : undefined
+    const summary = await findSupervisorRun(cwd, sessionId)
+    // The same answer `guard.continue` gives: a reopened ledger whose host goal
+    // could not be re-armed must say so, or the card shows "in progress" while
+    // nothing drives the next turn.
+    const hostGoal = hostGoalOf(ctx, agent)
+    return redlineOk(summary === null
+      ? null
+      : { ...summary, ...(goalResumed === undefined ? {} : { goalResumed }), ...(hostGoal === undefined ? {} : { hostGoal }) })
+  })
+  return answer
+}
+
+/**
+ * Read-only repository facts for the anchor dialog.
+ *
+ * The dialog offers「在独立 worktree 中运行」, and a run that commits on the
+ * default branch (or inside a GitLab project) is exactly what the checked mode
+ * exists to prevent — so the dialog needs to know whether this workspace is a
+ * repository before the human picks. Nothing here writes, creates a run, or
+ * touches the session; a missing service simply answers `isGit: false`.
+ */
+const readGuardRepo: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const agents = ctx.get('agents') as { get?(id: string): SupervisorAgent | undefined } | undefined
+  const agent = agents?.get?.(sessionId)
+  const headerCwd = agent?.session?.header?.cwd
+  if (agent === undefined || headerCwd === undefined) return fail(REDLINE_ERROR.notLive)
+  const cwd = effectiveCwdOf(ctx, agent.session, headerCwd)
+  try {
+    return redlineOk(await repoFacts(cwd))
+  } catch (error) {
+    return fail(REDLINE_ERROR.internal, `repository probe failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+/**
+ * Clear a blocked run and let it continue, without a rollback.
+ *
+ * An evaluator outage blocks the run's goal, which is correct (a judge that
+ * cannot judge must not pass anything) but it must not cost the task's
+ * progress: this clears the block flag and the outage streak, keeps every
+ * attempt and `baseCommit`, and re-arms the goal so the next turn retries the
+ * same task. A rollback would reopen the task and restore its scope instead.
+ */
+const resumeSupervisor: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const runId = typeof call.runId === 'string' ? call.runId.trim() : ''
+  if (!isSafeRunId(runId)) return fail(REDLINE_ERROR.badRequest)
+  const gate = await anchorGate(ctx, sessionId)
+  if (gate !== null) return gate
+  const agents = ctx.get('agents') as { get?(id: string): SupervisorAgent | undefined } | undefined
+  const agent = agents?.get?.(sessionId)
+  const headerCwd = agent?.session?.header?.cwd
+  if (agent === undefined || headerCwd === undefined) return fail(REDLINE_ERROR.notLive)
+  const cwd = effectiveCwdOf(ctx, agent.session, headerCwd)
+  const answer = await withSessionLock(sessionId, async () => {
+    const gateInside = await anchorGate(ctx, sessionId)
+    if (gateInside !== null) return gateInside
+    const store = new GuardStore(join(cwd, 'docs', 'guard', runId))
+    const owner = await ownershipGate(store, sessionId)
+    if (owner !== null) return owner
+    const outcome = await resumeBlockedRun(store)
+    const hostGoal = hostGoalOf(ctx, agent)
+    // The ledger and the host goal can disagree. A run whose tasks are all open
+    // but whose goal stopped on its own (round limit, or the session-start
+    // disarm) is NOT "not blocked": the driver is gone, and clicking 继续 is
+    // exactly how a human repairs it. Anything else keeps the old refusal.
+    const hostStopped = hostGoal !== undefined
+      && (hostGoal.phase !== 'active' || hostGoal.activation !== 'armed')
+    if (!outcome.ok) {
+      const ledger = await store.readState()
+      const shouldRearm = outcome.code === 'not-blocked'
+        && hostStopped
+        && ledger !== null
+        && ledger.status === 'active'
+        && ledger.goalBlocked === undefined
+      if (!shouldRearm) return fail(REDLINE_ERROR.badRequest, outcome.reason)
+      // Clearing the idle counters gives the reopened task a full chance; the
+      // event keeps the reason auditable even though no task was BLOCKED.
+      await store.mutate(current => ({
+        state: {
+          ...current,
+          tasks: current.tasks.map(task => ({ ...task, idleStreak: undefined })),
+          updatedAt: Date.now(),
+        },
+        events: [{ type: 'run.resumed' as const, at: Date.now(), reason: '人工继续：重新激活宿主目标' }],
+      }))
+    }
+    // The live attachment holds its own copy of the ledger: refresh it so the
+    // anchors and the tool guard see the reopened task immediately.
+    await attachedSupervisorFor(sessionId, runId)?.refresh().catch(() => undefined)
+    // Re-arming is what actually lets the next turn run; a completed goal is
+    // not recreated here because completion is a different (and final) state.
+    const goalResumed = await resumeSupervisorGoal({ ctx, agent, cwd, runId }).catch(() => false)
+    const summary = await findSupervisorRun(cwd, sessionId)
+    const refreshedHostGoal = hostGoalOf(ctx, agent)
+    // A cleared ledger whose host goal could not be re-armed must say so: the
+    // card would otherwise look resumed while nothing drives the next turn.
+    return redlineOk(summary === null
+      ? null
+      : { ...summary, goalResumed, ...(refreshedHostGoal === undefined ? {} : { hostGoal: refreshedHostGoal }) })
+  })
+  return answer
+}
+
+/** Resolve a role's route from the request or from the configured fallback. */
+function switchRouteOf(
+  call: RedlineCall,
+  state: {
+    readonly evaluator?: RouteChoice
+    readonly evaluatorFallback?: RouteChoice
+    readonly executor?: RouteChoice
+    readonly executorFallback?: RouteChoice
+    readonly activeExecutor?: RouteChoice
+  },
+  role: 'executor' | 'evaluator',
+): RouteChoice | null {
+  const explicit = evaluatorOf(call.route)
+  if (explicit === null) return null
+  if (explicit !== undefined) return explicit
+  const configured = role === 'executor'
+    ? (state.executorFallback ?? state.activeExecutor ?? state.executor)
+    : (state.evaluatorFallback ?? state.evaluator)
+  return configured === undefined ? null : { ...configured }
+}
+
+/**
+ * Switch the model of one role, optionally clearing a block at the same time.
+ *
+ * The execution route belongs to the session, so it is changed through the
+ * agent's own `model.select`; the ledger keeps `executor` frozen and records the
+ * new route as `activeExecutor`. The evaluator route lives in the ledger. Either
+ * way the change is a ledger event, and `resume` is a separate decision: a
+ * failed switch must never look like a resumed run.
+ */
+const switchSupervisorModel: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const runId = typeof call.runId === 'string' ? call.runId.trim() : ''
+  if (!isSafeRunId(runId)) return fail(REDLINE_ERROR.badRequest)
+  const role = call.role
+  if (role !== 'executor' && role !== 'evaluator') return fail(REDLINE_ERROR.badRequest)
+  const gate = await anchorGate(ctx, sessionId)
+  if (gate !== null) return gate
+  const agents = ctx.get('agents') as {
+    get?(id: string): (SupervisorAgent & { readonly model?: { select?(selection: Record<string, unknown>): void } }) | undefined
+  } | undefined
+  const agent = agents?.get?.(sessionId)
+  const headerCwd = agent?.session?.header?.cwd
+  if (agent === undefined || headerCwd === undefined) return fail(REDLINE_ERROR.notLive)
+  const cwd = effectiveCwdOf(ctx, agent.session, headerCwd)
+  const store = new GuardStore(join(cwd, 'docs', 'guard', runId))
+  const llm = ctx.get('llm') as CarrierLlmDirectoryFace | undefined
+  // Every read, validation and write happens under the session lock: reading the
+  // ledger (or the agent's model) outside it and writing a stale snapshot back
+  // would silently drop a concurrent audit/switch.
+  const answer = await withSessionLock(sessionId, async () => {
+    // The outer gate ran before the lock was granted. A new turn can open while
+    // this call waits behind another write; re-checking here is what keeps the
+    // session's model from being switched under a live turn.
+    const gateInside = await anchorGate(ctx, sessionId)
+    if (gateInside !== null) return gateInside
+    const owner = await ownershipGate(store, sessionId)
+    if (owner !== null) return owner
+    const state = await store.readState()
+    if (state === null) return fail(REDLINE_ERROR.badRequest, 'run ledger is missing')
+    // A resume that cannot succeed is refused BEFORE any side effect. Without
+    // this preflight the op selected the session model and persisted the route,
+    // then refused the resume — the reply said "switch failed" while the ledger
+    // and the model had already changed and the live snapshot still showed the
+    // old route.
+    if (call.resume === true) {
+      const eligibility = canResume(state)
+      if (!eligibility.ok && eligibility.code === 'milestone-pending') {
+        return fail(REDLINE_ERROR.badRequest, eligibility.reason)
+      }
+    }
+    const route = switchRouteOf(call, state, role)
+    if (route === null) return fail(REDLINE_ERROR.badRequest, 'no target model route')
+    if (typeof llm?.resolveModelInfo === 'function') {
+      let info: Awaited<ReturnType<CarrierLlmDirectoryFace['resolveModelInfo']>>
+      try {
+        info = await llm.resolveModelInfo(route.provider, route.model)
+      } catch {
+        return fail(REDLINE_ERROR.badRequest, `selected ${role} model is unavailable`)
+      }
+      if (route.reasoningEffort !== undefined
+        && !info.reasoning?.efforts.some(level => level.id === route.reasoningEffort)) {
+        return fail(REDLINE_ERROR.badRequest, `selected ${role} reasoning effort is unavailable`)
+      }
+      // A text-only judge would make the visual witness silently receive a text
+      // placeholder instead of the screenshots, so its observation would be
+      // fabricated. Refuse before the switch is persisted. The same holds for an
+      // EXECUTOR switch when no dedicated evaluator exists: the witness follows
+      // the evaluator, which follows the session model this switch just changed.
+      const witnessFollowsRoute = state.visual?.enabled === true && state.visual.route === undefined
+      const judgeFollowsExecutor = role === 'executor' && state.evaluator === undefined
+      if (witnessFollowsRoute && (role === 'evaluator' || judgeFollowsExecutor)
+        && info.inputModalities !== undefined
+        && !info.inputModalities.includes('image')) {
+        return fail(
+          REDLINE_ERROR.badRequest,
+          role === 'executor'
+            ? '视觉取证跟随执行模型（评估模型未单独配置）：该模型未声明图片输入。请为这次运行配置 visual.route，或换一个支持图片输入的模型。'
+            : '视觉取证跟随评估模型：该模型未声明图片输入。请为这次运行配置 visual.route，或换一个支持图片输入的评估模型。',
+        )
+      }
+    }
+    if (role === 'executor' && typeof agent.model?.select !== 'function') {
+      return fail(REDLINE_ERROR.internal, 'session model switching is unavailable')
+    }
+    if (role === 'executor') {
+      // The execution route is owned by the session; the judge route is not.
+      try {
+        agent.model?.select?.({
+          provider: route.provider,
+          model: route.model,
+          ...(route.reasoningEffort === undefined ? {} : { reasoningEffort: route.reasoningEffort }),
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return fail(REDLINE_ERROR.internal, `model switch failed: ${message}`)
+      }
+    }
+    const from = role === 'executor' ? (state.activeExecutor ?? state.executor) : state.evaluator
+    const previous = from === undefined ? '（未设置）' : routeLabel(from)
+    const switched = await store.mutate(current => ({
+      state: role === 'executor'
+        ? { ...current, activeExecutor: route, updatedAt: Date.now() }
+        : { ...current, evaluator: route, updatedAt: Date.now() },
+      events: [{
+        type: role === 'executor' ? 'executor.switched' as const : 'evaluator.switched' as const,
+        at: Date.now(), from: previous, to: routeLabel(route), reason: '人工切换',
+      }],
+    }))
+    if (switched === null) return fail(REDLINE_ERROR.badRequest, 'run ledger is missing')
+    // Switching models and clearing a block are separate decisions: only an
+    // explicit resume may wake a paused/blocked goal — and only when a block was
+    // actually cleared. A goal the human paused by hand must not be woken just
+    // because a model switch was submitted with `resume: true`.
+    let goalResumed: boolean | undefined
+    let resumeRefused: string | undefined
+    let failure: string | undefined
+    if (call.resume === true) {
+      const resumed = await resumeBlockedRun(store)
+      if (resumed.ok) {
+        goalResumed = await resumeSupervisorGoal({ ctx, agent, cwd, runId }).catch(() => false)
+      } else if (resumed.code === 'milestone-pending') {
+        // The preflight above already refused this from the in-lock snapshot.
+        // Reaching here means an audit wrote a failing review in between: the
+        // route switch DID commit, so the reply must say the resume was refused
+        // instead of pretending the whole switch failed.
+        resumeRefused = resumed.reason
+      } else if (resumed.code !== 'not-blocked' && resumed.code !== 'completed') {
+        failure = resumed.reason
+      }
+    }
+    // Refresh even when the resume was refused: this op may already have
+    // committed a route change, and the live attachment must stop showing the
+    // old snapshot.
+    await attachedSupervisorFor(sessionId, runId)?.refresh().catch(() => undefined)
+    if (failure !== undefined) return fail(REDLINE_ERROR.badRequest, failure)
+    const summary = await findSupervisorRun(cwd, sessionId)
+    const hostGoal = hostGoalOf(ctx, agent)
+    return redlineOk(summary === null
+      ? null
+      : {
+        ...summary,
+        ...(goalResumed === undefined ? {} : { goalResumed }),
+        ...(resumeRefused === undefined ? {} : { resumeRefused }),
+        ...(hostGoal === undefined ? {} : { hostGoal }),
+      })
+  })
+  return answer
+}
+
+interface HostGoalView {
+  readonly phase?: string
+  readonly activation?: string
+  readonly roundsStarted?: number
+  readonly maxGoalRounds?: number
+  readonly blockedReason?: { readonly code?: string; readonly message?: string }
+}
+
+/**
+ * The host goal's live view, or `undefined` when the host cannot answer.
+ *
+ * Never guesses: a missing service, a detached agent or a host that omits a
+ * field all answer `undefined`, and the card falls back to the ledger alone.
+ */
+function hostGoalOf(
+  ctx: { get(name: string): unknown },
+  agent: unknown,
+): SupervisorSummary['hostGoal'] | undefined {
+  if (agent === undefined) return undefined
+  const goals = ctx.get('goals') as { get?(target: unknown): HostGoalView | undefined } | undefined
+  if (goals?.get === undefined) return undefined
+  let view: HostGoalView | undefined
+  try {
+    view = goals.get(agent)
+  } catch {
+    return undefined
+  }
+  if (view === undefined) return undefined
+  const phase = view.phase === 'paused' || view.phase === 'blocked' || view.phase === 'complete'
+    ? view.phase
+    : 'active'
+  return {
+    phase,
+    activation: view.activation === 'disarmed' ? 'disarmed' : 'armed',
+    ...(typeof view.roundsStarted === 'number' ? { roundsStarted: view.roundsStarted } : {}),
+    ...(typeof view.maxGoalRounds === 'number' ? { maxGoalRounds: view.maxGoalRounds } : {}),
+    ...(view.blockedReason?.code === undefined ? {} : { blockedCode: view.blockedReason.code }),
+    ...(view.blockedReason?.message === undefined ? {} : { blockedMessage: view.blockedReason.message }),
+  }
+}
+
+/** Read-only supervisor summary for one session (null when it has no run). */
+const readSupervisor: RedlineOpHandler = async ({ ctx, call }) => {
+  const sessionId = sessionIdOf(call)
+  if (sessionId === null) return fail(REDLINE_ERROR.badRequest)
+  const agents = ctx.get('agents') as { get?(id: string): { readonly session?: { readonly header?: { readonly cwd?: string } } } | undefined } | undefined
+  const agent = agents?.get?.(sessionId)
+  const headerCwd = agent?.session?.header?.cwd
+  if (agent !== undefined && headerCwd !== undefined) {
+    // Read the run where it actually works: a supervisor worktree run keeps its
+    // header on the source project, so the header alone answers "no run".
+    const summary = await findSupervisorRun(effectiveCwdOf(ctx, agent.session, headerCwd), sessionId)
+    const hostGoal = hostGoalOf(ctx, agent)
+    return redlineOk(summary === null
+      ? null
+      : { ...summary, agentLive: true, ...(hostGoal === undefined ? {} : { hostGoal }) })
+  }
+  // The agent is gone (tab closed, or the process restarted and has not
+  // re-attached this session yet). The run may still be on disk: answering
+  // `notLive` here made the whole card vanish with no explanation, which reads
+  // as "my run disappeared" even though the ledger was intact. Read the
+  // remembered mount instead and mark the card read-only.
+  const remembered = await recallSupervisorRun(supervisorIndexDirOf(ctx), sessionId)
+  if (remembered === null) return fail(REDLINE_ERROR.notLive)
+  const summary = await findSupervisorRun(remembered.cwd, sessionId)
+  if (summary === null) return fail(REDLINE_ERROR.notLive)
+  return redlineOk({ ...summary, agentLive: false })
+}
 
 /**
  * The op table. M2's entries; M3/M5 add theirs here and nowhere else.
@@ -1288,9 +2079,12 @@ const OPS = new Map<string, RedlineOpHandler>([
   ['carrier.models', readCarrierModels],
   ['anchor.plan', anchorPlan],
   ['anchor.start', anchorStart],
-  ['guard.status', readGuard],
-  ['guard.pause', pauseGuard],
-  ['guard.resume', resumeGuard],
+  ['guard.repo', readGuardRepo],
+  ['guard.prepare', guardPrepare],
+  ['guard.supervisor', readSupervisor],
+  ['guard.continue', resumeSupervisor],
+  ['guard.switch', switchSupervisorModel],
+  ['guard.rollback', guardRollback],
 ])
 
 /** One JSON reply on the channel. `no-store` matches every other plugin route. */

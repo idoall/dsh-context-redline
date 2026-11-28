@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, test } from 'vitest'
+import { prepareGuardRun } from '../../src/host/goal-supervisor/create'
+import { forgetSessionAttachments } from '../../src/host/goal-supervisor/attach'
 import { createRedlineSessionControl, DEFAULT_COLD_READ_DELAYS, type CarrierSessionControlContext, type CarrierSessionRequest } from '../../src/host/redline-session-control'
 
 const request = (patch: Partial<CarrierSessionRequest> = {}): CarrierSessionRequest => ({
@@ -388,5 +393,73 @@ describe('有界重读只在 absent 时继续（0.4.1）', () => {
 
   test('默认退避是 200/500/1000ms，且只在 absent 时走完', async () => {
     assert.deepEqual(DEFAULT_COLD_READ_DELAYS, [200, 500, 1000])
+  })
+})
+
+describe('督导会话首条消息与目标启动顺序', () => {
+  test('首条用户任务消息在 armSupervisorGoal (goals.create) 之前发送，避免 turn 1 竞态', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'carrier-guard-order-'))
+    try {
+      const prepared = await prepareGuardRun(cwd, {
+        goal: '测试顺序', acceptance: '完成', discipline: '只规划', tasks: 'T1 | 一步 | 通过 | src/a.ts',
+      })
+      const order: string[] = []
+      const h = harness()
+      const origFollowup = h.agent.followup.bind(h.agent)
+      h.agent.followup = (msg: unknown) => {
+        order.push('followup')
+        origFollowup(msg)
+      }
+      const origGet = h.ctx.get
+      const ctxWithGoals: CarrierSessionControlContext = {
+        ...h.ctx,
+        get: (name: string) => {
+          if (name === 'goals') {
+            return {
+              get: () => undefined,
+              create: () => { order.push('goals.create') },
+            }
+          }
+          return origGet?.(name)
+        },
+      }
+      const result = await createRedlineSessionControl(ctxWithGoals, { coldReadDelays: [0], sleep: async () => {} }).start(request({
+        cwd,
+        guardRunId: prepared.runId,
+      }))
+      assert.equal(result.ok, true)
+      assert.deepEqual(order, ['followup', 'goals.create'])
+    } finally {
+      forgetSessionAttachments('carrier-fixed-id')
+      await rm(cwd, { recursive: true, force: true })
+    }
+  })
+
+  test('开启 danger-full-access 时在发送首条消息前调用 permissionPresets.set，服务缺失时显式失败', async () => {
+    const order: string[] = []
+    const h = harness()
+    const origFollowup = h.agent.followup.bind(h.agent)
+    h.agent.followup = (msg: unknown) => {
+      order.push('followup')
+      origFollowup(msg)
+    }
+    const ctxWithPerm: CarrierSessionControlContext = {
+      ...h.ctx,
+      get: (name: string) => name === 'permissionPresets'
+        ? { set: (_session: unknown, preset: string) => { order.push(`preset:${preset}`) } }
+        : h.ctx.get?.(name),
+    }
+    const ok = await createRedlineSessionControl(ctxWithPerm, { coldReadDelays: [0], sleep: async () => {} }).start(request({
+      permissionPreset: 'danger-full-access',
+    }))
+    assert.equal(ok.ok, true)
+    assert.deepEqual(order, ['preset:danger-full-access', 'followup'])
+
+    // Negative case: missing permissionPresets service fails clearly instead of silently dropping the user's request.
+    const h2 = harness()
+    const failRes = await createRedlineSessionControl(h2.ctx, { coldReadDelays: [0], sleep: async () => {} }).start(request({
+      permissionPreset: 'danger-full-access',
+    }))
+    assert.deepEqual(failRes, { ok: false, state: 'unknown', cause: 'permission-preset-unavailable' })
   })
 })

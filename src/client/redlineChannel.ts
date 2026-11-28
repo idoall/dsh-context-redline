@@ -25,6 +25,7 @@ import type { ChildCapacity } from '../shared/redline-capacity'
 import type { OriginRecord } from '../shared/redline-origins'
 import type { DraftTable } from '../shared/redline-drafts'
 import type { TurnState } from '../shared/redline-turn'
+import type { SupervisorSummary } from '../shared/redline-supervisor'
 
 /** One row's complete content, as `node.read` answers it. */
 export interface RedlineRow {
@@ -166,14 +167,12 @@ export interface AnchorInput {
   readonly goal: string
   readonly acceptance: string
   readonly discipline: string
-  /** Opt-in Goal Guard: one `T1 | title | acceptance` line per task. */
-  readonly guard?: {
-    readonly tasks: string
-    readonly dryRun?: boolean
-    readonly evaluator?: { readonly provider: string; readonly model: string }
-    readonly planPath?: string
-    readonly planHash?: string
-  }
+  /** Prepared supervisor run id; the run directory already exists on disk. */
+  readonly guardRunId?: string
+  /** Run worktree the new session works in; never registered as a DSH workspace. */
+  readonly guardWorktreePath?: string
+  /** Optional explicit permission preset applied to the newly created session. */
+  readonly permissionPreset?: 'danger-full-access'
 }
 
 export interface AnchorPlan {
@@ -183,19 +182,9 @@ export interface AnchorPlan {
   readonly requestFingerprint: string
   readonly title: string
   readonly workspaceId: string
+  /** Directory the new session runs in; probes and relative paths resolve here. */
+  readonly cwd?: string
   readonly config?: { agentPreset: string; provider: string; model: string; reasoningEffort?: string }
-  /** Present when a valid task list would enable the Goal Guard. */
-  readonly guard?: {
-    readonly hash: string
-    readonly taskCount: number
-    readonly plan?: {
-      readonly path: string
-      readonly hash: string
-      readonly bytes: number
-      readonly lines: number
-      readonly headings: readonly string[]
-    }
-  }
 }
 
 export interface AnchorStarted {
@@ -206,75 +195,123 @@ export interface AnchorStarted {
   readonly messageId: string
 }
 
-
-/** A guarded session's progress, mirroring the host store. */
-export interface GuardTaskStatus {
-  readonly id: string
-  readonly title: string
-  readonly acceptance: readonly string[]
-  readonly status: 'pending' | 'active' | 'passed' | 'failed' | 'blocked'
-  readonly attempts: number
-}
-
-export interface GuardStatus {
-  readonly sessionId: string
-  readonly goal: string
-  readonly acceptance: string
-  readonly discipline: string
-  readonly tasks: readonly GuardTaskStatus[]
-  readonly current: number
-  readonly verdict: 'pass' | 'fail' | 'insufficient' | 'blocked' | null
-  readonly correction: string
-  readonly steers: number
-  readonly blocked: boolean
-  readonly complete: boolean
-  readonly paused: boolean
-  readonly dryRun: boolean
-  readonly evaluatorProvider?: string
-  readonly evaluatorModel?: string
-  readonly lastAudit?: {
-    readonly at: number
-    readonly ran: boolean
-    readonly note: string
-  }
-  readonly lastEval?: {
-    readonly verdict: string
-    readonly model: string
-    readonly latencyMs: number
-    readonly inputTokens: number
-    readonly outputTokens: number
-    readonly at: number
-  }
-}
-
-/** Read the guard status; `null` means this session has no guard. */
-export async function readGuardStatus(sessionId: string): Promise<RedlineResult<GuardStatus | null>> {
-  const answer = await call<GuardStatus | null>({ op: 'guard.status', sessionId })
-  if (!answer.ok) return answer
-  const value = answer.value as unknown
-  if (value === null || typeof value !== 'object') return { ok: true, value: null }
-  const bag = value as { tasks?: unknown; goal?: unknown }
-  if (!Array.isArray(bag.tasks) || typeof bag.goal !== 'string') return { ok: true, value: null }
-  return { ok: true, value: value as GuardStatus }
-}
-
-async function setGuardPaused(sessionId: string, paused: boolean): Promise<RedlineResult<GuardStatus | null>> {
-  return await call<GuardStatus | null>({ op: paused ? 'guard.pause' : 'guard.resume', sessionId })
-}
-
-/** Pause the guard for one session (no tool denial, no steering). */
-export async function pauseGuard(sessionId: string): Promise<RedlineResult<GuardStatus | null>> {
-  return await setGuardPaused(sessionId, true)
-}
-
-/** Resume the guard for one session. */
-export async function resumeGuard(sessionId: string): Promise<RedlineResult<GuardStatus | null>> {
-  return await setGuardPaused(sessionId, false)
-}
-
 /** Read-only preview of one anchored conversation; creates nothing. */
 export async function planAnchor(sessionId: string, input: AnchorInput): Promise<RedlineResult<AnchorPlan>> {
   return await call<AnchorPlan>({ op: 'anchor.plan', sessionId, ...input })
+}
+
+/** One deterministic probe the plugin will run itself (never the model). */
+export interface GuardProbeInput {
+  readonly id: string
+  readonly taskId: string
+  readonly weight: 'light' | 'heavy'
+  readonly spec: {
+    readonly kind: 'command'
+    readonly cmd: string
+    readonly args: readonly string[]
+    readonly expectExit?: number
+  }
+  readonly enabled?: boolean
+}
+
+/** Step two of the anchor dialog: create the supervisor run directory. */
+export interface GuardPrepareInput {
+  readonly task: string
+  readonly goal: string
+  readonly acceptance: string
+  readonly discipline: string
+  /** Task table, one `ID | title | acceptance | scope` line per task. */
+  readonly tasks: string
+  readonly parallel?: number
+  readonly worktree?: boolean
+  /** Strict mode: deny out-of-scope writes and shell tools. */
+  readonly enforcement?: 'enforce'
+  /** Optional dedicated evaluator model route; defaults to the session's main model. */
+  readonly evaluator?: { readonly provider: string; readonly model: string; readonly reasoningEffort?: string }
+  /** Evaluator route tried when the primary judge cannot answer. */
+  readonly evaluatorFallback?: { readonly provider: string; readonly model: string; readonly reasoningEffort?: string }
+  /** Execution route recorded for this run (the session owns the live value). */
+  readonly executor?: { readonly provider: string; readonly model: string; readonly reasoningEffort?: string }
+  /** Execution route to switch to when the primary executor cannot run. */
+  readonly executorFallback?: { readonly provider: string; readonly model: string; readonly reasoningEffort?: string }
+  /** Observation-only visual witness configuration. */
+  readonly visual?: {
+    readonly enabled: boolean
+    readonly route?: { readonly provider: string; readonly model: string; readonly reasoningEffort?: string }
+    readonly fallback?: { readonly provider: string; readonly model: string; readonly reasoningEffort?: string }
+  }
+  /** Retry target: rewrite this run directory instead of creating a new one. */
+  readonly runId?: string
+  /** Deterministic probes, executed by the plugin before any evaluation. */
+  readonly probes?: readonly GuardProbeInput[]
+}
+
+export interface GuardPrepared {
+  readonly runId: string
+  readonly root: string
+  readonly files: readonly string[]
+  readonly worktreePath?: string
+}
+
+export async function readSupervisor(sessionId: string): Promise<RedlineResult<SupervisorSummary | null>> {
+  const answer = await call<unknown>({ op: 'guard.supervisor', sessionId })
+  if (!answer.ok) return answer
+  const value = answer.value
+  if (value === null || typeof value !== 'object') return { ok: true, value: null }
+  const bag = value as { runId?: unknown; tasks?: unknown; done?: unknown; total?: unknown }
+  if (typeof bag.runId !== 'string' || !Array.isArray(bag.tasks)
+    || typeof bag.done !== 'number' || typeof bag.total !== 'number') {
+    return { ok: true, value: null }
+  }
+  return { ok: true, value: value as SupervisorSummary }
+}
+
+/**
+ * Clear a blocked run and let it continue (no rollback: attempts and
+ * `baseCommit` are kept, only the block flag and the outage streak are reset).
+ */
+export async function resumeSupervisor(sessionId: string, runId: string): Promise<RedlineResult<SupervisorSummary | null>> {
+  return await call<SupervisorSummary | null>({ op: 'guard.continue', sessionId, runId })
+}
+
+/** Switch one role's model (optionally clearing a block in the same action). */
+export interface SupervisorSwitchInput {
+  readonly runId: string
+  readonly role: 'executor' | 'evaluator'
+  readonly route?: { readonly provider: string; readonly model: string; readonly reasoningEffort?: string }
+  readonly resume?: boolean
+}
+
+export async function switchSupervisor(sessionId: string, input: SupervisorSwitchInput): Promise<RedlineResult<SupervisorSummary | null>> {
+  return await call<SupervisorSummary | null>({ op: 'guard.switch', sessionId, ...input })
+}
+
+export async function rollbackSupervisor(sessionId: string, runId: string): Promise<RedlineResult<SupervisorSummary | null>> {
+  return await call<SupervisorSummary | null>({ op: 'guard.rollback', sessionId, runId, confirm: 'rollback' })
+}
+
+/** Read-only repository facts for the anchor dialog (never writes anything). */
+export interface RepoFacts {
+  readonly isGit: boolean
+  readonly branch?: string
+  readonly defaultBranch?: string
+  readonly remoteKind?: 'gitlab' | 'github' | 'other'
+  readonly remoteHost?: string
+}
+
+/**
+ * Ask whether this session's workspace is a git repository.
+ *
+ * The dialog offers an isolated worktree, and a supervised run that commits on
+ * the default branch is exactly what that mode exists to prevent — so the card
+ * asks first and can pre-select the safe option. The call writes nothing.
+ */
+export async function readRepo(sessionId: string): Promise<RedlineResult<RepoFacts>> {
+  return await call<RepoFacts>({ op: 'guard.repo', sessionId })
+}
+
+export async function prepareGuard(sessionId: string, input: GuardPrepareInput): Promise<RedlineResult<GuardPrepared>> {
+  return await call<GuardPrepared>({ op: 'guard.prepare', sessionId, ...input })
 }
 
 /** Create the anchored conversation after the human confirmation. */

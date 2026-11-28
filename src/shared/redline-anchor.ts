@@ -53,9 +53,33 @@ export function anchorRequestFingerprint(draft: AnchorDraft): string {
   return carrierContentFingerprint(JSON.stringify({ task, goal, acceptance, discipline }))
 }
 
+/** Longest session title we keep; anything longer is cut at a natural boundary. */
+const TITLE_MAX = 48
+/** A boundary earlier than this would leave a title too short to identify anything. */
+const TITLE_BOUNDARY_MIN = 8
+/** A sentence end inside the window is a title by itself: keep it, no ellipsis. */
+const SENTENCE_END = /[。！？!?]/
+/** A clause break is a decent cut, but the title must say that it was cut. */
+const CLAUSE_BREAK = /[，、；：,;:]/
+
+function titleOf(raw: string): string {
+  const flat = raw.trim().replace(/\s+/g, ' ')
+  if (flat.length <= TITLE_MAX) return flat
+  const head = flat.slice(0, TITLE_MAX)
+  for (let index = head.length - 1; index >= TITLE_BOUNDARY_MIN; index -= 1) {
+    if (SENTENCE_END.test(head[index] ?? '')) return head.slice(0, index + 1)
+  }
+  for (let index = head.length - 1; index >= TITLE_BOUNDARY_MIN; index -= 1) {
+    if (CLAUSE_BREAK.test(head[index] ?? '')) return `${head.slice(0, index).trimEnd()}…`
+  }
+  // No punctuation at all: a hard cut, but leave room for the ellipsis so the
+  // title never exceeds the cap.
+  return `${flat.slice(0, TITLE_MAX - 1)}…`
+}
+
 /** One-line title for the new session, derived from the goal (no generic prefix). */
 export function anchorTitle(draft: AnchorDraft): string {
-  const goal = draft.goal.trim().replace(/\s+/g, ' ').slice(0, 48)
-  const task = draft.task.trim().replace(/\s+/g, ' ').slice(0, 48)
+  const goal = titleOf(draft.goal)
+  const task = titleOf(draft.task)
   return goal || task || '未命名会话'
 }
