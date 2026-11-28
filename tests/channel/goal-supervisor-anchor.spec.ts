@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
-import { ANCHOR_BUDGET_BYTES, renderAnchor } from '../../src/host/goal-supervisor/anchor'
+import { ANCHOR_BUDGET_BYTES, renderAnchor, renderAnchorDetailed, renderAnchorUnclipped } from '../../src/host/goal-supervisor/anchor'
 import { GUARD_SCHEMA_VERSION, type GuardState } from '../../src/host/goal-supervisor/schema'
 
 function state(overrides: Partial<GuardState> = {}): GuardState {
@@ -81,6 +81,112 @@ describe('goal-supervisor anchor', () => {
   })
 })
 
+describe('goal-supervisor anchor budget priority', () => {
+  /** A ledger with a long future-task scope list, one blocked sibling and one running task. */
+  function crowded(goalLength = 6): GuardState {
+    const only = state().tasks[0]!
+    const upcoming = Array.from({ length: 12 }, (_, index) => ({
+      ...only,
+      id: `T${index + 2}`,
+      title: `未来任务 ${index + 2}`,
+      status: 'TODO' as const,
+      scope: [`very/long/declared/scope/segment-${index}`, 'another/long/declared/path', 'third/long/declared/path'],
+      dependsOn: [],
+    }))
+    const blocked = {
+      ...only,
+      id: 'B1',
+      title: '被阻塞的兄弟',
+      status: 'BLOCKED' as const,
+      scope: ['src/blocked'],
+      blocked: { reason: '探针一直失败', next: '回退后换个思路', remainingCandidates: [], at: 1 },
+    }
+    return state({
+      goal: '很长的目标描述。'.repeat(goalLength),
+      tasks: [{ ...only, scope: ['src/task-one'] }, ...upcoming, blocked],
+      activeTaskIds: ['T1'],
+      status: 'active',
+    })
+  }
+
+  test('a crowded ledger keeps the running task, progress and correction; only other-task scopes give way', () => {
+    const text = renderAnchor(crowded())
+    assert.ok(Buffer.byteLength(text, 'utf8') <= ANCHOR_BUDGET_BYTES, String(Buffer.byteLength(text, 'utf8')))
+    assert.match(text, /当前任务：T1/)
+    assert.match(text, /本任务 scope：src\/task-one/)
+    assert.match(text, /进度：0\/14/)
+    assert.match(text, /状态：active/)
+    assert.match(text, /纠正（B1）：探针一直失败 → 回退后换个思路/)
+    assert.match(text, /目标：/)
+    assert.match(text, /硬规则：/)
+    assert.match(text, /停止条件：/)
+  })
+
+  test('reports the true untruncated size instead of clamping the accounting to the budget', () => {
+    const ledger = crowded(80)
+    const full = renderAnchorUnclipped(ledger)
+    const rendered = renderAnchorDetailed(ledger)
+    assert.ok(rendered.truncated, 'the crowded ledger must be reported as truncated')
+    assert.equal(
+      rendered.originalBytes,
+      Buffer.byteLength(full, 'utf8'),
+      'originalBytes is the size of the untruncated rendering',
+    )
+    assert.ok(rendered.originalBytes > ANCHOR_BUDGET_BYTES + 200, `original=${rendered.originalBytes}`)
+    assert.equal(rendered.keptBytes, Buffer.byteLength(rendered.text, 'utf8'))
+    assert.ok(rendered.keptBytes <= ANCHOR_BUDGET_BYTES)
+  })
+
+  test('a rendering that fits reports no truncation and equal byte counts', () => {
+    const rendered = renderAnchorDetailed(state())
+    assert.equal(rendered.truncated, false)
+    assert.equal(rendered.originalBytes, rendered.keptBytes)
+    assert.equal(rendered.text, renderAnchorUnclipped(state()))
+  })
+})
+
+describe('goal-supervisor anchor after the run completes', () => {
+  /** A run whose tasks are all DONE: the guard must stop being a supervisor. */
+  function completed(): GuardState {
+    const only = state().tasks[0]!
+    return state({
+      tasks: [
+        { ...only, status: 'DONE', checkpointRef: 'guard/20261124-demo/T1' },
+        { ...only, id: 'T2', title: '第二条', status: 'DONE', checkpointRef: 'guard/20261124-demo/T2' },
+      ],
+      activeTaskIds: [],
+      status: 'completed',
+    })
+  }
+
+  test('stops imposing scope and completion-claim rules and lets new work run normally', () => {
+    const text = renderAnchor(completed(), { cwd: '/repo' })
+    assert.match(text, /全部完成 2\/2/)
+    assert.match(text, /已收口/)
+    assert.match(text, /普通会话/)
+    assert.match(text, /可以直接改文件/)
+    // The run-scoped rules must be gone, or the model refuses the next request.
+    assert.ok(!text.includes('只改本任务 scope 内的文件'), text)
+    assert.ok(!text.includes('不得让子会话代写'), text)
+    assert.ok(!text.includes('工具守卫已硬拦'), text)
+    assert.ok(!text.includes('写入后立刻结束本回合'), text)
+    assert.ok(Buffer.byteLength(text, 'utf8') <= ANCHOR_BUDGET_BYTES)
+  })
+
+  test('a blocked run still carries the task rules and the correction', () => {
+    const only = state().tasks[0]!
+    const blocked = state({
+      tasks: [{ ...only, status: 'BLOCKED', blocked: { reason: '探针失败', next: '回退重试', remainingCandidates: [], at: 1 } }],
+      activeTaskIds: [],
+      status: 'blocked',
+    })
+    const text = renderAnchor(blocked)
+    assert.match(text, /纠正（T1）：探针失败 → 回退重试/)
+    assert.match(text, /只改本任务 scope 内的文件/)
+    assert.ok(!text.includes('已收口'))
+  })
+})
+
 describe('goal-supervisor anchor completion claims', () => {
   test('a run whose tasks are all BLOCKED is not reported as complete', () => {
     const blocked = state({
@@ -154,5 +260,70 @@ describe('goal-supervisor anchor completion claims', () => {
     const textTwo = renderAnchor(transition)
     assert.match(textTwo, /当前任务：T2/)
     assert.ok(!textTwo.includes('其他任务 scope'), `T2 is the active task, not another task: ${textTwo}`)
+  })
+
+  test('states the turn-boundary protocol and adapts rules to enforcement without overriding milestone discipline', () => {
+    const warnText = renderAnchor(state({ enforcement: 'warn-only' }))
+    assert.match(warnText, /## 完成声明/)
+    assert.match(warnText, /立刻结束本回合/)
+    assert.match(warnText, /提醒模式/)
+    assert.ok(!warnText.includes('工具守卫已硬拦'), 'warn-only must not claim shell calls are hard-blocked')
+    assert.match(warnText, /若目标或纪律明确要求/)
+
+    const enforceText = renderAnchor(state({ enforcement: 'enforce' }))
+    assert.match(enforceText, /立刻结束本回合/)
+    assert.match(enforceText, /工具守卫已硬拦/)
+    assert.ok(Buffer.byteLength(enforceText, 'utf8') <= ANCHOR_BUDGET_BYTES)
+  })
+
+  test('requires the main session to write the completion claim after review and forbids subagents from doing so', () => {
+    for (const enforcement of ['warn-only', 'enforce'] as const) {
+      const text = renderAnchor(state({ enforcement }), { cwd: '/tmp/demo' })
+      assert.match(text, /主会话审查/)
+      assert.match(text, /亲自写入/)
+      assert.match(text, /不得让子会话代写/)
+      assert.ok(Buffer.byteLength(text, 'utf8') <= ANCHOR_BUDGET_BYTES)
+    }
+  })
+
+  test('names the run directory the probes execute in and forbids leaving the workspace', () => {
+    const cwd = '/Volumes/SSD/Home/lionm4/my_project/_AI/x9Copy'
+    const text = renderAnchor(state(), { cwd })
+    assert.match(text, /运行目录：/)
+    assert.ok(text.includes(cwd), `the anchor must name the run directory: ${text}`)
+    assert.match(text, /只限运行目录/)
+    assert.match(text, /跨工作区/)
+    assert.ok(Buffer.byteLength(text, 'utf8') <= ANCHOR_BUDGET_BYTES)
+    // Backwards compatibility: callers that cannot name a directory render the
+    // same block as before instead of a half-empty "运行目录：" line.
+    assert.ok(!renderAnchor(state()).includes('运行目录：'))
+  })
+
+  test('a long run directory is clipped and never squeezes out the task or the rules', () => {
+    const text = renderAnchor(state(), { cwd: `/very/${'long/'.repeat(80)}workspace` })
+    assert.ok(Buffer.byteLength(text, 'utf8') <= ANCHOR_BUDGET_BYTES, String(Buffer.byteLength(text, 'utf8')))
+    assert.match(text, /运行目录：/)
+    assert.match(text, /当前任务：T1/)
+    assert.match(text, /硬规则：/)
+    assert.match(text, /停止条件：/)
+  })
+})
+
+// 长跑的两个失败面：条目卡住空转却不自知，以及主会话因为“不改 docs/guard/**”
+// 而不敢写完成声明。锚点必须把这两件事说清楚。
+describe('goal-supervisor anchor — long run guidance', () => {
+  test('an idle task is told exactly how to stop spinning', () => {
+    const text = renderAnchor(state({
+      tasks: [{ ...state().tasks[0]!, idleStreak: 2 }],
+    }))
+    assert.match(text, /待验收（T1）/)
+    assert.match(text, /连续 2 轮/)
+    assert.match(text, /docs\/guard\/20261124-demo\/tasks\/T1\/notes\.md/)
+  })
+
+  test('the completion declaration names its path and the ledger exception', () => {
+    const text = renderAnchorUnclipped(state())
+    assert.match(text, /docs\/guard\/20261124-demo\/tasks\/<ID>\/notes\.md/)
+    assert.match(text, /例外/)
   })
 })

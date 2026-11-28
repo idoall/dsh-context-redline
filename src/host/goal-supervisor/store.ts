@@ -56,6 +56,19 @@ function serialize(value: unknown): string {
 }
 
 /** Pure rendering of the ledger for humans. Never read back as state. */
+/** True when both route records name the same provider, model and effort. */
+function sameRoute(
+  a: { readonly provider: string; readonly model: string; readonly reasoningEffort?: string } | undefined,
+  b: { readonly provider: string; readonly model: string; readonly reasoningEffort?: string },
+): boolean {
+  return a !== undefined && a.provider === b.provider && a.model === b.model && a.reasoningEffort === b.reasoningEffort
+}
+
+/** `provider/model（推理：effort）` for the human-readable page. */
+function routeText(route: { readonly provider: string; readonly model: string; readonly reasoningEffort?: string }): string {
+  return `${route.provider}/${route.model}${route.reasoningEffort === undefined ? '' : `（推理：${route.reasoningEffort}）`}`
+}
+
 export function renderTasksMarkdown(state: GuardState): string {
   const done = state.tasks.filter(task => task.status === 'DONE').length
   const lines: string[] = [
@@ -65,6 +78,22 @@ export function renderTasksMarkdown(state: GuardState): string {
     `- 状态：${state.status}`,
     `- 并行：${state.parallel}`,
     `- 进度：${done}/${state.tasks.length} 已完成`,
+    ...(state.evaluator === undefined ? [] : [
+      `- 评估模型：\`${state.evaluator.provider}/${state.evaluator.model}\`${state.evaluator.reasoningEffort === undefined ? '' : `（推理：\`${state.evaluator.reasoningEffort}\`）`}`,
+    ]),
+    ...(state.evaluatorFallback === undefined ? [] : [
+      `- 评估回退：\`${state.evaluatorFallback.provider}/${state.evaluatorFallback.model}\`${state.evaluatorFallback.reasoningEffort === undefined ? '' : `（推理：\`${state.evaluatorFallback.reasoningEffort}\`）`}`,
+    ]),
+    ...(state.executor === undefined ? [] : [
+      `- 执行模型：\`${state.executor.provider}/${state.executor.model}\`${state.executor.reasoningEffort === undefined ? '' : `（推理：\`${state.executor.reasoningEffort}\`）`}`,
+    ]),
+    ...(state.activeExecutor === undefined || sameRoute(state.executor, state.activeExecutor)
+      ? []
+      : [`- 当前执行模型：\`${routeText(state.activeExecutor)}\``]),
+    ...(state.executorFallback === undefined ? [] : [
+      `- 执行回退：\`${state.executorFallback.provider}/${state.executorFallback.model}\`${state.executorFallback.reasoningEffort === undefined ? '' : `（推理：\`${state.executorFallback.reasoningEffort}\`）`}`,
+    ]),
+    ...(state.visual?.enabled === true ? ['- 视觉取证：启用（观察型取证，不参与裁决）'] : []),
     // An isolated run commits to its own branch and NOTHING merges it back, so
     // the page a human reads on disk has to name it.
     ...(state.worktree.enabled && state.worktree.branch !== undefined
@@ -76,6 +105,7 @@ export function renderTasksMarkdown(state: GuardState): string {
     lines.push(`## ${task.id} · ${task.title}`, '')
     lines.push(`- 状态：${task.status}`)
     lines.push(`- 允许改动：${task.scope.length === 0 ? '（未声明）' : task.scope.map(path => `\`${path}\``).join('、')}`)
+    if (task.dependsOn.length > 0) lines.push(`- 依赖：${task.dependsOn.join('、')}`)
     if (task.acceptance.length > 0) lines.push(`- 验收：${task.acceptance.join('；')}`)
     if (task.probes.length > 0) {
       const required = new Set(task.requiredProbes)
@@ -108,6 +138,25 @@ function lockFor(root: string): SerialLock {
   const created = new SerialLock()
   LOCKS.set(key, created)
   return created
+}
+
+/** One atomic ledger commit: the new state plus the events it produced. */
+export interface GuardMutation {
+  readonly state: GuardState
+  readonly events?: readonly GuardEvent[]
+}
+
+/** A `GuardState` has no `state` key, so the presence of one identifies a mutation. */
+function isMutation(value: GuardState | GuardMutation): value is GuardMutation {
+  return 'state' in value
+}
+
+function mutationStateOf(value: GuardState | GuardMutation): GuardState {
+  return isMutation(value) ? value.state : value
+}
+
+function mutationEventsOf(value: GuardState | GuardMutation): readonly GuardEvent[] {
+  return isMutation(value) ? (value.events ?? []) : []
 }
 
 /** Storage rooted at one run directory (`docs/guard/<run-id>/`). */
@@ -144,6 +193,48 @@ export class GuardStore {
       await writeFileAtomic(this.tasksPath, serialize(state))
       for (const event of events) await this.appendEventUnlocked(event)
       await writeFileAtomic(this.renderedPath, renderTasksMarkdown(state))
+    })
+  }
+
+  /**
+   * Read-modify-write the ledger under the same lock as `update`.
+   *
+   * Two callers that both `readState()` before the lock and then `update()` a
+   * stale snapshot would otherwise silently drop each other's change (a runtime
+   * model switch racing the audit is exactly that case).
+   *
+   * The callback may also hand back the events that belong to this very commit
+   * (`{ state, events }`), so the ledger write, `state.jsonl` and `TASKS.md`
+   * land together instead of an append racing a reader between two locks.
+   * Returning `null` means "nothing to change": nothing is written, and the
+   * current ledger is answered. Returning the same state object is the same
+   * short circuit.
+   */
+  async mutate(
+    apply: (state: GuardState) => GuardState | GuardMutation | null,
+    /**
+     * State to apply when `tasks.json` is already gone.
+     *
+     * Only for a caller whose OWN side effects can remove the ledger: a rollback
+     * reverts commits, and a commit that carried `tasks.json` (a subagent's
+     * `git add -A`, or a checkpoint above the base) takes the file with it. That
+     * caller must still write the reopened ledger; every other caller keeps
+     * treating a missing ledger as a failure (`null`).
+     */
+    missing?: GuardState,
+  ): Promise<GuardState | null> {
+    return await this.lock.run(async () => {
+      const state = await this.readJson<GuardState>(this.tasksPath) ?? missing ?? null
+      if (state === null) return null
+      const applied = apply(state)
+      if (applied === null) return state
+      const next = mutationStateOf(applied)
+      const events = mutationEventsOf(applied)
+      if (next === state && events.length === 0) return state
+      await writeFileAtomic(this.tasksPath, serialize(next))
+      for (const event of events) await this.appendEventUnlocked(event)
+      await writeFileAtomic(this.renderedPath, renderTasksMarkdown(next))
+      return next
     })
   }
 

@@ -135,6 +135,8 @@
 - 满足其一：`scope` 内文件指纹（内容哈希集合）较上次评估变化；或 **上次评估之后新增**了完成声明（用 `last_eval_offset` 判断 `notes.md` 尾部新增段，旧声明不再触发）；
 - 避免：只过部分探针就评估、旧声明反复触发、探针集合不变导致永不评估。
 
+**评估调用预算**：单次调用 60s，**每次重试各自计时**（旧实现两次重试共用一个 30s 信号，第一次超时后第二次必然立刻失败）；超时在卡片上如实写成「调用超时（60s）」，不再把宿主的 `Request was aborted` 原样透出；传输错与超时同样重试一次，仍失败才记 `eval.unavailable`（不消耗 attempts、不推进游标）。
+
 **重试期评估**：同一做法签名连续 3 次命中时，触发一次轻量「进展评估」（只读尝试记录、diff 摘要与失败指纹，1 次调用）；它确认「同一思路死循环或 diff 往复」才转 BLOCKED。
 
 **并行**（默认 1）：
@@ -153,12 +155,13 @@
 - 位置：`systemPrompt.context`，head `order 90`、tail `order 900`，`required: true`（压缩后重贴）；
 - 预算：**每侧 ≤2KB**（约 600–1000 tokens），超预算按优先级截断并记事件；
 - 优先级（从高到低）：硬规则 3 条 → 停止条件 → 当前任务 id 与 scope → 本任务验收 → 下一步动作 → 目标 hash → 目标首行（描述性文字，可截断）；
+- **运行目录**：固定输出一行 `运行目录：<cwd>`（路径超过 120 B 截断），硬规则同步声明「所有写入与命令只限运行目录（勿跨工作区施工、勿自建外部 worktree，只读参考可以读）」。探针与任务 scope 都以这个目录为根；锚点不写这一行时，模型只能从账本反推运行根（2026-11-26 真机：一个写错工作区的交接卡让首回合空转 29 步、58 次只读调用，还去翻插件源码）。
 - 内容由插件从 `tasks.json` 实时生成，每轮刷新。
 
 ## 9. 启动时序（两段式）
 
 **对话框阶段（A）**：
-1. 校验目标卡（目标/验收/纪律/任务清单）与**探针命令清单**确认；任一非法则按钮禁用；工作区有未提交脏改动时，额外提示可勾选「在独立 worktree 中运行」；
+1. 校验目标卡（目标/验收/纪律/任务清单）与**探针命令清单**确认；任一非法则按钮禁用；可选勾选「在独立 worktree 中运行」，在当前工作区建 `.guard/worktrees/<run-id>` 隔离检出与 `guard/<run-id>` 分支：该目录写进 `.git/info/exclude` 本地忽略（不入提交），且**不注册新的 DSH 工作区**——会话 header 仍指向源项目（因此在侧栏仍归属原工作区，不会掉进「未分组」），运行目录由 Host 的 `workingDirectory.set` 切到 worktree；
 2. 生成 run-id，创建记录目录骨架与 `probes/*.json`（实时显示路径与已写文件数）；失败停在②，可重试，不建会话。
 
 成功后创建会话 B 并立即切过去，对话框关闭。
@@ -231,7 +234,7 @@ B 内状态条：目标已创建 / 锚点已注入 / 守卫已挂载 / 首条消
 
 ## 15. 界面
 
-- 创建对话框：两步（校验目标卡 + 确认探针命令、生成记录目录），第二步实时显示路径与文件数；检测到脏工作区时提供「在独立 worktree 中运行」勾选；
+- 创建对话框：两步（校验目标卡 + 确认探针命令、生成记录目录），第二步实时显示路径与文件数；提供「在独立 worktree 中运行」勾选（在当前工作区建 `.guard/worktrees/<run-id>` 隔离检出，主检出分支保持不动，也不新建 DSH 工作区；会话仍归原工作区的侧栏分组，工作目录切到隔离检出）；
 - 会话 B：启动状态条 + 失败重试；守卫卡显示当前任务、探针结果、最近评估、BLOCKED 原因与已试方法；
 - 上下文批改面板：run 列表与状态；「解阻 / 批准范围变更 / 回退到检查点」按钮。
 
@@ -295,7 +298,7 @@ B 内状态条：目标已创建 / 锚点已注入 / 守卫已挂载 / 首条消
 评审回归修复（2026-11-24 第二轮自审后补齐）：
 
 - 建 goal 从 `setup` 回调移到 `agents.create`/`resume` 之后（`armSupervisorGoal`）：goal 服务对未进入注册表的 agent 抛 `GOAL_AGENT_NOT_LIVE`，在 `setup` 里调用会让会话创建 100% 失败。
-- 督导 worktree 只能属于本次 run：`realpath(<source>/.guard/worktrees/<run-id>)` 精确比对后才切换 cwd，并为 worktree 单独登记 workspace（否则 `workspace-path-mismatch` 失败）。
+- 督导 worktree 只能属于本次 run：`realpath(<source>/.guard/worktrees/<run-id>)` 精确比对后才切换运行目录。**不再为 worktree 登记 DSH 工作区**（登记会让侧栏多出一个 run 目录分组，且 run 结束即变成 missing-dir）：会话以源项目为 header 创建并挂到源工作区，再由 `workingDirectory.set` 把有效目录切到检出（`workspace-root/change` 事件持久化，重开仍在检出里）。
 - DONE 提交或打 tag 失败时台账回滚为 `IN_PROGRESS` 并记录 `commit.failed` + `task.reopened`；同名 tag 已存在则在提交前 BLOCKED，不写一个没有 tag 的 DONE。
 - 完成声明偏移只在评估真正跑过时推进，避免「探针未过 → 偏移被吃掉 → 永远不再评估」的死锁。
 - 50 次上限改用 `attempts.at(-1).index + 1`（原按窗口长度判断，永远到不了）；`advancing` 会重置连击计数；豁免满 2 次后不再调用评估器。
@@ -304,7 +307,7 @@ B 内状态条：目标已创建 / 锚点已注入 / 守卫已挂载 / 首条消
 - 记录目录只放行 `tasks/<ID>/notes.md`、`review/*.md`、`requests/*.json`；`create_goal`、`apply_patch`、`str_replace_editor`、`pwsh` 在严格模式下一律拒绝，字符串形式的工具参数也会解析。
 - 探针：`rg` 退出码 2（非法正则/路径不存在）判 `unknown` 而不是 `pass`；超时与超缓冲判 `unknown` 而不是退出码 127；声明路径不得越出工作区；网络命令一律拒绝；`probeEnv()` 增加死代理与 `GIT_TERMINAL_PROMPT=0`，冒烟命令同样使用脱敏环境；失败探针与 heavy 探针的输出写入 `tasks/<ID>/evidence/<probe>-<ts>.log`（每任务最多保留 20 条证据）。
 - 创建对话框补上探针命令行（`任务 ID | 命令`，一行一条）：插件自己执行、退出码 0 才算通过；不填则该任务只靠评估器判定，此时 `TASKS.md` 不列探针。
-- 回退（`rollback.ts`）：无新增提交时不再报错；先留补丁证据，再把被重开任务 scope 内的脏文件恢复到检查点，最后重开任务并清除运行级阻塞；同一检查点二次回退会被拒绝，避免把上一次 revert 再 revert 回去。
+- 回退（`rollback.ts`）：无新增提交时不再报错；先留补丁证据，再把被重开任务 scope 内的脏文件恢复到检查点，最后重开任务并按需清除运行级阻塞（里程碑失败且本次未重开 DONE 任务时保留闸门）；同一检查点二次回退会被拒绝，避免把上一次 revert 再 revert 回去。
 - 冷启动：`watchGoalSupervisors` 在 `agent/created` 时按 `run.json.sessionId` 重挂锚点、门禁与收尾审计。
 - 第二轮评审修复（安全与正确性）：
   - 范围变更请求不再把 `id` 当文件名（`id: "../../tasks"` 曾可覆写台账），就地回写原文件；`addedPaths` 必须是安全的相对路径；`**`、`*`、`.`、`**/*.ts` 等整仓通配一律转人工。
@@ -470,3 +473,139 @@ B 内状态条：目标已创建 / 锚点已注入 / 守卫已挂载 / 首条消
   - **拆出 `unavailable` 第三态与目标 hash 异常直阻**：评估器自身故障（缺路由 / 超时 / 传输错 / 不可解析）不再伪装成有效判定，写入带 `reason`/`streak` 的 `eval.unavailable` 事件，**不消耗 `attempts`**、**不推进 `lastEvalScopeHash` 与 `lastEvalOffset`**；`evalUnavailableStreak` 落盘到 `GuardTask`，连续 3 次不可用即阻塞并展示真实原因，任一有效判定或 `rollbackRun` 重开任务时清零。`goal_hash` 不匹配（`goalHashMismatch: true`）归为完整性异常直接阻塞，不走故障重试。
   - **状态签名收敛**：有效 `fail`/`insufficient` 判定记录 `eval.done.reason`（`missing[0]` → `violations[0].why` → 未满足 `criteria` → `correction`）；阻塞签名改为 `digest({ kind: 'eval-not-pass', scopeHash, probeVector })`，去掉模型措辞与 `fail`/`insufficient` 交替差异，同一工作区连续三次未通过稳定进入 `progressDecision`。
   - **修补 `d127f78` 两处缺陷**：① `anchor.ts` 的「其他任务 scope（不是你的）」排除 `runningTasks` 自身，首轮/切换轮不再把当前 `TODO` 任务列为「不是你的」；② `loop.ts` 的未开始任务豁免仅限工作区未提交文件，已提交进 `baseCommit..HEAD` 的未来任务路径（`committedPathsSince`）不再豁免，避免破坏后续任务的 `baseCommit` 与回退链路。
+  - **大脏工作区 `baselineDirty` 截断与补丁性能修复**：① `git.ts` 移除 `dirtyHashes()` 的默认 `limit = 200` 静默截断，改为 32 并发全量采集，并将 git 命令 `maxBuffer` 提至 32 MB，避免存在数千个未跟踪构建缓存文件时超 200 条的既有文件在 `enforce` 下全部误判为 `scope 外改动`；② `schema.ts` 增加 run 级共享 `GuardState.baselineDirty`（>50 条时仅存一份，不再复制到每个任务行），`matchesTaskBaseline()` 兼容旧台账逐任务 `baselineDirty`；③ `blockTask` 与 `rollbackRun` 在调用 `captureBlockedPatch` 前过滤未变化的基线文件，避免阻塞/回退补丁扫入数千个既有缓存。
+  - **交接 Skill 补齐督导选项建议**：`src/host/handoff-skill.ts` 在督导运行段新增「选项建议」模板块与判断准则，要求每次明确给出「严格模式」与「独立 worktree」两项勾选建议及理由。
+
+- 第十六轮真机缺陷修复（worktree 会话掉进「未分组」+ 上一轮 Code Review 收口，逐条 TDD + 变更验证）：
+  - **P1 真机缺陷：勾选「在独立 worktree 中运行」后，新建的锚定会话在侧栏被归到「未分组」**。根因不是插件少写了一次登记，而是**归组规则**：DSH 只把会话算进某个工作区，当且仅当 `session.header.cwd` 的 `realpath` 精确等于该工作区的 `path`（`Workspace.entity.attachSession` 与 `candidateMatches` 同一条规则）；旧实现为了隔离把 header `cwd` 直接建成 `<源项目>/.guard/worktrees/<run-id>`，于是「不在任何工作区」是必然结果。修法（不再登记工作区，仍满足「不新建 DSH 工作区」的约束）：① 新建会话的 header `cwd` 取**源项目**，并照常 `attachSession` 到源工作区——侧栏分组回到项目下面；② 建会话后立刻用 Host 的 `ctx.workingDirectory.set(agent, <worktree>)` 把**有效目录**切到隔离检出，DSH 会落一条 `workspace-root/change`（持久化、重开沿用），模型看到的 `Current working directory`、写边界、文件视图与探针根目录都是检出；③ `workingDirectory` 服务缺失时**在建会话之前**失败（`working-directory-unavailable`），绝不留下一个未归组的孤儿会话；④ 台账/回退/冷启动定位改用新的 `effectiveCwdOf()`（`workingDirectory.get` 优先，header 兜底），否则改完 header 后 `guard.supervisor`、`guard.rollback`、`agent/created` 冷启动恢复都会去源项目找台账而「找不到 run」。相应地 `CarrierSessionRequest` 新增 `projectCwd`（header 目录），`cwd` 继续表示有效目录，所以探针、guard 写边界、台账路径等既有调用点语义不变。
+  - **上一轮 Code Review 收口（同批落地）**：① 切换「独立 worktree」开关时清空 `preparedRunId`，且 `anchorStart` 优先认 `<源项目>/docs/guard/<runId>`，重试不会沿用旧 worktree；② `excludeRunWorktreeRoot` 先建 `.git/info` 再写 exclude 并显式抛错，且排在建 worktree 之前；③ `guardWorktreePath` 统一 `realpath` 规范化，兜底候选同样校验 `.git`；④ `prepareGuardRun` 在 `worktree: true` 时不再在主检出创建空 `docs/guard/`，并同时检查两侧 `runId` 冲突；⑤ 从无工作区归属的旧 worktree 会话发起新对话时给出可操作提示。
+  - 新增/更新回归：channel「worktree 运行把 header 留在源项目、把有效目录切到检出、并挂到源工作区」1 条、「缺 `workingDirectory` 时在建会话前失败」1 条、「`guard.supervisor`/`guard.rollback` 走有效目录而不是 header」1 条、attach「冷启动按有效目录重挂 worktree run」1 条；`carrier.spec` 的 worktree 用例改为断言 `meta.cwd === 源项目` + 一次 `workingDirectory.set(<worktree>)` + `attachSession(新会话)`。
+  - 变更验证 4 处（临时改坏 → 对应用例红 → 还原）：header 改回 worktree 路径 → 归组用例红；跳过 `workingDirectory.set` → 有效目录用例红；`effectiveCwdOf` 退回 header → supervisor/rollback 与冷启动用例红；缺少服务时改为建完再报错 → fail-closed 用例红。
+  - 仍存偏差：与第九～十五轮相同（工作区内软链在 `enforce` 下一律拒绝；旧台账跨兄弟检查点回退显式拒绝而非猜测；并行任务仍共享 run worktree，`parallel` 默认 1）。另：本次变更前创建的旧 worktree 会话 header 仍在检出差目录里，仍显示为「未分组」，只读可用但不再新建同类会话（新建一律走新路径）。
+
+- 第十七轮真机复查修复（锚点预算优先级与记账 + 入参默认值 + 评估证据面，逐条 TDD + 变异验证）：
+  - **P1 锚点预算把「进度/纠正/目标」挤掉，且截断记账恒等于 2048**：zenspace 真机会话的头/尾锚点里，`其他任务 scope（不是你的）` 把预算吃满后 `目标：` 被拦腰截断、`进度：0/7；状态：active` 整行消失，而 `state.jsonl` 只记下 `originalBytes: 2048 / keptBytes: 2046`，看起来像「只截了 2 B」。根因是两处：① `buildBody` 先整块写入任务块（含未来任务 scope）再轮到 `目标/进度/纠正`，顺序即优先级，次要信息反而先占额度；② `renderAnchorDetailed` 用 `budget - keptBytes` 反推 `dropped`，内部裁切后 `originalBytes` 恒等于预算值，把真实规模藏起来了。修法：把渲染拆成有优先级的段（`当前任务/scope/验收` → `纠正` → `进度` → `目标` → `其他任务 scope`），按优先级分配预算、按固定顺序输出；新增 `renderAnchorUnclipped()` 产出未裁切全文，`originalBytes` 直接取它的真实字节数，`truncated` 以「裁切后是否等于全文」判定。拥挤台账下现在是：运行任务、进度、纠正、目标全部保留，只有 `其他任务 scope` 让位。
+  - **P2 对话框默认值不安全（真机两轮都漏勾 worktree）**：`supervisorWorktree` 默认恒为 `false`，即使工作区是 git 仓库、卡片纪律还写着「严禁直接提交到 main」，也没有任何默认或提示，两次真机运行都成了 in-place（其中 zenspace 那次在 `main` 上，靠模型自己切到 `dev` 才没污染）。修法：新增只读 op `guard.repo`（`git rev-parse`/`symbolic-ref`/`config`，不写任何东西、不建 run）返回 `{ isGit, branch, defaultBranch, remoteKind, remoteHost }`；对话框打开时读一次，**`isGit` 为真则默认勾选「在独立 worktree 中运行」**（人工取消后不再自动改回，`worktreeTouched` 记住选择）；GitLab/GitHub 远端在提示里点名；若取消且当前分支等于默认分支，显示「督导提交会直接落在 main」的告警。非 git 目录保持原默认，独立渲染（无 `readRepo`）行为不变。
+  - **P2 评估器看不到 `agy_tool` 的写入路径**：`antigravity` provider 把外部 CLI 的每个工具活动回放成一次 `agy_tool`，参数是 `{ run, step, tool, input }`，而 `candidateOf` 只认 `write`/`edit` 的 `file_path`，于是这类会话的 `main_write_paths` 始终为空（只靠 git diff 与 notes 兜底）。修法：抽出 `toolArguments()`，对 `agy_tool` 按 `tool` 名称（`write|edit|patch|create|replace`）解包 `input.Path/path/file_path/FilePath/TargetFile` 后再截断入列；读取与 `run_command` 仍不入列。
+  - 新增/更新回归 9 条：anchor「拥挤台账保留运行任务/进度/纠正/目标」1 条、「`originalBytes` 等于未裁切全文」1 条、「不裁切时三者相等」1 条；channel「`guard.repo` 报告分支/默认分支/GitLab 远端」1 条、「非仓库 answers `isGit:false`」1 条；client-ui「检测到 git 仓库默认勾选并说明原因」1 条、「默认分支取消后告警且尊重取消」1 条、「非 git 保持不勾选」1 条；候选证据「解包 agy_tool 写路径」1 条、「只读/命令不冒充写入」1 条。四 lane 53 文件 / 768 条全绿。
+  - 变异验证 4 处（临时改坏 → 对应用例红 → 还原）：恢复「先写任务块再写 extras」顺序 → 优先级用例红；`originalBytes` 退回 `budget - kept` → 记账用例红；`isGit` 默认不勾选 → 默认勾选用例红；删掉 `agy_tool` 的解包分支 → 写路径用例红。
+  - 仍存偏差：与第九～十六轮相同（工作区内软链在 `enforce` 下一律拒绝；旧台账跨兄弟检查点回退显式拒绝而非猜测；并行任务仍共享 run worktree，`parallel` 默认 1）。另：`guard.repo` 的远端类型按 **host** 判断（自建 GitLab 域名不含 `gitlab` 时归 `other`），它只影响提示文案；是否默认勾选只看 `isGit`。
+
+- 第十八轮真机闭环复查修复（已完成会话守卫退场 + 里程碑审阅可观测与超时预算，TDD + 变异验证）：
+  - **P1 督导全部完成后，严格模式工具守卫未退场，导致已完成会话永久只读锁死**：x9Copy 完整跑通 T1–T7（`status: completed`、宿主目标 `complete`）12 秒后，主会话想更新 `tmp/x9-re-189/README.md` 仍被守卫连拦 3 次（`不在当前任务 scope 内`），因为 `checkTool` 未对 `live.status === 'completed'` 放行且完成后 `runningTasks(live)` 恒为空数组。修法：`attach.ts` 的 `checkTool` 在 `live.status === 'completed'` 时立刻返回 `undefined` 退场；`status === 'blocked'` 期间保持拦截；人类通过回退重开任务（`rollbackRun` + `refresh()` 回到 `active`）后守卫自动重新生效。
+  - **P2 里程碑审阅（`review.milestone`）在两条真机会话里 3/3 静默退化为 `insufficient` 且 `review/` 空目录**：`milestone.ts` 之前对 3 位并行审阅者硬编码 30s 超时且无重试、`maxTokens` 仅 1200/800，且任意 1 位超时或返回非 JSON 即整体返回 `null`、不写 `review/round-<n>.md`、`state.jsonl` 不记原因。修法：`MILESTONE_TIMEOUT_MS` 对齐 `EVALUATOR_TIMEOUT_MS`（60s），`maxTokens` 提至 2500/1500；每次审阅/裁决失败自动重试一次（独立超时信号并检查 `assembler.finish`）；仅当无 LLM 路由时返回 `null`（且 `loop.ts` 记 `reason: '审阅模型不可用'`），单个审阅者或裁决者超时/不可解析不再丢弃其余结果，而是保留已得结论、把具体失败原因写入 `review/round-<n>.md` 与 `state.jsonl`（`review.milestone` 新增可选 `path`/`reason` 字段）。
+  - 新增/更新回归 3 组：attach「完成后守卫退场、阻塞态保持拦截、回退重开后重新生效」；evaluator「60s 预算 + 瞬时失败重试转 pass + 单审阅者超时落盘诊断报告 + 裁决者超时落盘诊断报告」；loop「不可解析里程碑同样写入 `review/round-1.md` 与 `state.jsonl` 的 `path`/`reason`」。
+  - 变异验证 2 处（临时改坏 → 对应用例红 → 还原）：移除 `live.status === 'completed'` 放行 → attach 退场用例红；将 `milestone.ts` 失败审阅者退回 `return null` → evaluator 与 loop 诊断报告用例红。
+
+- 第十九轮真机复查修复（收口后的会话必须能继续工作，run 级护栏不等于会话终身锁）：
+  - **P1 收口后锚点仍在发号施令，模型因此拒绝用户的新需求**：x9Copy 真机 `7/7 completed` 之后，用户提出新需求（「A，逆向后的程序还是放在 M4…」），模型先调 `create_goal` 被守卫拦（`这次运行已经有督导目标；不要另建 goal`），随后判定「本次 run 已收口，guard 不允许再新建 goal，需要开新 run」并只输出交接卡，不再执行——即使工具守卫已退场，`renderAnchor` 在 `status: completed` 时仍在注入 `不要中途向用户提问`/`只改本任务 scope 内的文件`/`完成声明只能由主会话写`/`工具守卫已硬拦` 等 run 级硬规则，且「当前任务：（全部完成）」没有任何「新需求怎么办」的出口。修法：`anchor.ts` 在 `state.status === 'completed'` 时改渲染**收口锚点**——`当前任务：（全部完成 n/m）` + 「任务表、scope、探针与逐任务提交规则不再生效」+「新需求按普通会话处理：可以直接改文件、执行命令，也可以新建 goal 或新的督导运行」+「台账只作历史」+ 停止条件，不再出现 scope/完成声明/工具守卫字样；`checkTool`（上一轮）与 `auditTurn`（`status !== 'active'` 直接返回）本就已退场，三者一起保证收口后会话恢复为普通会话。
+  - 新增回归 2 条：`anchor.spec`「收口后不得再出现 scope/完成声明/工具守卫硬规则，且必须写明可以直接改文件/新建 goal」与「`blocked` 运行仍保留任务规则与纠正行，不被收口分支误伤」。
+  - 变异验证 1 处：把 `state.status === 'completed'` 分支去掉 → 两条收口用例红。
+  - 仍存偏差：与第九～十八轮相同（工作区内软链在 `enforce` 下一律拒绝；旧台账跨兄弟检查点回退显式拒绝而非猜测；并行任务仍共享 run worktree，`parallel` 默认 1）。另：收口后不再自动提交/打 tag，新需求产生的改动需要用户自己 commit。
+
+- 第二十轮：评估器失败可见 + 阻塞后一键继续（模型回退链的第 1 步）。
+  - **评估器失败按 DSH 失败码透出，不再统一写成“不可解析”**：`evaluator.ts` 的 `finishFailure` 保留 `LlmFailure.code`（`EMPTY_RESPONSE`、`QUOTA`、`RATE_LIMIT`、`AUTH`、`TIMEOUT`、`TRANSPORT` 等），终态错误与两侧评估分别给出 `模型未返回任何文本（EMPTY_RESPONSE）` / `评估调用失败（<code>）`；这正是 zenspace 真机阻塞的原因——agy 桥接型 provider 对“一次性、无工具、严格 JSON”的请求返回零内容块，而旧文案把它和“JSON 写坏了”混为一谈。
+  - **新增只读以外的恢复动作 `guard.continue`**（通道 op + 卡片按钮「继续运行」）：清除 `goalBlocked`、把 `BLOCKED` 任务改回 `IN_PROGRESS`、清空 `evalUnavailableStreak`，**保留全部 attempts 与 `baseCommit`**，随后 `refresh()` 并 `resumeSupervisorGoal` 让下一回合继续同一任务；与 `guard.rollback` 的语义区别写进代码注释与卡片文案（回退会重开任务并恢复 scope，继续只清阻断）。事件新增 `run.resumed` 与既有 `task.unblocked`。
+  - 回归 4 组：evaluator「空回复必须报 `EMPTY_RESPONSE` 而不是不可解析」；channel「`guard.continue` 清阻断且保留 attempts / 未阻断时拒绝」；client「阻塞卡片出现「继续运行」、单击即调用且不触发回退」。
+
+- 第二十一轮：模型角色拆分（执行/评估各自主+回退，含推理等级）与视觉取证。
+  - **数据模型**：新增 `ModelRoute { provider, model, reasoningEffort? }`；`GuardState` 增加 `evaluatorFallback`、`executor`（创建时冻结）、`executorFallback`、`activeExecutor`（运行期当前值）、`visual { enabled, route?, fallback? }`。全部可选，旧台账零迁移。
+  - **失败按码路由**（`failure-policy.ts`）：`EMPTY_RESPONSE / MALFORMED_RESPONSE / INVALID_RESPONSE / TIMEOUT / TRANSPORT / SERVER / STREAM_CLOSED / RATE_LIMIT` 以及 `HTTP_404/408/429/5xx` 换下一个模型；`AUTH / INVALID_CREDENTIAL / MISSING_CREDENTIAL / UNKNOWN_MODEL / MODEL_UNSUPPORTED / CONTENT_REFUSED / CONTEXT_WINDOW_EXCEEDED` 只报清楚。`QUOTA / ACCOUNT_QUOTA` 仅在**跨 provider** 回退时切换——同 provider 换模型救不了额度。
+  - **评估器与里程碑**：`resolveEvaluatorRoutes` 给出有序路由链，每个路由保留原有的两次尝试；发生切换写 `eval.fallback{role, from, to, code}`，`eval.done`/审阅结论仍记录真正裁决的模型。推理等级过高时 `max-tokens` 会被识别并升一次输出预算，而不是报成“不可解析”。
+  - **执行模型**：`anchor.start` 记录 `activeExecutor`；新增 `guard.switch{role:'executor'|'evaluator', route?, resume?}`。执行角色走 `agent.model.select`（字段是 `reasoningEffort`），评估角色写台账；两者都只在回合空闲时接受、失败时不清理阻塞，并分别写 `executor.switched` / `evaluator.switched`。卡片在阻塞时提供「继续运行」「换执行回退模型并继续」「换评估回退模型并继续」。
+  - **对话框**：执行/评估各增回退 picker（含推理等级），评估“跟随主会话”时也可选等级（同模型不同推理）；评估选到 CLI 桥接型 provider（`antigravity`）时显示硬提示；视觉取证默认关闭，启用后可选 witness 模型（默认跟随评估模型）。
+  - **视觉取证（P3）**：`visual.witness` 只做观察，不给结论——`runVisualWitness` 从本任务相对 `baseCommit` 新增/修改的 png/jpg/webp 中取最多 5 张（单图 ≤1 MiB，经 `attachments.saveImages` 入库），以 `{type:'image'}` 块随判据发给 witness 模型，要求输出 `findings[{criterion,severity,what,where}]`；结果落 `tasks/<ID>/evidence/visual-<ts>.json` 并写 `visual.witness` 事件（含图片路径与 sha256）。witness 未启用→不加证据；启用但无截图/无模型/空回复→`result:'unavailable'`，评估器据此只能判 `unknown/insufficient`，**绝不可 pass**。prepare 阶段用 `resolveModelInfo().inputModalities` 预检 witness 是否声明图片输入。
+
+- 第二十二轮：按 Code Review 修复 P0/P1/P2（视觉取证接线、评估回退战术、切换竞态）。
+  - **视觉取证真正接入裁决**：`promptOf()` 现在序列化 `visual_witness`（`result/model/images/findings/summary`，不可用时带 `reason`），评估器因此能区分“有观察记录”和“没检查过”；`loop.ts` 另加**确定性否决**——任务验收含视觉条目且 witness 缺失/不可用时，即使模型判 `pass` 也强制改判 `insufficient`（插件拥有这条规则，不交给提示词）。
+  - **视觉取证不再误伤非 UI 任务**：只在任务验收含视觉判据（截图/UAT/画面/渲染/贴图/穿模/HUD/preview/render…）或本任务改动了图片时才取证；run 级开关不再把纯重构任务变成永远无法通过。
+  - **截图采集修正**：`buildEvalCandidate` 返回独立的未截断 `imagePaths`（git 可见改动优先，其次 ignored），读盘上限放宽到 20 MiB 交给附件服务归一（1080p 截图常 >1 MiB，旧的 1 MiB 硬丢弃会误报“无截图”）；`ignoredScopePaths` 的 `(N B)` 后缀不再污染路径匹配；`visitor` 目录/文件名改用 `dirname`/`basename`。
+  - **评估回退更可靠**：`UNPARSEABLE` 与 `MAX_TOKENS` 纳入可切换码；空文本归类为 `EMPTY_RESPONSE`；`max-tokens` 只在首次升预算、二次仍明确报 `MAX_TOKENS`（不再落成“不可解析”）；确定性失败（额度/鉴权/未知模型等）**不再同路由重试第二次**；里程碑任一评审者失败即可切回退，裁决者失败也可换路由；`evaluateProgress` 同样接入路由链。
+  - **卡片与状态**：`evaluatorFallbackModel` 不再被“没有独立主评估模型”遮蔽；阻塞卡片在**没有预设回退**的 run 上提供显式评估模型下拉（`carrier.models` + `guard.switch` 显式 route）——这是 zenspace 这类旧 run 的唯一界面出口；失败提示按动作区分「回退失败 / 继续运行失败 / 切换模型失败」，不再一律写成回退失败。
+  - **切换与写台账竞态**：`guard.switch` 的读、校验、`model.select`、写台账全部收进会话锁；`store.mutate()` 提供锁内 read-modify-write；`recordActiveExecutor` 改走 `mutate`；`resumeSupervisorGoal` 只在 `resume: true` 时调用；`resumeBlockedRun` 不再往 `GuardTask` 写不存在的 `updatedAt`，并保留并行批次里其他 `activeTaskIds`。
+  - **对话框**：评估“跟随主会话 + 指定推理等级”现在作为显式评估路由提交（此前静默丢弃）；`prepared` 缓存依赖补齐（执行模型/两级回退/视觉开关与路由）；桥接型警告覆盖“执行模型是 antigravity 且评估跟随主会话”以及回退/视觉路由；视觉取证新增回退模型选择。
+  - 回归：evaluator「prompt 携带 visual_witness」「空回复→EMPTY_RESPONSE 回退」「二次截断→MAX_TOKENS 回退」；status「跟随模式仍暴露评估回退」；channel「witness 路由未声明图片输入时 prepare 拒绝」；loop「只有视觉验收才要求取证」；client「继续失败不写成回退失败」「阻塞且无回退时可选模型切换」「桥接执行模型+跟随评估仍告警」「跟随模式等级随显式路由提交」。
+
+- 第二十三轮：按第二轮 Code Review 修复 P0/P1/P2（默认关闭的视觉取证不得否决、超时识别、阻塞中途下拉、切换锁边界、文案去重）。
+  - **默认关闭的视觉取证不再否决任务**：`loop.ts` 的 `visualRequired` 现在同时要求 `state.visual?.enabled === true`；未启用的 run 即使验收含 `UAT/render` 也不会把模型 `pass` 改判 `insufficient`。验收词表同步收紧：英文词加词边界（`\brender\b`/`\bpreview\b`/`\bscreenshot\b`/`\bvisual\b`/`\bUAT\b`/`\bHUD\b`），`mock` 改为 `mockup`，不再把“mock 数据单测”误判成截图验收。
+  - **超时按 TIMEOUT 归类**：`AbortSignal.timeout()` 抛的是 `DOMException{name:'TimeoutError', code: 23}`，`typeof code === 'string'` 会把超时看成“无失败码”，导致 `tryEvaluatorRoute` / `evaluateProgress` / `milestone.callModel` / `runVisualWitness` 四处都不切回退。四处 catch 改为 `attempt.aborted ? 'TIMEOUT' : …`（变量名按各处实际写法），`tryEvaluatorRoute` 的 catch 也补 `isDefinitiveFailure` 短路。
+  - **阻塞中途出现时加载显式评估下拉**：`contextView` 的 `carrier.models` effect 依赖 `blockedRun`（run status 或任一 `BLOCKED` 任务）而不是只看 run status；下拉补推理等级选择（随 `guard.switch` 的 route 提交），已配置回退时也不再隐藏该入口，切会话时重置所选目标与等级。
+  - **`guard.switch` 的锁边界**：`anchorGate` 在会话锁内复查；`resumeBlockedRun` 未真正清除阻断时不再调用 `resumeSupervisorGoal`，避免唤醒人工暂停的 goal。
+  - **对话框**：切换执行模型清空评估推理等级（旧等级可能不被新模型支持）；视觉路由只在视觉取证启用时参与桥接告警；视觉回退 picker 独立成行并补标题/说明（中英双语）。
+  - **判定证据与文案**：`validatePrepareRoutes` 的视觉主路由在“视觉与评估都跟随”时落到执行模型；`visual_witness` 移入 `CANDIDATE` 并在未启用时省略；`eval.fallback` 与失败模型名改用 `routeLabel`（同模型不同等级不再 `from===to`）；视觉取证 `EMPTY_RESPONSE`/`MAX_TOKENS` 文案去重、`max-tokens` 先升预算到 5000 再重试；里程碑裁决失败文案按 `includes(code)` 去重。
+  - 回归：loop「视觉取证关闭 + UAT/render 验收仍可 pass」「mock 单测不算视觉验收」；evaluator「AbortSignal 超时→TIMEOUT 切回退」（任务/进度/里程碑）「回退标签含推理等级」「prompt 的 visual_witness 在 candidate 内且未启用时省略」「裁决失败码不重复」；visual「超时切回退」「EMPTY_RESPONSE 不重复」「首次截断升预算」；channel「视觉跟随评估再跟随执行时校验图片模态」「未阻断时 resume 不唤醒 goal」「锁内复查回合门」；client「任务中途 BLOCKED 时下拉加载」「下拉提交推理等级」「已配置回退仍显示下拉」「切换执行模型清空评估等级」「视觉关闭不再触发桥接告警」「视觉回退独立行」。
+
+- 第二十四轮：按第三轮只读 Code Review（Gemini，0 P0 / 5 P1 / 5 P2）修复。
+  - **里程碑闸门不可被绕过**：`GuardState` 新增 `goalBlockKind: 'milestone' | 'unrunnable'`；`maybeMilestoneReview` 写 `milestone`，`settle()` 写 `unrunnable`（恢复 runnable/完成时两者一起清）。`resumeBlockedRun` 的判定抽成纯函数 `canResume(state)`：无 BLOCKED 任务的 run 级阻断里，`milestone`、旧台账的「里程碑审阅未通过」文案、或全 DONE，一律返回 `milestone-pending`——多任务 run 在第 1 轮审阅失败（T4-T6 仍 TODO）时不能再用「继续运行」清阻断跑过去。
+  - **`guard.switch{resume:true}` 先预检后落盘**：锁内读到 state 后先用 `canResume` 判定，milestone-pending 在任何副作用（`model.select`、写台账）之前拒绝；写入后的 resume 若仍被拒（审计并发写入了失败审阅），回复带 `resumeRefused` 而不是报「切换模型失败」，且无论成败都 `refresh()` 活动附件，避免 UI 显示旧快照。
+  - **`goalResumed` 前端可见**：`guard.rollback` 也返回 `goalResumed`；卡片把 `goalResumed:false` 存进独立状态（不被 3 秒轮询覆盖，切会话或下次成功动作清除）并显示「台账已恢复，但宿主 goal 未恢复（可能已达轮次上限）」；`resumeRefused` 单独显示「模型已切换，但 run 仍无法继续」。中英双语新增键。
+  - **评估器全路由失败保留 `fallbacks`**：`insufficient()` 透出 `fallbacks`，主 + 回退都失败时 `loop.ts` 仍能写 `eval.fallback`。失败策略补 `CLIENT_UPGRADE_REQUIRED`、`INVALID_CONFIG` 与不可切换的 `HTTP_4xx`（404/408/429 除外）为确定性失败；`describeEvalFailure` 与两处 catch 按 `includes(code)` 去重。
+  - **写台账不再盲写**：`store.mutate` 的回调可返回 `{ state, events } | null`，在同一次锁内完成 tasks.json → state.jsonl → TASKS.md；无变化且无事件时短路不写盘。`loop.ts` 的落盘统一走 `mergeRuntimeConfig(next, current)`（`evaluator`/`evaluatorFallback`/`executor`/`executorFallback`/`activeExecutor`/`visual` 以锁内最新台账为准），耗时审计不再覆盖并发热切；`resumeBlockedRun` 的 `run.resumed` / `task.unblocked` 与状态同一次提交。
+  - **视觉链路**：`guard.prepare` 先解析源会话，把 `source.config` 作为视觉主路由的最后兜底校验 `inputModalities`；`guard.switch` 在「执行模型切换 + 未配置独立评估模型 + 视觉跟随」时同样校验图片输入。git 可见截图也按 `mtimeMs` 降序后再交给 witness（最多 5 张）。
+  - **归属与台账安全**：`ownershipGate` 对缺失的 `run.json` 返回明确错误而不是放行；`anchor.start` 在 `recordActiveExecutor` 之前校验 `run.json` 存在、未被其他会话挂载（同一 operationId 的重试除外）且 phase 可启动。
+  - **卡片**：切会话重置 `switchModels`；操作区与模型下拉统一用 `blockedRun`（`status: blocked` 但无 BLOCKED 行也会出现「继续运行/回退」）；初始即 `agentLive:false` 不拉模型目录；评估回退说明改为「同 provider 额度/鉴权只报清楚、跨 provider 额度不足允许切换」。
+  - 回归：loop「中途里程碑失败不可 continue」「旧台账仅凭文案同样拒绝」「resume 清除 goalBlockKind」「运行时配置合并不覆盖并发热切」「git 可见截图 newest-first」；store「mutate 同锁写 state+events」「无变化/null 短路不写盘」；evaluator「主+回退全失败仍带 fallbacks」「失败码不重复」；failure-policy「CLIENT_UPGRADE_REQUIRED/INVALID_CONFIG/HTTP 4xx」；channel「里程碑阻断时 switch 预检零副作用」「run.json 缺失显式拒绝」「prepare 视觉主路由落会话模型」「执行模型切换校验图片输入」；carrier「anchor.start 拒绝他人挂载的 run 与不可启动 phase 且不改台账」；client「goalResumed:false 提示跨轮询保留（continue/switch）」「resumeRefused 不写成切换失败」「status blocked 无 BLOCKED 行也有操作区」「初始 agentLive:false 不拉目录」「切会话丢弃旧目录」。
+
+- 第二十五轮：按第四轮只读 Code Review（Gemini，0 P0 / 1 P1 / 4 P2）修复。
+  - **并行态里程碑闸门**：`canResume` 的里程碑判定移出「无 BLOCKED 任务」分支——`goalBlockKind === 'milestone'`（或旧台账文案、或全 DONE）无论是否存在 BLOCKED 兄弟都返回 `milestone-pending`；`status: 'blocked'` 且既无 `goalBlocked` 也无 BLOCKED 行的台账不再判 `not-blocked`，与前端「继续运行」口径一致。
+  - **回退不清里程碑闸门**：只回退 BLOCKED 兄弟（`reopeningDone === false`）时保留 `goalBlocked` / `goalBlockKind` / `status: 'blocked'`；只有重开 DONE 任务（审阅对象回到在途）才清除。
+  - **写台账失败显式中止**：`persist()` 返回 `GuardState | null`；`store.mutate` 在台账被删时返回 `null`，`finishTask` / `auditTask` / `settle` / 里程碑审阅一律中止，不再提交、打 tag 或完成 goal；调用点改用返回的合并态（`maybeMilestoneReview` 看到的是锁内最新 evaluator）。`rollbackRun` 改走 `store.mutate` 并合并 6 个运行期字段；仅当本次回退自己把 `tasks.json` 从历史里 revert 掉时，允许用回退前快照重建台账。
+  - **提示生命周期**：`goalResumeHint` / `resumeRefused` 在下一次动作发起时清空；轮询看到 `status: 'completed'` 或 `done` 增长也清空（读取失败不清）。
+  - **卡片**：run 级 `blockedReason` 与 BLOCKED 任务的 `blockedReason` 不同时同时显示，相同时才合并。
+  - 回归：loop「并行 BLOCKED 兄弟不绕过里程碑」「纯 status-blocked 可恢复」「台账消失时 pass 写入中止（无 commit/tag/goal）」「审计写入合并并发热切换」；rollback「只回退 BLOCKED 兄弟保留里程碑闸门」「回退合并运行期切换」「回退自己 revert 掉台账时重建」；channel「continue/switch 并行里程碑零副作用」「resume 在并发里程碑写入后被拒时报 `resumeRefused`」；contextView「不同原因的 run 级阻断同时显示」「拒绝横幅跨轮询保留」「完成/推进清空旧提示」「新动作失败前清空旧拒绝」。
+
+- 第二十六轮：交接技能补齐督导运行的全部六项选项建议（此前只给「评估模型 / 严格模式 / 独立 worktree」三项，与对话框里的六组控件不对齐）。
+  - `src/host/handoff-skill.ts` 的「选项建议」模板扩为六项：独立评估模型（含推理等级）、执行回退模型、评估回退模型、启用视觉取证（含多模态 witness）、严格模式、独立 worktree；并补每条判断准则：CLI 桥接型 provider 不能当评估器（无工具 JSON 请求易空回复→反复 `insufficient`）、回退只有跨 provider 才有意义、评估回退留空则失败按 `insufficient` 处理、视觉取证对纯后端/文档任务只会变慢且对缺 witness 是确定性否决、witness 留空跟随纯文本评估模型会 `UNSUPPORTED_CONTENT`。
+  - 「不设置回退」「使用模型默认值」同样是要写理由的结论；三个下拉的推理等级默认留空。
+  - 技能描述、质量检查清单与「最后一行」同步改为六项口径；README 中英与 `docs/12-user-guide.md` 的督导步骤同步。
+  - 回归：`tests/channel/handoff-skill.spec.ts` 固定「独立评估模型：跟随主会话」「执行回退模型：不设置回退」「评估回退模型：不设置回退」「启用视觉取证：不勾选」「六项选项建议」「推理等级」「确定性否决」「跨 provider」等 marker。
+
+- 第二十七轮：把「对话执行模型」并入督导运行选项区，交接技能同步扩为七项。
+  - **位置**：勾选「督导运行」后，「对话执行模型」从「新对话执行配置」移进督导选项面板，排在「执行回退模型」之前（执行主模型与它的回退读作一对）；未勾选时仍在运行配置区。同一个控件、同一份 `route`/`effort` 状态，只渲染一处（行标记 `data-redline-anchor-exec-model-row`），所以不会出现两个下拉各自漂移。
+  - **判定理由**：执行模型原先被运行目录隔在面板之外，用户会把「想换执行模型」误填到「执行回退模型」里（回退只在故障时接管，等于没换）；两者相邻后，主/回退的语义自己说清。
+  - **交接技能**：选项建议从六项扩为七项（新增「对话执行模型（含推理等级）」），并写明「想换风格/能力选执行模型，不要塞进执行回退」「CLI 桥接型 provider 可以做执行、不要做评估」。
+  - **文案**：执行模型提示补「督导运行时它排在执行回退之前，子会话也沿用它」；评估模型提示改为「默认跟随『对话执行模型』」。
+  - 回归：`tests/client-ui/child-card.spec.ts`「开启督导运行后执行模型移进选项区并排在执行回退之前（只渲染一处、评估仍在上方）」；`tests/channel/handoff-skill.spec.ts` 固定「七项」「对话执行模型：保持默认」。
+
+- 第二十八轮：选项区改为「评估对 → 执行对」，评估回退紧接评估模型。
+  - 顺序：独立评估模型 → 评估回退模型 → 对话执行模型 → 执行回退模型 → 启用视觉取证 → 严格模式 → 独立 worktree。主模型与它自己的回退相邻，不再被另一条链隔开；桥接型警告仍跟在评估模型行下（条件渲染，不占位）。
+  - 交接技能的七项模板与判断准则同步成同一顺序（评估链在前、执行链在后），避免卡片建议与界面排布互相打架。
+  - 回归：`tests/client-ui/child-card.spec.ts` 追加「评估回退紧接评估模型」「评估对整体排在执行对之前」。
+
+- 第二十九轮：评估器「推理吃满输出预算」导致的阻断改成可自助修复（x9Copy 1.6.90 run 实测）。
+  - **现象**：R1/R2 通过，R3 的评估连续 3 次 `MAX_TOKENS`（DeepSeek V4.1 Flash / max，4000→8000 两次都被截断、每次约 65 秒），达到 `EVAL_UNAVAILABLE_LIMIT` 后任务与 run 一起 `blocked`，会话停住等人工；该 run 没有配置评估回退，所以没有第二条路由。
+  - **判定**：这是设计内的停止（评估不可用绝不 `pass`），但失败原因对人不具可操作性——「检查模型配置、网络或输出格式」并不能指出真正该改的是推理等级。
+  - **修法**：`loop.ts` 在阻断原因是 `MAX_TOKENS` 时，把「把评估等级降到 High（或配置评估回退）后可继续」写进 `blocked.reason`，并把 `blocked.next` 改成同一句修法；其他失败码的文案不变。
+  - **交接技能**：评估等级建议补「`max` 的推理 token 与 JSON 共用输出预算，大任务容易连续 `MAX_TOKENS`；真要用 max 就先配好评估回退」。
+  - 回归：`goal-supervisor-loop.spec.ts`「评估器连续输出被截断时，阻断原因直接给出降到 High / 配回退的修法」。
+
+- 第三十轮：评估/审阅/视觉调用不再自带输出上限；冷启动恢复冻结卡片（x9Copy 1.6.90 run 与重启后会话实测）。
+  - **去掉人为 maxTokens**：`evaluator.ts`（任务评估 4000→8000、进度评估 800→1600）、`milestone.ts`（审阅 2500、裁决 1500）、`visual.ts`（2500→5000）此前都显式传 `maxTokens`，而推理 token 与 JSON 共用这份预算；`deepseek-v4.1-flash / max` 在 R3 上两次都被截断。现全部改为不传 `maxTokens`，由适配器按模型自身的默认预算填充（与普通对话一致），`MAX_TOKENS` 仅表示模型自身上限并保持可切换；超时仍是唯一的人为上限。
+  - **冷启动恢复冻结卡片**：`watchGoalSupervisors` 的 `agent/created` 在重新 `attachSupervisor` 之后，用台账里的 `goal/acceptance/discipline` 按创建时的格式（`目标：…\n\n验收：…\n\n纪律：…`）重新注册 `RUNTIME_ANCHOR_NAME` 运行时上下文。此前重启后模型只剩督导头/尾锚点（目标首行 + 当前任务），会静默丢失完整验收与纪律。
+  - **文档**：用户指南改为「评估调用用模型自身默认预算；仍报 MAX_TOKENS 说明撞到模型上限」。
+  - 回归：evaluator「截断如实报 MAX_TOKENS 且不请求显式 maxTokens」「进度评估截断同样不重试」；visual「截断不再升预算」；attach「冷启动重新注册 RUNTIME_ANCHOR_NAME 且文本含目标/验收/纪律」「worktree 冷启动同样恢复」。
+
+- 第三十一轮：督导运行卡重做视觉（按创建规则弹窗的密度与控件语汇）。
+  - **头部**：标题 + 状态胶囊（进行中/已阻塞/已完成/已暂停，按 `supervisor.status` 着色）+ 右侧 `done/total` 进度；运行 id 改为等宽小字单行省略。
+  - **阻断**：从「一行红字」改成左侧色条的 callout（error/warn 两档），任务级与 run 级阻断分开展示，失败原因与下一步修法不再淹没在元数据里。
+  - **模型信息**：保留原有六行（镜像/分支/评估/评估回退/执行/当前执行/视觉）的文案口径（测试逐字钉住），只统一字号与等宽数值。
+  - **按钮**：恢复/应用改为弹窗同款的 `redline-confirm-btn`（ok/cancel/danger 三档、29–28px 高、7px 圆角），回退从「需阻断才出现」回到「有历史状态就出现」，与主线行为一致。
+  - **选择器**：blocked 时的「评估模型 + 推理等级 + 应用并继续」改成同高的一行控件（圆角 7px、自绘 chevron），与弹窗的模型条读感一致；元素仍是原生 `select`，键盘与既有回归不受影响。
+  - 门禁：CSS 闭包（378 类）、i18n 孤儿（376 键）、contextView 71 项、全量 128 文件全过。
+
+- 第三十二轮：把「执行模型不要用 CLI 桥接型」写进技能与界面（选 C：DSH 原生执行 + agy 视觉子代理）。
+  - **背景**：`session-anchor-0219…`（zenspace V5 run）执行模型是 `antigravity/gemini-4-neon`，会话 107 次工具调用全部是 `agy_tool`、零 `subagent`——agy 把自己的子代理留在 CLI 内，DSH 的编队页与督导的「派子会话」都看不到委派。
+  - **技能**：`handoff-skill.ts` 的「对话执行模型」条目补：CLI 桥接型可以做执行、不要做评估，但它会把子代理留在自己的 CLI 里，默认用 DSH 原生模型做执行，视觉/画面任务再显式派给 agy 子代理。
+  - **对话框**：执行模型选到 `antigravity` 时，行下方出现 `data-redline-anchor-exec-bridge-warning` 硬提示。
+  - **督导卡**：`executorModel` 以 `antigravity/` 开头时补一条 `data-redline-supervisor-executor-bridge` 说明，避免运行中才后知后觉。
+  - 回归：client-ui「执行模型选到 CLI 桥接型时提示子代理会留在 CLI 里」；contextView「a CLI-bridge executor says its subagents stay inside the CLI」；channel 技能 marker「把子代理留在自己的 CLI」「派给 agy 子代理」。
+
+- 第三十三轮：长跑轮次预算、空转收敛与宿主 goal 对齐（2026-11-28，`session-anchor-0219…` 复盘）。
+  - **背景**：zenspace run 在同一个回合里做完 15 个任务并打出 15 个提交/tag，但一份「## 完成声明」都没写；回合结束后宿主 goal 被 256 轮默认上限停掉（`round-limit`），台账仍是 `active / 0/15`，卡片因此永远显示「进行中」。期间每轮 turn-stop 还把同一个 heavy 探针重跑了 256 次。
+  - **轮次预算（`budget.ts`）**：`armSupervisorGoal` 建 goal 时显式传 `maxGoalRounds = max(2000, 任务数 × 200)`；`auditTurn` 结束时若 run 仍在推进（无任务处于空转）且余量 ≤200，自动 `goals.edit` 每次 +1000 并记 `goal.extended` 事件。宿主的 256 默认值不再是长跑的天花板。
+  - **round-limit 可恢复**：`resumeSupervisorGoal` 遇 `roundsStarted >= maxGoalRounds` 时先 `edit` 扩容、再用 `edit` 返回的新 `revision` 调 `resume`；冷启动 `armSupervisorGoal` 同样处理「blocked 且轮次耗尽」的目标。
+  - **空转收敛**：没有 light 探针的任务不再对空数组 `.every()` 恒真而每轮重跑 heavy（改为：必选未全过、scope 指纹变化、或新增声明才跑）；未变化的探针复用上次结论与时间戳。`idleStreak` 记录「探针全过但 scope 未动且无新声明」的连续轮数，到 `IDLE_STALL_LIMIT = 5` 自动 BLOCKED 并给出 `docs/guard/<runId>/tasks/<ID>/notes.md`；任何真实进展（改代码、写声明、评估、DONE、人工继续、回退）都会清零。
+  - **锚点**：空转任务在最高优先级段显示「待验收（<ID>）：…追加「## 完成声明」并立刻结束本回合」；硬规则里的完成声明改为完整路径，并写明「即使项目纪律写着不改 `docs/guard/**`，该文件仍是例外」。
+  - **守卫文案**：`update_goal(complete)` / `update_goal(blocked)` 的拒绝改为给出未通过数量、当前任务与 `notes.md` 精确路径，避免模型把拒绝误读成「本会话没挂 guard 工具」后空转 200+ 轮。
+  - **卡片**：`SupervisorSummary` 新增只读 `hostGoal`（phase/activation/roundsStarted/maxGoalRounds/blockedReason，来自宿主 `GoalService`）；台账 `active` 但宿主 `blocked/paused/disarmed` 时，胶囊显示「已阻塞/已暂停」并给出原因与轮次，不再渲染成「进行中」。「继续运行」按钮在宿主停摆时同样可用：台账仍是 active 时也允许 `guard.continue` 清空 `idleStreak` 并扩容恢复目标（`milestone-pending` / `completed` 仍严格拒绝）。
+  - 门禁：channel 528+、client 75、loop 80；`tsc --noEmit`、`oxlint`、`tsdown`、文档/i18n 脚本全过。

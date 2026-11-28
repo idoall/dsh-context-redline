@@ -7,7 +7,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { afterEach, describe, test } from 'vitest'
 import {
-  changedPaths, changedPathsSince, commitPaths, globsOverlap, hasRef, headCommit, matchesGlob, normalizeScopePath,
+  changedPaths, changedPathsSince, commitPaths, dirtyHashes, globsOverlap, hasRef, headCommit, matchesGlob, normalizeScopePath,
   pathInScope, pluginCommitShas, resetPaths, restorePaths, restoreTrackedToHead, revertCommit, rollbackToCheckpoint,
   tagCheckpoint,
 } from '../../src/host/goal-supervisor/git'
@@ -1016,5 +1016,18 @@ describe('goal-supervisor attribution edge cases', () => {
     assert.equal(normalizeScopePath('//etc/passwd'), '/etc/passwd', 'a double leading slash is still absolute')
     assert.equal(normalizeScopePath('.'), '')
     assert.equal(normalizeScopePath('./'), '')
+  })
+
+  test('dirtyHashes captures more than 200 pre-existing dirty files without truncating', async () => {
+    const cwd = await repo()
+    await writeFile(join(cwd, 'base.ts'), 'base')
+    await run('git', ['add', '.'], { cwd })
+    await run('git', ['commit', '-qm', 'base'], { cwd })
+    await mkdir(join(cwd, 'cache'), { recursive: true })
+    await Promise.all(Array.from({ length: 225 }, (_, i) =>
+      writeFile(join(cwd, 'cache', `f-${String(i).padStart(3, '0')}.tmp`), `v-${i}`)))
+    const hashes = await dirtyHashes(cwd, 'docs/guard/run')
+    assert.equal(Object.keys(hashes).length, 225, 'every pre-existing dirty path must enter the baseline')
+    assert.ok(Object.hasOwn(hashes, 'cache/f-224.tmp'))
   })
 })

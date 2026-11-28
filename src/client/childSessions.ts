@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { planAnchor, planChild, prepareGuard, readCapacity, readCarrierModels, readCarriers, readOrigins, readTurnState, startAnchor, startChild, type AnchorInput, type AnchorPlan, type AnchorStarted, type CarrierAnchorMode, type CarrierModelOption, type ChildPlan, type ChildStarted, type GuardPrepareInput, type GuardPrepared, type RedlineResult } from './redlineChannel'
+import { planAnchor, planChild, prepareGuard, readCapacity, readCarrierModels, readCarriers, readOrigins, readRepo, readTurnState, startAnchor, startChild, type AnchorInput, type AnchorPlan, type AnchorStarted, type CarrierAnchorMode, type CarrierModelOption, type ChildPlan, type ChildStarted, type GuardPrepareInput, type GuardPrepared, type RedlineResult, type RepoFacts } from './redlineChannel'
 import { viaOf, type OriginRecord, type OriginVia } from '../shared/redline-origins'
 import { REDLINE_ERROR as ERR } from '../shared/redline-errors'
 import { UNKNOWN_CAPACITY, capacityOf, type ChildCapacity } from '../shared/redline-capacity'
@@ -120,6 +120,8 @@ export interface ChildController {
   ) => Promise<RedlineResult<ChildStarted>>
   /** Read-only preview of one anchored conversation. */
   readonly planAnchor: (input: AnchorInput) => Promise<RedlineResult<AnchorPlan>>
+  /** Read-only repository facts: does this workspace support an isolated checkout? */
+  readonly readRepo: () => Promise<RedlineResult<RepoFacts>>
   /** Create the supervisor run directory before the anchored session exists. */
   readonly prepareGuard: (input: GuardPrepareInput) => Promise<RedlineResult<GuardPrepared>>
   /** Create the anchored conversation; the only other session write in this panel. */
@@ -323,6 +325,11 @@ export function useChildSessions(
     return await planAnchor(sessionId, input)
   }, [sessionId])
 
+  const readRepoForSession = useCallback(async (): Promise<RedlineResult<RepoFacts>> => {
+    if (sessionId === undefined || sessionId === '') return { ok: false, code: 'redline/not-live', message: 'no session' }
+    return await readRepo(sessionId)
+  }, [sessionId])
+
   const prepareGuardForSession = useCallback(async (input: GuardPrepareInput): Promise<RedlineResult<GuardPrepared>> => {
     if (sessionId === undefined || sessionId === '') return { ok: false, code: 'redline/not-live', message: 'no session' }
     return await prepareGuard(sessionId, input)
@@ -342,11 +349,12 @@ export function useChildSessions(
   return useMemo(
     () => ({
       rows, capacity, originsKnown: origins.known, originsError: origins.error, models, plan, start,
-      planAnchor: planAnchorForSession, prepareGuard: prepareGuardForSession, startAnchor: startAnchorForSession,
+      planAnchor: planAnchorForSession, readRepo: readRepoForSession,
+      prepareGuard: prepareGuardForSession, startAnchor: startAnchorForSession,
     }),
     [
       rows, capacity, origins.known, origins.error, models, plan, start,
-      planAnchorForSession, prepareGuardForSession, startAnchorForSession,
+      planAnchorForSession, readRepoForSession, prepareGuardForSession, startAnchorForSession,
     ],
   )
 }

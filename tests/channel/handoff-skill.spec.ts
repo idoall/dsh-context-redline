@@ -17,19 +17,27 @@ describe('context handoff skill (0.9.4)', () => {
     for (const label of ['首条任务', '目标', '验收标准', '执行纪律']) {
       assert.ok(skill.content.includes(label), `missing ${label}`)
     }
-    for (const marker of ['情况 A', '情况 B', '每轮运行时规则', '最终发送全文', '有头 UAT', '主会话不直接开发', '子会话或团队成员', '先拆任务', '不得把所有工作合成一个连续任务', '不得自己连续做多个任务', '即使我说“过程中不用确认”', '任务清单', 'T1 |', '目标守卫（可选 · 要勾选就先贴这一段）', '离开这段对话也能判', '不要编造 provider/model 名称', '0.9.0 只观察', '计划文件', '直接继续下一个', '不逐任务等用户批准', '用户逐任务批准', '这四种情况', '### 督导运行（可选 · 要勾选就先贴这一段）', '任务ID | 标题 | 验收（分号分隔）| scope', 'scope 必填', '不会自动合回', '不经过 shell', '没有「只看不改」的档位']) {
+    for (const marker of ['情况 A', '情况 B', '每轮运行时规则', '最终发送全文', '有头 UAT', '主会话不直接开发', '子会话或团队成员', '先拆任务', '不得把所有工作合成一个连续任务', '不得自己连续做多个任务', '即使我说“过程中不用确认”', '任务清单', 'T1 |', '离开这段对话也能判', '不要编造 provider/model 名称', '直接继续下一个', '不逐任务等用户批准', '用户逐任务批准', '这四种情况', '### 督导运行（可选 · 要勾选就先贴这一段）', '任务ID | 标题 | 验收（分号分隔）| scope', 'scope 必填', '不会自动合回', '不经过 shell', '没有「只看不改」的档位', '选项建议', '对话执行模型：保持默认', '独立评估模型：跟随主会话', '执行回退模型：不设置回退', '评估回退模型：不设置回退', '启用视觉取证：不勾选', '严格模式：建议勾选 / 建议不勾选', '独立 worktree：建议勾选 / 建议不勾选', '推理等级', '把子代理留在自己的 CLI', '派给 agy 子代理', '跨 provider', '确定性否决', '不设置回退」「不勾选」也是结论', '独立 worktree：建议勾选 / 建议不勾选', '必须明确给出七项选项建议与理由', '直接输出在当前聊天回复', '禁止把完整版写入外部文件', '不要为了交接卡调用', '工作区一致', '先切到', '编号不冲突', '运行目录', '探针会在这个目录里执行', '另一个仓库']) {
       assert.ok(skill.content.includes(marker), `missing ${marker}`)
     }
     assert.ok(HANDOFF_SKILL_CONTENT.includes('主会话对照验收审查通过一个任务后**直接继续下一个**'))
-    assert.match(skill.description, /Goal Guard/)
+    assert.ok(!skill.content.includes('### 目标守卫'), 'legacy Goal Guard section is retired')
+    assert.ok(!/Goal Guard/.test(skill.description), 'legacy Goal Guard removed from description')
+    assert.ok(!/Goal Guard/.test(skill.whenToUse), 'legacy Goal Guard removed from whenToUse')
     assert.match(skill.description, /supervised-run/)
     assert.match(skill.whenToUse, /supervised run/)
-    assert.ok(!skill.content.includes('只在用户要启用'), 'the guard block is always offered, the user decides')
+    assert.ok(!skill.content.includes('只在用户要启用'), 'the supervisor block is always offered, the user decides')
     assert.ok(skill.content.includes('让用户自己决定要不要勾选'))
     assert.ok(!skill.content.includes('用户明确“通过”后才进入下一个'), 'no per-task user approval gate')
-    assert.match(skill.whenToUse, /Goal Guard/)
     assert.ok(skill.content.includes('判不了就改成命令 / 文件 / 可观察结果'))
-    assert.ok(skill.content.length < 7000)
+    assert.ok(!skill.content.includes('```text\n任务表'), 'task table header must stay outside the copyable code block')
+    assert.ok(!skill.content.includes('```text\n探针'), 'probe header must stay outside the copyable code block')
+    assert.ok(skill.content.includes('代码块内不要放标题行'))
+    assert.ok(skill.content.includes('第 5 列') || skill.content.includes('依赖'))
+    assert.ok(skill.content.includes('立刻结束本回合'))
+    assert.ok(skill.content.includes('只能由主会话审查'))
+    assert.ok(skill.content.includes('禁止让子会话代写'))
+    assert.ok(skill.content.length < 7600)
   })
 
   test('registers on the skills service through an injected fiber and never throws when absent', () => {

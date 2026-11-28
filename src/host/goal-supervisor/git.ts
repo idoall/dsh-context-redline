@@ -23,7 +23,7 @@ function run(cwd: string, args: readonly string[], env?: NodeJS.ProcessEnv): Pro
   return new Promise((resolve) => {
     execFile('git', [...args], {
       cwd,
-      maxBuffer: 1024 * 1024,
+      maxBuffer: 32 * 1024 * 1024,
       ...(env === undefined ? {} : { env }),
     }, (error, stdout, stderr) => {
       const code = error === null
@@ -51,6 +51,74 @@ export async function headCommit(cwd: string): Promise<string | null> {
 /** True when the path belongs to the run's own ledger directory. */
 function inGuardDir(path: string, guardDir: string): boolean {
   return path === guardDir || path.startsWith(`${guardDir}/`)
+}
+
+/**
+ * Read-only repository facts the anchor dialog needs before it can offer an
+ * isolated worktree: is this a repository at all, which branch is checked out,
+ * which branch plays "default", and which forge the origin points at.
+ *
+ * Every probe here is a plain `git` read; a missing git binary, a directory that
+ * is not a repository, or a detached HEAD simply yields fewer fields instead of
+ * failing the dialog.
+ */
+export interface RepoFacts {
+  readonly isGit: boolean
+  /** Checked-out branch; absent for a detached HEAD or an unborn branch. */
+  readonly branch?: string
+  /** `origin/HEAD`, else a local `main`, else a local `master`. */
+  readonly defaultBranch?: string
+  /** Forge inferred from `remote.origin.url`; `other` for any other remote. */
+  readonly remoteKind?: 'gitlab' | 'github' | 'other'
+  readonly remoteHost?: string
+}
+
+/** Host part of a git remote URL (`ssh://git@host:port/path` or `git@host:path`). */
+function remoteHostOf(url: string): string | undefined {
+  const scp = /^(?:[^@/]+@)?([^:/]+):(?!\/)/.exec(url)
+  if (scp !== null) return scp[1]
+  try {
+    const parsed = new URL(url)
+    return parsed.hostname === '' ? undefined : parsed.hostname
+  } catch {
+    return undefined
+  }
+}
+
+export async function repoFacts(cwd: string): Promise<RepoFacts> {
+  if (!(await hasGit(cwd))) return { isGit: false }
+  const facts: { isGit: true; branch?: string; defaultBranch?: string; remoteKind?: 'gitlab' | 'github' | 'other'; remoteHost?: string } = { isGit: true }
+
+  const branch = await run(cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
+  const branchName = branch.code === 0 ? branch.stdout.trim() : ''
+  // A detached HEAD prints the literal `HEAD`; it names no branch to warn about.
+  if (branchName !== '' && branchName !== 'HEAD') facts.branch = branchName
+
+  const remoteHead = await run(cwd, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'])
+  if (remoteHead.code === 0) {
+    const name = remoteHead.stdout.trim().replace(/^origin\//, '')
+    if (name !== '') facts.defaultBranch = name
+  } else {
+    const locals = await run(cwd, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/main', 'refs/heads/master'])
+    const names = locals.code === 0 ? locals.stdout.split('\n').map(line => line.trim()).filter(line => line !== '') : []
+    if (names.includes('main')) facts.defaultBranch = 'main'
+    else if (names.includes('master')) facts.defaultBranch = 'master'
+  }
+
+  const remote = await run(cwd, ['config', '--get', 'remote.origin.url'])
+  const url = remote.code === 0 ? remote.stdout.trim() : ''
+  if (url !== '') {
+    const host = remoteHostOf(url) ?? ''
+    if (host !== '') facts.remoteHost = host
+    // Classify on the HOST, never the whole URL: a repository path such as
+    // `ai/gitlab-tools` must not make a GitHub remote look like GitLab. A
+    // self-hosted forge (e.g. `git@lionm4:30006/ai/x9Copy.git`) stays `other`;
+    // the dialog's checkbox depends on `isGit`, not on this hint.
+    facts.remoteKind = /(^|\.)github(\.|$)/i.test(host)
+      ? 'github'
+      : /gitlab/i.test(host) ? 'gitlab' : 'other'
+  }
+  return facts
 }
 
 /**
@@ -247,22 +315,173 @@ export async function scopeDiffExcerpt(
   return sections.length === 0 ? '' : clipUtf8(sections.join('\n\n'), maxBytes)
 }
 
+export interface IgnoredScopeFile {
+  readonly path: string
+  readonly size: number
+  readonly fingerprint: string
+  /** Last modification time in milliseconds; lets excerpts surface fresh artifacts first. */
+  readonly mtimeMs?: number
+}
+
+const IGNORED_TEXT_READ_LIMIT = 512 * 1024
+
+/**
+ * Bounded snapshot of files under declared `scope` paths that `.gitignore`
+ * hides from `git status`.
+ *
+ * Only inspects static prefixes explicitly named by `task.scope` (never scans
+ * the whole repository or follows symlinks), and hashes files up to 512 KiB
+ * while fingerprinting larger binaries by `(size, mtime)` so large artifacts
+ * never exhaust memory.
+ */
+export async function ignoredScopeSnapshot(
+  cwd: string,
+  scope: readonly string[],
+  guardDir: string,
+  options: { readonly maxFiles?: number; readonly maxDepth?: number } = {},
+): Promise<IgnoredScopeFile[]> {
+  if (scope.length === 0 || !(await hasGit(cwd))) return []
+  const maxFiles = options.maxFiles ?? 100
+  const maxDepth = options.maxDepth ?? 5
+  const prefixes = [...new Set(scope.map(glob => staticPrefix(normalizeScopePath(glob))))]
+    .filter(prefix => prefix !== '' && prefix !== '.' && !prefix.startsWith('/') && !prefix.startsWith('..') && !inGuardDir(prefix, guardDir))
+  if (prefixes.length === 0) return []
+
+  const roots = new Set<string>()
+  for (const prefix of prefixes) {
+    try {
+      await lstat(join(cwd, prefix))
+    } catch {
+      continue
+    }
+    const direct = await run(cwd, ['check-ignore', '--no-index', '-q', '--', prefix])
+    if (direct.code === 0) {
+      roots.add(prefix)
+      continue
+    }
+    const status = await run(cwd, ['status', '--porcelain', '-z', '--ignored=matching', '--', prefix])
+    if (status.code !== 0) continue
+    for (const entry of status.stdout.split('\u0000')) {
+      if (!entry.startsWith('!! ')) continue
+      const candidate = entry.slice(3).replace(/\/+$/, '')
+      if (candidate !== '' && !inGuardDir(candidate, guardDir)) roots.add(candidate)
+    }
+  }
+  if (roots.size === 0) return []
+
+  const seen = new Map<string, IgnoredScopeFile>()
+  const walk = async (rel: string, depth: number): Promise<void> => {
+    if (seen.size >= maxFiles || depth > maxDepth) return
+    const normalized = normalizeScopePath(rel)
+    if (normalized === '' || normalized === '.' || inGuardDir(normalized, guardDir)) return
+    let info: Awaited<ReturnType<typeof lstat>>
+    try {
+      info = await lstat(join(cwd, normalized))
+    } catch {
+      return
+    }
+    if (info.isSymbolicLink()) return
+    if (info.isDirectory()) {
+      let entries: string[]
+      try {
+        entries = (await readdir(join(cwd, normalized))).sort()
+      } catch {
+        return
+      }
+      for (const name of entries) {
+        if (seen.size >= maxFiles) break
+        await walk(`${normalized}/${name}`, depth + 1)
+      }
+      return
+    }
+    if (!info.isFile()) return
+    if (!pathInScope(normalized, scope)) return
+    const fingerprint = info.size <= IGNORED_TEXT_READ_LIMIT
+      ? await hashPath(cwd, normalized)
+      : `stat:${info.size}:${Math.trunc(info.mtimeMs)}`
+    seen.set(normalized, { path: normalized, size: info.size, fingerprint, mtimeMs: info.mtimeMs })
+  }
+
+  for (const root of [...roots].sort()) {
+    if (seen.size >= maxFiles) break
+    await walk(root, 0)
+  }
+  return [...seen.values()].sort((left, right) => left.path.localeCompare(right.path))
+}
+
+/** Order ignored scope files newest-first, falling back to path order when mtimes match or are absent. */
+export function sortIgnoredScopeByRecency(files: readonly IgnoredScopeFile[]): IgnoredScopeFile[] {
+  return [...files].sort((left, right) => {
+    const delta = (right.mtimeMs ?? 0) - (left.mtimeMs ?? 0)
+    return delta !== 0 ? delta : left.path.localeCompare(right.path)
+  })
+}
+
+/**
+ * Bounded evaluator excerpt for gitignored in-scope artifacts: prioritizes the
+ * most recently modified text files so fresh task deliverables are not crowded
+ * out by older files in the same ignored directory. Never throws.
+ */
+export async function ignoredScopeExcerpt(
+  cwd: string,
+  files: readonly IgnoredScopeFile[],
+  maxBytes = 2500,
+): Promise<string> {
+  if (files.length === 0 || maxBytes <= 0) return ''
+  const ordered = sortIgnoredScopeByRecency(files)
+  // Cap the file-list header so a directory with dozens of older ignored files
+  // still leaves room for the newest artifacts' actual content.
+  const listBudget = Math.max(200, Math.floor(maxBytes * 0.35))
+  const headerPrefix = `--- gitignored in-scope files (${files.length}, newest first, not committed to git)`
+  const listedLines: string[] = [headerPrefix]
+  let listBytes = Buffer.byteLength(headerPrefix, 'utf8')
+  const listedCandidates = ordered.slice(0, 30)
+  let omittedFromList = Math.max(0, files.length - listedCandidates.length)
+  for (const [index, file] of listedCandidates.entries()) {
+    const line = `${file.path} (${file.size} B)`
+    const nextBytes = listBytes + 1 + Buffer.byteLength(line, 'utf8')
+    if (index > 0 && nextBytes > listBudget) {
+      omittedFromList += listedCandidates.length - index
+      break
+    }
+    listedLines.push(line)
+    listBytes = nextBytes
+  }
+  if (omittedFromList > 0) listedLines.push(`… (+${omittedFromList} more)`)
+  const sections: string[] = [listedLines.join('\n')]
+  let sampled = 0
+  for (const file of ordered) {
+    if (sampled >= 8 || file.size === 0 || file.size > IGNORED_TEXT_READ_LIMIT) continue
+    try {
+      const raw = await readFile(join(cwd, file.path))
+      if (raw.includes(0)) continue
+      const text = raw.toString('utf8').trimEnd()
+      if (text === '') continue
+      sections.push(`--- ${file.path} (gitignored in-scope artifact, ${file.size} B)\n${clipUtf8(text, 1000)}`)
+      sampled += 1
+    } catch { /* unreadable */ }
+  }
+  return clipUtf8(sections.join('\n\n'), maxBytes)
+}
+
 /**
  * Content hash of every path dirty right now, excluding the run's own ledger.
  *
  * Captured ONCE at run creation: it is the only honest "was already dirty"
  * baseline. Capturing it later would bake the model's own first-turn writes into
- * the baseline and hide them from every later scope check.
+ * the baseline and hide them from every later scope check. Never silently
+ * truncate: dropping paths past 200 caused every remaining pre-existing dirty
+ * file (such as untracked build caches) to block T1 as an out-of-scope write.
  */
-export async function dirtyHashes(cwd: string, guardDir: string, limit = 200): Promise<Record<string, string>> {
-  const paths = (await changedPaths(cwd, guardDir)).slice(0, limit)
+export async function dirtyHashes(cwd: string, guardDir: string, limit?: number): Promise<Record<string, string>> {
+  const all = await changedPaths(cwd, guardDir)
+  const paths = limit !== undefined && Number.isFinite(limit) && limit >= 0 ? all.slice(0, limit) : all
   const hashes: Record<string, string> = {}
-  for (const path of paths) {
-    try {
-      hashes[path] = createHash('sha256').update(await readFile(join(cwd, path))).digest('hex')
-    } catch {
-      hashes[path] = 'deleted'
-    }
+  const chunk = 32
+  for (let start = 0; start < paths.length; start += chunk) {
+    const slice = paths.slice(start, start + chunk)
+    const pairs = await Promise.all(slice.map(async (path): Promise<[string, string]> => [path, await hashPath(cwd, path)]))
+    for (const [path, hash] of pairs) hashes[path] = hash
   }
   return hashes
 }
@@ -284,6 +503,23 @@ export async function matchesBaseline(
 ): Promise<boolean> {
   if (!Object.hasOwn(baseline, path)) return false
   return baseline[path] === await hashPath(cwd, path)
+}
+
+/**
+ * Check a path against both the task's own baseline map (legacy / small runs)
+ * and the run-level shared `state.baselineDirty` map (large dirty workspaces).
+ */
+export async function matchesTaskBaseline(
+  cwd: string,
+  runBaseline: Readonly<Record<string, string>> | undefined,
+  taskBaseline: Readonly<Record<string, string>>,
+  path: string,
+): Promise<boolean> {
+  if (Object.hasOwn(taskBaseline, path)) return await matchesBaseline(cwd, taskBaseline, path)
+  if (runBaseline !== undefined && Object.hasOwn(runBaseline, path)) {
+    return await matchesBaseline(cwd, runBaseline, path)
+  }
+  return false
 }
 
 /**
@@ -1062,26 +1298,60 @@ export async function pluginCommitShas(cwd: string, runId: string): Promise<Set<
 }
 
 
-/** Create a per-run worktree on its own branch; no-op when the branch exists. */
-export async function createRunWorktree(cwd: string, path: string, branch: string): Promise<void> {
-  const existing = await run(cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])
-  const add = existing.code === 0
-    ? await run(cwd, ['worktree', 'add', path, branch])
-    : await run(cwd, ['worktree', 'add', '-b', branch, path, 'HEAD'])
-  if (add.code !== 0) throw new Error(`git worktree add failed: ${add.stderr.trim()}`)
-  const exclude = await run(cwd, ['rev-parse', '--git-path', 'info/exclude'])
-  if (exclude.code === 0) {
-    const raw = exclude.stdout.trim()
-    const file = isAbsolute(raw) ? raw : join(cwd, raw)
-    await mkdir(dirname(file), { recursive: true })
-    const current = await readFile(file, 'utf8').catch(() => '')
-    if (!current.split(/\r?\n/).includes('.guard/')) {
-      await writeFile(file, `${current}${current.endsWith('\n') || current === '' ? '' : '\n'}.guard/\n`, 'utf8')
-    }
-  }
+/** Existing `guard/<run-id>` branch suffixes so auto-minted run ids never collide with leftover branches. */
+export async function existingGuardBranches(cwd: string): Promise<string[]> {
+  const refs = await run(cwd, ['for-each-ref', '--format=%(refname:short)', 'refs/heads/guard/'])
+  if (refs.code !== 0) return []
+  return refs.stdout
+    .split('\n')
+    .map(line => line.trim())
+    .filter(line => line.startsWith('guard/'))
+    .map(line => line.slice('guard/'.length))
+    .filter(id => id !== '' && !id.includes('/'))
 }
 
-/** Remove a worktree (used only by explicit cleanup, never during a run). */
-export async function removeRunWorktree(cwd: string, path: string): Promise<void> {
-  await run(cwd, ['worktree', 'remove', '--force', path])
+/**
+ * Make sure the run worktree directory is ignored by the repository.
+ *
+ * `.git/info/exclude` is local-only and never committed, so the worktree stays
+ * out of every commit without editing a tracked `.gitignore`.
+ */
+export async function excludeRunWorktreeRoot(cwd: string, relative: string): Promise<void> {
+  const exclude = await run(cwd, ['rev-parse', '--git-path', 'info/exclude'])
+  if (exclude.code !== 0) {
+    throw new Error(`git rev-parse --git-path info/exclude failed: ${exclude.stderr.trim()}`)
+  }
+  const raw = exclude.stdout.trim()
+  if (raw === '') throw new Error('git rev-parse --git-path info/exclude returned an empty path')
+  const file = isAbsolute(raw) ? raw : join(cwd, raw)
+  await mkdir(dirname(file), { recursive: true })
+  let current = ''
+  try {
+    current = await readFile(file, 'utf8')
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+  }
+  const bare = relative.replace(/^\/+|\/+$/g, '')
+  const entry = `${bare}/`
+  const lines = current.split(/\r?\n/).map(line => line.trim())
+  if (lines.some(line => line === entry || line === bare || line === `/${entry}` || line === `/${bare}`)) return
+  const prefix = current === '' || current.endsWith('\n') ? current : `${current}\n`
+  await writeFile(file, `${prefix}${entry}\n`, 'utf8')
+}
+
+/**
+ * Create the run's isolated worktree at `path` on its own new branch from HEAD.
+ *
+ * The main checkout keeps whatever branch and dirty files it already had; the
+ * supervisor and the anchored session both work inside `path`. A leftover
+ * branch with the same name is refused rather than silently checked out from an
+ * older commit.
+ */
+export async function createRunWorktree(cwd: string, path: string, branch: string): Promise<void> {
+  const existing = await run(cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`])
+  if (existing.code === 0) {
+    throw new Error(`branch already exists: ${branch}`)
+  }
+  const add = await run(cwd, ['worktree', 'add', '-b', branch, path, 'HEAD'])
+  if (add.code !== 0) throw new Error(`git worktree add failed: ${add.stderr.trim()}`)
 }

@@ -125,12 +125,48 @@ export interface GuardTask {
   readonly lastEvalOffset?: number
   /** Consecutive evaluator outages (`unavailable`); cleared on any real verdict or rollback. */
   readonly evalUnavailableStreak?: number
+  /**
+   * Consecutive audits that found nothing to do: every required probe already
+   * passes, the scope fingerprint has not moved and no new `## 完成声明`
+   * appeared. ANY real progress resets it to zero.
+   *
+   * This is what keeps an idle turn from silently burning the host goal's whole
+   * round budget: `auditTask` counts the streak and blocks the task at
+   * `IDLE_STALL_LIMIT`, naming the missing declaration instead of re-probing
+   * forever.
+   */
+  readonly idleStreak?: number
 }
 
 export interface SmokeCommand {
   readonly cmd: string
   readonly args: readonly string[]
   readonly timeoutMs?: number
+}
+
+/** Optional dedicated evaluator model route (overrides the session's main model). */
+export interface EvaluatorRoute {
+  readonly provider: string
+  readonly model: string
+  /** Optional explicit reasoning effort; when omitted, uses lowest selectable effort. */
+  readonly reasoningEffort?: string
+}
+
+/** One selectable model route, including the reasoning level it runs at. */
+export interface ModelRoute {
+  readonly provider: string
+  readonly model: string
+  /** Explicit reasoning level; omitted means "adapter default" / lowest for judges. */
+  readonly reasoningEffort?: string
+}
+
+/** Visual evidence: an observation-only model reads the task's screenshots. */
+export interface VisualEvidenceConfig {
+  readonly enabled: boolean
+  /** Preferred witness route; omitted follows the evaluator route. */
+  readonly route?: ModelRoute
+  /** Witness route used when the preferred one is unavailable. */
+  readonly fallback?: ModelRoute
 }
 
 /** `tasks.json`: the machine source of truth for one run. */
@@ -161,13 +197,44 @@ export interface GuardState {
   }
   /** Optional project-level compile/smoke command for the merge queue. */
   readonly smokeCommand?: SmokeCommand
+  /** Optional dedicated evaluator model; when absent, follows the session's main model. */
+  readonly evaluator?: EvaluatorRoute
+  /** Evaluator route used when the primary route cannot produce a verdict. */
+  readonly evaluatorFallback?: ModelRoute
+  /** Execution route frozen at run creation (history only; `activeExecutor` is current). */
+  readonly executor?: ModelRoute
+  /** Execution route used when the primary executor cannot run. */
+  readonly executorFallback?: ModelRoute
+  /** Execution route the session is actually using right now (after a switch). */
+  readonly activeExecutor?: ModelRoute
+  /** Observation-only visual witness runs in addition to the text judge. */
+  readonly visual?: VisualEvidenceConfig
   /** Every N DONE tasks trigger the milestone review. */
   readonly milestoneEvery: number
+  /**
+   * Run-level pre-existing dirty files captured once at run creation.
+   *
+   * Stored once on the run instead of duplicated onto every task when a repo
+   * starts with many dirty/untracked files (e.g. build caches). Callers check
+   * `task.baselineDirty` first and fall back to this map so legacy ledgers and
+   * per-task fixtures remain valid.
+   */
+  // oxlint-disable-next-line typescript/no-redundant-type-constituents -- 'deleted' is a sentinel, not a hash
+  readonly baselineDirty?: Readonly<Record<string, string | 'deleted'>>
   /**
    * Why the plugin last asked the host goal to stop. Cleared as soon as a batch
    * becomes runnable again, so a human re-arming the goal resumes the run.
    */
   readonly goalBlocked?: string
+  /**
+   * What KIND of run-level block `goalBlocked` records, so recovery never has
+   * to parse the human sentence.
+   *
+   * `milestone` is a safety-gate block: the review already judged the ledger and
+   * must not be skipped by simply continuing. `unrunnable` is an ordinary stall
+   * (a task outage, nothing startable) that a human may clear.
+   */
+  readonly goalBlockKind?: 'milestone' | 'unrunnable'
   readonly status: 'active' | 'paused' | 'completed' | 'blocked'
   readonly createdAt: number
   readonly updatedAt: number
@@ -207,7 +274,7 @@ export interface RunMeta {
   /** Reserved for the optional epoch fallback; starts at 1. */
   readonly epoch: number
   readonly goalHash: string
-  readonly phase: 'creating' | 'ready' | 'running' | 'aborted' | 'setup-failed'
+  readonly phase: 'creating' | 'ready' | 'running' | 'completed' | 'aborted' | 'setup-failed'
   readonly setup: {
     readonly goal: boolean
     readonly anchors: boolean
@@ -295,7 +362,19 @@ export type GuardEvent =
   | { readonly type: 'task.done'; readonly at: number; readonly taskId: string; readonly checkpointRef: string }
   | { readonly type: 'task.blocked'; readonly at: number; readonly taskId: string; readonly reason: string }
   | { readonly type: 'task.unblocked'; readonly at: number; readonly taskId: string; readonly note: string }
-  | { readonly type: 'review.milestone'; readonly at: number; readonly round: number; readonly verdict: Verdict }
+  | { readonly type: 'run.resumed'; readonly at: number; readonly reason: string }
+  | {
+    readonly type: 'goal.extended'
+    readonly at: number
+    readonly from: number
+    readonly to: number
+    readonly roundsStarted: number
+  }
+  | { readonly type: 'eval.fallback'; readonly at: number; readonly role: 'evaluator' | 'milestone' | 'progress'; readonly from: string; readonly to: string; readonly code: string }
+  | { readonly type: 'executor.switched'; readonly at: number; readonly from: string; readonly to: string; readonly reason: string }
+  | { readonly type: 'evaluator.switched'; readonly at: number; readonly from: string; readonly to: string; readonly reason: string }
+  | { readonly type: 'visual.witness'; readonly at: number; readonly taskId: string; readonly model: string; readonly images: readonly { readonly path: string; readonly sha256: string }[]; readonly result: 'ok' | 'unavailable'; readonly findings: number; readonly reason?: string; readonly artifact?: string }
+  | { readonly type: 'review.milestone'; readonly at: number; readonly round: number; readonly verdict: Verdict; readonly path?: string; readonly reason?: string }
   | { readonly type: 'run.blocked'; readonly at: number; readonly reason: string }
   | { readonly type: 'task.reopened'; readonly at: number; readonly taskId: string; readonly reason: string }
   | {

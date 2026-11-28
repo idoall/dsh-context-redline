@@ -172,6 +172,37 @@ describe('goal-supervisor store', () => {
     assert.ok(await readFile(join(root, 'probes', 'T1.json'), 'utf8'))
   })
 
+  test('mutate commits the ledger and its events under one lock', async () => {
+    const { root, store } = await runRoot()
+    await store.update(state(), [event(1)])
+    const next = await store.mutate(current => ({
+      state: { ...current, status: 'paused' as const, updatedAt: 2 },
+      events: [event(2)],
+    }))
+    assert.equal(next?.status, 'paused')
+    const saved = JSON.parse(await readFile(join(root, 'tasks.json'), 'utf8')) as GuardState
+    assert.equal(saved.status, 'paused')
+    const events = (await readFile(join(root, 'state.jsonl'), 'utf8')).trim().split('\n')
+    assert.equal(events.length, 2, 'the callback-supplied events are appended by the same mutate')
+    assert.equal((JSON.parse(events[1] ?? '{}') as GuardEvent).type, 'task.done')
+    assert.match(await readFile(join(root, 'TASKS.md'), 'utf8'), /状态：paused/)
+  })
+
+  test('mutate short-circuits an unchanged ledger and a null answer without writing', async () => {
+    const { root, store } = await runRoot()
+    await store.update(state(), [event(1)])
+    // A sentinel page proves no write happened: every real commit regenerates it.
+    await writeFile(join(root, 'TASKS.md'), 'sentinel', 'utf8')
+    const same = await store.mutate(current => current)
+    assert.equal(same?.runId, '20261124-demo', 'an unchanged answer still reports the ledger')
+    assert.equal(await readFile(join(root, 'TASKS.md'), 'utf8'), 'sentinel', 'no write when nothing changed')
+    const none = await store.mutate(() => null)
+    assert.equal(none?.runId, '20261124-demo', 'a null answer means "no write", not "ledger missing"')
+    assert.equal(await readFile(join(root, 'TASKS.md'), 'utf8'), 'sentinel')
+    const events = (await readFile(join(root, 'state.jsonl'), 'utf8')).trim().split('\n')
+    assert.equal(events.length, 1, 'a short-circuited mutate appends no events')
+  })
+
   test('surfaces a corrupt ledger instead of pretending it is absent', async () => {
     const { root, store } = await runRoot()
     await writeFile(join(root, 'tasks.json'), '{ not json', 'utf8')

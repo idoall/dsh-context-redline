@@ -14,18 +14,22 @@
 
 import { access, mkdir, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { guardHashOf } from '../goal-guard'
+import { carrierContentFingerprint } from '../../shared/redline-carrier'
+import { splitTaskRow } from '../../shared/redline-supervisor'
 import { GUARD_SCHEMA_VERSION } from './schema'
 import type {
   EnforcementMode,
+  EvaluatorRoute,
   GuardEvent,
   GuardTask,
+  ModelRoute,
   ProbeDef,
   RunMeta,
   TaskProbeFile,
+  VisualEvidenceConfig,
 } from './schema'
 import { buildRunId, SAFE_RUN_ID, sanitizeRefSegment } from './run-id'
-import { createRunWorktree, dirtyHashes, hasGit, headCommit, normalizeScopePath } from './git'
+import { createRunWorktree, dirtyHashes, excludeRunWorktreeRoot, existingGuardBranches, hasGit, headCommit, normalizeScopePath } from './git'
 import { isBroadScopePath, isSafeScopePath } from './scope'
 import { shellishProbeArg } from './probes'
 import { GuardStore } from './store'
@@ -47,14 +51,42 @@ export interface PrepareRunInput {
   readonly smokeCommand?: { readonly cmd: string; readonly args: readonly string[]; readonly timeoutMs?: number }
   /** Optional explicit run id (used when the dialog retries step two). */
   readonly runId?: string
-  /** Run in an isolated git worktree when the workspace is a repo. */
+  /** Work in an isolated worktree on its own branch when the workspace is a repo; no extra DSH workspace is created. */
   readonly worktree?: boolean
+  /** Optional dedicated evaluator model route; defaults to the session's main model. */
+  readonly evaluator?: EvaluatorRoute
+  /** Evaluator route tried when the primary judge cannot answer. */
+  readonly evaluatorFallback?: ModelRoute
+  /** Execution route the human chose for this run (record only; the session owns the live value). */
+  readonly executor?: ModelRoute
+  /** Execution route to switch to when the primary executor cannot run. */
+  readonly executorFallback?: ModelRoute
+  /** Observation-only visual witness configuration. */
+  readonly visual?: VisualEvidenceConfig
+}
+
+/** Canonical hash over the frozen goal card and task table. */
+export function guardHashOf(seed: {
+  readonly goal: string
+  readonly acceptance: string
+  readonly discipline: string
+  readonly tasks: string
+}): string {
+  return carrierContentFingerprint(JSON.stringify({
+    goal: seed.goal.trim(),
+    acceptance: seed.acceptance.trim(),
+    discipline: seed.discipline.trim(),
+    tasks: seed.tasks,
+    planPath: '',
+    planHash: '',
+  }))
 }
 
 export interface PreparedRun {
   readonly runId: string
   readonly root: string
   readonly files: readonly string[]
+  /** Set when the run works in its own `<cwd>/.guard/worktrees/<run-id>` checkout. */
   readonly worktreePath?: string
 }
 
@@ -65,37 +97,66 @@ function splitAcceptance(raw: string): string[] {
 }
 
 function splitList(raw: string): string[] {
-  return raw.split(/[,，]\s*/).map(item => item.trim()).filter(item => item !== '')
+  return raw
+    .split(/[,，、]\s*/)
+    .map(item => item.trim().replace(/^`+|`+$/g, '').trim())
+    .filter(item => item !== '')
 }
 
-/**
- * Parse the task table; `null` means the table cannot be trusted.
- *
- * Columns: `ID | title | acceptance;acceptance | scope,scope | dependsOn,dependsOn`.
- * Dependencies must name tasks that exist in the same table.
- */
-export function parseSupervisorTasks(
+const NO_DEP_SENTINEL = /^(?:-+|—|–|none|n\/a|null|无|无依赖|\(无\)|（无）)$/i
+
+function splitDependsOn(raw: string): string[] {
+  const items = splitList(raw)
+  if (items.length === 1 && NO_DEP_SENTINEL.test(items[0] ?? '')) return []
+  return items
+}
+
+type ParsedSupervisorTable =
+  | {
+    readonly ok: true
+    readonly tasks: GuardTask[]
+    /** True when at least one row explicitly provided column 5 (even `-` / empty). */
+    readonly explicitDependsOn: boolean
+  }
+  | {
+    readonly ok: false
+    readonly reason: string
+  }
+
+function parseSupervisorTable(
   input: string,
   scopes: Readonly<Record<string, readonly string[]>> = {},
-): GuardTask[] | null {
+): ParsedSupervisorTable {
   const tasks: GuardTask[] = []
   const ids = new Set<string>()
-  const missing: string[] = []
-  for (const raw of input.split(/\r?\n/)) {
-    const line = raw.trim()
+  const pendingDeps: { readonly lineNo: number; readonly taskId: string; readonly dep: string }[] = []
+  let explicitDependsOn = false
+  const rawLines = input.split(/\r?\n/)
+  for (let index = 0; index < rawLines.length; index += 1) {
+    const lineNo = index + 1
+    const line = (rawLines[index] ?? '').trim()
     if (line === '') continue
     const match = TASK_LINE.exec(line)
-    if (match === null) return null
+    if (match === null) {
+      return { ok: false, reason: `第 ${lineNo} 行格式无效（需以任务 ID 开头，如 T1 | 标题 | 验收 | scope）：${line.slice(0, 48)}` }
+    }
     const id = match[1]
-    if (id === '' || ids.has(id)) return null
+    if (id === '' || ids.has(id)) {
+      return { ok: false, reason: `第 ${lineNo} 行任务 ID「${id}」重复或为空` }
+    }
     const rest = match[2]
-    const parts = rest.split('|').map(part => part.trim())
+    // Quote-aware: an acceptance cell may carry `-run "A|B"`, and a plain split
+    // would shift the scope into the dependency column and reject the row.
+    const parts = splitTaskRow(rest)
     const title = parts[0] ?? ''
-    if (title === '') return null
+    if (title === '') {
+      return { ok: false, reason: `第 ${lineNo} 行（${id}）缺少任务标题` }
+    }
     ids.add(id)
     const acceptance = splitAcceptance(parts[1] ?? '完成本任务并提交证据')
     const tableScope = parts.length > 2 ? splitList(parts[2] ?? '') : []
-    const dependsOn = parts.length > 3 ? splitList(parts[3] ?? '') : []
+    if (parts.length > 3) explicitDependsOn = true
+    const dependsOn = parts.length > 3 ? splitDependsOn(parts[3] ?? '') : []
     const mappedScope = scopes[id] ?? []
     // The table's inline scope column is how the dialog actually declares scope,
     // so it needs the same rules as the programmatic map: relative only, no `..`,
@@ -104,10 +165,17 @@ export function parseSupervisorTasks(
     // worktree-relative paths: `././src/a.ts` would never match `src/a.ts`.
     const mergedScope = [...new Set([...tableScope, ...mappedScope].map(normalizeScopePath))]
     for (const entry of mergedScope) {
-      if (!isSafeScopePath(entry) || isBroadScopePath(entry) || entry.length > 300) return null
+      if (!isSafeScopePath(entry) || isBroadScopePath(entry) || entry.length > 300) {
+        return {
+          ok: false,
+          reason: `第 ${lineNo} 行（${id}）的 scope 路径「${entry}」不合法（需为工作区内相对路径，不能含 .. 或全局通配符）`,
+        }
+      }
     }
-    for (const dep of dependsOn) if (dep === id) return null
-    missing.push(...dependsOn)
+    for (const dep of dependsOn) {
+      if (dep === id) return { ok: false, reason: `第 ${lineNo} 行（${id}）不能依赖自身` }
+      pendingDeps.push({ lineNo, taskId: id, dep })
+    }
     tasks.push({
       id,
       title,
@@ -124,12 +192,30 @@ export function parseSupervisorTasks(
       baselineDirty: {},
     })
   }
-  if (tasks.length === 0) return null
-  for (const dep of missing) if (!ids.has(dep)) return null
+  if (tasks.length === 0) return { ok: false, reason: '任务表为空' }
+  for (const item of pendingDeps) {
+    if (!ids.has(item.dep)) {
+      return { ok: false, reason: `第 ${item.lineNo} 行（${item.taskId}）的依赖「${item.dep}」不在任务表中` }
+    }
+  }
   // A cycle (T1 → T2 → T1) never becomes startable, so the run would deadlock on
   // its first turn after the session already exists. Refuse it up front.
-  if (hasDependencyCycle(tasks)) return null
-  return tasks
+  if (hasDependencyCycle(tasks)) return { ok: false, reason: '任务依赖存在环路（cycle）' }
+  return { ok: true, tasks, explicitDependsOn }
+}
+
+/**
+ * Parse the task table; `null` means the table cannot be trusted.
+ *
+ * Columns: `ID | title | acceptance;acceptance | scope,scope | dependsOn,dependsOn`.
+ * Dependencies must name tasks that exist in the same table.
+ */
+export function parseSupervisorTasks(
+  input: string,
+  scopes: Readonly<Record<string, readonly string[]>> = {},
+): GuardTask[] | null {
+  const parsed = parseSupervisorTable(input, scopes)
+  return parsed.ok ? parsed.tasks : null
 }
 
 /** True when following `dependsOn` from any task returns to itself. */
@@ -162,8 +248,9 @@ function notesSkeleton(task: GuardTask): string {
     '',
     '## 完成声明',
     '',
-    '（写清做了什么、怎么验证的。新增一段“## 完成声明”会让督导立刻重新评估本任务；',
-    '  不写这一节也可以，督导会在文件改动变化后自动评估。）',
+    '（本段只能由主会话审查子会话产物后亲自写入，禁止让子会话代写。',
+    '  写清做了什么、主会话如何复核的；新增一段“## 完成声明”后请立刻结束当前回合，',
+    '  督导才会运行探针、独立评估并把锚点切到下一个任务。）',
     '',
   ]
   return lines.join('\n')
@@ -190,17 +277,62 @@ export async function prepareGuardRun(cwd: string, input: PrepareRunInput): Prom
   const acceptance = input.acceptance.trim()
   const discipline = input.discipline.trim()
   if (goal === '') throw new Error('goal is empty')
-  const tasks = parseSupervisorTasks(input.tasks, input.scopes)
-  if (tasks === null) throw new Error('task table is invalid')
+  const parsedTable = parseSupervisorTable(input.tasks, input.scopes)
+  if (!parsedTable.ok) throw new Error(`task table is invalid: ${parsedTable.reason}`)
+  const parallel = clampParallel(input.parallel)
+  // In sequential mode (parallel=1), a four-column table with no explicit
+  // dependency column describes an ordered milestone pipeline: chain each row
+  // on the previous task so a blocked earlier milestone cannot be silently
+  // bypassed. Explicit column 5 (including `-`) or parallel>1 stays verbatim.
+  const tasks: GuardTask[] = parallel === 1 && !parsedTable.explicitDependsOn
+    ? parsedTable.tasks.map((task, index) => {
+      const previous = index > 0 ? parsedTable.tasks.at(index - 1) : undefined
+      return previous === undefined ? task : { ...task, dependsOn: [previous.id] }
+    })
+    : parsedTable.tasks
+  const routeOf = (raw: ModelRoute | undefined): ModelRoute | undefined => {
+    if (raw === undefined) return undefined
+    const provider = typeof raw.provider === 'string' ? raw.provider.trim() : ''
+    const model = typeof raw.model === 'string' ? raw.model.trim() : ''
+    const effort = typeof raw.reasoningEffort === 'string' ? raw.reasoningEffort.trim() : ''
+    if (provider === '' || model === '') throw new Error('model route is invalid')
+    return { provider, model, ...(effort === '' ? {} : { reasoningEffort: effort }) }
+  }
+  const evaluatorFallback = routeOf(input.evaluatorFallback)
+  const executor = routeOf(input.executor)
+  const executorFallback = routeOf(input.executorFallback)
+  const visualRoute = routeOf(input.visual?.route)
+  const visualFallback = routeOf(input.visual?.fallback)
+  const visual: VisualEvidenceConfig | undefined = input.visual?.enabled === true
+    ? {
+      enabled: true,
+      ...(visualRoute === undefined ? {} : { route: visualRoute }),
+      ...(visualFallback === undefined ? {} : { fallback: visualFallback }),
+    }
+    : undefined
+  let evaluator: EvaluatorRoute | undefined
+  if (input.evaluator !== undefined) {
+    const provider = typeof input.evaluator.provider === 'string' ? input.evaluator.provider.trim() : ''
+    const model = typeof input.evaluator.model === 'string' ? input.evaluator.model.trim() : ''
+    const reasoningEffort = typeof input.evaluator.reasoningEffort === 'string'
+      ? input.evaluator.reasoningEffort.trim()
+      : ''
+    if (provider === '' || model === '') throw new Error('evaluator model is invalid')
+    evaluator = {
+      provider,
+      model,
+      ...(reasoningEffort === '' ? {} : { reasoningEffort }),
+    }
+  }
 
   const guardRoot = join(cwd, 'docs', 'guard')
-  await mkdir(guardRoot, { recursive: true })
-  // Worktree runs keep their ledger inside `.guard/worktrees/<run-id>`, so a
-  // collision scan that only looks at `docs/guard` would miss every one of them
-  // and silently overwrite a running run's ledger.
+  const gitRepo = await hasGit(cwd)
+  // Include existing `guard/*` branches (and any `.guard/worktrees` dirs) so
+  // auto-minted run ids never collide with a branch or worktree already in git.
   const taken = new Set([
     ...await existingRunIds(guardRoot),
     ...await existingRunIds(join(cwd, '.guard', 'worktrees')),
+    ...(gitRepo ? await existingGuardBranches(cwd) : []),
   ])
   let runId: string
   if (input.runId !== undefined && input.runId !== '') {
@@ -209,29 +341,6 @@ export async function prepareGuardRun(cwd: string, input: PrepareRunInput): Prom
     runId = candidate
   } else {
     runId = buildRunId(new Date(), goal.split(/\r?\n/).find(line => line.trim() !== '') ?? goal, taken)
-  }
-
-  let root = join(guardRoot, runId)
-  let worktreePath: string | undefined
-  const wantWorktree = input.worktree === true && await hasGit(cwd) && (await headCommit(cwd)) !== null
-  if (wantWorktree) {
-    worktreePath = join(cwd, '.guard', 'worktrees', runId)
-    let exists = true
-    try { await access(join(worktreePath, '.git')) } catch { exists = false }
-    if (!exists) {
-      await mkdir(join(cwd, '.guard', 'worktrees'), { recursive: true })
-      await createRunWorktree(cwd, worktreePath, `guard/${runId}`)
-    }
-    root = join(worktreePath, 'docs', 'guard', runId)
-  }
-
-  const store = new GuardStore(root)
-  // One guard for every mode: a run that already owns a live session is never
-  // rewritten, whether or not it lives in a worktree. Read the meta directly —
-  // a missing directory simply answers `null`.
-  const existing = await store.readMeta()
-  if (existing !== null && (existing.phase === 'running' || existing.sessionId !== undefined)) {
-    throw new Error('run already exists')
   }
 
   const probeMap = new Map<string, ProbeDef[]>()
@@ -259,11 +368,58 @@ export async function prepareGuardRun(cwd: string, input: PrepareRunInput): Prom
     probeMap.set(probe.taskId, list)
   }
 
+  const wantWorktree = input.worktree === true && gitRepo && (await headCommit(cwd)) !== null
+  const worktreeDir = join(cwd, '.guard', 'worktrees', runId)
+  // Check both checkout roots BEFORE touching git or creating any directory:
+  // one run id may live in at most one checkout mode, and a running/completed
+  // run must never be overwritten or forked into a second ledger.
+  const sourceExisting = await new GuardStore(join(cwd, 'docs', 'guard', runId)).readMeta()
+  const worktreeExisting = await new GuardStore(join(worktreeDir, 'docs', 'guard', runId)).readMeta()
+  for (const meta of [sourceExisting, worktreeExisting]) {
+    if (meta !== null && (meta.phase === 'running' || meta.phase === 'completed' || meta.sessionId !== undefined)) {
+      throw new Error('run already exists')
+    }
+  }
+  if (wantWorktree && sourceExisting !== null) {
+    throw new Error('run already exists in the main workspace')
+  }
+  if (!wantWorktree && worktreeExisting !== null) {
+    throw new Error('run already exists in a worktree')
+  }
+
+  let worktreePath: string | undefined
+  if (wantWorktree) {
+    worktreePath = worktreeDir
+    // Write local-only ignore BEFORE creating `.guard/worktrees` so the main
+    // checkout never briefly reports `.guard/` as untracked and no tracked
+    // `.gitignore` in the user's repository has to change.
+    await excludeRunWorktreeRoot(cwd, '.guard')
+    let mounted = true
+    try { await access(join(worktreePath, '.git')) } catch { mounted = false }
+    if (!mounted) {
+      await mkdir(join(cwd, '.guard', 'worktrees'), { recursive: true })
+      await createRunWorktree(cwd, worktreePath, `guard/${runId}`)
+    }
+  }
+  // Runs work in the worktree when they have one; the ledger keeps its
+  // `docs/guard/<run-id>/` layout relative to whatever directory the runs
+  // actually operate in.
+  const runCwd = worktreePath ?? cwd
+  const root = join(runCwd, 'docs', 'guard', runId)
+  await mkdir(root, { recursive: true })
+  const store = new GuardStore(root)
+  const existing = wantWorktree ? worktreeExisting : sourceExisting
+
   const now = Date.now()
   // One baseline for the whole run, taken before any task touches the tree: a
   // file that was already dirty when the run started must never be blamed on a
   // task, and the model's own first-turn writes must never enter the baseline.
-  const baselineDirty = await dirtyHashes(worktreePath ?? cwd, `docs/guard/${runId}`)
+  const baselineDirty = await dirtyHashes(runCwd, `docs/guard/${runId}`)
+  const baselineEntries = Object.keys(baselineDirty).length
+  // Keep small baselines mirrored onto each task for backwards compatibility
+  // with legacy readers; store large baselines only once on `state.baselineDirty`
+  // so multi-task ledgers do not duplicate thousands of entries per task.
+  const perTaskBaseline = baselineEntries <= 50 ? baselineDirty : {}
   const skeletons = new Map<string, string>()
   const stateTasks: GuardTask[] = tasks.map((task) => {
     const probes = probeMap.get(task.id) ?? []
@@ -271,7 +427,7 @@ export async function prepareGuardRun(cwd: string, input: PrepareRunInput): Prom
       ...task,
       probes: probes.map(probe => probe.id),
       requiredProbes: probes.map(probe => probe.id),
-      baselineDirty,
+      baselineDirty: perTaskBaseline,
     }
     const skeleton = notesSkeleton(shaped)
     skeletons.set(task.id, skeleton)
@@ -291,11 +447,19 @@ export async function prepareGuardRun(cwd: string, input: PrepareRunInput): Prom
     goalHash: guardHashOf({ goal, acceptance, discipline, tasks: input.tasks }),
     tasks: stateTasks,
     activeTaskIds: [],
-    parallel: clampParallel(input.parallel),
+    parallel,
     enforcement: input.enforcement ?? 'warn-only',
-    worktree: worktreePath === undefined ? { enabled: false } : { enabled: true, path: worktreePath, branch: `guard/${runId}` },
+    worktree: worktreePath === undefined
+      ? { enabled: false }
+      : { enabled: true, path: worktreePath, branch: `guard/${runId}` },
     ...(input.smokeCommand === undefined ? {} : { smokeCommand: input.smokeCommand }),
+    ...(evaluator === undefined ? {} : { evaluator }),
+    ...(evaluatorFallback === undefined ? {} : { evaluatorFallback }),
+    ...(executor === undefined ? {} : { executor }),
+    ...(executorFallback === undefined ? {} : { executorFallback }),
+    ...(visual === undefined ? {} : { visual }),
     milestoneEvery: Math.max(1, Math.trunc(input.milestoneEvery ?? 3)),
+    ...(baselineEntries === 0 ? {} : { baselineDirty }),
     status: 'active' as const,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
@@ -381,6 +545,26 @@ export function checkpointRefOf(runId: string, taskId: string): string {
  * `run.json.setup.firstMessage` stayed `false` forever, so the card could not
  * tell an armed run from one whose first task never arrived.
  */
+/**
+ * Record the route the anchored session actually runs on.
+ *
+ * The human's chosen execution model belongs to the session (DSH owns it); the
+ * ledger keeps a copy so a later switch is visible and auditable. `executor` is
+ * the frozen choice from the dialog, `activeExecutor` the route in force now.
+ */
+export async function recordActiveExecutor(cwd: string, runId: string, route: ModelRoute): Promise<void> {
+  const store = new GuardStore(join(cwd, 'docs', 'guard', runId))
+  // Under the store lock: a first turn racing the cold-start read must not erase
+  // whatever the other writer just recorded.
+  await store.mutate(current => (
+    current.activeExecutor?.provider === route.provider
+      && current.activeExecutor.model === route.model
+      && current.activeExecutor.reasoningEffort === route.reasoningEffort
+      ? current
+      : { ...current, activeExecutor: route, updatedAt: Date.now() }
+  ))
+}
+
 export async function markFirstMessageDelivered(cwd: string, runId: string): Promise<void> {
   const store = new GuardStore(join(cwd, 'docs', 'guard', runId))
   // Mutate the LATEST meta under the store lock: this call races the first turn's

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
 import { realpathSync } from 'node:fs'
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,6 +12,7 @@ import {
   resumeSupervisorGoal,
   SUPERVISOR_ANCHOR_HEAD, SUPERVISOR_ANCHOR_TAIL, watchGoalSupervisors,
 } from '../../src/host/goal-supervisor/attach'
+import { RUNTIME_ANCHOR_NAME } from '../../src/shared/redline-carrier'
 import type { GuardState, RunMeta } from '../../src/host/goal-supervisor/schema'
 
 const git = promisify(execFile)
@@ -80,6 +81,12 @@ describe('goal-supervisor attach', () => {
     assert.deepEqual(contexts.map(item => item.name), [SUPERVISOR_ANCHOR_HEAD, SUPERVISOR_ANCHOR_TAIL])
     assert.deepEqual(contexts.map(item => item.order), [90, 900])
     assert.match(contexts[0]!.text(), /目标守卫 · 锚点/)
+    // The injected anchor must name the directory the probes run in: the model
+    // otherwise has to reverse-engineer it from the ledger and burns the turn.
+    assert.ok(
+      contexts[0]!.text().includes(`运行目录：${cwd}`),
+      `anchor must name the run directory: ${contexts[0]!.text()}`,
+    )
     // Attaching never touches the goal service: `setup` runs before the agent is live.
     // (Snapshotted, because `assert.equal` narrows the live variable.)
     const createdBeforeArm = created as { objective: string } | undefined
@@ -237,6 +244,7 @@ describe('goal-supervisor attach', () => {
     forgetSupervisor('session-cold', cwd, runId)
 
     const contexts: string[] = []
+    const texts: Record<string, string> = {}
     const handlers: Record<string, () => void | Promise<void>> = {}
     const listeners: ((payload: { agent: unknown }) => void | Promise<void>)[] = []
     const agent = {
@@ -245,7 +253,12 @@ describe('goal-supervisor attach', () => {
       ctx: {
         get(name: string) {
           if (name !== 'systemPrompt') return undefined
-          return { context: (input: { name: string }) => { contexts.push(input.name) } }
+          return {
+            context: (input: { name: string; text: string | (() => string) }) => {
+              contexts.push(input.name)
+              texts[input.name] = typeof input.text === 'function' ? input.text() : input.text
+            },
+          }
         },
         on(name: string, handler: () => void | Promise<void>) { handlers[name] = handler },
       },
@@ -259,7 +272,55 @@ describe('goal-supervisor attach', () => {
     watchGoalSupervisors(ctx as never)
     assert.equal(listeners.length, 1)
     await listeners[0]!({ agent })
-    assert.deepEqual(contexts, [SUPERVISOR_ANCHOR_HEAD, SUPERVISOR_ANCHOR_TAIL])
+    assert.deepEqual(contexts, [SUPERVISOR_ANCHOR_HEAD, SUPERVISOR_ANCHOR_TAIL, RUNTIME_ANCHOR_NAME])
+    // A cold start must give the model the same frozen card, not only the
+    // supervisor's short head/tail rendering.
+    assert.match(texts[RUNTIME_ANCHOR_NAME] ?? '', /^目标：/)
+    assert.match(texts[RUNTIME_ANCHOR_NAME] ?? '', /验收：/)
+    assert.match(texts[RUNTIME_ANCHOR_NAME] ?? '', /纪律：/)
+    assert.equal(typeof handlers['agent/turn-stopping'], 'function')
+  })
+
+  test('a cold start re-attaches a worktree run through the effective directory', async () => {
+    const cwd = await workspace()
+    const runId = await prepared(cwd)
+    // Move the run into its isolated checkout: the header keeps the project,
+    // which no longer holds the ledger at all.
+    const worktree = join(cwd, '.guard', 'worktrees', runId)
+    await mkdir(join(worktree, 'docs', 'guard'), { recursive: true })
+    await rename(join(cwd, 'docs', 'guard', runId), join(worktree, 'docs', 'guard', runId))
+    await writeFile(join(worktree, 'a.ts'), 'ok')
+    // `run.json.sessionId` is what binds a re-opened session to its run.
+    const metaPath = join(worktree, 'docs', 'guard', runId, 'run.json')
+    const meta = JSON.parse(await readFile(metaPath, 'utf8')) as RunMeta
+    await writeFile(metaPath, JSON.stringify({ ...meta, sessionId: 'session-cold-worktree' }, null, 2), 'utf8')
+
+    const contexts: string[] = []
+    const handlers: Record<string, () => void | Promise<void>> = {}
+    const listeners: ((payload: { agent: unknown }) => void | Promise<void>)[] = []
+    const agent = {
+      id: 'session-cold-worktree',
+      session: { header: { cwd } },
+      ctx: {
+        get(name: string) {
+          if (name !== 'systemPrompt') return undefined
+          return { context: (input: { name: string }) => { contexts.push(input.name) } }
+        },
+        on(name: string, handler: () => void | Promise<void>) { handlers[name] = handler },
+      },
+    }
+    const ctx = {
+      // The Host moved this session into the checkout after it was created.
+      get(name: string) {
+        return name === 'workingDirectory' ? { get: () => worktree } : undefined
+      },
+      on(name: string, handler: (payload: { agent: unknown }) => void | Promise<void>) {
+        if (name === 'agent/created') listeners.push(handler)
+      },
+    }
+    watchGoalSupervisors(ctx as never)
+    await listeners[0]!({ agent })
+    assert.deepEqual(contexts, [SUPERVISOR_ANCHOR_HEAD, SUPERVISOR_ANCHOR_TAIL, RUNTIME_ANCHOR_NAME], 'the ledger is found in the checkout')
     assert.equal(typeof handlers['agent/turn-stopping'], 'function')
   })
 
@@ -405,6 +466,34 @@ describe('goal-supervisor attach', () => {
     const armed = makeCtx({ id: 'goal-1', revision: 4, phase: 'active', activation: 'armed' })
     assert.equal(await resumeSupervisorGoal({ ctx: armed.ctx as never, agent: { id: 's3' } as never, cwd, runId }), true)
     assert.deepEqual(armed.calls, { resume: 0, create: 0 })
+  })
+
+  test('resumeSupervisorGoal refuses a ledger the milestone gate still blocks', async () => {
+    const cwd = await workspace()
+    const runId = await prepared(cwd)
+    const tasksPath = join(cwd, 'docs', 'guard', runId, 'tasks.json')
+    const state = JSON.parse(await readFile(tasksPath, 'utf8')) as GuardState
+    await writeFile(tasksPath, JSON.stringify({
+      ...state,
+      status: 'blocked',
+      goalBlocked: '里程碑审阅未通过（第 1 轮）：见 review/round-1.md',
+      goalBlockKind: 'milestone',
+    }, null, 2), 'utf8')
+
+    const calls = { resume: 0, create: 0 }
+    const ctx = {
+      get: (name: string) => (name === 'goals'
+        ? {
+          get: () => ({ id: 'goal-1', revision: 2, phase: 'blocked', activation: 'disarmed' }),
+          resume: () => { calls.resume += 1 },
+          create: () => { calls.create += 1 },
+        }
+        : undefined),
+    }
+    assert.equal(await resumeSupervisorGoal({ ctx: ctx as never, agent: { id: 's' } as never, cwd, runId }), false)
+    // Waking this goal drove turns that `auditTurn` refuses to supervise; a
+    // fresh `create` would hide the deliberate gate the same way.
+    assert.deepEqual(calls, { resume: 0, create: 0 }, 'a gate the ledger keeps closed is not reopened')
   })
 
   test('armSupervisorGoal refuses a run that is not active', async () => {
@@ -740,5 +829,221 @@ describe('goal-supervisor mirror probe budget', () => {
     } finally {
       process.env.PATH = previous
     }
+  })
+})
+
+describe('goal-supervisor single-turn boundary and pre-step audit', () => {
+  test('blocks dispatching a new subagent once the current task wrote a completion claim, and pre-step audits it automatically', async () => {
+    const cwd = await workspace()
+    const runId = (await prepareGuardRun(cwd, {
+      goal: '把目标漂移修好',
+      acceptance: '所有任务 DONE',
+      discipline: '主会话只规划/分派/审查',
+      tasks: 'T1 | 第一步 | 文件存在 | a.ts\nT2 | 第二步 | 文件存在 | b.ts',
+      probes: [
+        { id: 'P1', taskId: 'T1', weight: 'light', spec: { kind: 'file_exists', path: 'a.ts' }, enabled: true },
+        { id: 'P2', taskId: 'T2', weight: 'light', spec: { kind: 'file_exists', path: 'b.ts' }, enabled: true },
+      ],
+    })).runId
+    await writeFile(join(cwd, 'a.ts'), 'done\n')
+
+    const hooks = new Map<string, ((...args: unknown[]) => unknown)[]>()
+    const ctx = {
+      get(name: string) {
+        if (name !== 'llm') return undefined
+        return {
+          prepareCall: async () => ({
+            config: { provider: 'p', model: 'm', temperature: 0, maxTokens: 4000 },
+            stream: () => (async function* () {
+              const current = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+              const payload = JSON.stringify({
+                goal_hash: current.goalHash, verdict: 'pass', criteria: [], violations: [], missing: [], correction: '', next_action: 'continue',
+              })
+              yield { type: 'text-delta', index: 0, text: payload }
+              yield { type: 'block-end', index: 0, block: { type: 'text', text: payload } }
+            })(),
+          }),
+        }
+      },
+    }
+    const attached = await attachSupervisor({
+      ctx: ctx as never,
+      agentCtx: {
+        get: () => undefined,
+        on(event: string, fn: (...args: unknown[]) => unknown) {
+          const list = hooks.get(event) ?? []
+          list.push(fn)
+          hooks.set(event, list)
+        },
+      } as never,
+      agent: { id: 's', options: { provider: 'p', model: 'm' } } as never,
+      runId,
+      cwd,
+    })
+
+    // Before T1 declares completion, subagent is allowed and pre-step is a no-op.
+    assert.equal(attached.checkTool({ name: 'subagent', arguments: { name: 'm0' } }), undefined)
+    const preSteps = hooks.get('agent/pre-step') ?? []
+    assert.equal(preSteps.length, 1, 'attaches a pre-step listener')
+    let nextCalls = 0
+    const nextResult = await preSteps[0]!({}, async () => { nextCalls += 1; return { kind: 'enter', messages: [] } })
+    assert.equal(nextCalls, 1)
+    assert.deepEqual(nextResult, { kind: 'enter', messages: [] })
+    assert.equal(attached.state.tasks[0]?.status, 'TODO', 'pre-step must not audit before a completion claim exists')
+
+    // Once T1 appends "## 完成声明", dispatching another subagent in the same turn is refused.
+    const notesPath = join(cwd, 'docs', 'guard', runId, 'tasks', 'T1', 'notes.md')
+    await writeFile(notesPath, `${await readFile(notesPath, 'utf8')}\n## 完成声明\nT1 完成\n`)
+    const denied = attached.checkTool({ name: 'subagent', arguments: { name: 'm1' } })
+    assert.match(denied ?? '', /完成声明/)
+    assert.equal(attached.checkTool({ name: 'read', arguments: { file_path: 'a.ts' } }), undefined, 'non-subagent tools remain allowed')
+
+    // When the next step enters agent/pre-step, the supervisor audits T1 immediately and advances to T2.
+    await preSteps[0]!({}, async () => { nextCalls += 1; return { kind: 'enter', messages: [] } })
+    assert.equal(nextCalls, 2)
+    assert.equal(attached.state.tasks[0]?.status, 'DONE')
+    // Now current task is T2 (which has no completion claim yet), so dispatching T2's subagent succeeds.
+    assert.equal(attached.checkTool({ name: 'subagent', arguments: { name: 'm1' } }), undefined)
+  })
+
+  test('re-attaching a completed run preserves run.json phase as completed', async () => {
+    const cwd = await workspace()
+    const runId = (await prepareGuardRun(cwd, {
+      goal: '目标', acceptance: '验收', discipline: '纪律', tasks: 'T1 | 一 | 通过 | a.ts',
+    })).runId
+    const tasksPath = join(cwd, 'docs', 'guard', runId, 'tasks.json')
+    const metaPath = join(cwd, 'docs', 'guard', runId, 'run.json')
+    const state = JSON.parse(await readFile(tasksPath, 'utf8')) as Record<string, unknown>
+    await writeFile(tasksPath, JSON.stringify({ ...state, status: 'completed', activeTaskIds: [] }, null, 2), 'utf8')
+    const meta = JSON.parse(await readFile(metaPath, 'utf8')) as Record<string, unknown>
+    await writeFile(metaPath, JSON.stringify({ ...meta, phase: 'completed', sessionId: 's-done' }, null, 2), 'utf8')
+
+    await attachSupervisor({
+      ctx: { get: () => undefined },
+      agentCtx: { get: () => ({ context: () => undefined }), on: () => undefined } as never,
+      agent: { id: 's-done' },
+      runId,
+      cwd,
+    })
+    const after = JSON.parse(await readFile(metaPath, 'utf8')) as { phase: string }
+    assert.equal(after.phase, 'completed', 'cold-start re-attach must not regress a completed run to running')
+  })
+
+  test('enforce mode stands down once the run completes, stays active while blocked, and re-engages if reopened', async () => {
+    const cwd = await workspace()
+    const runId = (await prepareGuardRun(cwd, {
+      goal: 'g', acceptance: 'a', discipline: 'd', tasks: 'T1 | 落盘 | 文件存在',
+      enforcement: 'enforce',
+      scopes: { T1: ['src/**'] },
+      probes: [{ id: 'P1', taskId: 'T1', weight: 'light', spec: { kind: 'file_exists', path: 'src/a.ts' }, enabled: true }],
+    })).runId
+    const tasksPath = join(cwd, 'docs', 'guard', runId, 'tasks.json')
+    let guardFn: ((exec: Record<string, unknown>) => string | undefined) | undefined
+    const attached = await attachSupervisor({
+      ctx: { get: () => undefined } as never,
+      agentCtx: {
+        get(name: string) {
+          return name === 'tools' ? { guard: (fn: typeof guardFn) => { guardFn = fn } } : undefined
+        },
+        on() {},
+      } as never,
+      agent: { id: 's' } as never,
+      runId,
+      cwd,
+    })
+
+    // While active, out-of-scope edits, shell commands, and new goals are denied.
+    assert.match(guardFn?.({ name: 'edit', arguments: { file_path: 'tmp/README.md' } }) ?? '', /scope/)
+    assert.match(guardFn?.({ name: 'bash', arguments: { command: 'ls' } }) ?? '', /子会话/)
+    assert.match(guardFn?.({ name: 'create_goal', arguments: { objective: 'next' } }) ?? '', /不要另建 goal/)
+
+    // While blocked, enforce must NOT stand down.
+    const raw = JSON.parse(await readFile(tasksPath, 'utf8')) as GuardState
+    await writeFile(tasksPath, JSON.stringify({ ...raw, status: 'blocked', activeTaskIds: [] }, null, 2), 'utf8')
+    await attached.refresh()
+    assert.match(guardFn?.({ name: 'edit', arguments: { file_path: 'tmp/README.md' } }) ?? '', /scope/)
+    assert.match(guardFn?.({ name: 'bash', arguments: { command: 'ls' } }) ?? '', /子会话/)
+    assert.match(guardFn?.({ name: 'update_goal', arguments: { action: 'complete' } }) ?? '', /不能标记目标完成/)
+
+    // Once completed, the supervised run is done and the session is usable again.
+    await writeFile(tasksPath, JSON.stringify({
+      ...raw,
+      status: 'completed',
+      activeTaskIds: [],
+      tasks: raw.tasks.map(task => ({ ...task, status: 'DONE' })),
+    }, null, 2), 'utf8')
+    await attached.refresh()
+    assert.equal(guardFn?.({ name: 'edit', arguments: { file_path: 'tmp/README.md' } }), undefined)
+    assert.equal(guardFn?.({ name: 'write', arguments: { file_path: 'docs/x.md' } }), undefined)
+    assert.equal(guardFn?.({ name: 'bash', arguments: { command: 'ls' } }), undefined)
+    assert.equal(guardFn?.({ name: 'create_goal', arguments: { objective: 'follow-up' } }), undefined)
+
+    // If a human rolls back / reopens the run, refresh() must re-engage the guard.
+    await writeFile(tasksPath, JSON.stringify({ ...raw, status: 'active', activeTaskIds: ['T1'] }, null, 2), 'utf8')
+    await attached.refresh()
+    assert.match(guardFn?.({ name: 'edit', arguments: { file_path: 'tmp/README.md' } }) ?? '', /scope/)
+    assert.match(guardFn?.({ name: 'bash', arguments: { command: 'ls' } }) ?? '', /子会话/)
+  })
+})
+
+// A long run must not die on the host's default 256-round cap, and the denial
+// that stops `update_goal(complete)` must name the one file that unblocks it.
+describe('goal-supervisor long-run goal budget', () => {
+  test('armSupervisorGoal arms the host goal with a multi-thousand round budget', async () => {
+    const cwd = await workspace()
+    const runId = await prepared(cwd)
+    let created: { objective: string; maxGoalRounds?: number } | undefined
+    const ctx = {
+      get: (name: string) => (name === 'goals'
+        ? {
+          get: () => undefined,
+          create: (_agent: unknown, request: { objective: string; maxGoalRounds?: number }) => { created = request },
+        }
+        : undefined),
+    }
+    assert.equal(await armSupervisorGoal({ ctx: ctx as never, agent: { id: 's' } as never, cwd, runId }), true)
+    assert.ok((created?.maxGoalRounds ?? 0) >= 2000, `armed with a long-run budget, got ${String(created?.maxGoalRounds)}`)
+  })
+
+  test('resumeSupervisorGoal raises an exhausted round cap before resuming', async () => {
+    const cwd = await workspace()
+    const runId = await prepared(cwd)
+    const calls: { edit?: number; resumeRevision?: number } = {}
+    const ctx = {
+      get: (name: string) => (name === 'goals'
+        ? {
+          get: () => ({
+            id: 'goal-1', revision: 3, phase: 'blocked', activation: 'disarmed',
+            roundsStarted: 256, maxGoalRounds: 256, blockedReason: { code: 'round-limit', message: 'exhausted' },
+          }),
+          edit: (_agent: unknown, _ref: unknown, request: { maxGoalRounds?: number }) => {
+            calls.edit = request.maxGoalRounds
+            return { id: 'goal-1', revision: 4, phase: 'blocked', activation: 'disarmed', roundsStarted: 256, maxGoalRounds: request.maxGoalRounds }
+          },
+          resume: (_agent: unknown, ref: { revision: number }) => { calls.resumeRevision = ref.revision },
+        }
+        : undefined),
+    }
+    assert.equal(await resumeSupervisorGoal({ ctx: ctx as never, agent: { id: 's' } as never, cwd, runId }), true)
+    assert.equal(calls.edit, 2000, 'an exhausted 256 cap rolls up to the long-run base')
+    assert.equal(calls.resumeRevision, 4, 'resume must use the revision edit returned')
+  })
+
+  test('the complete denial names the notes file that unblocks the task', async () => {
+    const cwd = await workspace()
+    const runId = await prepared(cwd)
+    let guardFn: ((exec: Record<string, unknown>) => string | undefined) | undefined
+    const agentCtx = {
+      get(name: string) {
+        if (name === 'tools') return { guard: (fn: typeof guardFn) => { guardFn = fn } }
+        return undefined
+      },
+      on() {},
+    }
+    await attachSupervisor({ ctx: { get: () => undefined } as never, agentCtx: agentCtx as never, agent: { id: 's' } as never, runId, cwd })
+    const denial = guardFn?.({ name: 'update_goal', arguments: { action: 'complete' } }) ?? ''
+    assert.match(denial, /不能标记目标完成/)
+    assert.ok(denial.includes(`docs/guard/${runId}/tasks/T1/notes.md`), denial)
+    assert.match(denial, /完成声明/)
   })
 })

@@ -5,9 +5,11 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile, chmod } from 'node:fs
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { afterEach, describe, test } from 'vitest'
+import { afterEach, describe, test, vi } from 'vitest'
 import { prepareGuardRun } from '../../src/host/goal-supervisor/create'
 import { rollbackRun } from '../../src/host/goal-supervisor/rollback'
+import { resumeBlockedRun } from '../../src/host/goal-supervisor/loop'
+import { GuardStore } from '../../src/host/goal-supervisor/store'
 import { changedPaths } from '../../src/host/goal-supervisor/git'
 import type { GuardState, RunMeta } from '../../src/host/goal-supervisor/schema'
 
@@ -15,6 +17,7 @@ const run = promisify(execFile)
 const roots: string[] = []
 
 afterEach(async () => {
+  vi.restoreAllMocks()
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
 
@@ -91,6 +94,75 @@ describe('goal-supervisor rollback', () => {
       .map(line => JSON.parse(line) as { type: string; skipped?: string[] })
     const rollbackEvent = events.find(event => event.type === 'checkpoint.rollback')
     assert.ok(rollbackEvent !== undefined)
+  })
+
+  test('rolling back a BLOCKED sibling does not clear a milestone gate', async () => {
+    const cwd = await repo()
+    const runId = await prepared(cwd)
+    const tasksPath = join(cwd, 'docs/guard', runId, 'tasks.json')
+    const before = JSON.parse(await readFile(tasksPath, 'utf8')) as GuardState
+    // A parallel batch whose sibling finished and failed a milestone review while
+    // T1 blocked. The prose deliberately avoids the legacy Chinese phrase: only
+    // `goalBlockKind` says this is a safety gate.
+    const milestone = 'milestone review failed (round 1): see review/round-1.md'
+    await writeFile(tasksPath, JSON.stringify({
+      ...before,
+      status: 'blocked',
+      goalBlocked: milestone,
+      goalBlockKind: 'milestone',
+      tasks: [
+        {
+          ...before.tasks[0]!,
+          status: 'BLOCKED',
+          blocked: { reason: '卡住', next: '回退', remainingCandidates: [], at: Date.now() },
+        },
+        { ...before.tasks[1]!, status: 'DONE' },
+      ],
+      activeTaskIds: [],
+    }, null, 2), 'utf8')
+
+    const outcome = await rollbackRun({ cwd, runId, sessionId: 'session-owner' })
+    assert.equal(outcome.ok, true)
+    if (!outcome.ok) return
+    assert.equal(outcome.report.taskId, 'T1', 'the BLOCKED sibling is the rollback target')
+    const state = JSON.parse(await readFile(tasksPath, 'utf8')) as GuardState
+    assert.equal(state.tasks.find(task => task.id === 'T1')?.status, 'TODO', 'the sibling was reopened')
+    // Rolling back a sibling did not reopen the reviewed DONE task, so the
+    // milestone gate is still open and must not be cleared by this rollback.
+    assert.equal(state.goalBlockKind, 'milestone', 'the milestone source survives a sibling-only rollback')
+    assert.equal(state.goalBlocked, milestone)
+    assert.equal(state.status, 'blocked')
+    const refused = await resumeBlockedRun(new GuardStore(join(cwd, 'docs/guard', runId)))
+    assert.equal(refused.ok, false)
+    assert.equal(refused.ok === false ? refused.code : '', 'milestone-pending', 'the gate still refuses continue')
+  })
+
+  test('a rollback keeps a runtime switch that landed while it ran', async () => {
+    const cwd = await repo()
+    const runId = await prepared(cwd)
+    const store = new GuardStore(join(cwd, 'docs/guard', runId))
+    const base = await store.readState()
+    assert.ok(base !== null)
+    // What the rollback reads: T1 blocked and no evaluator. The real ledger then
+    // gets a `guard.switch`; git work below can take seconds.
+    const stale: GuardState = {
+      ...base,
+      tasks: base.tasks.map((task, index) => ({
+        ...task,
+        status: index === 0 ? 'BLOCKED' : 'TODO',
+        ...(index === 0 ? { blocked: { reason: '卡住', next: '回退', remainingCandidates: [], at: Date.now() } } : {}),
+      })),
+    }
+    await store.update({ ...stale, evaluator: { provider: 'p-live', model: 'm-live' } })
+    vi.spyOn(GuardStore.prototype, 'readState').mockResolvedValueOnce(stale)
+
+    const outcome = await rollbackRun({ cwd, runId, sessionId: 'session-owner' })
+    assert.equal(outcome.ok, true)
+    const after = JSON.parse(await readFile(join(cwd, 'docs/guard', runId, 'tasks.json'), 'utf8')) as GuardState
+    assert.equal(after.tasks.find(task => task.id === 'T1')?.status, 'TODO')
+    // Writing the pre-git snapshot back blind erased this route.
+    assert.deepEqual(after.evaluator, { provider: 'p-live', model: 'm-live' },
+      'the lock-time evaluator survives the rollback write')
   })
 
   test('a dirty edit inside the task scope is restored, not deleted', async () => {
@@ -1521,5 +1593,34 @@ describe('goal-supervisor partial revert and stale checkpoints', () => {
     if (outcome.ok) return
     assert.match(outcome.reason, /本任务 scope 内没有成功重置的脏文件/, outcome.reason)
     assert.doesNotMatch(outcome.reason, /没有可重置的脏文件/, `a dirty path did exist: ${outcome.reason}`)
+  })
+
+  test('rollback preserves pre-existing dirty files stored on run-level baselineDirty (>200 dirty files)', async () => {
+    const cwd = await repo()
+    await mkdir(join(cwd, '.cache'), { recursive: true })
+    await Promise.all(Array.from({ length: 215 }, (_, i) =>
+      writeFile(join(cwd, '.cache', `c-${String(i).padStart(3, '0')}.tmp`), `c-${i}`)))
+    await mkdir(join(cwd, 'src'), { recursive: true })
+    await writeFile(join(cwd, 'src/pre.ts'), 'human pre-existing work')
+    const runId = await prepared(cwd, { T1: ['src/**'], T2: ['b.ts'] })
+    const baseCommit = (await run('git', ['rev-parse', 'HEAD'], { cwd })).stdout.trim()
+    await writeFile(join(cwd, 'src/new.ts'), 'task draft')
+    const tasksPath = join(cwd, 'docs', 'guard', runId, 'tasks.json')
+    const state = JSON.parse(await readFile(tasksPath, 'utf8')) as GuardState
+    assert.equal(Object.keys(state.baselineDirty ?? {}).length, 216)
+    await writeFile(tasksPath, JSON.stringify({
+      ...state,
+      tasks: [
+        { ...state.tasks[0]!, status: 'BLOCKED', baseCommit, blocked: { reason: 'x', next: 'y', remainingCandidates: [], at: Date.now() } },
+        state.tasks[1]!,
+      ],
+    }, null, 2), 'utf8')
+
+    const outcome = await rollbackRun({ cwd, runId, sessionId: 'session-owner' })
+    assert.equal(outcome.ok, true, outcome.ok ? '' : outcome.reason)
+    if (!outcome.ok) return
+    assert.equal(await readFile(join(cwd, 'src/pre.ts'), 'utf8'), 'human pre-existing work', 'run-level baseline file survives rollback')
+    assert.equal(existsSync(join(cwd, 'src/new.ts')), false, 'task-created file is removed')
+    assert.ok(outcome.report.skipped.includes('src/pre.ts'))
   })
 })

@@ -5,7 +5,7 @@
  * host's detail endpoint only while the tab (or modal) is open.
  */
 
-import { createElement as h, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import { createElement as h, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type ReactElement } from 'react'
 import type { ContextEventRecord, RequestRecord, SurfaceNode } from '../../shared/types'
 import { briefNodes, briefOf } from '../brief'
 import type { ContextViewProps } from '../services'
@@ -18,7 +18,7 @@ import type { ContextSettings } from '../settings'
 import type { ViewKit } from '../viewkit'
 import { makeContextBrowser } from './browser'
 import { useRedlineDrafts } from '../redlineDrafts'
-import { pauseGuard, readGuardStatus, readSupervisor, rollbackSupervisor, resumeGuard, type GuardStatus } from '../redlineChannel'
+import { readCarrierModels, readSupervisor, resumeSupervisor, rollbackSupervisor, switchSupervisor } from '../redlineChannel'
 import type { SupervisorSummary } from '../../shared/redline-supervisor'
 import { useChildSessions } from '../childSessions'
 import { makeChildCard } from './childCard'
@@ -98,14 +98,51 @@ export function makeContextView(
     // one switch, both cards move. It forces total semantics (the bands are the
     // composition), so turning it on parks the Total/Delta switch at total.
     const [dna, setDna] = useState(false)
-    const [guard, setGuard] = useState<GuardStatus | null>(null)
     const [supervisor, setSupervisor] = useState<SupervisorSummary | null>(null)
     const [supervisorBusy, setSupervisorBusy] = useState(false)
+    // Only needed when a blocked run has no configured fallback: the ledger still
+    // accepts an explicit route, so the card can offer one.
+    const [switchModels, setSwitchModels] = useState<{
+      readonly provider: string
+      readonly model: string
+      readonly label: string
+      readonly efforts: readonly { readonly id: string; readonly name: string }[]
+    }[]>([])
+    const [switchTarget, setSwitchTarget] = useState('')
+    // The chosen route's reasoning level; empty means "the adapter's default".
+    // It resets whenever the model or the session changes.
+    const [switchEffort, setSwitchEffort] = useState('')
     const [rollbackArmed, setRollbackArmed] = useState(false)
-    const [supervisorError, setSupervisorError] = useState<string | null>(null)
+    // Which action failed, so the card never labels a failed "continue" as a
+    // failed rollback.
+    const [supervisorError, setSupervisorError] = useState<{
+      readonly action: 'rollback' | 'resume' | 'switch'
+      readonly message: string
+    } | null>(null)
+    // `goalResumed:false` is an ACTION result, not a durable ledger fact, so it
+    // lives beside the polled summary: the 3-second poll replaces `supervisor`
+    // with the disk snapshot, which must not erase the warning. It is cleared by
+    // a session switch, by the next action, or once a poll shows the run
+    // finished (or moved on), which makes the old warning stale.
+    const [goalResumeHint, setGoalResumeHint] = useState(false)
+    // A switch whose resume half was refused: the model DID change, so this is
+    // shown as its own notice instead of a "model switch failed" error.
+    const [resumeRefused, setResumeRefused] = useState<string | null>(null)
     /** Bumped on every session change so a late rollback reply is dropped. */
     const rollbackGeneration = useRef(0)
-    const [guardBusy, setGuardBusy] = useState(false)
+    /**
+     * Bumped when an action is dispatched and again when its answer is applied.
+     * A poll that started before either carries an older generation: its answer
+     * describes a ledger the card no longer shows, so it is dropped instead of
+     * overwriting the action result and clearing its warning.
+     */
+    const supervisorPollGen = useRef(0)
+    /**
+     * Last observed run progress. The goal-resume warning and the resume
+     * refusal are ACTION results, not ledger facts; a poll that shows the run
+     * completed (or further along) proves them stale.
+     */
+    const lastProgress = useRef<{ readonly status: SupervisorSummary['status']; readonly done: number } | null>(null)
     // One handler for both DNA switches: opening DNA from the browser must also
     // park the trend's Total/Delta switch at Total, or the chart plots total
     // while the Delta segment still looks selected.
@@ -232,22 +269,8 @@ export function makeContextView(
       [dna, data, headers, displayRequests],
     )
 
-    // Goal Guard status: a per-session polling read; a session without a guard
+    // Supervisor run status: a per-session polling read; a session without a run
     // answers `null` and renders no card, so ordinary conversations stay untouched.
-    useEffect(() => {
-      if (typeof sessionId !== 'string' || sessionId === '') { setGuard(null); return }
-      let cancelled = false
-      const load = (): void => {
-        void readGuardStatus(sessionId).then((answer) => {
-          if (!cancelled && answer.ok) setGuard(answer.value)
-        })
-      }
-      load()
-      const timer = setInterval(load, 3000)
-      return () => { cancelled = true; clearInterval(timer) }
-    }, [sessionId])
-
-    // Supervisor run status: same polling cadence as the legacy guard card.
     useEffect(() => {
       // A pending second click belongs to the session it was armed in, and so
       // does the card: showing session A's run while session B is selected is
@@ -256,14 +279,51 @@ export function makeContextView(
       setSupervisorError(null)
       setSupervisor(null)
       setSupervisorBusy(false)
+      // The explicit judge pick belongs to the session it was made in.
+      setSwitchTarget('')
+      setSwitchEffort('')
+      // The catalog belongs to the blocked run of the previous session; keeping
+      // it would paint that session's models into the next one's picker.
+      setSwitchModels([])
+      setGoalResumeHint(false)
+      setResumeRefused(null)
+      lastProgress.current = null
       rollbackGeneration.current += 1
+      // A poll of the previous session must never land on this one either.
+      supervisorPollGen.current += 1
       if (typeof sessionId !== 'string' || sessionId === '') return
       let cancelled = false
       const load = (): void => {
+        const generation = supervisorPollGen.current
         void readSupervisor(sessionId).then((answer) => {
-          if (cancelled) return
+          if (cancelled || supervisorPollGen.current !== generation) return
           // a refusal here is "this session has no live run", not an error to show
-          setSupervisor(answer.ok ? answer.value : null)
+          const value = answer.ok ? answer.value : null
+          const previous = lastProgress.current
+          // A finished run cannot still be waiting to be resumed, and a run that
+          // advanced to another task has already been driven again: both make
+          // the previous action's notice stale. A FAILED poll proves neither, so
+          // it leaves the notice alone.
+          const stale = answer.ok && (value === null || value.status === 'completed'
+            || (previous !== null && value.done > previous.done))
+          if (stale) {
+            setGoalResumeHint(false)
+            setResumeRefused(null)
+          }
+          // A refusal describes a BLOCKED run. A poll that shows it unblocked
+          // proves the notice stale even when `done` did not move: another tab's
+          // `guard.continue` or fallback switch clears a block in place, and a
+          // multi-tab rollback can even lower `done` — neither is visible to the
+          // progress comparison above. The baseline's status is what makes this
+          // a real transition: without one there is no notice to clear.
+          const unblocked = answer.ok && value !== null
+            && value.status !== 'blocked'
+            && value.blockedReason === undefined
+            && !value.tasks.some(task => task.status === 'BLOCKED')
+            && previous?.status === 'blocked'
+          if (unblocked) setResumeRefused(null)
+          if (answer.ok) lastProgress.current = value === null ? null : { status: value.status, done: value.done }
+          setSupervisor(value)
         })
       }
       load()
@@ -271,14 +331,64 @@ export function makeContextView(
       return () => { cancelled = true; clearInterval(timer) }
     }, [sessionId])
 
-    const toggleGuard = (): void => {
-      if (guard === null || guardBusy) return
-      setGuardBusy(true)
-      const action = guard.paused ? resumeGuard : pauseGuard
-      void action(guard.sessionId).then((answer) => {
-        setGuardBusy(false)
-        if (answer.ok) setGuard(answer.value)
+    // A blocked run without a configured fallback is the zenspace case: the card
+    // must still be able to name a judge, so load the catalog on demand. The
+    // dependency is the BLOCK itself, not the run status: a task can flip to
+    // BLOCKED while the run-level status stays `active`, and watching only
+    // `supervisor?.status` left the picker empty for exactly that transition.
+    const blockedRun = supervisor !== null
+      && (supervisor.blockedReason !== undefined
+        || supervisor.status === 'blocked'
+        || supervisor.tasks.some(task => task.status === 'BLOCKED'))
+    // The ledger and the host goal disagree when the driver stopped without a
+    // supervisor block: a round-limit stop or the session-start disarm leaves
+    // `tasks.json` saying `active` while nothing will run another turn. That is
+    // a real state the card must show, and 继续 is how a human repairs it.
+    const hostGoal = supervisor?.hostGoal
+    const hostStopped = supervisor !== null && supervisor.status === 'active'
+      && hostGoal !== undefined
+      && (hostGoal.phase !== 'active' || hostGoal.activation !== 'armed')
+    const recoverable = blockedRun || hostStopped
+    const effectiveStatus = supervisor === null || supervisor.status !== 'active' || hostGoal === undefined
+      ? supervisor?.status ?? 'active'
+      : hostGoal.phase === 'blocked'
+        ? 'blocked'
+        : hostGoal.phase === 'complete'
+          ? 'completed'
+          : hostGoal.phase === 'paused' || hostGoal.activation === 'disarmed'
+            ? 'paused'
+            : 'active'
+    // A run read from disk while its session is unloaded cannot be acted on:
+    // loading the catalog would offer a switch that the host must refuse.
+    const supervisorAgentDown = supervisor !== null && supervisor.agentLive === false
+    useEffect(() => {
+      if (!blockedRun || supervisorAgentDown || typeof sessionId !== 'string' || sessionId === '') return
+      let cancelled = false
+      void readCarrierModels().then((answer) => {
+        if (cancelled || !answer.ok) return
+        setSwitchModels(answer.value.models.map(model => ({
+          provider: model.provider,
+          model: model.model,
+          label: `${model.provider}/${model.model}`,
+          efforts: model.efforts,
+        })))
       })
+      return () => { cancelled = true }
+    }, [blockedRun, supervisorAgentDown, supervisor?.runId, sessionId])
+
+    // One place for every action answer: the summary replaces the polled one and
+    // the two action-only notices are re-derived from THIS reply, so a later
+    // poll cannot silently drop the warning.
+    const applySupervisorAnswer = (value: SupervisorSummary | null): void => {
+      // Any poll still in flight read a ledger older than this reply.
+      supervisorPollGen.current += 1
+      setSupervisor(value)
+      setGoalResumeHint(value?.goalResumed === false)
+      setResumeRefused(value?.resumeRefused ?? null)
+      // The reply's progress is the baseline the next poll compares against;
+      // otherwise a poll that repeats the reply's own numbers would look like
+      // progress and clear a warning the action just raised.
+      lastProgress.current = value === null ? null : { status: value.status, done: value.done }
     }
 
     // Rollback is destructive (it reverts commits and restores the reopened
@@ -288,48 +398,174 @@ export function makeContextView(
       if (supervisor === null || supervisorBusy || typeof sessionId !== 'string' || sessionId === '') return
       if (!rollbackArmed) { setRollbackArmed(true); return }
       setRollbackArmed(false)
+      // A poll in flight read the pre-rollback ledger; this action's reply is
+      // newer than anything that request can return.
+      supervisorPollGen.current += 1
       setSupervisorBusy(true)
       setSupervisorError(null)
+      // The previous action's notice describes a different request; keeping it
+      // beside this one would report two outcomes at once.
+      setGoalResumeHint(false)
+      setResumeRefused(null)
       // A response that lands after the user switched sessions must not paint
       // this session's result onto the next one.
       const generation = rollbackGeneration.current
       void rollbackSupervisor(sessionId, supervisor.runId).then((answer) => {
         if (rollbackGeneration.current !== generation) return
         setSupervisorBusy(false)
-        if (answer.ok) { setSupervisor(answer.value); return }
+        if (answer.ok) { applySupervisorAnswer(answer.value); return }
         // A failed rollback is actionable: the host says which checkpoint or
         // file is in the way, so surface it instead of going silent. Keep the raw
         // message (an empty one must render the title alone, not the title twice);
         // the localized template is applied at render time.
-        setSupervisorError(answer.message)
+        setSupervisorError({ action: 'rollback', message: answer.message })
+      })
+    }
+
+    // A blocked run is one click away from continuing: the block exists to stop
+    // an unusable judge from passing anything, not to make the human roll the
+    // task back (which would reopen it and lose its base commit).
+    const resumeSupervisorRun = (): void => {
+      if (supervisor === null || supervisorBusy || typeof sessionId !== 'string' || sessionId === '') return
+      supervisorPollGen.current += 1
+      setSupervisorBusy(true)
+      setSupervisorError(null)
+      setGoalResumeHint(false)
+      setResumeRefused(null)
+      const generation = rollbackGeneration.current
+      void resumeSupervisor(sessionId, supervisor.runId).then((answer) => {
+        if (rollbackGeneration.current !== generation) return
+        setSupervisorBusy(false)
+        if (answer.ok) { applySupervisorAnswer(answer.value); return }
+        setSupervisorError({ action: 'resume', message: answer.message })
+      })
+    }
+
+    // A blocked run may be blocked BECAUSE the judge is unusable: switching to the
+    // configured fallback is the recovery, and it resumes in the same action.
+    const switchSupervisorModel = (role: 'executor' | 'evaluator'): void => {
+      if (supervisor === null || supervisorBusy || typeof sessionId !== 'string' || sessionId === '') return
+      supervisorPollGen.current += 1
+      setSupervisorBusy(true)
+      setSupervisorError(null)
+      setGoalResumeHint(false)
+      setResumeRefused(null)
+      const generation = rollbackGeneration.current
+      void switchSupervisor(sessionId, { runId: supervisor.runId, role, resume: true }).then((answer) => {
+        if (rollbackGeneration.current !== generation) return
+        setSupervisorBusy(false)
+        if (answer.ok) { applySupervisorAnswer(answer.value); return }
+        setSupervisorError({ action: 'switch', message: answer.message })
+      })
+    }
+
+    // Explicit judge switch for a run whose configured routes are unusable — the
+    // card must keep offering it even when a fallback is configured.
+    const switchEvaluatorTo = (): void => {
+      if (supervisor === null || supervisorBusy || switchTarget === '' || typeof sessionId !== 'string') return
+      const picked = switchModels.find(model => `${model.provider}/${model.model}` === switchTarget)
+      if (picked === undefined) return
+      // Only a level this model actually advertises; a stale selection from the
+      // previous model must not reach the host.
+      const effort = picked.efforts.some(level => level.id === switchEffort) ? switchEffort : ''
+      supervisorPollGen.current += 1
+      setSupervisorBusy(true)
+      setSupervisorError(null)
+      setGoalResumeHint(false)
+      setResumeRefused(null)
+      const generation = rollbackGeneration.current
+      void switchSupervisor(sessionId, {
+        runId: supervisor.runId,
+        role: 'evaluator',
+        route: {
+          provider: picked.provider,
+          model: picked.model,
+          ...(effort === '' ? {} : { reasoningEffort: effort }),
+        },
+        resume: true,
+      }).then((answer) => {
+        if (rollbackGeneration.current !== generation) return
+        setSupervisorBusy(false)
+        if (answer.ok) { applySupervisorAnswer(answer.value); setSwitchTarget(''); setSwitchEffort(''); return }
+        setSupervisorError({ action: 'switch', message: answer.message })
       })
     }
 
     const supervisorCard = supervisor === null ? null : (() => {
       const currentTask = supervisor.tasks.find(task => task.id === supervisor.currentTaskId)
       const blocked = supervisor.tasks.find(task => task.status === 'BLOCKED')
+      const pickedSwitch = switchModels.find(model => `${model.provider}/${model.model}` === switchTarget)
+      // Once a role already runs on its fallback route, "switch to the fallback"
+      // is a no-op button that only looks like a recovery action.
+      const executorOnFallback = supervisor.activeExecutorModel !== undefined
+        && supervisor.activeExecutorModel === supervisor.executorFallbackModel
+      const evaluatorOnFallback = supervisor.evaluatorModel !== undefined
+        && supervisor.evaluatorModel === supervisor.evaluatorFallbackModel
+      const chip = `redline-guard-chip redline-guard-chip-${effectiveStatus}`
+      // A host-side stop (round limit / paused / disarmed) is the OTHER way a run
+      // goes quiet while the ledger still says `active`; without this row the
+      // card rendered a dead run as "running" forever.
+      const hostGoalRow = hostGoal === undefined || !hostStopped
+        ? null
+        : h('div', {
+          className: hostGoal.phase === 'blocked'
+            ? 'redline-guard-alert redline-guard-alert-error'
+            : 'redline-guard-alert redline-guard-alert-warn',
+          role: 'alert',
+          'data-redline-supervisor-host-goal': hostGoal.phase,
+        },
+        hostGoal.phase === 'blocked'
+          ? t('supervisor.hostGoalBlocked', {
+            code: hostGoal.blockedCode ?? hostGoal.phase,
+            reason: hostGoal.blockedMessage ?? '',
+          })
+          : t('supervisor.hostGoalStopped', {
+            rounds: hostGoal.roundsStarted === undefined || hostGoal.maxGoalRounds === undefined
+              ? ''
+              : `（${hostGoal.roundsStarted}/${hostGoal.maxGoalRounds}）`,
+          }))
       return h('div', { className: 'redline-card redline-guard-card', 'data-redline-supervisor-card': '1' },
-        h('div', { className: 'redline-card-title' },
-          h('span', { className: 'redline-card-title-text' }, t('supervisor.title')),
-          h('span', { className: 'redline-card-scale' },
-            `${supervisor.done}/${supervisor.total} · ${t(`supervisor.status.${supervisor.status}`)}`)),
-        h('div', { className: 'redline-guard-current' }, t('supervisor.run', { runId: supervisor.runId })),
-        currentTask === undefined ? null : h('div', { className: 'redline-guard-current' },
+        // Header: what this is, whether it is stuck, and how far it got.
+        h('div', { className: 'redline-guard-head' },
+          h('span', { className: 'redline-guard-title' }, t('supervisor.title')),
+          h('span', { className: chip }, t(`supervisor.status.${effectiveStatus}`)),
+          h('span', { className: 'redline-guard-progress' }, `${supervisor.done}/${supervisor.total}`)),
+        h('div', { className: 'redline-guard-run', title: supervisor.runId }, t('supervisor.run', { runId: supervisor.runId })),
+        currentTask === undefined ? null : h('div', { className: 'redline-guard-task' },
           t('supervisor.task', { id: currentTask.id, title: currentTask.title })),
-        blocked === undefined ? null : h('div', { className: 'redline-editor-err', role: 'alert' },
+        // A block is the one thing a human must act on: give it a callout, not a
+        // red sentence lost among the metadata rows.
+        blocked === undefined ? null : h('div', { className: 'redline-guard-alert redline-guard-alert-error', role: 'alert' },
           t('supervisor.blocked', { reason: blocked.blockedReason ?? '' })),
         // A run-level block is the plugin telling the host goal to stop; without
-        // it on the card a stalled run looks identical to an idle one.
-        supervisor.blockedReason === undefined || blocked !== undefined
+        // it on the card a stalled run looks identical to an idle one. A BLOCKED
+        // sibling is a DIFFERENT fact (a parallel batch can have both), so only
+        // hide this line when it would repeat the same sentence.
+        hostGoalRow,
+        supervisor.blockedReason === undefined || blocked?.blockedReason === supervisor.blockedReason
           ? null
-          : h('div', { className: 'redline-guard-eval' }, t('supervisor.runBlocked', { reason: supervisor.blockedReason })),
+          : h('div', { className: 'redline-guard-alert redline-guard-alert-error', role: 'status' },
+            h('div', { className: 'redline-guard-alert-body' }, t('supervisor.runBlocked', { reason: supervisor.blockedReason }))),
         supervisor.setupError === undefined
           ? null
-          : h('div', { className: 'redline-editor-err', role: 'alert' }, t('supervisor.setupError', { reason: supervisor.setupError })),
-        supervisorError === null ? null : h('div', { className: 'redline-editor-err', role: 'alert' },
-          supervisorError.trim() === ''
-            ? t('supervisor.rollbackFailed')
-            : t('supervisor.rollbackFailedDetail', { reason: supervisorError })),
+          : h('div', { className: 'redline-guard-alert redline-guard-alert-warn', role: 'alert' }, t('supervisor.setupError', { reason: supervisor.setupError })),
+        supervisorError === null ? null : h('div', { className: 'redline-guard-alert redline-guard-alert-error', role: 'alert' },
+          supervisorError.message.trim() === ''
+            ? t(`supervisor.${supervisorError.action}Failed`)
+            : t('supervisor.actionFailedDetail', {
+              action: t(`supervisor.${supervisorError.action}Failed`),
+              reason: supervisorError.message,
+            })),
+        goalResumeHint
+          ? h('div', {
+            className: 'redline-guard-note', role: 'status', 'data-redline-supervisor-goal-resume': '1',
+          }, t('supervisor.goalNotResumed'))
+          : null,
+        resumeRefused === null
+          ? null
+          : h('div', {
+            className: 'redline-guard-alert redline-guard-alert-error', role: 'alert', 'data-redline-supervisor-resume-refused': '1',
+          }, t('supervisor.resumeRefused', { reason: resumeRefused })),
         supervisor.mirror?.issueUrl === undefined ? null : h('div', { className: 'redline-guard-eval' },
           h('a', { href: supervisor.mirror.issueUrl, target: '_blank', rel: 'noreferrer' }, t('supervisor.mirror'))),
         // An isolated run commits to its own branch and nothing merges it back,
@@ -338,51 +574,103 @@ export function makeContextView(
           ? null
           : h('div', { className: 'redline-guard-eval', 'data-redline-supervisor-branch': '1' },
             t('supervisor.worktreeBranch', { branch: supervisor.worktreeBranch })),
+        supervisor.evaluatorModel === undefined
+          ? null
+          : h('div', { className: 'redline-guard-eval', 'data-redline-supervisor-evaluator': '1' },
+            t('supervisor.evaluator', { model: supervisor.evaluatorModel })),
+        supervisor.evaluatorFallbackModel === undefined
+          ? null
+          : h('div', { className: 'redline-guard-eval', 'data-redline-supervisor-evaluator-fallback': '1' },
+            t('supervisor.evaluatorFallback', { model: supervisor.evaluatorFallbackModel })),
+        supervisor.executorModel === undefined
+          ? null
+          : h('div', { className: 'redline-guard-eval', 'data-redline-supervisor-executor': '1' },
+            t('supervisor.executor', { model: supervisor.executorModel })),
+        supervisor.activeExecutorModel === undefined || supervisor.activeExecutorModel === supervisor.executorModel
+          ? null
+          : h('div', { className: 'redline-guard-eval', 'data-redline-supervisor-active-executor': '1' },
+            t('supervisor.activeExecutor', { model: supervisor.activeExecutorModel })),
+        supervisor.executorModel?.startsWith('antigravity/') === true
+          ? h('div', {
+            className: 'redline-guard-note', 'data-redline-supervisor-executor-bridge': '1',
+          }, t('supervisor.executorBridgeWarn'))
+          : null,
+        supervisor.visualWitness === true
+          ? h('div', { className: 'redline-guard-eval', 'data-redline-supervisor-visual': '1' }, t('supervisor.visual'))
+          : null,
         // The run was read from disk because this session is not loaded: say so
         // instead of hiding the card, or a restart reads as "my run vanished".
         supervisor.agentLive === false
-          ? h('div', { className: 'redline-guard-eval', role: 'status', 'data-redline-supervisor-down': '1' },
+          ? h('div', { className: 'redline-guard-note', role: 'status', 'data-redline-supervisor-down': '1' },
             t('supervisor.agentDown'))
           : null,
-        supervisor.tasks.some(task => task.status !== 'TODO') ? h('button', {
-          type: 'button', className: 'redline-gran-btn', 'data-redline-supervisor-rollback': '1',
-          disabled: supervisorBusy || supervisor.agentLive === false, onClick: rollbackSupervisorRun,
-        }, rollbackArmed ? t('supervisor.rollbackArmed') : t('supervisor.rollback')) : null)
-    })()
-
-    const guardCard = guard === null ? null : (() => {
-      const passed = guard.tasks.filter(task => task.status === 'passed').length
-      const current = guard.current < guard.tasks.length ? guard.tasks[guard.current] : null
-      return h('div', { className: 'redline-card redline-guard-card', 'data-redline-guard-card': '1' },
-        h('div', { className: 'redline-card-title' },
-          h('span', { className: 'redline-card-title-text' }, t('guard.title')),
-          h('span', { className: 'redline-card-scale' },
-            guard.dryRun ? t('guard.dryRun') : guard.paused ? t('guard.paused') : t('guard.progress', { done: passed, total: guard.tasks.length })),
-          h('button', {
-            type: 'button', className: 'redline-gran-btn redline-guard-toggle', disabled: guardBusy,
-            'data-redline-guard-toggle': '1', onClick: toggleGuard,
-          }, guard.paused ? t('guard.resume') : t('guard.pause')),
-        ),
-        h('div', { className: 'redline-guard-current' },
-          current === null
-            ? t('guard.allDone')
-            : t('guard.current', { id: current.id, title: current.title })),
-        h('div', { className: 'redline-guard-tasks' }, guard.tasks.map(task =>
-          h('span', { key: task.id, className: `redline-guard-task redline-guard-${task.status}` }, `${task.id} ${task.status}`))),
-        guard.verdict === null ? null : h('div', { className: 'redline-guard-verdict' },
-          t('guard.verdict', { verdict: guard.verdict }),
-          guard.correction === '' ? null : h('span', { className: 'redline-guard-correction' }, ' · ' + guard.correction)),
-        guard.lastAudit !== undefined && !guard.lastAudit.ran
-          ? h('div', { className: 'redline-guard-eval' }, t('guard.notEvaluated', { note: guard.lastAudit.note }))
+        !recoverable
+          ? null
+          : h('div', { className: 'redline-guard-actions' },
+            // Recovery first; destructive last.
+            h('button', {
+              type: 'button', className: 'redline-confirm-btn redline-confirm-btn-ok', 'data-redline-supervisor-resume': '1',
+              disabled: supervisorBusy || supervisor.agentLive === false, onClick: resumeSupervisorRun,
+            }, t('supervisor.resume')),
+            supervisor.executorFallbackModel === undefined || executorOnFallback
+              ? null
+              : h('button', {
+                type: 'button', className: 'redline-confirm-btn redline-confirm-btn-cancel', 'data-redline-supervisor-switch-executor': '1',
+                disabled: supervisorBusy || supervisor.agentLive === false,
+                onClick: () => { switchSupervisorModel('executor') },
+              }, t('supervisor.switchExecutor')),
+            supervisor.evaluatorFallbackModel === undefined || evaluatorOnFallback
+              ? null
+              : h('button', {
+                type: 'button', className: 'redline-confirm-btn redline-confirm-btn-cancel', 'data-redline-supervisor-switch-evaluator': '1',
+                disabled: supervisorBusy || supervisor.agentLive === false,
+                onClick: () => { switchSupervisorModel('evaluator') },
+              }, t('supervisor.switchEvaluator')),
+            null),
+        // Rollback is not a recovery: it is offered whenever this run has any
+        // recorded state, and stays usable when a run is read from disk.
+        supervisor.tasks.some(task => task.status !== 'TODO')
+          ? h('div', { className: 'redline-guard-actions' },
+            h('button', {
+              type: 'button', className: 'redline-confirm-btn redline-confirm-btn-danger', 'data-redline-supervisor-rollback': '1',
+              disabled: supervisorBusy || supervisor.agentLive === false, onClick: rollbackSupervisorRun,
+            }, rollbackArmed ? t('supervisor.rollbackArmed') : t('supervisor.rollback')))
           : null,
-        guard.lastEval === undefined ? null : h('div', { className: 'redline-guard-eval' },
-          t('guard.lastEval', {
-            model: guard.lastEval.model,
-            ms: guard.lastEval.latencyMs,
-            input: guard.lastEval.inputTokens,
-            output: guard.lastEval.outputTokens,
-          })),
-      )
+        // The configured fallback may itself be the unusable route, so the
+        // explicit picker is offered whenever the catalog is known — never
+        // hidden just because a fallback exists. Same picker style as the
+        // creation dialog, so model + reasoning level read the same everywhere.
+        switchModels.length === 0
+          ? null
+          : h('div', { className: 'redline-guard-switch' },
+            h('select', {
+              className: 'redline-guard-select', 'data-redline-supervisor-switch-target': '1',
+              value: switchTarget, 'aria-label': t('supervisor.switchEvaluatorPick'),
+              disabled: supervisorBusy || supervisor.agentLive === false,
+              onChange: (event: ChangeEvent<HTMLSelectElement>) => {
+                setSwitchTarget(event.target.value)
+                setSwitchEffort('')
+              },
+            },
+            h('option', { value: '' }, t('supervisor.switchEvaluatorPick')),
+            ...switchModels.map(model => h('option', {
+              key: `${model.provider}/${model.model}`, value: `${model.provider}/${model.model}`,
+            }, model.label))),
+            pickedSwitch === undefined || pickedSwitch.efforts.length === 0
+              ? null
+              : h('select', {
+                className: 'redline-guard-select', 'data-redline-supervisor-switch-effort': '1',
+                value: switchEffort, 'aria-label': t('supervisor.switchEffortPick'),
+                disabled: supervisorBusy || supervisor.agentLive === false,
+                onChange: (event: ChangeEvent<HTMLSelectElement>) => { setSwitchEffort(event.target.value) },
+              },
+              h('option', { value: '' }, t('supervisor.switchEffortDefault')),
+              ...pickedSwitch.efforts.map(level => h('option', { key: level.id, value: level.id }, level.name))),
+            h('button', {
+              type: 'button', className: 'redline-confirm-btn redline-confirm-btn-ok', 'data-redline-supervisor-switch-apply': '1',
+              disabled: supervisorBusy || supervisor.agentLive === false || switchTarget === '',
+              onClick: switchEvaluatorTo,
+            }, t('supervisor.switchApply'))))
     })()
 
     // Chat → Context jump, leg 1: pick up the assistant-action relay's request for this session —
@@ -657,7 +945,6 @@ export function makeContextView(
             会被拉成三大行，既不像 demo 也浪费首屏。右侧栏面板（窄列）不放它（`docs/03` R5.1）。 */}
         <div className="redline-masonry">
           <div className="redline-masonry-col">
-            {guardCard}
             {supervisorCard}
             {inSidebar ? null : (
               <StatsContext stats={stepStats} turn={activeReq?.turn} step={activeReq?.step}
@@ -705,6 +992,7 @@ export function makeContextView(
               plan={children.plan}
               start={children.start}
               planAnchor={children.planAnchor}
+              readRepo={children.readRepo}
               prepareGuard={children.prepareGuard}
               startAnchor={children.startAnchor}
               openSession={(id) => { openSessionVia(ctx, id) }}

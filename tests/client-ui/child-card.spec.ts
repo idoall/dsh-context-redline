@@ -65,6 +65,7 @@ async function open(props: Partial<ChildCardProps> = {}): Promise<Mounted> {
       value: {
         snapshot: '目标：目标\n\n验收：验收\n\n纪律：纪律', snapshotFingerprint: 'sf', requestFingerprint: 'rf',
         title: '目标', workspaceId: 'workspace', config: { agentPreset: 'standard', provider: 'provider-a', model: 'model-a' },
+        cwd: '/Volumes/SSD/Home/lionm4/my_project/_AI/x9Copy',
       },
     }),
     startAnchor: () => Promise.resolve({
@@ -607,7 +608,7 @@ describe('锚定会话（0.4.0）', () => {
     await m.unmount()
   })
 
-  test('督导运行：勾选独立 worktree 后首次点击就把 worktreePath 交给宿主（闭包不得读旧 state）', async () => {
+  test('督导运行：勾选 worktree 后把隔离检出路径交给宿主（首次点击即生效）', async () => {
     const prepared: { tasks?: string, worktree?: boolean, runId?: string }[] = []
     const starts: unknown[][] = []
     const m = await open({
@@ -621,7 +622,7 @@ describe('锚定会话（0.4.0）', () => {
           ok: true as const,
           value: {
             runId: '20261124-worktree',
-            root: '/repo/.guard/worktrees/20261124-worktree',
+            root: '/repo/.guard/worktrees/20261124-worktree/docs/guard/20261124-worktree',
             files: ['tasks.json'],
             worktreePath: '/repo/.guard/worktrees/20261124-worktree',
           },
@@ -658,7 +659,90 @@ describe('锚定会话（0.4.0）', () => {
     assert.equal(starts.length, 1)
     const input = starts[0]?.[1] as { guardRunId?: string, guardWorktreePath?: string }
     assert.equal(input.guardRunId, '20261124-worktree')
-    assert.equal(input.guardWorktreePath, '/repo/.guard/worktrees/20261124-worktree', '第一次点击就必须带上 worktree 路径')
+    assert.equal(input.guardWorktreePath, '/repo/.guard/worktrees/20261124-worktree', '首次点击就必须带上隔离检出路径')
+    await m.unmount()
+  })
+
+  test('督导运行：检测到 git 仓库时默认勾选独立 worktree，并说明为什么', async () => {
+    const prepared: { worktree?: boolean }[] = []
+    const m = await open({
+      readRepo: () => Promise.resolve({
+        ok: true as const,
+        value: { isGit: true, branch: 'dev', defaultBranch: 'main', remoteKind: 'gitlab' as const, remoteHost: 'lionm4' },
+      }),
+      prepareGuard: (input) => {
+        prepared.push(input.worktree === undefined ? {} : { worktree: input.worktree })
+        return Promise.resolve({
+          ok: true as const,
+          value: {
+            runId: '20261124-auto-wt',
+            root: '/repo/.guard/worktrees/20261124-auto-wt/docs/guard/20261124-auto-wt',
+            files: ['tasks.json'],
+            worktreePath: '/repo/.guard/worktrees/20261124-auto-wt',
+          },
+        })
+      },
+      startAnchor: () => Promise.resolve({
+        ok: true as const,
+        value: { sessionId: 'session-auto-wt', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+      }),
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    const setValue = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setValue('[data-redline-anchor-task]', '任务 A')
+    await setValue('[data-redline-anchor-acceptance]', '验收 A')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]').click() })
+    await setValue('[data-redline-anchor-supervisor-tasks]', 'T1 | 落盘 | 文件存在')
+    // Nothing was clicked on the worktree row: the detected repository is what
+    // checks it, so an in-place run cannot happen by accident.
+    assert.ok(query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor-worktree]').checked)
+    assert.ok(text(modal).includes(DICT_EN['anchor.supervisorRepoGitlab'].replace('{branch}', 'dev')))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    assert.deepEqual(prepared, [{ worktree: true }])
+    await m.unmount()
+  })
+
+  test('督导运行：默认分支上取消隔离 worktree 时给出警告，取消本身被尊重', async () => {
+    const m = await open({
+      readRepo: () => Promise.resolve({
+        ok: true as const,
+        value: { isGit: true, branch: 'main', defaultBranch: 'main' },
+      }),
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]').click() })
+    const worktree = query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor-worktree]')
+    assert.equal(worktree.checked, true, 'a git repository defaults to the isolated checkout')
+    await act(async () => { worktree.click() })
+    assert.equal(worktree.checked, false, 'the human can always turn the default off')
+    assert.equal(queryAll(modal, '[data-redline-anchor-worktree-warn]').length, 1)
+    assert.ok(text(modal).includes(DICT_EN['anchor.supervisorWorktreeMainWarn'].replace('{branch}', 'main')))
+    await m.unmount()
+  })
+
+  test('督导运行：不是 git 仓库时保持不勾选（没有仓库可隔离）', async () => {
+    const m = await open({
+      readRepo: () => Promise.resolve({ ok: true as const, value: { isGit: false } }),
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 30)) })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]').click() })
+    assert.equal(query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor-worktree]').checked, false)
+    assert.equal(queryAll(modal, '[data-redline-anchor-repo-hint]').length, 0)
     await m.unmount()
   })
 
@@ -815,15 +899,89 @@ describe('锚定会话（0.4.0）', () => {
   })
 })
 
-describe('目标守卫（0.9.0 只观察）', () => {
-  test('开启目标守卫时固定以「只观察」发起（0.9.0 不拦截）', async () => {
+describe('督导运行：评估模型选择与旧目标守卫下线', () => {
+  test('弹窗不再显示旧目标守卫，并在督导运行中提供独立评估模型与推理等级双段选择器', async () => {
+    const prepared: unknown[] = []
+    const m = await open({
+      models: [
+        { provider: 'deepseek', providerName: 'DeepSeek', model: 'deepseek-chat', modelName: 'DeepSeek Chat', efforts: [{ id: 'low', name: 'Low' }, { id: 'max', name: 'Max' }] },
+        { provider: 'anthropic', providerName: 'Anthropic', model: 'claude-sonnet', modelName: 'Claude Sonnet', efforts: [{ id: 'low', name: 'Low' }, { id: 'max', name: 'Max' }] },
+      ],
+      prepareGuard: (input) => {
+        prepared.push(input)
+        return Promise.resolve({ ok: true as const, value: { runId: 'r-eval', root: '/tmp/r-eval', files: ['tasks.json'] } })
+      },
+      startAnchor: () => Promise.resolve({
+        ok: true as const,
+        value: { sessionId: 'session-supervisor-eval', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+      }),
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    assert.equal(queryAll(modal, '[data-redline-anchor-guard]').length, 0, '旧目标守卫入口已下线')
+    const setValue = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setValue('[data-redline-anchor-task]', '任务 A')
+    await setValue('[data-redline-anchor-acceptance]', '验收 A')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]').click() })
+    await setValue('[data-redline-anchor-supervisor-tasks]', 'T1 | one | e1 | src/a.ts')
+
+    // Uses the custom two-segment picker (model + effort), never a bare native <select>.
+    assert.equal(queryAll(modal, '[data-redline-anchor-supervisor-options] select').length, 0)
+    const evalBtn = query<HTMLButtonElement>(modal, '[data-redline-anchor-supervisor-evaluator]')
+    assert.equal(evalBtn.tagName, 'BUTTON')
+    assert.ok(text(evalBtn).includes(DICT_EN['anchor.supervisorEvaluatorSame']), '评估模型默认跟随主会话')
+    const evalEffortBtn = query<HTMLButtonElement>(modal, '[data-redline-anchor-supervisor-evaluator-effort]')
+    assert.equal(evalEffortBtn.disabled, true, '跟随主会话时评估推理等级禁用')
+
+    await act(async () => { evalBtn.click() })
+    const modelMenu = query<HTMLElement>(document.body, '[data-redline-picker-menu="model"]')
+    const claude = queryAll<HTMLButtonElement>(modelMenu, '[role="menuitemradio"]').find(btn => text(btn).includes('Claude Sonnet'))
+    assert.ok(claude !== undefined)
+    await act(async () => { claude.click() })
+    assert.equal(evalEffortBtn.disabled, false)
+
+    await act(async () => { evalEffortBtn.click() })
+    const effortMenu = query<HTMLElement>(document.body, '[data-redline-picker-menu="effort"]')
+    const maxBtn = queryAll<HTMLButtonElement>(effortMenu, '[role="menuitemradio"]').find(btn => text(btn).includes('Max'))
+    assert.ok(maxBtn !== undefined)
+    await act(async () => { maxBtn.click() })
+
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    assert.equal(prepared.length, 1)
+    const input = prepared[0] as { evaluator?: { provider: string; model: string; reasoningEffort?: string } }
+    assert.deepEqual(input.evaluator, { provider: 'anthropic', model: 'claude-sonnet', reasoningEffort: 'max' }, '选中的独立评估模型与推理等级传给督导运行')
+    await m.unmount()
+  })
+
+  test('锚定对话：手动选择模型与 Max 推理等级后继续填写任务表不会被 planAnchor 重置为 Default，且支持开启 danger-full-access', async () => {
     const starts: unknown[][] = []
     const m = await open({
+      models: [
+        { provider: 'dimagent-oauth', providerName: 'DimAgent OAuth', model: 'deepseek-v4.1-flash', modelName: 'DeepSeek 4.1 Flash', efforts: [{ id: 'low', name: 'Low' }, { id: 'max', name: 'Max' }] },
+      ],
+      planAnchor: () => Promise.resolve({
+        ok: true as const,
+        value: {
+          snapshot: '目标：目标', snapshotFingerprint: 'sf', requestFingerprint: 'rf',
+          title: '目标', workspaceId: 'workspace',
+          config: { agentPreset: 'standard', provider: 'dimagent-oauth', model: 'deepseek-v4.1-flash' },
+        },
+      }),
+      prepareGuard: () => Promise.resolve({ ok: true as const, value: { runId: 'r-max', root: '/tmp/r-max', files: ['tasks.json'] } }),
       startAnchor: (...args) => {
         starts.push(args)
         return Promise.resolve({
           ok: true as const,
-          value: { sessionId: 'session-guard-observe', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+          value: { sessionId: 'session-anchor-max', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
         })
       },
     })
@@ -837,19 +995,95 @@ describe('目标守卫（0.9.0 只观察）', () => {
         area.dispatchEvent(new Event('input', { bubbles: true }))
       })
     }
+    // User picks model + Max BEFORE finishing the supervisor task table (the exact real-machine repro).
+    const execModelBtn = query<HTMLButtonElement>(modal, '[data-redline-model]')
+    await act(async () => { execModelBtn.click() })
+    const modelMenu = query<HTMLElement>(document.body, '[data-redline-picker-menu="model"]')
+    const flash = queryAll<HTMLButtonElement>(modelMenu, '[role="menuitemradio"]').find(btn => text(btn).includes('DeepSeek 4.1 Flash'))
+    assert.ok(flash !== undefined)
+    await act(async () => { flash.click() })
+
+    const execEffortBtn = query<HTMLButtonElement>(modal, '[data-redline-effort]')
+    await act(async () => { execEffortBtn.click() })
+    const effortMenu = query<HTMLElement>(document.body, '[data-redline-picker-menu="effort"]')
+    const maxOpt = queryAll<HTMLButtonElement>(effortMenu, '[role="menuitemradio"]').find(btn => text(btn).includes('Max'))
+    assert.ok(maxOpt !== undefined)
+    await act(async () => { maxOpt.click() })
+    assert.ok(text(execEffortBtn).includes('Max'))
+
+    // Now fill in the fields + supervisor table, which triggers debounced planAnchor.
     await setValue('[data-redline-anchor-task]', '任务 A')
     await setValue('[data-redline-anchor-acceptance]', '验收 A')
-    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-guard]').click() })
-    await setValue('[data-redline-anchor-guard-tasks]', 'T1 | one | e1')
-    assert.ok(query(modal, '[data-redline-anchor-guard-observe]'), '只观察的说明可见')
-    assert.equal(queryAll(modal, '[data-redline-anchor-guard-dry]').length, 0, '0.9.0 不提供拦截开关')
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]').click() })
+    await setValue('[data-redline-anchor-supervisor-tasks]', 'T1 | one | e1 | src/a.ts')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-danger-full-access]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 320)) })
+
+    // Re-plan must NOT have wiped Max back to Default.
+    assert.ok(text(query<HTMLButtonElement>(modal, '[data-redline-effort]')).includes('Max'), '手动选择的 Max 推理等级不能被 planAnchor 抹成 Default')
     await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+
     assert.equal(starts.length, 1)
-    const guard = (starts[0]?.[1] as { guard?: { dryRun?: boolean, tasks?: string } }).guard
-    assert.equal(guard?.dryRun, true, '守卫永远以只观察发起')
-    assert.equal(guard?.tasks, 'T1 | one | e1')
+    const anchorInput = starts[0]?.[1] as { permissionPreset?: string }
+    const sentConfig = starts[0]?.[4] as { provider?: string; model?: string; reasoningEffort?: string }
+    assert.equal(anchorInput.permissionPreset, 'danger-full-access')
+    assert.deepEqual(sentConfig, { provider: 'dimagent-oauth', model: 'deepseek-v4.1-flash', reasoningEffort: 'max' })
     await m.unmount()
+  })
+
+  test('锚定对话：督导复选框各自独立占行且前端即时校验非法 scope 与未知依赖', async () => {
+    const css = readFileSync(join(process.cwd(), 'src/client/styles/childCard.css'), 'utf8')
+    const checksRule = /\.redline-guard-checks\s*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    assert.match(checksRule, /display:\s*flex/)
+    assert.match(checksRule, /flex-direction:\s*column/)
+    assert.match(checksRule, /margin-top:\s*4px/)
+    assert.match(checksRule, /padding-top:\s*10px/)
+
+    const m = await open()
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    const setValue = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setValue('[data-redline-anchor-task]', '任务 A')
+    await setValue('[data-redline-anchor-acceptance]', '验收 A')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]').click() })
+
+    // Invalid dependency (e.g. T0) is caught inline before clicking confirm.
+    await setValue('[data-redline-anchor-supervisor-tasks]', 'T1 | 一 | 通过 | src/a.ts | T0')
+    await act(async () => {})
+    assert.equal(query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').disabled, true)
+    assert.match(text(query(modal, '[data-redline-supervisor-tasks-err]')), /T0/)
+
+    // Invalid absolute scope path is caught inline too.
+    await setValue('[data-redline-anchor-supervisor-tasks]', 'T1 | 一 | 通过 | /abs/path')
+    await act(async () => {})
+    assert.equal(query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').disabled, true)
+    assert.match(text(query(modal, '[data-redline-supervisor-tasks-err]')), /\/abs\/path/)
+
+    // A `|` inside a quoted regex is part of the acceptance cell, not a column
+    // separator: `-run "Playbook|WalkForward"` must not shift the scope into the
+    // dependency slot (the real-machine report named `internal/service/` as an
+    // unknown dependency).
+    await setValue(
+      '[data-redline-anchor-supervisor-tasks]',
+      'T4 | P1: playbook 枚举 + walk-forward 闸 | go test ./internal/... -run "Playbook|WalkForward" -count=1 退出 0 | internal/service/,internal/domain/',
+    )
+    await act(async () => {})
+    assert.equal(queryAll(modal, '[data-redline-supervisor-tasks-err]').length, 0, '引号内的竖线不算列分隔符')
+    await m.unmount()
+  })
+
+  test('行内校验红字与输入框留 5px 间距', () => {
+    const css = readFileSync(join(process.cwd(), 'src/client/styles/browser.css'), 'utf8')
+    const rule = /\.redline-editor-err\[data-redline-supervisor-tasks-err\][^{]*\{([^}]*)\}/.exec(css)?.[1] ?? ''
+    assert.match(rule, /margin-top:\s*5px/, '红字不能贴着 textarea 边框')
   })
 })
 
@@ -914,14 +1148,24 @@ describe('锚定会话弹窗底栏间距（0.4.1 回归）', () => {
     await setArea('[data-redline-anchor-supervisor-probes]', 'pnpm test')
     await act(async () => {})
     assert.equal(confirm().disabled, true, 'a probe line without a task id disables the confirm')
+    assert.match(text(query(modal, '[data-redline-supervisor-probes-err]')), /Line 1|第 1 行/, 'shows inline probe format error')
     // A probe for a task the table does not define is refused too.
     await setArea('[data-redline-anchor-supervisor-probes]', 'T9 | pnpm test')
     await act(async () => {})
     assert.equal(confirm().disabled, true, 'a probe for an unknown task disables the confirm')
+    assert.match(text(query(modal, '[data-redline-supervisor-probes-err]')), /T9/, 'names the unknown task id inline')
+    // A pasted Chinese header line in the task table shows a clear line-1 inline error.
+    await setArea('[data-redline-anchor-supervisor-tasks]', '任务表（每行四段；scope 必填）\nT1 | 落盘 | 文件存在')
+    await act(async () => {})
+    assert.equal(confirm().disabled, true)
+    assert.match(text(query(modal, '[data-redline-supervisor-tasks-err]')), /Line 1|第 1 行/, 'names the bad task header line inline')
+    await setArea('[data-redline-anchor-supervisor-tasks]', 'T1 | 落盘 | 文件存在')
     // A well-formed line enables it again and is sent as a heavy command probe.
     await setArea('[data-redline-anchor-supervisor-probes]', 'T1 | pnpm test -- --run')
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
     assert.equal(confirm().disabled, false)
+    assert.equal(queryAll(modal, '[data-redline-supervisor-tasks-err]').length, 0)
+    assert.equal(queryAll(modal, '[data-redline-supervisor-probes-err]').length, 0)
     await act(async () => { confirm().click() })
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
     const input = prepared[0] as { probes?: readonly { taskId: string, weight: string, spec: { cmd: string, args: readonly string[] } }[] }
@@ -930,6 +1174,479 @@ describe('锚定会话弹窗底栏间距（0.4.1 回归）', () => {
     assert.equal(input.probes?.[0]?.weight, 'heavy', 'command probes are the expensive tier')
     assert.equal(input.probes?.[0]?.spec.cmd, 'pnpm')
     assert.deepEqual(input.probes?.[0]?.spec.args, ['test', '--', '--run'])
+    await m.unmount()
+  })
+
+  test('点「督导运行（实验 · 自动跑任务）」这行文字也能勾选/取消，不必非点小方框', async () => {
+    const m = await open()
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    const box = query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]')
+    assert.equal(box.checked, false, '默认不勾选')
+    const toggle = query<HTMLElement>(modal, '[data-redline-anchor-supervisor-toggle]')
+    assert.ok(text(toggle).includes(DICT_EN['anchor.supervisorLabel']), '这行文字就是开关的标签')
+    await act(async () => { toggle.click() })
+    assert.equal(box.checked, true, '点文字应当勾选')
+    assert.ok(query(modal, '[data-redline-anchor-supervisor-tasks]'), '勾选后任务表出现')
+    await act(async () => { toggle.click() })
+    assert.equal(box.checked, false, '再点文字应当取消')
+    assert.equal(queryAll(modal, '[data-redline-anchor-supervisor-tasks]').length, 0, '取消后任务表收起')
+    await m.unmount()
+  })
+
+  test('督导运行对话框提供执行/评估回退模型与视觉取证，并默认全部关闭', async () => {
+    const m = await open()
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    await act(async () => { query<HTMLElement>(modal, '[data-redline-anchor-supervisor-toggle]').click() })
+
+    const execFallback = query<HTMLElement>(modal, '[data-redline-anchor-executor-fallback-picker]')
+    const evalFallback = query<HTMLElement>(modal, '[data-redline-anchor-evaluator-fallback-picker]')
+    assert.ok(execFallback, '执行回退 picker 就位')
+    assert.ok(evalFallback, '评估回退 picker 就位')
+    assert.ok(text(execFallback).includes(DICT_EN['anchor.supervisorNoFallback']), '默认不设置回退')
+
+    // Visual evidence starts off and its model picker only appears once enabled.
+    const visual = query<HTMLInputElement>(modal, '[data-redline-anchor-visual]')
+    assert.equal(visual.checked, false, '视觉取证默认关闭')
+    assert.equal(queryAll(modal, '[data-redline-anchor-visual-picker]').length, 0)
+    await act(async () => { visual.click() })
+    assert.ok(query(modal, '[data-redline-anchor-visual-picker]'), '启用后出现视觉模型 picker')
+    await m.unmount()
+  })
+
+  test('开启督导运行后，「对话执行模型」移进选项区并排在执行回退之前', async () => {
+    // 同一个控件两个位置：不让执行模型和自己的回退被运行配置隔开。
+    const m = await open()
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    const before = query<HTMLElement>(modal, '[data-redline-anchor-exec-model-row]')
+    assert.ok(before, '未开启督导时执行模型仍在运行配置里')
+    assert.equal(queryAll(modal, '[data-redline-anchor-supervisor-options]').length, 0)
+
+    await act(async () => { query<HTMLElement>(modal, '[data-redline-anchor-supervisor-toggle]').click() })
+    const panel = query<HTMLElement>(modal, '[data-redline-anchor-supervisor-options]')
+    const exec = query<HTMLElement>(panel, '[data-redline-anchor-exec-model-row]')
+    assert.ok(exec, '开启后执行模型出现在选项区')
+    assert.equal(queryAll(modal, '[data-redline-anchor-exec-model-row]').length, 1, '只渲染一处，不重复')
+    const fallback = query<HTMLElement>(panel, '[data-redline-anchor-executor-fallback-picker]')
+    assert.ok(exec.compareDocumentPosition(fallback) & Node.DOCUMENT_POSITION_FOLLOWING, '执行模型排在执行回退之前')
+    const evaluator = query<HTMLElement>(panel, '[data-redline-anchor-supervisor-eval-picker]')
+    assert.ok(evaluator.compareDocumentPosition(exec) & Node.DOCUMENT_POSITION_FOLLOWING, '评估模型仍在上方')
+    const evalFallbackRow = query<HTMLElement>(panel, '[data-redline-anchor-evaluator-fallback-picker]')
+    assert.ok(evaluator.compareDocumentPosition(evalFallbackRow) & Node.DOCUMENT_POSITION_FOLLOWING, '评估回退紧接评估模型')
+    assert.ok(evalFallbackRow.compareDocumentPosition(exec) & Node.DOCUMENT_POSITION_FOLLOWING, '评估对整体排在执行对之前')
+    await m.unmount()
+  })
+
+  test('评估模型选到 CLI 桥接型 provider 时给出硬提示', async () => {
+    const m = await open({ models: [
+      { provider: 'antigravity', providerName: 'Antigravity', model: 'gemini-4-neon', modelName: 'Gemini 4 Neon', efforts: [] },
+      { provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'deepseek-v4.1-flash', modelName: 'DeepSeek V4.1 Flash', efforts: [] },
+    ] })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    await act(async () => { query<HTMLElement>(modal, '[data-redline-anchor-supervisor-toggle]').click() })
+
+    const evalPicker = query<HTMLElement>(modal, '[data-redline-anchor-supervisor-eval-picker]')
+    await act(async () => { query<HTMLButtonElement>(evalPicker, '[data-redline-anchor-supervisor-evaluator]').click() })
+    const option = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))
+      .find(item => text(item).includes('Gemini 4 Neon'))
+    assert.ok(option, '评估模型菜单列出桥接型模型')
+    await act(async () => { option?.click() })
+    assert.ok(query(modal, '[data-redline-anchor-eval-bridge-warning]'), '桥接型当评估器时给出警告')
+    await m.unmount()
+  })
+
+  test('执行模型选到 CLI 桥接型时提示子代理会留在 CLI 里', async () => {
+    const m = await open({ models: [
+      { provider: 'antigravity', providerName: 'Antigravity', model: 'gemini-4-neon', modelName: 'Gemini 4 Neon', efforts: [] },
+      { provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'deepseek-v4.1-flash', modelName: 'DeepSeek V4.1 Flash', efforts: [] },
+    ] })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    assert.equal(queryAll(modal, '[data-redline-anchor-exec-bridge-warning]').length, 0, '原生模型不提示')
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-model]').click() })
+    const option = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))
+      .find(item => text(item).includes('Gemini 4 Neon'))
+    assert.ok(option, '执行模型菜单列出桥接型模型')
+    await act(async () => { option?.click() })
+    const warn = query<HTMLElement>(modal, '[data-redline-anchor-exec-bridge-warning]')
+    assert.ok(warn, '桥接型执行模型给出子代理不可见提示')
+    assert.ok(text(warn).includes(DICT_EN['anchor.executorBridgeWarn']))
+    await m.unmount()
+  })
+
+  test('执行模型是 CLI 桥接型、评估又跟随主会话时同样给出硬提示', async () => {
+    // The zenspace incident: no explicit evaluator was chosen, the judge followed
+    // the executor, and that executor was the CLI bridge. Warning only when an
+    // explicit evaluator was picked would have missed it.
+    const m = await open({ models: [
+      { provider: 'antigravity', providerName: 'Antigravity', model: 'gemini-4-neon', modelName: 'Gemini 4 Neon', efforts: [] },
+      { provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'deepseek-v4.1-flash', modelName: 'DeepSeek V4.1 Flash', efforts: [] },
+    ] })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    await act(async () => { query<HTMLElement>(modal, '[data-redline-anchor-supervisor-toggle]').click() })
+
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-model]').click() })
+    const option = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))
+      .find(item => text(item).includes('Gemini 4 Neon'))
+    assert.ok(option, '执行模型菜单列出桥接型模型')
+    await act(async () => { option?.click() })
+    assert.ok(query(modal, '[data-redline-anchor-eval-bridge-warning]'), '跟随主会话时也要警告')
+    await m.unmount()
+  })
+
+  test('评估「跟随主会话」时选定的推理等级会作为显式评估路由提交', async () => {
+    const prepared: { evaluator?: { provider: string, model: string, reasoningEffort?: string } }[] = []
+    const m = await open({
+      models: [
+        {
+          provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'deepseek-v4.1-flash',
+          modelName: 'DeepSeek V4.1 Flash',
+          efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }],
+        },
+      ],
+      prepareGuard: (input) => {
+        prepared.push({ evaluator: input.evaluator })
+        return Promise.resolve({ ok: true as const, value: { runId: 'r1', root: '/tmp/run', files: [] } })
+      },
+      startAnchor: () => Promise.resolve({
+        ok: true as const,
+        value: { sessionId: 's1', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+      }),
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    await act(async () => { query<HTMLElement>(modal, '[data-redline-anchor-supervisor-toggle]').click() })
+
+    // Executor: the only model, then pick the "High" level.
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-model]').click() })
+    const model = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))
+      .find(item => text(item).includes('DeepSeek V4.1 Flash'))
+    assert.ok(model)
+    await act(async () => { model?.click() })
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-effort]').click() })
+    const high = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))
+      .find(item => text(item).trim() === 'High')
+    assert.ok(high, '执行模型提供 High 推理等级')
+    await act(async () => { high?.click() })
+
+    // Evaluator stays on "follow the session model" but inherits that level.
+    const evalEffort = query<HTMLButtonElement>(modal, '[data-redline-anchor-supervisor-evaluator-effort]')
+    await act(async () => { evalEffort.click() })
+    const evalHigh = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))
+      .filter(item => text(item).trim() === 'High')
+      .at(-1)
+    assert.ok(evalHigh, '评估跟随模式也能选等级')
+    await act(async () => { evalHigh?.click() })
+
+    const setValue = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setValue('[data-redline-anchor-task]', '任务 A')
+    await setValue('[data-redline-anchor-acceptance]', '验收 A')
+    await setValue('[data-redline-anchor-supervisor-tasks]', 'T1 | 落盘 | 文件存在')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)) })
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    assert.deepEqual(prepared.at(-1)?.evaluator, {
+      provider: 'dimagent-oauth', model: 'deepseek-v4.1-flash', reasoningEffort: 'high',
+    })
+    await m.unmount()
+  })
+
+  test('确认框显示新会话的运行目录（只读），让"探针跑在哪个仓库"一眼可见', async () => {
+    const m = await open()
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    const setArea = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setArea('[data-redline-anchor-task]', '任务 A')
+    await setArea('[data-redline-anchor-acceptance]', '验收 A')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 320)) })
+    const dir = query<HTMLElement>(modal, '[data-redline-anchor-run-dir]')
+    assert.ok(dir, '运行目录必须显示')
+    assert.equal(text(dir), '/Volumes/SSD/Home/lionm4/my_project/_AI/x9Copy')
+    assert.equal(
+      queryAll(modal, '[data-redline-anchor-run-dir] input').length
+        + queryAll(modal, '[data-redline-anchor-run-dir] select').length,
+      0,
+      '运行目录只读，不能在确认框里改',
+    )
+    // Checking supervisor + worktree previews the isolated checkout root instead of only showing the source root.
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]').click() })
+    await setArea('[data-redline-anchor-supervisor-tasks]', 'T1 | 落盘 | 文件存在')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor-worktree]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 320)) })
+    assert.equal(
+      text(query<HTMLElement>(modal, '[data-redline-anchor-run-dir]')),
+      '/Volumes/SSD/Home/lionm4/my_project/_AI/x9Copy/.guard/worktrees/<runId>',
+    )
+    await m.unmount()
+  })
+
+  test('督导运行：启动失败后切换 worktree 开关重试，必须清空旧 runId 与 operationId，不沿用旧模式台账', async () => {
+    const prepared: { worktree?: boolean, runId?: string }[] = []
+    const starts: { opId: string, input: { guardRunId?: string, guardWorktreePath?: string } }[] = []
+    let prepareCount = 0
+    let startCount = 0
+    const m = await open({
+      prepareGuard: (input) => {
+        prepareCount += 1
+        prepared.push({
+          ...(input.worktree === undefined ? {} : { worktree: input.worktree }),
+          ...(input.runId === undefined ? {} : { runId: input.runId }),
+        })
+        if (prepareCount === 1) {
+          return Promise.resolve({
+            ok: true as const,
+            value: {
+              runId: '20261127-wt-first',
+              root: '/repo/.guard/worktrees/20261127-wt-first/docs/guard/20261127-wt-first',
+              files: ['tasks.json'],
+              worktreePath: '/repo/.guard/worktrees/20261127-wt-first',
+            },
+          })
+        }
+        return Promise.resolve({
+          ok: true as const,
+          value: {
+            runId: '20261127-main-retry',
+            root: '/repo/docs/guard/20261127-main-retry',
+            files: ['tasks.json'],
+          },
+        })
+      },
+      startAnchor: (opId, input) => {
+        startCount += 1
+        starts.push({ opId, input: input as { guardRunId?: string, guardWorktreePath?: string } })
+        if (startCount === 1) {
+          return Promise.resolve({ ok: false as const, code: 'redline/bad-request', message: 'selected model is unavailable' })
+        }
+        return Promise.resolve({
+          ok: true as const,
+          value: { sessionId: 'session-main-retry', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm2' },
+        })
+      },
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    const setArea = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setArea('[data-redline-anchor-task]', '任务 A')
+    await setArea('[data-redline-anchor-acceptance]', '验收 A')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor]').click() })
+    await setArea('[data-redline-anchor-supervisor-tasks]', 'T1 | 落盘 | 文件存在')
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor-worktree]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 320)) })
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+
+    assert.equal(prepared.length, 1)
+    assert.equal(starts.length, 1)
+    assert.equal(starts[0]?.input.guardRunId, '20261127-wt-first')
+    assert.equal(starts[0]?.input.guardWorktreePath, '/repo/.guard/worktrees/20261127-wt-first')
+
+    // Uncheck worktree and retry: must NOT reuse the old runId or operationId.
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-supervisor-worktree]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+
+    assert.equal(prepared.length, 2)
+    assert.deepEqual(prepared[1], { worktree: false })
+    assert.equal(starts.length, 2)
+    assert.notEqual(starts[1]?.opId, starts[0]?.opId)
+    assert.equal(starts[1]?.input.guardRunId, '20261127-main-retry')
+    assert.equal(starts[1]?.input.guardWorktreePath, undefined)
+    await m.unmount()
+  })
+
+  test('视觉回退 picker 有自己的行标题与说明，不与主视觉 picker 挤在同一行', async () => {
+    const m = await open()
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    await act(async () => { query<HTMLElement>(modal, '[data-redline-anchor-supervisor-toggle]').click() })
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-visual]').click() })
+    const main = query<HTMLElement>(modal, '[data-redline-anchor-visual-picker]')
+    const fallback = query<HTMLElement>(modal, '[data-redline-anchor-visual-fallback-picker]')
+    const fallbackRow = query<HTMLElement>(modal, '[data-redline-anchor-visual-fallback-row]')
+    assert.ok(fallbackRow !== null, '视觉回退 picker 有独立的设置行')
+    assert.equal(fallbackRow === main.parentElement, false, '回退 picker 不挂在主 picker 的行里')
+    assert.ok(fallbackRow.contains(fallback), '回退 picker 在该行内')
+    assert.equal(fallbackRow.contains(main), false, '两行互不嵌套')
+    assert.ok(text(fallbackRow).includes(DICT_EN['anchor.supervisorVisualFallbackLabel']))
+    assert.ok(text(fallbackRow).includes(DICT_EN['anchor.supervisorVisualFallbackHint']))
+    await m.unmount()
+  })
+
+  test('视觉取证关闭后，残留的视觉路由不再触发桥接告警', async () => {
+    const m = await open({ models: [
+      { provider: 'antigravity', providerName: 'Antigravity', model: 'gemini-4-neon', modelName: 'Gemini 4 Neon', efforts: [] },
+      { provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'deepseek-v4.1-flash', modelName: 'DeepSeek V4.1 Flash', efforts: [] },
+    ] })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    await act(async () => { query<HTMLElement>(modal, '[data-redline-anchor-supervisor-toggle]').click() })
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-visual]').click() })
+
+    // Pick the CLI-bridge model for the witness: that is a real warning.
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-visual-model]').click() })
+    const option = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))
+      .find(item => text(item).includes('Gemini 4 Neon'))
+    assert.ok(option !== undefined)
+    await act(async () => { option.click() })
+    assert.ok(query(modal, '[data-redline-anchor-eval-bridge-warning]'), 'enabled visual route warns')
+
+    // Turning visual evidence off must also drop the warning: the stale route
+    // state is not part of the submitted run any more.
+    await act(async () => { query<HTMLInputElement>(modal, '[data-redline-anchor-visual]').click() })
+    assert.equal(queryAll(modal, '[data-redline-anchor-eval-bridge-warning]').length, 0)
+    await m.unmount()
+  })
+
+  test('独立评估路由与等级不会被执行模型切换清空', async () => {
+    const prepared: { evaluator?: { provider: string, model: string, reasoningEffort?: string } }[] = []
+    const m = await open({
+      models: [
+        {
+          provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'deepseek-v4.1-flash',
+          modelName: 'DeepSeek V4.1 Flash', efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }],
+        },
+        {
+          provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'kimi-k3',
+          modelName: 'Kimi K3', efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }],
+        },
+        {
+          provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'glm-5',
+          modelName: 'GLM 5', efforts: [{ id: 'low', name: 'Low' }],
+        },
+      ],
+      prepareGuard: (input) => {
+        prepared.push({ evaluator: input.evaluator })
+        return Promise.resolve({ ok: true as const, value: { runId: 'r-independent', root: '/tmp/r-independent', files: [] } })
+      },
+      startAnchor: () => Promise.resolve({
+        ok: true as const,
+        value: { sessionId: 's-independent', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+      }),
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    await act(async () => { query<HTMLElement>(modal, '[data-redline-anchor-supervisor-toggle]').click() })
+    const pick = async (trigger: string, label: string): Promise<void> => {
+      await act(async () => { query<HTMLButtonElement>(modal, trigger).click() })
+      const option = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))
+        .filter(item => text(item).trim() === label)
+        .at(-1)
+      assert.ok(option !== undefined, `menu option ${label}`)
+      await act(async () => { option.click() })
+    }
+    // Executor: DeepSeek. Judge: an INDEPENDENT Kimi K3 route at High.
+    await pick('[data-redline-model]', 'DeepSeek V4.1 Flash')
+    await pick('[data-redline-anchor-supervisor-evaluator]', 'Kimi K3')
+    await pick('[data-redline-anchor-supervisor-evaluator-effort]', 'High')
+
+    // Changing the executor cannot invalidate a judge level for another model.
+    await pick('[data-redline-model]', 'GLM 5')
+
+    const setArea = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setArea('[data-redline-anchor-task]', '任务 A')
+    await setArea('[data-redline-anchor-acceptance]', '验收 A')
+    await setArea('[data-redline-anchor-supervisor-tasks]', 'T1 | 落盘 | 文件存在')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 320)) })
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    assert.equal(prepared.length, 1)
+    assert.deepEqual(prepared[0]?.evaluator, {
+      provider: 'dimagent-oauth', model: 'kimi-k3', reasoningEffort: 'high',
+    }, 'the independent judge route keeps its own level across an executor change')
+    await m.unmount()
+  })
+
+  test('切换执行模型会清空评估推理等级，避免沿用新模型不支持的重等级', async () => {
+    const prepared: { evaluator?: { provider: string, model: string, reasoningEffort?: string } }[] = []
+    const m = await open({
+      models: [
+        {
+          provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'deepseek-v4.1-flash',
+          modelName: 'DeepSeek V4.1 Flash', efforts: [{ id: 'low', name: 'Low' }, { id: 'high', name: 'High' }],
+        },
+        {
+          provider: 'dimagent-oauth', providerName: 'DimAgent', model: 'kimi-k3',
+          modelName: 'Kimi K3', efforts: [{ id: 'low', name: 'Low' }],
+        },
+      ],
+      prepareGuard: (input) => {
+        prepared.push({ evaluator: input.evaluator })
+        return Promise.resolve({ ok: true as const, value: { runId: 'r-switch', root: '/tmp/r-switch', files: [] } })
+      },
+      startAnchor: () => Promise.resolve({
+        ok: true as const,
+        value: { sessionId: 's-switch', title: '目标', mode: 'created' as const, delivery: 'sent' as const, messageId: 'm1' },
+      }),
+    })
+    await act(async () => { query<HTMLButtonElement>(m.container, '[data-redline-anchor-open]').click() })
+    const modal = query<HTMLElement>(m.container, '[data-redline-anchor-modal]')
+    await act(async () => { query<HTMLElement>(modal, '[data-redline-anchor-supervisor-toggle]').click() })
+    const pick = async (trigger: string, label: string): Promise<void> => {
+      await act(async () => { query<HTMLButtonElement>(modal, trigger).click() })
+      const option = Array.from(document.querySelectorAll<HTMLElement>('[role="menuitemradio"]'))
+        .find(item => text(item).trim() === label)
+      assert.ok(option !== undefined, `menu option ${label}`)
+      await act(async () => { option.click() })
+    }
+    // Executor: model + High; the followed evaluator inherits that level.
+    await pick('[data-redline-model]', 'DeepSeek V4.1 Flash')
+    await pick('[data-redline-effort]', 'High')
+    await pick('[data-redline-anchor-supervisor-evaluator-effort]', 'High')
+
+    // Switching the executor model changes the follow target; the old level is
+    // not necessarily supported by the new model and must not be submitted.
+    await pick('[data-redline-model]', 'Kimi K3')
+
+    const setArea = async (selector: string, value: string): Promise<void> => {
+      const area = query<HTMLTextAreaElement>(modal, selector)
+      await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+        setter?.call(area, value)
+        area.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    await setArea('[data-redline-anchor-task]', '任务 A')
+    await setArea('[data-redline-anchor-acceptance]', '验收 A')
+    await setArea('[data-redline-anchor-supervisor-tasks]', 'T1 | 落盘 | 文件存在')
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 320)) })
+    await act(async () => { query<HTMLButtonElement>(modal, '[data-redline-anchor-confirm]').click() })
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)) })
+    assert.equal(prepared.length, 1)
+    assert.equal(prepared[0]?.evaluator, undefined, 'the stale reasoning level is not submitted for the new model')
     await m.unmount()
   })
 })

@@ -34,7 +34,6 @@ import { createFallbackActivityDefinition, createFallbackHeadersDefinition, crea
 import { createContextHeadersDefinition } from './headers'
 import { watchRedlineChannel } from './redline-channel'
 import { registerHandoffSkill } from './handoff-skill'
-import { watchGoalGuards } from './goal-guard'
 import { watchGoalSupervisors } from './goal-supervisor/attach'
 import { watchCarrierRecovery } from './redline-carrier-recovery'
 import { watchStepIdentity } from './stepIdentity'
@@ -62,7 +61,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   // on BOTH sides of it: it owns its own namespaced route and depends on no
   // projection generation, so a below-baseline harness must not lose it.
   watchCarrierRecovery(ctx)
-  watchGoalGuards(ctx)
   // Cold start for supervised sessions: re-arm the anchors, the tool guard and
   // the turn-stopping audit when a run's session is reopened in a new process.
   watchGoalSupervisors(ctx as never)

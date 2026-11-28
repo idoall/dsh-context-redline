@@ -14,6 +14,13 @@ async function readJson<T>(path: string): Promise<T | null> {
   }
 }
 
+/** `provider/model (effort)` — the reasoning level is part of the identity here. */
+function routeLabel(route: { readonly provider: string; readonly model: string; readonly reasoningEffort?: string }): string {
+  return route.reasoningEffort === undefined
+    ? `${route.provider}/${route.model}`
+    : `${route.provider}/${route.model} (${route.reasoningEffort})`
+}
+
 function summaryOf(runId: string, state: GuardState, meta: RunMeta, pendingRequests: number): SupervisorSummary {
   const done = state.tasks.filter(task => task.status === 'DONE').length
   // Same rule as the tool guard and the anchors: only a task that can actually
@@ -42,6 +49,15 @@ function summaryOf(runId: string, state: GuardState, meta: RunMeta, pendingReque
     ...(state.worktree.enabled && state.worktree.branch !== undefined
       ? { worktreeBranch: state.worktree.branch }
       : {}),
+    ...(state.evaluator === undefined ? {} : { evaluatorModel: routeLabel(state.evaluator) }),
+    // The fallback exists independently of the primary: a run that follows the
+    // session model can still have a configured fallback, and hiding it would
+    // hide the only "switch and continue" action the card can offer.
+    ...(state.evaluatorFallback === undefined ? {} : { evaluatorFallbackModel: routeLabel(state.evaluatorFallback) }),
+    ...(state.executor === undefined ? {} : { executorModel: routeLabel(state.executor) }),
+    ...(state.executorFallback === undefined ? {} : { executorFallbackModel: routeLabel(state.executorFallback) }),
+    ...(state.activeExecutor === undefined ? {} : { activeExecutorModel: routeLabel(state.activeExecutor) }),
+    ...(state.visual?.enabled === true ? { visualWitness: true } : {}),
     ...(meta.mirror.issueUrl === undefined && meta.mirror.reason === undefined && meta.mirror.lastError === undefined
       ? {}
       : {

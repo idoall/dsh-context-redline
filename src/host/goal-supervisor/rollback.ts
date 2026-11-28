@@ -26,7 +26,7 @@ import { join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import {
   blobAt, changedPaths, changedPathsSince, commitsAfter, deleteRef, foreignPluginCommitPaths, hasRef, hashPath,
-  headBlob, headCommit, isAncestor, isRevertSubject, matchesBaseline, pathInScope, pluginCommitShas, refCommit,
+  headBlob, headCommit, isAncestor, isRevertSubject, matchesTaskBaseline, pathInScope, pluginCommitShas, refCommit,
   restorePaths, restoreTrackedToHead, revertCommitsProgress, rollbackToCheckpoint,
 } from './git'
 import { captureBlockedPatch } from './patch'
@@ -203,7 +203,17 @@ export async function rollbackRun(request: RollbackRequest): Promise<RollbackOut
   const candidates = restoreRef === null
     ? dirty
     : await changedPathsSince(cwd, restoreRef, guardDir, { runId, taskId: target.id })
-  const captured = dirty.length === 0 ? null : await captureBlockedPatch(cwd, store, target.id, dirty, 0)
+  // Never pass unchanged run-start baseline files to `captureBlockedPatch`:
+  // rollback never restores or removes them, and hashing/diffing thousands of
+  // pre-existing cache files would stall or overflow the patch buffer.
+  const nonBaselineDirty: string[] = []
+  const chunk = 32
+  for (let start = 0; start < dirty.length; start += chunk) {
+    const slice = dirty.slice(start, start + chunk)
+    const flags = await Promise.all(slice.map(path => matchesTaskBaseline(cwd, state.baselineDirty, target.baselineDirty, path)))
+    slice.forEach((path, index) => { if (!flags[index]) nonBaselineDirty.push(path) })
+  }
+  const captured = nonBaselineDirty.length === 0 ? null : await captureBlockedPatch(cwd, store, target.id, nonBaselineDirty, 0)
   const patch = captured?.path ?? null
   // Coverage is per path: the patch is built from the WHOLE dirty set, so its
   // mere existence proves nothing about any single path below.
@@ -214,7 +224,7 @@ export async function rollbackRun(request: RollbackRequest): Promise<RollbackOut
   for (const path of candidates) {
     // A file that is still byte-identical to the run-creation snapshot was the
     // user's own work before the run started; it is never restored or deleted.
-    if (await matchesBaseline(cwd, target.baselineDirty, path)) { skipped.push(path); continue }
+    if (await matchesTaskBaseline(cwd, state.baselineDirty, target.baselineDirty, path)) { skipped.push(path); continue }
     // An unscoped task matches every path, so a rollback there would delete
     // unrelated work in the shared tree. Restore nothing and report the rest.
     if (target.scope.length > 0 && pathInScope(path, target.scope)) scoped.push(path)
@@ -450,6 +460,9 @@ export async function rollbackRun(request: RollbackRequest): Promise<RollbackOut
     // make the milestone review (and the next rollback) treat it as finished.
     ...(state.doneOrder === undefined ? {} : { doneOrder: state.doneOrder.filter(id => id !== target.id) }),
     goalBlocked: undefined,
+    // The block's source travels with `goalBlocked`: a stale `milestone` kind
+    // would make the reopened run refuse every later resume.
+    goalBlockKind: undefined,
     status: 'active',
     updatedAt: at,
   }
@@ -461,17 +474,47 @@ export async function rollbackRun(request: RollbackRequest): Promise<RollbackOut
   const targetRef = splitBase === null
     ? restoreRef ?? revertFrom ?? target.checkpointRef ?? 'HEAD'
     : ownPaths.length > 0 || previousPaths.length === 0 ? splitBase : previousRef ?? splitBase
-  await store.update(reopened, [{
-    type: 'checkpoint.rollback',
-    at,
-    targetRef,
-    by: 'human',
-    reverted,
-    reopened: [target.id],
-    restored: restore.restored,
-    removed: restore.removed,
-    skipped: [...skipped, ...restore.skipped],
-  }])
+  // A milestone failure is a RUN-level safety gate. Rolling back a BLOCKED
+  // sibling does not reopen the DONE task that the review rejected, so clearing
+  // the gate here would let the next resume walk past it. Only a rollback that
+  // reopens a DONE task (the review's subject) clears it.
+  const keepMilestoneGate = (current: GuardState): boolean =>
+    !reopeningDone
+    && (current.goalBlockKind === 'milestone'
+      || current.goalBlocked?.includes('里程碑审阅未通过') === true)
+  // Read-modify-write under the run lock: a `guard.switch` may have landed while
+  // the git work above ran, and writing this snapshot back blind would erase it.
+  const saved = await store.mutate(current => ({
+    state: {
+      ...reopened,
+      // The six fields an operator may switch while this rollback runs come from
+      // the lock-time ledger, never from the pre-git snapshot.
+      evaluator: current.evaluator,
+      evaluatorFallback: current.evaluatorFallback,
+      executor: current.executor,
+      executorFallback: current.executorFallback,
+      activeExecutor: current.activeExecutor,
+      visual: current.visual,
+      ...(keepMilestoneGate(current)
+        ? { goalBlocked: current.goalBlocked, goalBlockKind: current.goalBlockKind, status: 'blocked' as const }
+        : {}),
+    },
+    events: [{
+      type: 'checkpoint.rollback',
+      at,
+      targetRef,
+      by: 'human',
+      reverted,
+      reopened: [target.id],
+      restored: restore.restored,
+      removed: restore.removed,
+      skipped: [...skipped, ...restore.skipped],
+    }],
+  }), state)
+  if (saved === null) return { ok: false, reason: 'run ledger is missing' }
+  if (meta.phase === 'completed') {
+    await store.updateMeta(current => ({ ...current, phase: 'running', updatedAt: at }))
+  }
   return {
     ok: true,
     report: {

@@ -17,15 +17,17 @@
 
 import { createHash } from 'node:crypto'
 import { execFile } from 'node:child_process'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Attempt, EvidenceRef, GuardEvent, GuardState, GuardTask, ProbeDef, ProbeResult, ProbeSpec, RollbackResidueEntry } from './schema'
 import { orderedByCompletion } from './schema'
 import { evaluateProgress, evaluateTask, type EvalCandidate, type EvalProbeEvidence } from './evaluator'
+import { runVisualWitness } from './visual'
 import { checkpointRefOf } from './create'
 import {
   changedPaths, changedPathsSince, commitPaths, committedPathsSince, hasGit, hasRef, headBlob, headCommit,
-  matchesBaseline, pathInScope, resetPaths, revertCommit, scopeDiffExcerpt, scopesOverlap, tagCheckpoint,
+  ignoredScopeExcerpt, ignoredScopeSnapshot, matchesTaskBaseline, pathInScope, resetPaths, revertCommit,
+  scopeDiffExcerpt, scopesOverlap, sortIgnoredScopeByRecency, tagCheckpoint,
 } from './git'
 import { isNetworkUse, probeEnv, runProbe, runProbes, type ProbeOutcome } from './probes'
 import { processScopeRequests } from './scope'
@@ -33,6 +35,7 @@ import { captureBlockedPatch } from './patch'
 import { commentRunIssue, createRunIssue, type MirrorConfig } from './mirror'
 import { reviewMilestone } from './milestone'
 import type { GuardStore } from './store'
+import { goalBudgetLow, goalRounds, nextGoalRounds } from './budget'
 
 /** A task that cannot make progress after this many attempts needs a human. */
 export const ATTEMPT_LIMIT = 50
@@ -42,6 +45,16 @@ export const EXEMPTION_LIMIT = 2
 export const STREAK_LIMIT = 3
 /** Consecutive evaluator outages (`unavailable`) tolerated before blocking the task. */
 export const EVAL_UNAVAILABLE_LIMIT = 3
+/**
+ * Consecutive audits with nothing to do before the task blocks.
+ *
+ * A task whose required probes already pass, whose scope fingerprint has not
+ * moved and which declared no new `## 完成声明` is spinning: re-probing it on
+ * every turn is how a 256-round goal budget burned in half an hour with zero
+ * work done. The streak is reset by ANY real progress, so a task that is being
+ * written or debugged never reaches it.
+ */
+export const IDLE_STALL_LIMIT = 5
 const MIRROR_RETRY_MS = 60_000
 
 export interface LoopAgent {
@@ -60,8 +73,16 @@ interface GoalBlockReason {
   readonly message: string
 }
 
+interface GoalViewFace extends GoalRef {
+  readonly phase?: string
+  readonly activation?: string
+  readonly roundsStarted?: number
+  readonly maxGoalRounds?: number
+}
+
 interface GoalsFace {
-  get?(agent: LoopAgent): GoalRef | undefined
+  get?(agent: LoopAgent): GoalViewFace | undefined
+  edit?(agent: LoopAgent, ref: GoalRef, request: { readonly maxGoalRounds?: number }): GoalViewFace | undefined
   complete?(agent: LoopAgent, ref: GoalRef): unknown
   block?(agent: LoopAgent, ref: GoalRef, reason: GoalBlockReason): unknown
 }
@@ -110,7 +131,42 @@ function goalsOf(ctx: LoopDeps['ctx']): GoalsFace | undefined {
 }
 
 /** Bounded candidate for the evaluator: recent assistant text and tool names only. */
-async function candidateOf(ctx: LoopDeps['ctx'], sessionId: string): Promise<EvalCandidate> {
+/** The arguments of one tool call, however the provider serialized them. */
+function toolArguments(data: Record<string, unknown>): Record<string, unknown> {
+  if (typeof data.arguments === 'string') {
+    try {
+      const parsed: unknown = JSON.parse(data.arguments)
+      return parsed !== null && typeof parsed === 'object' ? parsed as Record<string, unknown> : {}
+    } catch {
+      return {}
+    }
+  }
+  return data.arguments !== null && typeof data.arguments === 'object'
+    ? data.arguments as Record<string, unknown>
+    : {}
+}
+
+/**
+ * The path a replayed Antigravity activity writes, when it writes one.
+ *
+ * The `antigravity` provider exposes the external CLI's tool activity as a
+ * single `agy_tool` call whose payload is `{ run, step, tool, input }`; without
+ * unwrapping it the evaluator saw no `main_write_paths` at all for such a
+ * session even though the CLI had written files.
+ */
+function agyWritePath(args: Record<string, unknown>): string | undefined {
+  const tool = typeof args.tool === 'string' ? args.tool : ''
+  if (!/write|edit|patch|create|replace/i.test(tool)) return undefined
+  const input = args.input
+  if (input === null || typeof input !== 'object') return undefined
+  for (const key of ['Path', 'path', 'file_path', 'FilePath', 'TargetFile']) {
+    const value = (input as Record<string, unknown>)[key]
+    if (typeof value === 'string' && value !== '') return value
+  }
+  return undefined
+}
+
+export async function candidateOf(ctx: LoopDeps['ctx'], sessionId: string): Promise<EvalCandidate> {
   const query = ctx.get('sessionQuery') as { readSession?(id: string): Promise<{ readonly events: readonly unknown[] }> } | undefined
   if (typeof query?.readSession !== 'function') return { summary: '', tools: [], writePaths: [], subagents: 0 }
   let events: readonly unknown[] = []
@@ -136,14 +192,12 @@ async function candidateOf(ctx: LoopDeps['ctx'], sessionId: string): Promise<Eva
       if (name !== '') {
         tools.push(name)
         if (name === 'subagent') subagents += 1
-        if ((name === 'write' || name === 'edit')) {
-          let args: Record<string, unknown> = {}
-          if (typeof data.arguments === 'string') {
-            try { args = JSON.parse(data.arguments) as Record<string, unknown> } catch { args = {} }
-          } else if (data.arguments !== null && typeof data.arguments === 'object') {
-            args = data.arguments as Record<string, unknown>
-          }
+        if (name === 'write' || name === 'edit') {
+          const args = toolArguments(data)
           if (typeof args.file_path === 'string') writePaths.push(args.file_path.slice(0, 240))
+        } else if (name === 'agy_tool') {
+          const path = agyWritePath(toolArguments(data))
+          if (path !== undefined) writePaths.push(path.slice(0, 240))
         }
       }
     }
@@ -183,7 +237,10 @@ async function buildEvalCandidate(
   task: GuardTask,
   probes: readonly ProbeDef[],
   outcomes: Readonly<Record<string, { result: ProbeResult; detail: string } | undefined>>,
-): Promise<EvalCandidate> {
+): Promise<{
+  readonly candidate: EvalCandidate
+  readonly imagePaths: readonly string[]
+}> {
   const base = await candidateOf(deps.ctx, deps.agent.id)
   const probeEvidence: EvalProbeEvidence[] = probes.map((probe) => {
     const outcome = outcomes[probe.id]
@@ -198,18 +255,89 @@ async function buildEvalCandidate(
   const changed = (await taskPaths(deps, state, guardDir, task))
     .filter(path => pathInScope(path, task.scope))
     .sort()
-  const diffExcerpt = await scopeDiffExcerpt(deps.cwd, task.baseCommit, changed, 4000)
+  const ignored = await ignoredScopeSnapshot(deps.cwd, task.scope, guardDir)
+  const ignoredRecent = sortIgnoredScopeByRecency(ignored)
+  const mergedChanged = [...new Set([...changed, ...ignored.map(file => file.path)])].sort()
+  const gitExcerpt = await scopeDiffExcerpt(deps.cwd, task.baseCommit, changed, 4000)
+  const ignoredBudget = gitExcerpt === '' ? 4000 : Math.max(0, 4000 - Buffer.byteLength(gitExcerpt, 'utf8') - 2)
+  const ignoredExcerpt = ignoredBudget > 120 ? await ignoredScopeExcerpt(deps.cwd, ignored, ignoredBudget) : ''
+  const diffExcerpt = [gitExcerpt, ignoredExcerpt].filter(part => part !== '').join('\n\n')
   let notesExcerpt = ''
   try {
     notesExcerpt = (await readFile(deps.store.notesPath(task.id), 'utf8')).slice(-1500)
   } catch { /* notes may be absent */ }
   return {
-    ...base,
-    probes: probeEvidence,
-    changedPaths: changed.slice(0, 30),
-    ...(diffExcerpt === '' ? {} : { diffExcerpt }),
-    ...(notesExcerpt === '' ? {} : { notesExcerpt }),
+    candidate: {
+      ...base,
+      probes: probeEvidence,
+      changedPaths: mergedChanged.slice(0, 30),
+      ...(ignoredRecent.length === 0
+        ? {}
+        : { ignoredScopePaths: ignoredRecent.slice(0, 30).map(file => `${file.path} (${file.size} B)`) }),
+      ...(diffExcerpt === '' ? {} : { diffExcerpt }),
+      ...(notesExcerpt === '' ? {} : { notesExcerpt }),
+    },
+    // The witness needs real paths (no size suffix, no 30-entry cap). Git-visible
+    // changes come first: an ignored, untouched screenshot directory must not
+    // crowd out the screenshot this task just rendered — but within each set the
+    // newest file wins, or a directory with more than `MAX_IMAGES` screenshots
+    // would keep handing the witness the alphabetically first ones.
+    imagePaths: imageCandidates(await newestFirst(deps.cwd, imagesIn(changed)), ignoredRecent),
   }
+}
+
+/**
+ * Newest-first order for git-visible candidates.
+ *
+ * `git status` lists a changed set in path order, which says nothing about when
+ * a screenshot was rendered: the witness's five-image budget must go to the
+ * newest files, exactly like the gitignored set already does.
+ */
+async function newestFirst(cwd: string, paths: readonly string[]): Promise<readonly string[]> {
+  const stamped = await Promise.all(paths.map(async (path) => {
+    try {
+      return { path, mtimeMs: (await stat(join(cwd, path))).mtimeMs }
+    } catch {
+      return { path, mtimeMs: 0 }
+    }
+  }))
+  return stamped
+    .sort((left, right) => right.mtimeMs - left.mtimeMs || left.path.localeCompare(right.path))
+    .map(entry => entry.path)
+}
+
+/**
+ * Ordered witness candidates: git-visible changes first, then gitignored files
+ * newest-first. Exported so the ordering is pinned without a git fixture.
+ */
+export function imageCandidates(
+  changed: readonly string[],
+  ignoredRecent: readonly { readonly path: string }[],
+): readonly string[] {
+  return [...new Set([
+    ...imagesIn(changed),
+    ...imagesIn(ignoredRecent.map(file => file.path)),
+  ])]
+}
+
+/**
+ * Words in an acceptance line that only a screenshot can prove.
+ *
+ * English words carry word boundaries (`render` must not match "rendered by the
+ * test runner", `preview` must not match "previewer"), and `mock` is deliberately
+ * absent: "mock 数据" is ordinary unit-test prose, and matching it made a pure
+ * logic task require a screenshot it never promised.
+ */
+const VISUAL_ACCEPTANCE = /截图|截屏|视觉|画面|渲染|贴图|穿模|穿帮|\bHUD\b|\bUAT\b|\bpreview\b|\bscreenshot\b|\brender\b|\bvisual\b|mockup/i
+
+/** True when this task's acceptance says a human/model must look at a picture. */
+export function needsVisualEvidence(task: GuardTask): boolean {
+  return task.acceptance.some(item => VISUAL_ACCEPTANCE.test(item))
+}
+
+/** Image paths among the changed files, in the order the audit collected them. */
+function imagesIn(paths: readonly string[]): readonly string[] {
+  return paths.filter(path => /\.(png|jpe?g|webp)$/i.test(path))
 }
 
 /** Content hash of one workspace file; `'deleted'` when it cannot be read. */
@@ -221,9 +349,26 @@ async function hashOf(cwd: string, path: string): Promise<string> {
   }
 }
 
-/** True when `path` still matches the hash captured when the task started. */
-async function unchangedSinceBaseline(cwd: string, task: GuardTask, path: string): Promise<boolean> {
-  return await matchesBaseline(cwd, task.baselineDirty, path)
+/** True when `path` still matches the hash captured when the run started. */
+async function unchangedSinceBaseline(cwd: string, state: GuardState, task: GuardTask, path: string): Promise<boolean> {
+  return await matchesTaskBaseline(cwd, state.baselineDirty, task.baselineDirty, path)
+}
+
+/** Drop paths that are still byte-identical to the run-start baseline (batched). */
+async function excludeBaseline(
+  cwd: string,
+  state: GuardState,
+  task: GuardTask,
+  paths: readonly string[],
+): Promise<string[]> {
+  const kept: string[] = []
+  const chunk = 32
+  for (let start = 0; start < paths.length; start += chunk) {
+    const slice = paths.slice(start, start + chunk)
+    const flags = await Promise.all(slice.map(path => unchangedSinceBaseline(cwd, state, task, path)))
+    slice.forEach((path, index) => { if (!flags[index]) kept.push(path) })
+  }
+  return kept
 }
 
 /**
@@ -242,9 +387,9 @@ async function taskPaths(deps: LoopDeps, state: GuardState, guardDir: string, ta
   const raw = task.baseCommit === undefined
     ? await changedPaths(deps.cwd, guardDir)
     : await changedPathsSince(deps.cwd, task.baseCommit, guardDir, { runId: deps.runId, taskId: task.id })
+  const nonBaseline = await excludeBaseline(deps.cwd, state, task, raw)
   const kept: string[] = []
-  for (const path of raw) {
-    if (await unchangedSinceBaseline(deps.cwd, task, path)) continue
+  for (const path of nonBaseline) {
     if (await explainedByRollbackResidue(deps.cwd, state, task, path)) continue
     kept.push(path)
   }
@@ -381,16 +526,25 @@ async function scopeFingerprint(deps: LoopDeps, state: GuardState, guardDir: str
   const changed = (await taskPaths(deps, state, guardDir, task)).filter(path => pathInScope(path, task.scope)).sort()
   const parts: string[] = []
   for (const path of changed) parts.push(`${path}:${await hashOf(deps.cwd, path)}`)
+  const ignored = await ignoredScopeSnapshot(deps.cwd, task.scope, guardDir)
+  for (const file of ignored) parts.push(`ignored:${file.path}:${file.fingerprint}`)
   return digest(parts.join('\n'))
 }
 
-async function completionOffset(store: GuardStore, task: GuardTask): Promise<{ declared: boolean; offset: number }> {
+async function completionOffset(
+  store: GuardStore,
+  task: GuardTask,
+): Promise<{ declared: boolean; notesExtended: boolean; offset: number }> {
   try {
     const text = await readFile(store.notesPath(task.id), 'utf8')
     const tail = text.slice(task.lastEvalOffset ?? 0)
-    return { declared: /##\s*完成声明/.test(tail), offset: text.length }
+    return {
+      declared: /##\s*完成声明/.test(tail),
+      notesExtended: tail.trim().length > 0,
+      offset: text.length,
+    }
   } catch {
-    return { declared: false, offset: task.lastEvalOffset ?? 0 }
+    return { declared: false, notesExtended: false, offset: task.lastEvalOffset ?? 0 }
   }
 }
 
@@ -413,6 +567,46 @@ function signatureOf(paths: readonly string[], tools: readonly string[], failed:
 
 function updateTask(state: GuardState, id: string, patch: Partial<GuardTask>): GuardTask[] {
   return state.tasks.map(task => task.id === id ? { ...task, ...patch } : task)
+}
+
+/**
+ * Fields an operator can switch while one audit is running.
+ *
+ * An audit reads `tasks.json`, then spends seconds on probes and one evaluator
+ * call. Writing its whole snapshot back erased a `guard.switch` that landed in
+ * between — the ledger showed the old evaluator/activeExecutor while the event
+ * log said it had been switched. These fields always come from the CURRENT
+ * ledger; everything else is what this audit computed.
+ */
+export function mergeRuntimeConfig(next: GuardState, current: GuardState): GuardState {
+  return {
+    ...next,
+    evaluator: current.evaluator,
+    evaluatorFallback: current.evaluatorFallback,
+    executor: current.executor,
+    executorFallback: current.executorFallback,
+    activeExecutor: current.activeExecutor,
+    visual: current.visual,
+  }
+}
+
+/**
+ * Commit one audit result through the store's read-modify-write.
+ *
+ * The state and its events travel in one atomic commit, and the runtime config
+ * fields are re-read from the latest ledger so a completed audit cannot revert
+ * a model switch that happened while it was running.
+ *
+ * `null` is a real outcome: `mutate` answers it when `tasks.json` disappeared
+ * while the audit was running. Returning the computed state instead would let
+ * the caller commit and tag a task whose ledger no longer exists, so every
+ * caller must abort on it.
+ */
+async function persist(deps: LoopDeps, next: GuardState, events: readonly GuardEvent[] = []): Promise<GuardState | null> {
+  return await deps.store.mutate(current => ({
+    state: mergeRuntimeConfig(next, current),
+    ...(events.length === 0 ? {} : { events }),
+  }))
 }
 
 function blockedTask(reason: string, next: string): GuardTask['blocked'] {
@@ -505,6 +699,15 @@ async function syncMirror(deps: LoopDeps, state: GuardState, note: string): Prom
   await deps.store.appendEvents([{ type: 'mirror.synced', at: commentedAt }])
 }
 
+/** Mark `run.json` completed once every task is DONE and final milestone review passed. */
+async function markRunCompleted(deps: LoopDeps): Promise<void> {
+  await deps.store.updateMeta(current => ({
+    ...current,
+    phase: 'completed',
+    updatedAt: Date.now(),
+  })).catch(() => undefined)
+}
+
 /** Mark the host goal complete; a missing or failing goal service never fails the ledger. */
 function completeGoal(deps: LoopDeps): void {
   const goals = goalsOf(deps.ctx)
@@ -526,6 +729,53 @@ function blockGoal(deps: LoopDeps, reason: string): void {
   } catch { /* an already paused or blocked goal is not an error */ }
 }
 
+/**
+ * Roll the host goal's round budget forward while the run is making progress.
+ *
+ * Only a RUN WITH NO IDLE TASK earns an extension: `idleStreak > 0` means the
+ * last audit found nothing to do, so growing the budget would just pay for more
+ * spinning. A promise with a full budget and an idle task is left alone — the
+ * idle limiter blocks that task instead.
+ *
+ * Best effort: a host without `edit` keeps its original cap, and the ledger is
+ * the authority either way.
+ */
+async function extendGoalBudget(deps: LoopDeps, state: GuardState): Promise<void> {
+  if (state.status !== 'active') return
+  if (state.tasks.some(task => (task.idleStreak ?? 0) > 0)) return
+  const goals = goalsOf(deps.ctx)
+  if (goals?.get === undefined || goals.edit === undefined) return
+  let view: GoalViewFace | undefined
+  try {
+    view = goals.get(deps.agent)
+  } catch {
+    return
+  }
+  if (view === undefined || view.phase !== 'active' || view.activation !== 'armed') return
+  if (!goalBudgetLow(view)) return
+  const rounds = goalRounds(view)
+  const target = nextGoalRounds(rounds === null ? 0 : rounds.max)
+  try {
+    goals.edit(deps.agent, { id: view.id, revision: view.revision }, { maxGoalRounds: target })
+  } catch {
+    return
+  }
+  await deps.store.appendEvents([{
+    type: 'goal.extended',
+    at: Date.now(),
+    from: rounds === null ? 0 : rounds.max,
+    to: target,
+    roundsStarted: rounds === null ? 0 : rounds.started,
+  }]).catch(() => undefined)
+}
+
+/** Settle the run, then give a still-active goal enough rounds to keep going. */
+async function finishTurn(deps: LoopDeps, state: GuardState): Promise<GuardState | null> {
+  const settled = await settle(deps, state)
+  if (settled !== null) await extendGoalBudget(deps, settled)
+  return settled
+}
+
 /** Undo one just-created commit so the ledger and the history cannot disagree. */
 /**
  * Commit the task's scope plus the ledger, tag it, then record the commit.
@@ -541,7 +791,7 @@ async function finishTask(
   task: GuardTask,
   changed: readonly string[],
   allDone: boolean,
-): Promise<GuardState> {
+): Promise<GuardState | null> {
   const guardDir = `docs/guard/${deps.runId}`
   // Stage only what is DIRTY right now. `changed` also names work the task (or a
   // subagent) already committed; a path that no longer exists in the worktree or
@@ -551,13 +801,12 @@ async function finishTask(
   const dirtyNow = new Set(await changedPaths(deps.cwd, guardDir))
   const staged = changed.filter(path => dirtyNow.has(path))
   const paths = [...new Set([...staged, guardDir])]
-  const failCommit = async (message: string, reason: string): Promise<GuardState> => {
+  const failCommit = async (message: string, reason: string): Promise<GuardState | null> => {
     await resetPaths(deps.cwd, paths)
-    await deps.store.update(rollbackState, [
+    return await persist(deps, rollbackState, [
       { type: 'commit.failed', at: Date.now(), taskId: task.id, message },
       { type: 'task.reopened', at: Date.now(), taskId: task.id, reason },
     ])
-    return rollbackState
   }
   if (!(await hasGit(deps.cwd))) {
     await deps.store.appendEvents([{ type: 'commit.done', at: Date.now(), taskId: task.id, sha: '', checkpointRef: '' }])
@@ -565,8 +814,10 @@ async function finishTask(
     // not depend on git, so skipping it here would silently drop a safety gate.
     await syncMirror(deps, doneState, `${task.id} ${task.title} DONE（无 git，未提交）${allDone ? '（全部完成）' : ''}`)
     const reviewedNoGit = await maybeMilestoneReview(deps, doneState)
+    if (reviewedNoGit === null) return null
     if (reviewedNoGit.status === 'blocked') return reviewedNoGit
     if (allDone) {
+      await markRunCompleted(deps)
       completeGoal(deps)
       return reviewedNoGit
     }
@@ -603,16 +854,21 @@ async function finishTask(
   // residue's recorded hash no longer describes the tree). Neither case may wait
   // for `changed.length > 0`.
   const settled = await settleResidue(deps, doneState, task.id, changed)
-  if (settled !== doneState) await deps.store.update(settled)
+  // The returned state carries the runtime fields merged from the lock-time
+  // ledger; the review below must read THAT, not the stale snapshot.
+  const settledSaved = settled === doneState ? settled : await persist(deps, settled)
+  if (settledSaved === null) return null
   await deps.store.appendEvents([{
     type: 'commit.done', at, taskId: task.id, sha, checkpointRef: task.checkpointRef ?? '',
   }])
-  await syncMirror(deps, settled, `${task.id} ${task.title} DONE${allDone ? '（全部完成）' : ''}`)
+  await syncMirror(deps, settledSaved, `${task.id} ${task.title} DONE${allDone ? '（全部完成）' : ''}`)
   // The review runs BEFORE the goal is completed: a failing final milestone must
   // be able to stop the run instead of being skipped because everything is DONE.
-  const reviewed = await maybeMilestoneReview(deps, settled)
+  const reviewed = await maybeMilestoneReview(deps, settledSaved)
+  if (reviewed === null) return null
   if (reviewed.status === 'blocked') return reviewed
   if (allDone) {
+    await markRunCompleted(deps)
     completeGoal(deps)
     return reviewed
   }
@@ -624,7 +880,7 @@ async function finishTask(
  * look at the batch. A `fail` stops the run for a human; `insufficient` is
  * recorded and the run keeps going (nothing is marked done by a review).
  */
-async function maybeMilestoneReview(deps: LoopDeps, state: GuardState): Promise<GuardState> {
+async function maybeMilestoneReview(deps: LoopDeps, state: GuardState): Promise<GuardState | null> {
   const every = Math.max(1, state.milestoneEvery)
   const doneTasks = state.tasks.filter(task => task.status === 'DONE')
   const completed = doneTasks.length
@@ -635,19 +891,46 @@ async function maybeMilestoneReview(deps: LoopDeps, state: GuardState): Promise<
   // can neither review the same task twice nor drop a genuinely completed one.
   const batch = orderedByCompletion(state, doneTasks).slice(-every)
   const review = await reviewMilestone(deps.ctx, deps.agent, state, batch, round, deps.store)
+  if (review !== null) {
+    for (const fallback of review.fallbacks ?? []) {
+      await deps.store.appendEvents([{
+        type: 'eval.fallback', at: Date.now(), role: 'milestone',
+        from: fallback.from, to: fallback.to, code: fallback.code,
+      }])
+    }
+  }
   if (review === null) {
-    // No evaluator model: record the skip instead of pretending it passed.
-    await deps.store.appendEvents([{ type: 'review.milestone', at: Date.now(), round, verdict: 'insufficient' }])
+    // No evaluator model: record the skip with its cause instead of pretending it passed.
+    await deps.store.appendEvents([{
+      type: 'review.milestone', at: Date.now(), round, verdict: 'insufficient', reason: '审阅模型不可用',
+    }])
     return state
   }
-  await deps.store.appendEvents([{ type: 'review.milestone', at: Date.now(), round, verdict: review.verdict }])
+  await deps.store.appendEvents([{
+    type: 'review.milestone',
+    at: Date.now(),
+    round,
+    verdict: review.verdict,
+    path: review.path,
+    ...(review.reason === undefined ? {} : { reason: review.reason }),
+  }])
   await syncMirror(deps, state, `里程碑 ${round}：${review.verdict}（${review.path}）`)
   if (review.verdict !== 'fail') return state
   const reason = `里程碑审阅未通过（第 ${round} 轮）：见 ${review.path}`
+  const blocked: GuardState = {
+    ...state,
+    status: 'blocked',
+    goalBlocked: reason,
+    goalBlockKind: 'milestone',
+    updatedAt: Date.now(),
+  }
+  // Persist FIRST: stopping the host goal is a consequence of a recorded block.
+  // If the ledger vanished, there is no block to enforce and the goal must stay
+  // untouched instead of being stopped by a write that never happened.
+  const blockedSaved = await persist(deps, blocked, [{ type: 'run.blocked', at: Date.now(), reason }])
+  if (blockedSaved === null) return null
   blockGoal(deps, reason)
-  const blocked: GuardState = { ...state, status: 'blocked', goalBlocked: reason, updatedAt: Date.now() }
-  await deps.store.update(blocked, [{ type: 'run.blocked', at: Date.now(), reason }])
-  return blocked
+  return blockedSaved
 }
 
 function depsDone(state: GuardState, task: GuardTask): boolean {
@@ -711,30 +994,55 @@ function stuckReason(state: GuardState): string {
  * running. Keeps `goalBlocked` idempotent so a blocked run does not call the
  * host goal again on every turn.
  */
-async function settle(deps: LoopDeps, state: GuardState): Promise<GuardState> {
+async function settle(deps: LoopDeps, state: GuardState): Promise<GuardState | null> {
   if (state.status !== 'active') return state
   if (state.tasks.length > 0 && state.tasks.every(task => task.status === 'DONE')) {
-    const done: GuardState = { ...state, status: 'completed', activeTaskIds: [], goalBlocked: undefined, updatedAt: Date.now() }
-    await deps.store.update(done)
-    await syncMirror(deps, done, '全部任务完成')
+    const done: GuardState = {
+      ...state,
+      status: 'completed',
+      activeTaskIds: [],
+      goalBlocked: undefined,
+      goalBlockKind: undefined,
+      updatedAt: Date.now(),
+    }
+    const doneSaved = await persist(deps, done)
+    if (doneSaved === null) return null
+    // `run.json.phase` must not stay `running` forever once the ledger is done:
+    // the card and the cold start both read the phase, and a completed run that
+    // still claims to be running is a state nobody can reconcile.
+    await markRunCompleted(deps)
+    await syncMirror(deps, doneSaved, '全部任务完成')
     completeGoal(deps)
-    return done
+    return doneSaved
   }
   const runnable = state.activeTaskIds.some(id => state.tasks.some(task => task.id === id))
     || state.tasks.some(task => task.status === 'TODO' && depsDone(state, task))
   if (runnable) {
     if (state.goalBlocked === undefined) return state
-    const cleared: GuardState = { ...state, goalBlocked: undefined, updatedAt: Date.now() }
-    await deps.store.update(cleared)
-    return cleared
+    // A run that has work again is not blocked any more, whatever stopped it
+    // before: leaving the kind behind made a later block look like the old one.
+    const cleared: GuardState = { ...state, goalBlocked: undefined, goalBlockKind: undefined, updatedAt: Date.now() }
+    return await persist(deps, cleared)
   }
   const reason = stuckReason(state)
   if (state.goalBlocked === reason) return state
+  // Same status the milestone block writes. Leaving the run `active` while its
+  // goal was stopped made the card show "in progress + blocked" at once.
+  const blocked: GuardState = {
+    ...state,
+    status: 'blocked',
+    goalBlocked: reason,
+    goalBlockKind: 'unrunnable',
+    updatedAt: Date.now(),
+  }
+  // Persist FIRST: a host-side block is only honest once the ledger records it.
+  // The old order stopped the goal even when the write answered null (a ledger
+  // that vanished mid-audit), leaving a dead goal with a live-looking run.
+  const blockedSaved = await persist(deps, blocked, [{ type: 'run.blocked', at: Date.now(), reason }])
+  if (blockedSaved === null) return null
   blockGoal(deps, reason)
-  const blocked: GuardState = { ...state, goalBlocked: reason, updatedAt: Date.now() }
-  await deps.store.update(blocked, [{ type: 'run.blocked', at: Date.now(), reason }])
-  await syncMirror(deps, blocked, `运行暂停：${reason}`)
-  return blocked
+  await syncMirror(deps, blockedSaved, `运行暂停：${reason}`)
+  return blockedSaved
 }
 
 /** Audit every runnable task in this turn's batch (one task unless parallel > 1). */
@@ -744,13 +1052,40 @@ export async function auditTurn(deps: LoopDeps): Promise<GuardState | null> {
   const limit = initial.parallel > 1 && (await hasGit(deps.cwd)) ? initial.parallel : 1
   const batch = selectBatch(initial, limit)
   let state: GuardState = initial
-  if (batch.length === 0) return await settle(deps, state)
+  if (batch.length === 0) return await finishTurn(deps, state)
   for (const task of batch) {
     const latest = await deps.store.readState()
-    if (latest === null || latest.status !== 'active') return latest
-    state = (await auditTask(deps, task.id, batch.map(item => item.id))) ?? latest
+    if (latest === null) return null
+    if (latest.status !== 'active') return latest
+    // `auditTask` answers null when its own persist lost the ledger. Falling back
+    // to `latest` here disguised that as a successful audit and let `settle`
+    // report the stale pre-audit snapshot as the turn's outcome.
+    const audited = await auditTask(deps, task.id, batch.map(item => item.id))
+    if (audited === null) return null
+    state = audited
   }
-  return await settle(deps, state)
+  // If a sequential run finished multiple tasks inside one long turn and wrote
+  // `## 完成声明` for the next ready task too, drain those declared tasks in
+  // order instead of stranding them until later turns.
+  if (limit === 1) {
+    const maxExtra = state.tasks.length
+    for (let step = 0; step < maxExtra; step += 1) {
+      const latest = await deps.store.readState()
+      if (latest === null) return null
+      if (latest.status !== 'active') { state = latest; break }
+      const next = selectBatch(latest, 1).at(0)
+      if (next === undefined || batch.some(item => item.id === next.id && latest.tasks.find(t => t.id === next.id)?.status !== 'TODO')) break
+      const claimed = await completionOffset(deps.store, next)
+      if (!claimed.declared) break
+      const beforeStatus = next.status
+      const audited = await auditTask(deps, next.id, [next.id])
+      if (audited === null) return null
+      state = audited
+      const afterStatus = state.tasks.find(item => item.id === next.id)?.status
+      if (afterStatus !== 'DONE' || beforeStatus === 'DONE') break
+    }
+  }
+  return await finishTurn(deps, state)
 }
 
 export interface ProgressDecision {
@@ -797,6 +1132,14 @@ async function progressDecision(
     }
   }
   const progress = await evaluateProgress(deps.ctx, deps.agent, state, task, [...task.attempts, baseAttempt])
+  // A switched progress judge is a ledger fact too: the verdict below must never
+  // look as if the primary model produced it.
+  for (const fallback of progress.fallbacks ?? []) {
+    events.push({
+      type: 'eval.fallback', at: Date.now(), role: 'progress',
+      from: fallback.from, to: fallback.to, code: fallback.code,
+    })
+  }
   if (progress.verdict === 'unknown') {
     // The evaluator itself is unavailable (no model, timeout, unparseable
     // answer). That is exactly the case this budget exists for: without this
@@ -824,7 +1167,129 @@ async function progressDecision(
   return { attempt, blockedReason, blockedNext }
 }
 
-/** Write the BLOCKED row plus its patch evidence; caller decides what happens to the goal. */async function blockTask(
+/** Why a resume was refused, machine-readable so callers never parse prose. */
+export type ResumeBlockedCode = 'missing' | 'completed' | 'not-blocked' | 'milestone-pending'
+
+/** A refusal that is a property of the ledger, not of the store. */
+export type ResumeRefusalCode = Exclude<ResumeBlockedCode, 'missing'>
+
+/** Pure resume gate: "may this ledger be cleared and driven again?" */
+export type ResumeEligibility =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly code: ResumeRefusalCode; readonly reason: string }
+
+export type ResumeBlockedOutcome =
+  | { readonly ok: true; readonly state: GuardState }
+  | { readonly ok: false; readonly code: ResumeBlockedCode; readonly reason: string }
+
+/** The one sentence a failed milestone gate answers with. */
+const MILESTONE_REFUSAL = '里程碑审阅未通过：请先回退并重开相关任务修复缺陷，不能直接继续'
+
+/**
+ * Decide whether a run may be resumed, WITHOUT touching the store.
+ *
+ * Pure on purpose: `guard.switch` needs the same verdict BEFORE it performs any
+ * side effect (a model select or a ledger write), or a refused resume left half
+ * a decision committed. It is also the single place that knows how a run-level
+ * block is classified:
+ *
+ *   - a failed milestone review is a safety gate. `maybeMilestoneReview` writes
+ *     `goalBlockKind: 'milestone'`; a ledger from before that field existed is
+ *     recognised by its reason text or by an all-DONE table. None of these are
+ *     resumable: the next audit would finish the run without the review ever
+ *     having passed.
+ *   - every other run-level block (`unrunnable`) is an ordinary stall a human
+ *     may clear.
+ */
+export function canResume(
+  state: Pick<GuardState, 'status' | 'tasks' | 'goalBlocked' | 'goalBlockKind'>,
+): ResumeEligibility {
+  if (state.status === 'completed') return { ok: false, code: 'completed', reason: 'run 已全部完成，无需继续' }
+  const blockedTasks = state.tasks.filter(task => task.status === 'BLOCKED')
+  // The card treats `status: 'blocked'` as blocked and offers "continue"; a
+  // ledger that is blocked without a reason string or a BLOCKED row must not be
+  // answered with `not-blocked` (that made the button a permanent no-op).
+  if (state.status !== 'blocked' && state.goalBlocked === undefined && blockedTasks.length === 0) {
+    return { ok: false, code: 'not-blocked', reason: 'run 当前没有被阻断' }
+  }
+  // The milestone gate is a RUN-level fact. Checking it only when no task is
+  // BLOCKED let a parallel batch bypass it: a failed review alongside a blocked
+  // sibling looked resumable, and continuing reopened that sibling while the
+  // review that failed was never re-run.
+  // A mid-run milestone failure leaves later tasks TODO (only a FINAL failure
+  // is all-DONE), so the all-DONE leg alone is not enough either.
+  const legacyMilestone = state.goalBlocked?.includes('里程碑审阅未通过') === true
+  const allDone = state.tasks.length > 0 && state.tasks.every(task => task.status === 'DONE')
+  if (state.goalBlockKind === 'milestone' || legacyMilestone || allDone) {
+    return { ok: false, code: 'milestone-pending', reason: MILESTONE_REFUSAL }
+  }
+  return { ok: true }
+}
+
+/**
+ * Reopen a blocked run by hand.
+ *
+ * An evaluator outage is not a task failure: the attempts stay, the scope and
+ * `baseCommit` stay, only the block flag and the outage streak are cleared, so
+ * the retry continues from the same point instead of forcing a rollback (which
+ * would reopen the task and lose the "already started" context). The run-level
+ * block is cleared in the same write so the host goal can be armed again.
+ *
+ * The resume gate is `canResume`: a milestone block is never cleared here,
+ * whatever the task table looks like. The state transition and its
+ * `task.unblocked` / `run.resumed` events are committed by ONE `store.mutate`,
+ * so `state.jsonl` can never describe a resume the ledger does not have.
+ */
+export async function resumeBlockedRun(
+  store: GuardStore,
+  reason = '人工继续：清除阻断后重试',
+): Promise<ResumeBlockedOutcome> {
+  const box: { refusal: { readonly code: ResumeRefusalCode; readonly reason: string } | null } = { refusal: null }
+  const next = await store.mutate((state) => {
+    const eligibility = canResume(state)
+    if (!eligibility.ok) {
+      box.refusal = { code: eligibility.code, reason: eligibility.reason }
+      return state
+    }
+    const blockedTasks = state.tasks.filter(task => task.status === 'BLOCKED')
+    const at = Date.now()
+    return {
+      state: {
+        ...state,
+        status: 'active',
+        goalBlocked: undefined,
+        goalBlockKind: undefined,
+        // Keep any sibling that is still running (parallel batches share the ledger).
+        activeTaskIds: [...new Set([
+          ...state.activeTaskIds,
+          ...blockedTasks.map(task => task.id),
+        ])],
+        tasks: state.tasks.map(task => (
+          task.status === 'BLOCKED'
+            ? {
+              ...task,
+              status: 'IN_PROGRESS' as const,
+              blocked: undefined,
+              evalUnavailableStreak: undefined,
+              idleStreak: undefined,
+            }
+            : { ...task, evalUnavailableStreak: undefined, idleStreak: undefined }
+        )),
+        updatedAt: at,
+      },
+      events: [
+        ...blockedTasks.map(task => ({ type: 'task.unblocked' as const, at, taskId: task.id, note: reason })),
+        { type: 'run.resumed' as const, at, reason },
+      ],
+    }
+  })
+  if (box.refusal !== null) return { ok: false, ...box.refusal }
+  if (next === null) return { ok: false, code: 'missing', reason: 'run ledger is missing' }
+  return { ok: true, state: next }
+}
+
+/** Write the BLOCKED row plus its patch evidence; caller decides what happens to the goal. */
+async function blockTask(
   deps: LoopDeps,
   state: GuardState,
   task: GuardTask,
@@ -832,10 +1297,14 @@ async function progressDecision(
   next: string,
   events: GuardEvent[],
   attempts?: readonly Attempt[],
-): Promise<GuardState> {
+): Promise<GuardState | null> {
   const guardDir = `docs/guard/${deps.runId}`
+  // Exclude unchanged pre-existing dirty files from the blocked patch: a dirty
+  // repo with thousands of untracked build-cache files must not be swept into
+  // `git add -N` / `git diff` whenever a task blocks.
+  const dirtyForPatch = await excludeBaseline(deps.cwd, state, task, await changedPaths(deps.cwd, guardDir))
   const captured = await captureBlockedPatch(
-    deps.cwd, deps.store, task.id, await changedPaths(deps.cwd, guardDir), nextAttemptIndex(task),
+    deps.cwd, deps.store, task.id, dirtyForPatch, nextAttemptIndex(task),
   )
   const evidence = captured === null
     ? task.evidence
@@ -847,13 +1316,13 @@ async function progressDecision(
       ...(attempts === undefined ? {} : { attempts }),
       evidence,
       blocked: blockedTask(reason, next),
+      idleStreak: undefined,
     }),
     activeTaskIds: state.activeTaskIds.filter(id => id !== task.id),
     updatedAt: Date.now(),
   }
   events.push({ type: 'task.blocked', at: Date.now(), taskId: task.id, reason })
-  await deps.store.update(blocked, events)
-  return blocked
+  return await persist(deps, blocked, events)
 }
 
 /**
@@ -874,9 +1343,11 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
     // with only BLOCKED tasks is stuck, not finished, and `settle` will stop it.
     if (!initial.tasks.every(item => item.status === 'DONE')) return await settle(deps, initial)
     const done: GuardState = { ...initial, status: 'completed', activeTaskIds: [], updatedAt: Date.now() }
-    await deps.store.update(done)
+    const saved = await persist(deps, done)
+    if (saved === null) return null
+    await markRunCompleted(deps)
     completeGoal(deps)
-    return done
+    return saved
   }
 
   const starting = !initial.activeTaskIds.includes(task.id) && task.status !== 'IN_PROGRESS'
@@ -887,7 +1358,7 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
   // would restore that stale code.
   const head = starting && task.baseCommit === undefined ? await headCommit(deps.cwd) : null
   const base: GuardTask = starting
-    ? { ...task, status: 'IN_PROGRESS', ...(head === null ? {} : { baseCommit: head }) }
+    ? { ...task, status: 'IN_PROGRESS', idleStreak: undefined, ...(head === null ? {} : { baseCommit: head }) }
     : { ...task, status: 'IN_PROGRESS' }
   const events: GuardEvent[] = []
   let state: GuardState = {
@@ -925,8 +1396,25 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
   }
 
   const completion = await completionOffset(deps.store, task)
+  // After an `insufficient` or `fail` evaluation, adding evidence directly to
+  // `notes.md` (without repeating "## 完成声明" or touching code) is a real
+  // retry and should re-evaluate instead of idling on probes alone.
+  const lastEvalVerdict = task.attempts.at(-1)?.evalVerdict
+  const notesRetried = (lastEvalVerdict === 'insufficient' || lastEvalVerdict === 'fail') && completion.notesExtended
   const lightAllPass = light.every(probe => outcomes[probe.id]?.result === 'pass')
-  if (lightAllPass || completion.declared) {
+  // A task with NO light probes is the common case, and `[].every(...)` is
+  // `true`: that made the heavy gate a constant, so every idle turn re-ran the
+  // whole heavy probe set (256 runs in the zenspace run). A zero-light task
+  // measures its own scope instead and only probes when something moved.
+  const priorRequiredPass = task.requiredProbes.every(id => task.probeResults[id]?.result === 'pass')
+  const earlyFingerprint = light.length === 0
+    ? await scopeFingerprint(deps, state, guardDir, base)
+    : undefined
+  const scopeMoved = earlyFingerprint !== undefined && earlyFingerprint !== task.lastEvalScopeHash
+  const runHeavy = light.length === 0
+    ? (!priorRequiredPass || scopeMoved || completion.declared || notesRetried)
+    : (lightAllPass || completion.declared || notesRetried)
+  if (runHeavy) {
     for (const probe of probes.filter(item => item.enabled && item.weight === 'heavy')) {
       const heavy = await runProbe(deps.cwd, probe)
       outcomes[probe.id] = heavy
@@ -938,7 +1426,14 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
   }
 
   const results: Record<string, ProbeResult> = {}
-  for (const probe of probes) results[probe.id] = outcomes[probe.id]?.result ?? 'unknown'
+  for (const probe of probes) {
+    // `Object.hasOwn` rather than a truthiness test: the ledger type is a plain
+    // Record, so TS believes every key exists, while a probe may never have run.
+    const prior: ProbeResult | undefined = Object.hasOwn(task.probeResults, probe.id)
+      ? task.probeResults[probe.id].result
+      : undefined
+    results[probe.id] = outcomes[probe.id]?.result ?? prior ?? 'unknown'
+  }
   const allRequiredPass = task.requiredProbes.every(id => results[id] === 'pass')
 
   // Evidence for failed or heavy probes only; the list is bounded per task.
@@ -957,6 +1452,14 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
   for (const ref of evidenceRefs) if (ref.probeId !== undefined) evidenceByProbe.set(ref.probeId, ref.id)
   const probeResults: Record<string, { result: ProbeResult; at: number; evidenceId?: string }> = {}
   for (const probe of probes) {
+    const hadPrior = Object.hasOwn(task.probeResults, probe.id)
+    const prior = task.probeResults[probe.id]
+    if (outcomes[probe.id] === undefined && hadPrior) {
+      // Not re-run this turn: keep the recorded verdict AND its timestamp, so the
+      // ledger never claims a probe ran when it did not.
+      probeResults[probe.id] = prior
+      continue
+    }
     const evidenceId = evidenceByProbe.get(probe.id)
     probeResults[probe.id] = { result: results[probe.id] ?? 'unknown', at, ...(evidenceId === undefined ? {} : { evidenceId }) }
   }
@@ -1002,7 +1505,7 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
     && (committedInRange.has(path) || !upcomingScopes.some(scope => pathInScope(path, scope)))
 
   if (allRequiredPass) {
-    const scopeHash = await scopeFingerprint(deps, state, guardDir, liveTask)
+    const scopeHash = earlyFingerprint ?? await scopeFingerprint(deps, state, guardDir, liveTask)
     // The project smoke command is a deterministic gate, so it runs whenever the
     // required probes pass — not only on turns where the evaluator would also
     // run. Advancing `lastEvalScopeHash` here would make a failed smoke command
@@ -1025,7 +1528,7 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
         const failed: GuardState = {
           ...state,
           tasks: updateTask(state, task.id, {
-            attempts,
+            attempts, idleStreak: undefined,
             probeResults: { ...probeResults, smoke: { result: 'fail', at: Date.now() } },
           }),
           updatedAt: Date.now(),
@@ -1035,14 +1538,58 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
         if (reason !== null) {
           return await blockTask(deps, failed, liveTask, reason, decision.blockedReason === null ? '检查项目是否能编译/自测' : decision.blockedNext, events, attempts)
         }
-        await deps.store.update(failed, events)
-        return failed
+        return await persist(deps, failed, events)
       }
     }
-    const shouldEvaluate = scopeHash !== task.lastEvalScopeHash || completion.declared
+    const shouldEvaluate = scopeHash !== task.lastEvalScopeHash || completion.declared || notesRetried
     if (shouldEvaluate) {
-      const candidate = await buildEvalCandidate(deps, state, guardDir, liveTask, probes, outcomes)
-      const evaluated = await evaluateTask(deps.ctx, deps.agent, state, liveTask, candidate)
+      const { candidate, imagePaths } = await buildEvalCandidate(deps, state, guardDir, liveTask, probes, outcomes)
+      // Visual evidence is observation only: the witness never decides anything.
+      // It only runs when this task actually claims visual acceptance or touched
+      // a screenshot — a run-level toggle must not turn a pure refactor into a
+      // task that can never pass. The requirement only exists when the run
+      // enabled the witness: with the toggle off there is no witness to miss.
+      const visualRequired = state.visual?.enabled === true && needsVisualEvidence(liveTask)
+      const witness = visualRequired || imagePaths.length > 0
+        ? await runVisualWitness({
+          ctx: deps.ctx,
+          cwd: deps.cwd,
+          store: deps.store,
+          state,
+          task: liveTask,
+          paths: imagePaths,
+          agent: deps.agent,
+        })
+        : undefined
+      if (witness !== undefined) {
+        events.push({
+          type: 'visual.witness', at: Date.now(), taskId: task.id,
+          model: witness.model ?? '',
+          images: witness.images,
+          result: witness.result,
+          findings: witness.result === 'ok' ? witness.findings.length : 0,
+          ...(witness.result === 'unavailable' ? { reason: witness.reason } : {}),
+          ...(witness.result === 'ok' && witness.artifact !== undefined ? { artifact: witness.artifact } : {}),
+        })
+      }
+      const raw = await evaluateTask(deps.ctx, deps.agent, state, liveTask,
+        witness === undefined ? candidate : { ...candidate, visualWitness: witness })
+      // A visual acceptance criterion with no usable witness evidence must never
+      // read as a pass, whatever the model said: the plugin owns this rule.
+      const evaluated = visualRequired && raw.verdict === 'pass' && (witness === undefined || witness.result === 'unavailable')
+        ? {
+          ...raw,
+          verdict: 'insufficient' as const,
+          reason: `视觉验收缺少可用取证（${witness === undefined ? '未运行视觉取证' : witness.reason}），不能判通过`,
+          correction: '补一张能证明验收条目的截图（或用视觉取证模型重新取证）后再评估。',
+          nextAction: 'retry' as const,
+        }
+        : raw
+      // A switched judge is a ledger fact: the verdict below must never look as
+      // if the primary model produced it.
+      for (const fallback of evaluated.fallbacks ?? []) {
+        events.push({ type: 'eval.fallback', at: Date.now(), role: 'evaluator', from: fallback.from, to: fallback.to, code: fallback.code })
+      }
       if (evaluated.unavailable === true) {
         const streak = (task.evalUnavailableStreak ?? 0) + 1
         const reason = evaluated.reason ?? evaluated.missing.at(0) ?? '评估器不可用'
@@ -1062,15 +1609,21 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
           updatedAt: Date.now(),
         }
         if (streak >= EVAL_UNAVAILABLE_LIMIT) {
+          // Truncation is a budget/config problem the human can fix in the card,
+          // so the block carries the fix instead of a generic "retry".
+          const truncated = reason.includes('MAX_TOKENS')
           return await blockTask(
             deps, retrying, liveTask,
-            `评估器连续 ${EVAL_UNAVAILABLE_LIMIT} 次不可用：${reason}`,
-            '检查模型配置、网络或输出格式后回退重试',
+            `评估器连续 ${EVAL_UNAVAILABLE_LIMIT} 次不可用：${reason}${evaluated.model === '' ? '' : `（模型 ${evaluated.model}）`}${truncated ? '；把评估等级降到 High（或配置评估回退）后可继续' : ''}`,
+            truncated
+              ? '评估器的推理吃满了输出预算：把「独立评估模型」的等级降到 High，或配置评估回退后点「继续运行」'
+              : evaluated.reason?.includes('EMPTY_RESPONSE') === true
+                ? '该模型对一次性 JSON 评估返回空文本：换一个评估模型后点「继续运行」'
+                : '检查模型配置、网络或输出格式后点「继续运行」重试',
             events,
           )
         }
-        await deps.store.update(retrying, events)
-        return retrying
+        return await persist(deps, retrying, events)
       }
       events.push({
         type: 'eval.done', at: Date.now(), taskId: task.id, verdict: evaluated.verdict,
@@ -1129,6 +1682,7 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
             // worktree still needs to be excluded from a sibling's audit.
             rollbackResidue: undefined,
             evalUnavailableStreak: undefined,
+            idleStreak: undefined,
             lastEvalScopeHash: scopeHash, lastEvalAt: Date.now(),
             lastEvalOffset: completion.offset,
           }),
@@ -1145,14 +1699,17 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
         const rollbackState: GuardState = {
           ...state,
           tasks: updateTask(state, task.id, {
-            status: 'IN_PROGRESS', lastEvalAt: Date.now(), evalUnavailableStreak: undefined,
+            status: 'IN_PROGRESS', lastEvalAt: Date.now(), evalUnavailableStreak: undefined, idleStreak: undefined,
           }),
           status: 'active',
           updatedAt: Date.now(),
         }
         events.push({ type: 'task.done', at: Date.now(), taskId: task.id, checkpointRef: gitRepo ? checkpointRef : '' })
-        await deps.store.update(doneState, events)
-        return await finishTask(deps, doneState, rollbackState, { ...liveTask, checkpointRef }, changed, allDone)
+        const persisted = await persist(deps, doneState, events)
+        // The ledger vanished between this audit's read and its write: do NOT
+        // commit, tag or complete a task the ledger no longer knows about.
+        if (persisted === null) return null
+        return await finishTask(deps, persisted, rollbackState, { ...liveTask, checkpointRef }, changed, allDone)
       }
       // State-based signature: omit model phrasing (`correction`) and verdict
       // wobble (`fail` vs `insufficient`), so an unchanged workspace oscillating
@@ -1171,7 +1728,7 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
       const failed: GuardState = {
         ...state,
         tasks: updateTask(state, task.id, {
-          attempts, evalUnavailableStreak: undefined,
+          attempts, evalUnavailableStreak: undefined, idleStreak: undefined,
           lastEvalAt: Date.now(), lastEvalScopeHash: scopeHash,
           lastEvalOffset: completion.offset,
         }),
@@ -1183,13 +1740,27 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
       if (nextAttemptIndex(task) >= ATTEMPT_LIMIT) {
         return await blockTask(deps, failed, liveTask, `单任务尝试达到 ${ATTEMPT_LIMIT} 次上限`, '检查目标与验收是否可执行，或由用户补充新方法', events, attempts)
       }
-      await deps.store.update(failed, events)
-      return failed
+      return await persist(deps, failed, events)
     }
     // No new scope change and no new declaration: keep the offset untouched so a
     // completion note written before the probes passed is still seen later.
-    await deps.store.update({ ...state, updatedAt: Date.now() }, events)
-    return state
+    //
+    // This is also the exact definition of an idle turn, so it is counted. The
+    // streak only survives while NOTHING moves; every real action elsewhere in
+    // this function resets it. At the limit the task blocks with the one
+    // instruction that can unblock it, instead of re-probing forever.
+    const idleStreak = (task.idleStreak ?? 0) + 1
+    if (idleStreak >= IDLE_STALL_LIMIT) {
+      const reason = `探针已通过，但连续 ${idleStreak} 轮无代码改动且未新增「## 完成声明」`
+      const next = `审查产物后在 docs/guard/${deps.runId}/tasks/${task.id}/notes.md 追加「## 完成声明」（该文件是督导允许主会话写入的例外），然后继续运行`
+      return await blockTask(deps, state, liveTask, reason, next, events)
+    }
+    const stalled: GuardState = {
+      ...state,
+      tasks: updateTask(state, task.id, { idleStreak }),
+      updatedAt: Date.now(),
+    }
+    return await persist(deps, stalled, events)
   }
 
   const signature = signatureOf(
@@ -1214,9 +1785,8 @@ export async function auditTask(deps: LoopDeps, taskId?: string, batchIds: reado
   }
   const waiting: GuardState = {
     ...state,
-    tasks: updateTask(state, task.id, { ...liveTask, attempts, lastEvalOffset: task.lastEvalOffset }),
+    tasks: updateTask(state, task.id, { ...liveTask, attempts, idleStreak: undefined, lastEvalOffset: task.lastEvalOffset }),
     updatedAt: Date.now(),
   }
-  await deps.store.update(waiting, events)
-  return waiting
+  return await persist(deps, waiting, events)
 }

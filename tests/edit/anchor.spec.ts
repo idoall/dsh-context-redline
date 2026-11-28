@@ -3,6 +3,7 @@ import { describe, test } from 'vitest'
 import {
   ANCHOR_FIELD_LIMIT,
   anchorRequestFingerprint,
+  anchorTitle,
   composeAnchor,
   type AnchorDraft,
 } from '../../src/shared/redline-anchor'
@@ -47,5 +48,25 @@ describe('锚定会话的三段式快照（0.4.0）', () => {
   test('任务也进入请求指纹：只改任务也会让旧确认失效', () => {
     assert.notEqual(anchorRequestFingerprint(draft), anchorRequestFingerprint({ ...draft, task: '另一个任务' }))
     assert.equal(composeAnchor(draft).fingerprint, composeAnchor({ ...draft, task: '另一个任务' }).fingerprint)
+  })
+
+  test('标题在标点处截断，不把半句话甩进会话列表', () => {
+    const head = '一二三四五六七八九十一二三四五六七八九十'
+    const title = anchorTitle({ ...draft, goal: `${head}，${'后面这半句不该出现在标题里的内容'.repeat(2)}` })
+    assert.equal(title, `${head}…`)
+    assert.ok(title.length <= 48)
+  })
+
+  test('句子边界优先：能整句收尾就不补省略号', () => {
+    const title = anchorTitle({ ...draft, goal: `把设置页改成深色模式。${'第二句很长'.repeat(20)}` })
+    assert.equal(title, '把设置页改成深色模式。')
+    assert.ok(title.length <= 48)
+  })
+
+  test('没有标点时按上限截断并补省略号，短标题原样返回', () => {
+    const long = anchorTitle({ ...draft, goal: '很'.repeat(120) })
+    assert.equal(long.length, 48)
+    assert.ok(long.endsWith('…'))
+    assert.equal(anchorTitle(draft), '把设置页改成深色模式')
   })
 })

@@ -14,17 +14,20 @@
  * process.
  */
 
-import { lstatSync, realpathSync } from 'node:fs'
+import { lstatSync, readFileSync, realpathSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { readdir, readFile } from 'node:fs/promises'
-import type { GuardState, RunMeta } from './schema'
+import type { GuardState, GuardTask, RunMeta } from './schema'
 import { renderAnchorDetailed } from './anchor'
+import { initialGoalRounds, nextGoalRounds, goalExhausted, GOAL_ROUNDS_INITIAL } from './budget'
+import { RUNTIME_ANCHOR_NAME, RUNTIME_ANCHOR_ORDER } from '../../shared/redline-carrier'
 import { pathInScope } from './git'
 import { REDLINE_DATA_DIR_NAME } from '../../shared/redline-paths'
 import { auditTurn, runningTasks } from './loop'
 import { detectMirror, type MirrorConfig } from './mirror'
-import { GuardStore } from './store'
+import { GuardStore, SerialLock } from './store'
 import { rememberSupervisorRun } from './status'
+import { effectiveCwdOf } from '../effective-cwd'
 
 export const SUPERVISOR_ANCHOR_HEAD = 'redline:goal-supervisor-head'
 export const SUPERVISOR_ANCHOR_TAIL = 'redline:goal-supervisor-tail'
@@ -77,19 +80,53 @@ interface GoalRef {
   readonly revision: number
 }
 
+/** The host `GoalView` fields this plugin reads; all optional for older hosts. */
+interface GoalViewFace extends GoalRef {
+  readonly phase?: string
+  readonly activation?: string
+  readonly roundsStarted?: number
+  readonly maxGoalRounds?: number
+  readonly blockedReason?: { readonly code?: string; readonly message?: string }
+}
+
 interface GoalsFace {
-  get?(agent: SupervisorAgentFace): (GoalRef & { readonly phase?: string; readonly activation?: string }) | undefined
-  create?(agent: SupervisorAgentFace, request: { readonly objective: string }): unknown
+  get?(agent: SupervisorAgentFace): GoalViewFace | undefined
+  create?(agent: SupervisorAgentFace, request: { readonly objective: string; readonly maxGoalRounds?: number }): unknown
+  edit?(
+    agent: SupervisorAgentFace,
+    ref: GoalRef,
+    request: { readonly objective?: string; readonly maxGoalRounds?: number },
+  ): GoalViewFace | undefined
   complete?(agent: SupervisorAgentFace, ref: GoalRef): unknown
   block?(agent: SupervisorAgentFace, ref: GoalRef, reason: { readonly code: string; readonly message: string }): unknown
   resume?(agent: SupervisorAgentFace, ref: GoalRef): unknown
+}
+
+/**
+ * Raise an exhausted round cap and resume with the NEW revision.
+ *
+ * `GoalService.resume` refuses a goal whose `roundsStarted >= maxGoalRounds`,
+ * and its own error says to raise the cap first. `edit` accepts a `blocked`
+ * goal and bumps `revision`, so resume must use the revision `edit` returned.
+ */
+async function extendAndResume(goals: GoalsFace, agent: SupervisorAgentFace, view: GoalViewFace): Promise<boolean> {
+  if (goals.edit === undefined || goals.resume === undefined) return false
+  const rounds = typeof view.roundsStarted === 'number' && typeof view.maxGoalRounds === 'number'
+    ? { started: view.roundsStarted, max: view.maxGoalRounds }
+    : null
+  const target = nextGoalRounds(rounds === null ? GOAL_ROUNDS_INITIAL : rounds.max)
+  const edited = goals.edit(agent, { id: view.id, revision: view.revision }, { maxGoalRounds: target })
+  if (edited !== undefined && typeof edited.revision !== 'number') return false
+  const revision = typeof edited?.revision === 'number' ? edited.revision : view.revision + 1
+  await goals.resume(agent, { id: view.id, revision })
+  return true
 }
 
 export interface SupervisorDeps {
   readonly ctx: { get(name: string): GoalsFace | { (name: string): string } | undefined }
   readonly agentCtx: {
     get?(name: string): SystemPromptFace | undefined
-    on?(name: string, handler: () => void | Promise<void>): unknown
+    on?(name: string, handler: (...args: unknown[]) => unknown): unknown
   }
   readonly agent: SupervisorAgentFace
   readonly runId: string
@@ -159,6 +196,32 @@ function homeDirOf(ctx: SupervisorDeps['ctx']): string | null {
 
 function systemPromptOf(agentCtx: SupervisorDeps['agentCtx']): SystemPromptFace | undefined {
   return agentCtx.get?.('systemPrompt')
+}
+
+/**
+ * The frozen goal card a run was created with. The ledger stores exactly the
+ * three fields the card was composed from, so a cold start can re-declare the
+ * same text the original session saw.
+ */
+export function frozenCardText(state: GuardState): string {
+  return `目标：${state.goal}\n\n验收：${state.acceptance}\n\n纪律：${state.discipline}`
+}
+
+/**
+ * Re-declare the frozen card after a process restart. Without it the model only
+ * sees the supervisor's head/tail anchors (first goal line, current task) and
+ * silently loses the acceptance criteria and the discipline it was created with.
+ */
+function restoreFrozenCard(agentCtx: SupervisorDeps['agentCtx'], state: GuardState): void {
+  const systemPrompt = systemPromptOf(agentCtx)
+  if (typeof systemPrompt?.context !== 'function') return
+  systemPrompt.context({
+    name: RUNTIME_ANCHOR_NAME,
+    order: RUNTIME_ANCHOR_ORDER,
+    text: frozenCardText(state),
+    interpolate: false,
+    required: true,
+  })
 }
 
 function goalsOf(ctx: SupervisorDeps['ctx']): GoalsFace | undefined {
@@ -304,6 +367,23 @@ function realPathOrNull(cwd: string, absolute: string): string | null {
   return null
 }
 
+/**
+ * True when the current sequential task has written a fresh `## 完成声明` past
+ * `lastEvalOffset` that has not been audited yet.
+ */
+function pendingCompletionTaskSync(store: GuardStore, state: GuardState): GuardTask | undefined {
+  if (state.status !== 'active' || state.parallel !== 1) return undefined
+  const task = runningTasks(state).at(0)
+  if (task === undefined || task.status === 'DONE' || task.status === 'BLOCKED') return undefined
+  try {
+    const text = readFileSync(store.notesPath(task.id), 'utf8')
+    const tail = text.slice(task.lastEvalOffset ?? 0)
+    return /##\s*完成声明/.test(tail) ? task : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** `undefined` when the write is allowed inside the run directory. */
 function guardDirDenial(relativeToRun: string): string | undefined {
   return GUARD_WRITABLE.some(pattern => pattern.test(relativeToRun))
@@ -344,7 +424,7 @@ export async function attachSupervisor(deps: SupervisorDeps): Promise<AttachedSu
   const anchorsAvailable = typeof systemPrompt?.context === 'function'
   const reported = { head: false, tail: false }
   const sideText = (side: 'head' | 'tail'): string => {
-    const rendered = renderAnchorDetailed(live)
+    const rendered = renderAnchorDetailed(live, { cwd: deps.cwd })
     if (rendered.truncated && !reported[side]) {
       reported[side] = true
       void store.appendEvents([{
@@ -387,7 +467,7 @@ export async function attachSupervisor(deps: SupervisorDeps): Promise<AttachedSu
     await store.updateMeta(current => ({
       ...current,
       sessionId: deps.agent.id,
-      phase: 'running',
+      phase: initial.status === 'completed' ? 'completed' : 'running',
       // A successful mount clears the previous failure: a red "mount incomplete"
       // line that never goes away is worse than no line at all.
       setup: { ...current.setup, anchors: anchorsAvailable, guard: true, failedStep: undefined, errorMessage: undefined },
@@ -415,9 +495,12 @@ export async function attachSupervisor(deps: SupervisorDeps): Promise<AttachedSu
     runId: deps.runId,
   })
 
+  const auditLock = new SerialLock()
   const handler = async (): Promise<void> => {
-    const next = await auditTurn({ ctx: deps.ctx, agent: deps.agent, cwd: deps.cwd, runId: deps.runId, store, mirror })
-    if (next !== null) live = next
+    await auditLock.run(async () => {
+      const next = await auditTurn({ ctx: deps.ctx, agent: deps.agent, cwd: deps.cwd, runId: deps.runId, store, mirror })
+      if (next !== null) live = next
+    })
   }
 
   const refresh = async (): Promise<void> => {
@@ -432,14 +515,28 @@ export async function attachSupervisor(deps: SupervisorDeps): Promise<AttachedSu
   const checkTool = (exec: Record<string, unknown>): string | undefined => {
     const caller = (exec as { agent?: { readonly id?: unknown } }).agent
     if (caller !== undefined && typeof caller.id === 'string' && caller.id !== deps.agent.id) return undefined
+    // Once the supervised run has completed, stand down completely so follow-up
+    // conversation in the same session is not locked read-only forever. A later
+    // human rollback calls `refresh()` and reopens `status` to `'active'`,
+    // which immediately re-engages every rule below.
+    if (live.status === 'completed') return undefined
     const name = typeof exec.name === 'string' ? exec.name : ''
     const args = argsOf(exec.arguments)
     if (name === 'create_goal') {
       return 'guard: 这次运行已经有督导目标；不要另建 goal。'
     }
     if (name === 'update_goal') {
-      if (args.action === 'complete' && live.status !== 'completed') {
-        return 'guard: 还有任务未通过，不能标记目标完成。'
+      if (args.action === 'complete') {
+        // Name the exact file and the exact next action. The old sentence
+        // ("还有任务未通过") was read as "this session has no guard tool" by a
+        // bridged model, which then spun `update_goal(complete)` for 200+ rounds.
+        const pending = live.tasks.filter(task => task.status !== 'DONE')
+        const current = runningTasks(live)
+        const focus = (current.length > 0 ? current : pending).slice(0, 3).map(task => task.id)
+        const paths = focus.map(id => `docs/guard/${deps.runId}/tasks/${id}/notes.md`).join('、')
+        const count = `${pending.length}/${live.tasks.length}`
+        const where = focus.length === 0 ? '' : `（当前：${focus.join('、')}）`
+        return `guard: 还有 ${count} 个任务未通过${where}，不能标记目标完成。请审查产物后在 ${paths} 追加「## 完成声明」（该文件是督导允许主会话写入的例外），然后直接结束本回合，由督导跑探针并切换锚点；不要调用 update_goal(complete)。`
       }
       if (args.action === 'edit') return 'guard: 目标变更必须由用户确认。'
       // `pause` disarms the host goal just like `blocked`: a model-initiated
@@ -449,9 +546,17 @@ export async function attachSupervisor(deps: SupervisorDeps): Promise<AttachedSu
       // `blocked` is recorded only by the supervisor loop, which also writes the
       // reason the card shows.
       if (args.action === 'blocked') {
-        return 'guard: 只有督导循环可以判定阻塞；请把卡点写进 tasks/<ID>/notes.md 并继续尝试。'
+        const focus = (runningTasks(live).length > 0 ? runningTasks(live) : live.tasks).slice(0, 3).map(task => task.id)
+        const paths = focus.map(id => `docs/guard/${deps.runId}/tasks/${id}/notes.md`).join('、')
+        return `guard: 只有督导循环可以判定阻塞；请把卡点写进 ${paths}（督导允许主会话写入的例外），然后继续尝试。`
       }
       return undefined
+    }
+    if (name === 'subagent' || name === 'subagent_fork') {
+      const claimed = pendingCompletionTaskSync(store, live)
+      if (claimed !== undefined) {
+        return `guard: 当前任务（${claimed.id}）已写入「## 完成声明」，请先结束本回合让督导完成探针与评估并切换锚点，再派发下一个任务。`
+      }
     }
     if (live.enforcement !== 'enforce') return undefined
     if (DENIED_IN_ENFORCE.has(name) || isShellTool(name)) {
@@ -489,6 +594,15 @@ export async function attachSupervisor(deps: SupervisorDeps): Promise<AttachedSu
 
   if (typeof deps.agentCtx.on === 'function') {
     deps.agentCtx.on('agent/turn-stopping', () => handler())
+    // Also advance the audit between steps whenever the current sequential task
+    // writes a new `## 完成声明`: a model that stays inside turn 1 after writing
+    // its completion note cannot starve probes, checkpoints and anchor updates.
+    deps.agentCtx.on('agent/pre-step', async (_payload, next) => {
+      if (pendingCompletionTaskSync(store, live) !== undefined) {
+        await handler()
+      }
+      return typeof next === 'function' ? await (next as () => unknown)() : undefined
+    })
   }
 
   const attached: AttachedSupervisor = {
@@ -522,7 +636,7 @@ export async function armSupervisorGoal(deps: ArmGoalDeps): Promise<boolean> {
   if (state.status !== 'active' || state.goalBlocked !== undefined) return false
   const goals = goalsOf(deps.ctx)
   if (goals?.create === undefined) return false
-  let existing: (GoalRef & { readonly phase?: string; readonly activation?: string }) | undefined
+  let existing: GoalViewFace | undefined
   try {
     existing = goals.get?.(deps.agent)
   } catch {
@@ -536,21 +650,44 @@ export async function armSupervisorGoal(deps: ArmGoalDeps): Promise<boolean> {
     // left the ledger healthy while the round driver saw `activation !== 'armed'`
     // and never drove another turn. A `paused` goal stays paused: that is the
     // human's own pause, and only an explicit rollback may resume it.
-    if (existing.phase === 'active' && existing.activation === 'disarmed') {
-      if (goals.resume === undefined) return false
-      try {
-        await goals.resume(deps.agent, { id: existing.id, revision: existing.revision })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'goal resume failed'
-        await recordGoalFailure(store, message)
-        return false
+    //
+    // An exhausted `round-limit` block is different: it was not a human decision
+    // and `resume` refuses it, so the cap is raised first. Otherwise reopening
+    // this session after a long run leaves a ledger that says "active" with a
+    // goal that can never drive another turn.
+    const needsResume = (existing.phase === 'active' && existing.activation === 'disarmed')
+      || (existing.phase === 'blocked' && goalExhausted(existing))
+    if (needsResume) {
+      if (goalExhausted(existing)) {
+        try {
+          if (!await extendAndResume(goals, deps.agent, existing)) {
+            await recordGoalFailure(store, 'goal round budget exhausted and the host cannot raise it')
+            return false
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'goal resume failed'
+          await recordGoalFailure(store, message)
+          return false
+        }
+      } else {
+        if (goals.resume === undefined) return false
+        try {
+          await goals.resume(deps.agent, { id: existing.id, revision: existing.revision })
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'goal resume failed'
+          await recordGoalFailure(store, message)
+          return false
+        }
       }
     }
     await markGoalReady(store)
     return true
   }
   try {
-    goals.create(deps.agent, { objective: objectiveOf(state) })
+    goals.create(deps.agent, {
+      objective: objectiveOf(state),
+      maxGoalRounds: initialGoalRounds(state.tasks.length),
+    })
   } catch (error) {
     await recordGoalFailure(store, error instanceof Error ? error.message : 'goal creation failed')
     return false
@@ -587,13 +724,19 @@ async function recordGoalFailure(store: GuardStore, message: string): Promise<vo
  * A blocked, paused, disarmed or completed goal does not drive rounds, so the
  * reopened task would never run. The run's own ledger has just been reset to
  * `active`; this brings the host side back in line with it.
+ *
+ * The ledger gate comes FIRST, exactly like `armSupervisorGoal`: a sibling-only
+ * rollback deliberately keeps a milestone block (`status:'blocked'` +
+ * `goalBlocked`), and resuming then drove turns that `auditTurn` immediately
+ * refuses to supervise — the model wrote files with no audit, probes or
+ * evaluator behind it.
  */
 export async function resumeSupervisorGoal(deps: ArmGoalDeps): Promise<boolean> {
   const goals = goalsOf(deps.ctx)
   const store = new GuardStore(join(deps.cwd, 'docs', 'guard', deps.runId))
   const state = await store.readState()
-  if (state === null) return false
-  let current: (GoalRef & { readonly phase?: string; readonly activation?: string }) | undefined
+  if (state === null || state.status !== 'active' || state.goalBlocked !== undefined) return false
+  let current: GoalViewFace | undefined
   try {
     current = goals?.get?.(deps.agent)
   } catch {
@@ -604,11 +747,12 @@ export async function resumeSupervisorGoal(deps: ArmGoalDeps): Promise<boolean> 
   if (current.phase === 'active' && current.activation === 'armed') return true
   if (goals?.resume === undefined) return false
   try {
+    // An exhausted round budget is the one case `resume` cannot fix: raise the
+    // cap through `edit` and resume on the revision it returns.
+    if (goalExhausted(current)) return await extendAndResume(goals, deps.agent, current)
     await goals.resume(deps.agent, { id: current.id, revision: current.revision })
     return true
   } catch {
-    // An exhausted round budget is the one case `resume` cannot fix; the ledger
-    // is still reopened, so the operator can raise the cap and resume by hand.
     return false
   }
 }
@@ -634,8 +778,11 @@ export function watchGoalSupervisors(ctx: SupervisorWatcherContext): void {
       readonly ctx?: unknown
     }
     if (typeof face.id !== 'string' || face.ctx === undefined) return
-    const cwd = face.session?.header?.cwd
-    if (cwd === undefined) return
+    const headerCwd = face.session?.header?.cwd
+    if (headerCwd === undefined) return
+    // A worktree run keeps its header on the source project and records the
+    // checkout as a working-directory change; the ledger lives in the checkout.
+    const cwd = effectiveCwdOf(ctx, face.session, headerCwd)
     try {
       const found = await findRunForSession(cwd, face.id)
       if (found === null) return
@@ -652,6 +799,7 @@ export function watchGoalSupervisors(ctx: SupervisorWatcherContext): void {
       // A cold start must rebuild the rendered page from the ledger: the run may
       // have been changed by another process or interrupted mid-write.
       await attached.store.refreshRendered()
+      restoreFrozenCard(face.ctx as SupervisorDeps['agentCtx'], attached.state)
       // `GoalService` also listens on `agent/created` and DISARMS the goal it
       // sees there. Listeners run in registration order, so arming inside this
       // one loses whenever the goal service registered later. Defer past the

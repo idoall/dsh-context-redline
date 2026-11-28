@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, test } from 'vitest'
 import { markFirstMessageDelivered, prepareGuardRun } from '../../src/host/goal-supervisor/create'
+import { excludeRunWorktreeRoot } from '../../src/host/goal-supervisor/git'
 import { GuardStore } from '../../src/host/goal-supervisor/store'
 import { SAFE_RUN_ID } from '../../src/host/goal-supervisor/run-id'
 import type { GuardState, RunMeta, TaskProbeFile } from '../../src/host/goal-supervisor/schema'
@@ -97,7 +98,7 @@ describe('goal-supervisor run creation', () => {
     assert.deepEqual(state.tasks[0]?.scope, ['src/a.ts', 'src/b.ts', 'src/c.ts'])
   })
 
-  test('creates an isolated worktree when requested', async () => {
+  test('creates an isolated worktree under .guard/worktrees and ignores it locally', async () => {
     const cwd = await workspace()
     await run('git', ['init', '-q'], { cwd })
     await run('git', ['config', 'user.email', 'g@test'], { cwd })
@@ -105,17 +106,32 @@ describe('goal-supervisor run creation', () => {
     await writeFile(join(cwd, 'README.md'), 'base')
     await run('git', ['add', '.'], { cwd })
     await run('git', ['commit', '-qm', 'base'], { cwd })
+    // The main checkout keeps its branch and its uncommitted work.
+    await writeFile(join(cwd, 'README.md'), 'dirty-before-run')
 
     const prepared = await prepareGuardRun(cwd, { ...card, worktree: true })
-    assert.ok(prepared.worktreePath !== undefined)
-    assert.ok(prepared.root.startsWith(prepared.worktreePath ?? ''))
+    const worktree = prepared.worktreePath ?? ''
+    assert.equal(worktree, join(cwd, '.guard', 'worktrees', prepared.runId))
+    assert.equal(prepared.root, join(worktree, 'docs', 'guard', prepared.runId))
     const state = await readJson<GuardState>(join(prepared.root, 'tasks.json'))
     assert.equal(state.worktree.enabled, true)
     assert.equal(state.worktree.branch, `guard/${prepared.runId}`)
-    const list = await run('git', ['worktree', 'list'], { cwd })
-    assert.match(list.stdout, /\.guard\/worktrees/)
-    const exclude = await readFile(join(cwd, '.git', 'info', 'exclude'), 'utf8')
-    assert.match(exclude, /\.guard\//)
+    assert.equal(state.worktree.path, worktree)
+
+    // The main checkout never moves, never loses its dirty file, and never gets an empty docs/guard dir.
+    assert.equal((await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd })).stdout.trim(), 'main')
+    assert.equal(await readFile(join(cwd, 'README.md'), 'utf8'), 'dirty-before-run')
+    await assert.rejects(() => stat(join(cwd, 'docs', 'guard')))
+
+    // The worktree is a real checkout on its own branch ...
+    assert.equal((await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: worktree })).stdout.trim(), `guard/${prepared.runId}`)
+    assert.match((await run('git', ['worktree', 'list'], { cwd })).stdout, /\.guard\/worktrees/)
+
+    // ... and git ignores it, so it can never be committed with the project.
+    assert.match(await readFile(join(cwd, '.git', 'info', 'exclude'), 'utf8'), /^\.guard\/$/m)
+    // Resolving (instead of throwing) is the assertion: `check-ignore` exits 0
+    // only for a path git really ignores.
+    await run('git', ['check-ignore', '-q', '.guard/worktrees/x'], { cwd })
   })
 
   test('rejects a malformed task table without creating a run', async () => {
@@ -175,12 +191,13 @@ describe('goal-supervisor run creation', () => {
     }), /task table/)
   })
 
-  test('rejects an unsafe explicit run id', async () => {
+  test('rejects an unsafe explicit run id without creating docs/guard', async () => {
     const cwd = await workspace()
     await assert.rejects(() => prepareGuardRun(cwd, { ...card, runId: 'bad:name' }), /run id/)
+    await assert.rejects(() => stat(join(cwd, 'docs', 'guard')))
   })
 
-  test('a worktree run never collides with, or overwrites, an existing worktree run', async () => {
+  test('a worktree-isolated run never collides with, overwrites, or switches checkout mode on retries', async () => {
     const cwd = await workspace()
     await run('git', ['init', '-q'], { cwd })
     await run('git', ['config', 'user.email', 'g@test'], { cwd })
@@ -190,16 +207,64 @@ describe('goal-supervisor run creation', () => {
     await run('git', ['commit', '-qm', 'base'], { cwd })
 
     const first = await prepareGuardRun(cwd, { ...card, worktree: true })
-    // A second prepare with the same goal must get a different run id: the
-    // collision scan has to see the worktree directory, not only docs/guard.
+    // A second prepare with the same goal must get a different run id and branch.
     const second = await prepareGuardRun(cwd, { ...card, worktree: true })
     assert.notEqual(second.runId, first.runId)
     assert.notEqual(second.root, first.root)
+    assert.notEqual(second.worktreePath, first.worktreePath)
+    // Minting a second run never switches the main checkout away.
+    assert.equal((await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd })).stdout.trim(), 'main')
 
-    // And an explicit id that is already mounted is refused, worktree or not.
+    // An explicit id that is already mounted is refused BEFORE touching git branch.
     const meta = await readJson<RunMeta>(join(first.root, 'run.json'))
     await writeFile(join(first.root, 'run.json'), JSON.stringify({ ...meta, phase: 'running', sessionId: 's' }), 'utf8')
     await assert.rejects(() => prepareGuardRun(cwd, { ...card, worktree: true, runId: first.runId }), /already exists/)
+    assert.equal((await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd })).stdout.trim(), 'main')
+
+    // Retrying a still-ready explicit run reuses the same worktree instead of adding another.
+    const retried = await prepareGuardRun(cwd, { ...card, worktree: true, runId: second.runId, tasks: 'T9 | 改表 | 通过' })
+    assert.equal(retried.runId, second.runId)
+    assert.equal(retried.worktreePath, second.worktreePath)
+    const mounted = (await run('git', ['worktree', 'list'], { cwd })).stdout.split('\n').filter(line => line.includes('.guard/worktrees/'))
+    assert.equal(mounted.length, 2)
+
+    // Switching checkout mode (worktree <-> main) with the same runId is refused so dual ledgers never form.
+    await assert.rejects(() => prepareGuardRun(cwd, { ...card, worktree: false, runId: second.runId }), /already exists/)
+    const mainRun = await prepareGuardRun(cwd, { ...card, worktree: false, runId: '20261127-main-only' })
+    assert.equal(mainRun.worktreePath, undefined)
+    await assert.rejects(() => prepareGuardRun(cwd, { ...card, worktree: true, runId: '20261127-main-only' }), /already exists/)
+
+    // A leftover branch with no mounted worktree must be refused instead of silently checking out an old commit.
+    await run('git', ['branch', 'guard/20261127-stale-branch'], { cwd })
+    await assert.rejects(
+      () => prepareGuardRun(cwd, { ...card, worktree: true, runId: '20261127-stale-branch' }),
+      /branch already exists/,
+    )
+  })
+
+  test('excludeRunWorktreeRoot creates a missing .git/info directory and surfaces write failures', async () => {
+    const cwd = await workspace()
+    await run('git', ['init', '-q'], { cwd })
+    await rm(join(cwd, '.git', 'info'), { recursive: true, force: true })
+
+    await excludeRunWorktreeRoot(cwd, '.guard')
+    const content = await readFile(join(cwd, '.git', 'info', 'exclude'), 'utf8')
+    assert.match(content, /^\.guard\/$/m)
+
+    // Calling again is idempotent (no duplicate lines).
+    await excludeRunWorktreeRoot(cwd, '.guard')
+    const again = await readFile(join(cwd, '.git', 'info', 'exclude'), 'utf8')
+    assert.equal(again.split(/\r?\n/).filter(line => line.trim() === '.guard/').length, 1)
+
+    // When info/exclude cannot be written, the failure must not be swallowed silently.
+    const excludeFile = join(cwd, '.git', 'info', 'exclude')
+    await writeFile(excludeFile, '# empty\n', 'utf8')
+    await chmod(excludeFile, 0o444)
+    try {
+      await assert.rejects(() => excludeRunWorktreeRoot(cwd, '.guard'))
+    } finally {
+      await chmod(excludeFile, 0o644)
+    }
   })
 
   test('the initial notes skeleton is excluded from the completion offset', async () => {
@@ -209,6 +274,8 @@ describe('goal-supervisor run creation', () => {
     const notes = await readFile(join(prepared.root, 'tasks', 'T1', 'notes.md'), 'utf8')
     assert.equal(state.tasks[0]?.lastEvalOffset, notes.length)
     assert.ok(notes.includes('## 完成声明'), 'the guidance stays in the skeleton')
+    assert.match(notes, /主会话审查/)
+    assert.match(notes, /禁止让子会话代写/)
   })
 
   test('a probe that names an unknown task refuses the run instead of being dropped', async () => {
@@ -356,5 +423,88 @@ describe('goal-supervisor first message marker', () => {
       (state as unknown as { probes: { spec: { args: string[] } }[] }).probes[0]?.spec.args,
       ['-Eq', 'add|multiply', 'src/a.ts'],
     )
+  })
+
+  test('persists a dedicated evaluator model in tasks.json and TASKS.md and rejects empty routes', async () => {
+    const cwd = await workspace()
+    const ok = await prepareGuardRun(cwd, {
+      ...card, runId: 'eval-route', tasks: 'T1 | 一条 | 通过 | src/a.ts',
+      evaluator: { provider: ' anthropic ', model: ' claude-sonnet ', reasoningEffort: ' max ' },
+    })
+    const state = await readJson<GuardState>(join(ok.root, 'tasks.json'))
+    assert.deepEqual(state.evaluator, { provider: 'anthropic', model: 'claude-sonnet', reasoningEffort: 'max' })
+    const rendered = await readFile(join(ok.root, 'TASKS.md'), 'utf8')
+    assert.match(rendered, /评估模型：`anthropic\/claude-sonnet`（推理：`max`）/)
+
+    await assert.rejects(() => prepareGuardRun(cwd, {
+      ...card, runId: 'eval-bad', tasks: 'T1 | 一条 | 通过 | src/a.ts',
+      evaluator: { provider: '  ', model: 'claude-sonnet' },
+    }), /evaluator model is invalid/)
+  })
+
+  test('chains sequential dependsOn by default when parallel=1 and no row specifies column 5, and renders dependencies', async () => {
+    const cwd = await workspace()
+    const seq = await prepareGuardRun(cwd, {
+      ...card, runId: 'seq-default-deps',
+      tasks: 'T1 | 一 | 通过 | src/a.ts\nT2 | 二 | 通过 | src/b.ts\nT3 | 三 | 通过 | src/c.ts',
+    })
+    const seqState = await readJson<GuardState>(join(seq.root, 'tasks.json'))
+    assert.deepEqual(seqState.tasks.map(task => task.dependsOn), [[], ['T1'], ['T2']])
+    const rendered = await readFile(join(seq.root, 'TASKS.md'), 'utf8')
+    assert.match(rendered, /- 依赖：T1/)
+    assert.match(rendered, /- 依赖：T2/)
+    const notes = await readFile(join(seq.root, 'tasks', 'T1', 'notes.md'), 'utf8')
+    assert.match(notes, /立刻结束当前回合/)
+
+    // Negative 1: parallel > 1 must NOT auto-chain dependencies.
+    const par = await prepareGuardRun(cwd, {
+      ...card, runId: 'par-no-auto-deps', parallel: 2,
+      tasks: 'T1 | 一 | 通过 | src/a.ts\nT2 | 二 | 通过 | src/b.ts',
+    })
+    const parState = await readJson<GuardState>(join(par.root, 'tasks.json'))
+    assert.deepEqual(parState.tasks.map(task => task.dependsOn), [[], []])
+
+    // Negative 2: an explicit column 5 (including `-` for no dependency) is respected verbatim.
+    const explicit = await prepareGuardRun(cwd, {
+      ...card, runId: 'explicit-deps',
+      tasks: 'T1 | 一 | 通过 | src/a.ts | -\nT2 | 二 | 通过 | src/b.ts | -\nT3 | 三 | 通过 | src/c.ts | T1',
+    })
+    const expState = await readJson<GuardState>(join(explicit.root, 'tasks.json'))
+    assert.deepEqual(expState.tasks.map(task => task.dependsOn), [[], [], ['T1']])
+
+    // Accepts common "no dependency" sentinels (em-dash / 无依赖 / backticks / ideographic comma in scope)
+    // and reports specific line/field reasons on invalid scope or unknown dependency.
+    const tolerant = await prepareGuardRun(cwd, {
+      ...card, runId: 'tolerant-table',
+      tasks: 'T1 | 一 | 通过 | `src/a.ts`、`src/b.ts` | —\nT2 | 二 | 通过 | `src/c.ts` | 无依赖',
+    })
+    const tolState = await readJson<GuardState>(join(tolerant.root, 'tasks.json'))
+    assert.deepEqual(tolState.tasks[0]?.scope, ['src/a.ts', 'src/b.ts'])
+    assert.deepEqual(tolState.tasks.map(task => task.dependsOn), [[], []])
+
+    await assert.rejects(() => prepareGuardRun(cwd, {
+      ...card, runId: 'detail-dep', tasks: 'T1 | 一 | 通过 | src/a.ts | T0',
+    }), /task table is invalid:.*第 1 行.*T0/)
+    await assert.rejects(() => prepareGuardRun(cwd, {
+      ...card, runId: 'detail-scope', tasks: 'T1 | 一 | 通过 | /abs/path',
+    }), /task table is invalid:.*第 1 行.*\/abs\/path/)
+  })
+
+  test('a quoted pipe inside an acceptance cell is not a column separator', async () => {
+    const cwd = await workspace()
+    const prepared = await prepareGuardRun(cwd, {
+      ...card, runId: 'quoted-pipe',
+      tasks: 'T4 | P1: playbook 枚举 + walk-forward 闸 | go test ./internal/... -run "Playbook|WalkForward" -count=1 退出 0 | internal/service/,internal/domain/\n'
+        + 'T5 | 收口 | `grep -q "a|b"` 退出 0 | docs/',
+    })
+    const state = await readJson<GuardState>(join(prepared.root, 'tasks.json'))
+    const t4 = state.tasks[0]
+    assert.deepEqual(t4?.acceptance, ['go test ./internal/... -run "Playbook|WalkForward" -count=1 退出 0'])
+    // Trailing slashes normalize away; nothing lands in the dependency column.
+    assert.deepEqual(t4?.scope, ['internal/service', 'internal/domain'])
+    assert.deepEqual(t4?.dependsOn, [])
+    const t5 = state.tasks[1]
+    assert.deepEqual(t5?.scope, ['docs'])
+    assert.match(t5?.acceptance[0] ?? '', /grep -q "a\|b"/)
   })
 })

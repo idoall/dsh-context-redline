@@ -59,6 +59,26 @@ describe('goal-supervisor status', () => {
     assert.equal(summary?.mirror?.issueUrl, 'https://github.com/o/r/issues/7')
   })
 
+  test('exposes an evaluator fallback even when the judge follows the session model', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'guard-status-fallback-'))
+    roots.push(cwd)
+    const dir = join(cwd, 'docs', 'guard', 'r1')
+    await mkdir(join(dir, 'requests'), { recursive: true })
+    const base = state('r1', 3)
+    const withFallback: GuardState = {
+      ...base,
+      evaluatorFallback: { provider: 'dimagent-oauth', model: 'kimi-k3', reasoningEffort: 'low' },
+    }
+    await writeFile(join(dir, 'tasks.json'), JSON.stringify(withFallback), 'utf8')
+    await writeFile(join(dir, 'run.json'), JSON.stringify(meta('session-fallback')), 'utf8')
+
+    const summary = await findSupervisorRun(cwd, 'session-fallback')
+    assert.equal(summary?.evaluatorModel, undefined, 'no dedicated primary judge')
+    // The fallback is independent state: hiding it would hide the card's only
+    // "switch and continue" action.
+    assert.equal(summary?.evaluatorFallbackModel, 'dimagent-oauth/kimi-k3 (low)')
+  })
+
   test('returns null without a matching run', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'guard-status-'))
     roots.push(cwd)
@@ -121,5 +141,23 @@ describe('goal-supervisor status current task', () => {
     // An in-place run has no branch to name.
     await writeFile(join(dir, 'tasks.json'), JSON.stringify(state(runId, 2)), 'utf8')
     assert.equal((await findSupervisorRun(cwd, 'session-br'))?.worktreeBranch, undefined)
+  })
+
+  test('exposes the configured evaluator model when set and omits it when following main session', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'guard-status-eval-'))
+    roots.push(cwd)
+    const runId = 'ev'
+    const dir = join(cwd, 'docs', 'guard', runId)
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'run.json'), JSON.stringify(meta('session-ev')), 'utf8')
+
+    await writeFile(join(dir, 'tasks.json'), JSON.stringify({
+      ...state(runId, 1),
+      evaluator: { provider: 'anthropic', model: 'claude-sonnet' },
+    }), 'utf8')
+    assert.equal((await findSupervisorRun(cwd, 'session-ev'))?.evaluatorModel, 'anthropic/claude-sonnet')
+
+    await writeFile(join(dir, 'tasks.json'), JSON.stringify(state(runId, 2)), 'utf8')
+    assert.equal((await findSupervisorRun(cwd, 'session-ev'))?.evaluatorModel, undefined)
   })
 })

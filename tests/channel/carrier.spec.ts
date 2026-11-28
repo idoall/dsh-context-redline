@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { promisify } from 'node:util'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, test } from 'vitest'
@@ -39,6 +41,9 @@ interface CarrierOps {
   readonly resumes: Record<string, unknown>[]
   readonly mounts: { receiver: unknown; agentCtx: unknown; preset: string }[]
   readonly attachments: string[]
+  readonly workspaceCreates: { readonly path: string; readonly name?: string }[]
+  /** Every Host directory move a worktree run performed, in call order. */
+  readonly workingDirectorySets: { readonly agent: unknown; readonly path: string }[]
   readonly followups: unknown[]
   readonly flushes: unknown[]
   readonly sourceAgent: {
@@ -51,6 +56,7 @@ interface CarrierOps {
 
 const plugin = { name, inject, apply } as never
 const homes: string[] = []
+const exec = promisify(execFile)
 
 const ORIGINAL_USER = '用户原话：保留完整上下文。'
 const ORIGINAL_ASSISTANT = '助手原话：逐字执行并报告结果。'
@@ -92,7 +98,11 @@ function notFound(): Error & { code: string } {
   return Object.assign(new Error('missing'), { code: 'SESSION_QUERY_SESSION_NOT_FOUND' })
 }
 
-async function boot(): Promise<CarrierOps> {
+async function boot(
+  workspacePath = WORKSPACE_PATH,
+  sourceCwd = workspacePath,
+  withWorkingDirectory = true,
+): Promise<CarrierOps> {
   const home = mkdtempSync(join(tmpdir(), 'redline-carrier-route-'))
   homes.push(home)
   const ctx = new Context()
@@ -101,6 +111,9 @@ async function boot(): Promise<CarrierOps> {
   const resumes: Record<string, unknown>[] = []
   const mounts: { receiver: unknown; agentCtx: unknown; preset: string }[] = []
   const attachments: string[] = []
+  const workspaceCreates: { readonly path: string; readonly name?: string }[] = []
+  const workingDirectorySets: { readonly agent: unknown; readonly path: string }[] = []
+  let workingDirectoryCurrent: string | undefined
   const followups: unknown[] = []
   const flushes: unknown[] = []
   const carrierAgents = new Map<string, CarrierAgent>()
@@ -119,7 +132,7 @@ async function boot(): Promise<CarrierOps> {
   const sourceSession = ctx.sessions.create()
   const sourceAgent = {
     options: { provider: 'provider-exact', model: 'model-exact', reasoningEffort: 'high' },
-    session: { id: sourceSession.id, header: { cwd: WORKSPACE_PATH, agentPreset: 'preset-exact' } },
+    session: { id: sourceSession.id, header: { cwd: sourceCwd, agentPreset: 'preset-exact' } },
   }
 
   ctx.provide('sessionQuery', {
@@ -173,16 +186,32 @@ async function boot(): Promise<CarrierOps> {
   })
   ctx.provide('workspaceRegistry', {
     async resolveByPath(path: string) {
-      return path === WORKSPACE_PATH ? { id: 'workspace-exact', path } : undefined
+      return path === workspacePath ? { id: 'workspace-exact', path } : undefined
     },
     get(id: string) {
       if (id !== 'workspace-exact') return undefined
       return {
-        path: WORKSPACE_PATH,
+        path: workspacePath,
         async attachSession(sessionId: string) { attachments.push(sessionId) },
       }
     },
+    async create(path: string, name?: string) {
+      workspaceCreates.push({ path, ...(name === undefined ? {} : { name }) })
+      return { id: `workspace-extra-${workspaceCreates.length}`, path }
+    },
   })
+  // Mounted by `dsh-base`; a worktree run enters its checkout through it instead
+  // of pointing the session header (and its sidebar group) at the run directory.
+  if (withWorkingDirectory) {
+    ctx.provide('workingDirectory', {
+      get() { return workingDirectoryCurrent },
+      async set(agent: unknown, path: string) {
+        workingDirectorySets.push({ agent, path })
+        workingDirectoryCurrent = path
+        return path
+      },
+    })
+  }
   ctx.provide('sessionTitle', { rename() { return undefined } })
   const systemPrompt = { context(contribution: Record<string, unknown>) { runtimeContexts.push(contribution); return () => {} } }
   ctx.provide('systemPrompt', systemPrompt)
@@ -210,7 +239,7 @@ async function boot(): Promise<CarrierOps> {
       carrierLogs.set(id, [])
       const setup = options.setup
       assert.equal(typeof setup, 'function')
-      await (setup as (agentCtx: unknown) => Promise<void>)({ scope: 'carrier-created', systemPrompt })
+      await (setup as (agentCtx: unknown, agent: unknown) => Promise<void>)({ scope: 'carrier-created', systemPrompt }, agent)
       carrierAgents.set(id, agent)
       return { agent, async dispose() {} }
     },
@@ -234,6 +263,8 @@ async function boot(): Promise<CarrierOps> {
     resumes,
     mounts,
     attachments,
+    workspaceCreates,
+    workingDirectorySets,
     followups,
     flushes,
     sourceAgent,
@@ -628,6 +659,8 @@ describe('锚定会话（0.4.0）', () => {
     const preview = value(await call(ops, { op: 'anchor.plan', sessionId: ops.sessionId, ...ANCHOR }))
     assert.equal(preview.snapshot, SNAPSHOT)
     assert.equal(preview.title, '把设置页改成深色模式')
+    // The dialog shows this read-only: probes and relative paths resolve here.
+    assert.equal(preview.cwd, WORKSPACE_PATH)
     assert.ok(String(preview.snapshotFingerprint).length > 0)
     assert.ok(String(preview.requestFingerprint).length > 0)
     assert.equal(ops.creates.length, 0)
@@ -691,5 +724,245 @@ describe('锚定会话（0.4.0）', () => {
       assert.equal(refused.ok, false)
       assert.equal((refused.error as { code: string }).code, 'redline/bad-request')
     }
+  })
+
+  test('勾选 worktree 运行时在 .guard/worktrees 建隔离检出，规范化路径且绝不注册新的 DSH 工作区', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'redline-anchor-worktree-'))
+    homes.push(repo)
+    await exec('git', ['init', '-q'], { cwd: repo })
+    await exec('git', ['config', 'user.email', 'g@test'], { cwd: repo })
+    await exec('git', ['config', 'user.name', 'g'], { cwd: repo })
+    writeFileSync(join(repo, 'README.md'), 'base')
+    await exec('git', ['add', '.'], { cwd: repo })
+    await exec('git', ['commit', '-qm', 'base'], { cwd: repo })
+
+    const ops = await boot(repo)
+    const prepared = value(await call(ops, {
+      op: 'guard.prepare',
+      sessionId: ops.sessionId,
+      ...ANCHOR,
+      tasks: 'T1 | 改设置页 | 文件存在 | src/**',
+      worktree: true,
+    }))
+    const runId = String(prepared.runId)
+    const worktree = String(prepared.worktreePath)
+    assert.equal(worktree, join(repo, '.guard', 'worktrees', runId))
+    // The user's own checkout keeps its branch.
+    assert.equal((await exec('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: repo })).stdout.trim(), 'main')
+
+    const preview = value(await call(ops, { op: 'anchor.plan', sessionId: ops.sessionId, ...ANCHOR }))
+    // Explicit valid guardWorktreePath (even with trailing slash / dot segment) is normalized to the canonical worktree path.
+    const explicit = value(await call(ops, {
+      op: 'anchor.start',
+      sessionId: ops.sessionId,
+      operationId: 'anchor-op-worktree-explicit',
+      ...ANCHOR,
+      guardRunId: runId,
+      guardWorktreePath: `${worktree}/./`,
+      snapshotFingerprint: preview.snapshotFingerprint,
+      requestFingerprint: preview.requestFingerprint,
+    }))
+    assert.equal(ops.workspaceCreates.length, 0, 'must never register a second DSH workspace')
+    assert.equal(ops.creates.length, 1)
+    // The header keeps the source project, so DSH groups the session under it…
+    assert.equal((ops.creates[0]?.meta as { cwd?: string }).cwd, repo)
+    // …and the run checkout is entered through the Host directory move.
+    assert.deepEqual(ops.workingDirectorySets.map(set => set.path), [worktree])
+    // The session is accounted by its project workspace, never left ungrouped.
+    assert.deepEqual(ops.attachments, [String(explicit.sessionId)])
+
+    // Omitting guardWorktreePath still resolves to the worktree when only the worktree ledger exists.
+    const preparedFallback = value(await call(ops, {
+      op: 'guard.prepare',
+      sessionId: ops.sessionId,
+      ...ANCHOR,
+      tasks: 'T1 | 改设置页 | 文件存在 | src/**',
+      worktree: true,
+    }))
+    const fallbackRunId = String(preparedFallback.runId)
+    const fallbackWorktree = String(preparedFallback.worktreePath)
+    value(await call(ops, {
+      op: 'anchor.start',
+      sessionId: ops.sessionId,
+      operationId: 'anchor-op-worktree-fallback',
+      ...ANCHOR,
+      guardRunId: fallbackRunId,
+      snapshotFingerprint: preview.snapshotFingerprint,
+      requestFingerprint: preview.requestFingerprint,
+    }))
+    assert.equal((ops.creates[1]?.meta as { cwd?: string }).cwd, repo)
+    assert.deepEqual(ops.workingDirectorySets.map(set => set.path), [worktree, fallbackWorktree])
+    assert.equal(ops.attachments.length, 2)
+
+    // If a stale worktree ledger AND a main-workspace ledger exist for the same runId, omitting guardWorktreePath must refuse instead of silently hijacking.
+    mkdirSync(join(repo, 'docs', 'guard', fallbackRunId), { recursive: true })
+    const ambiguous = await call(ops, {
+      op: 'anchor.start',
+      sessionId: ops.sessionId,
+      operationId: 'anchor-op-ambiguous',
+      ...ANCHOR,
+      guardRunId: fallbackRunId,
+      snapshotFingerprint: preview.snapshotFingerprint,
+      requestFingerprint: preview.requestFingerprint,
+    })
+    assert.equal(ambiguous.ok, false)
+    assert.equal((ambiguous.error as { code: string }).code, REDLINE_ERROR.badRequest)
+
+    // A stray directory under .guard/worktrees/<id> without .git must not be treated as a worktree.
+    const brokenRunId = '20261127-no-git'
+    mkdirSync(join(repo, '.guard', 'worktrees', brokenRunId, 'docs', 'guard', brokenRunId), { recursive: true })
+    const noGit = await call(ops, {
+      op: 'anchor.start',
+      sessionId: ops.sessionId,
+      operationId: 'anchor-op-no-git',
+      ...ANCHOR,
+      guardRunId: brokenRunId,
+      snapshotFingerprint: preview.snapshotFingerprint,
+      requestFingerprint: preview.requestFingerprint,
+    })
+    assert.equal(noGit.ok, false)
+    assert.equal(ops.creates.length, 2)
+
+    const refused = await call(ops, {
+      op: 'anchor.start',
+      sessionId: ops.sessionId,
+      operationId: 'anchor-op-bad-wt',
+      ...ANCHOR,
+      guardRunId: runId,
+      guardWorktreePath: join(repo, '.guard', 'worktrees', 'someone-else'),
+      snapshotFingerprint: preview.snapshotFingerprint,
+      requestFingerprint: preview.requestFingerprint,
+    })
+    assert.equal(refused.ok, false)
+    assert.equal((refused.error as { code: string }).code, REDLINE_ERROR.badRequest)
+    assert.equal(ops.workspaceCreates.length, 0)
+  })
+
+  test('anchor.start refuses a run already owned by another session and never rewrites its ledger', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'redline-anchor-owned-'))
+    homes.push(repo)
+    const ops = await boot(repo)
+    const prepared = value(await call(ops, {
+      op: 'guard.prepare',
+      sessionId: ops.sessionId,
+      ...ANCHOR,
+      tasks: 'T1 | 改设置页 | 文件存在 | src/**',
+    }))
+    const root = String(prepared.root)
+    const metaPath = join(root, 'run.json')
+    const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as Record<string, unknown>
+    // Another session mounted this run: its ledger already has an executor
+    // freeze that a new start must not overwrite.
+    writeFileSync(metaPath, JSON.stringify({ ...meta, phase: 'running', sessionId: 'session-other' }), 'utf8')
+    const preview = value(await call(ops, { op: 'anchor.plan', sessionId: ops.sessionId, ...ANCHOR }))
+    const refused = await call(ops, {
+      op: 'anchor.start',
+      sessionId: ops.sessionId,
+      operationId: 'anchor-op-owned',
+      ...ANCHOR,
+      guardRunId: String(prepared.runId),
+      snapshotFingerprint: preview.snapshotFingerprint,
+      requestFingerprint: preview.requestFingerprint,
+    })
+    assert.equal(refused.ok, false)
+    assert.equal(code(refused), REDLINE_ERROR.badRequest)
+    assert.match(((refused.error as { message?: string }).message ?? ''), /already mounted/)
+    assert.equal(ops.creates.length, 0, 'no session is created for a run it cannot own')
+    const ledger = JSON.parse(readFileSync(join(root, 'tasks.json'), 'utf8')) as { activeExecutor?: unknown }
+    assert.equal(ledger.activeExecutor, undefined, 'the refused start must not rewrite the ledger')
+  })
+
+  test('anchor.start refuses a run whose phase is no longer startable', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'redline-anchor-phase-'))
+    homes.push(repo)
+    const ops = await boot(repo)
+    const prepared = value(await call(ops, {
+      op: 'guard.prepare',
+      sessionId: ops.sessionId,
+      ...ANCHOR,
+      tasks: 'T1 | 改设置页 | 文件存在 | src/**',
+    }))
+    const root = String(prepared.root)
+    const metaPath = join(root, 'run.json')
+    const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as Record<string, unknown>
+    // A finished/aborted run with no bound session is not a fresh ledger.
+    writeFileSync(metaPath, JSON.stringify({ ...meta, phase: 'completed' }), 'utf8')
+    const preview = value(await call(ops, { op: 'anchor.plan', sessionId: ops.sessionId, ...ANCHOR }))
+    const refused = await call(ops, {
+      op: 'anchor.start',
+      sessionId: ops.sessionId,
+      operationId: 'anchor-op-finished',
+      ...ANCHOR,
+      guardRunId: String(prepared.runId),
+      snapshotFingerprint: preview.snapshotFingerprint,
+      requestFingerprint: preview.requestFingerprint,
+    })
+    assert.equal(refused.ok, false)
+    assert.equal(code(refused), REDLINE_ERROR.badRequest)
+    assert.match(((refused.error as { message?: string }).message ?? ''), /not startable/)
+    assert.equal(ops.creates.length, 0)
+    const ledger = JSON.parse(readFileSync(join(root, 'tasks.json'), 'utf8')) as { activeExecutor?: unknown }
+    assert.equal(ledger.activeExecutor, undefined)
+  })
+
+  test('缺少 workingDirectory 服务时，worktree 运行在建会话前就失败，不留下未归组的孤儿会话', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'redline-no-workdir-'))
+    homes.push(repo)
+    await exec('git', ['init', '-q'], { cwd: repo })
+    await exec('git', ['config', 'user.email', 'g@test'], { cwd: repo })
+    await exec('git', ['config', 'user.name', 'g'], { cwd: repo })
+    writeFileSync(join(repo, 'README.md'), 'base')
+    await exec('git', ['add', '.'], { cwd: repo })
+    await exec('git', ['commit', '-qm', 'base'], { cwd: repo })
+
+    const ops = await boot(repo, repo, false)
+    const prepared = value(await call(ops, {
+      op: 'guard.prepare',
+      sessionId: ops.sessionId,
+      ...ANCHOR,
+      tasks: 'T1 | 改设置页 | 文件存在 | src/**',
+      worktree: true,
+    }))
+    const preview = value(await call(ops, { op: 'anchor.plan', sessionId: ops.sessionId, ...ANCHOR }))
+    const refused = await call(ops, {
+      op: 'anchor.start',
+      sessionId: ops.sessionId,
+      operationId: 'anchor-op-no-workdir',
+      ...ANCHOR,
+      guardRunId: String(prepared.runId),
+      guardWorktreePath: String(prepared.worktreePath),
+      snapshotFingerprint: preview.snapshotFingerprint,
+      requestFingerprint: preview.requestFingerprint,
+    })
+    assert.equal(refused.ok, false)
+    assert.equal((refused.error as { code: string }).code, REDLINE_ERROR.internal)
+    assert.match((refused.error as { message: string }).message, /working-directory-unavailable/)
+    assert.equal(ops.creates.length, 0, 'nothing is created when the run checkout cannot be entered')
+    assert.deepEqual(ops.attachments, [])
+    // The route is frozen BEFORE the session exists: recording it afterwards
+    // raced the first turn's audit, which could write the ledger back without it.
+    const ledgerPath = join(String(prepared.worktreePath), 'docs', 'guard', String(prepared.runId), 'tasks.json')
+    const ledger = JSON.parse(readFileSync(ledgerPath, 'utf8')) as { activeExecutor?: { provider: string, model: string, reasoningEffort?: string } }
+    assert.deepEqual(ledger.activeExecutor, {
+      provider: 'provider-exact', model: 'model-exact', reasoningEffort: 'high',
+    })
+  })
+
+  test('从无工作区归属的 worktree 会话发起新对话时，给出明确可操作提示而不是内部报错', async () => {
+    const repo = mkdtempSync(join(tmpdir(), 'redline-ungrouped-wt-'))
+    homes.push(repo)
+    const wtCwd = join(repo, '.guard', 'worktrees', '20261127-demo')
+    mkdirSync(wtCwd, { recursive: true })
+    const ops = await boot(repo, wtCwd)
+
+    const anchorReply = await call(ops, { op: 'anchor.plan', sessionId: ops.sessionId, ...ANCHOR })
+    assert.equal(anchorReply.ok, false)
+    assert.equal((anchorReply.error as { code: string }).code, REDLINE_ERROR.badRequest)
+    assert.match((anchorReply.error as { message: string }).message, /worktree/i)
+
+    const carrierReply = await call(ops, { op: 'carrier.plan', sessionId: ops.sessionId, humanTask: '继续收尾' })
+    assert.equal(carrierReply.ok, false)
+    assert.equal((carrierReply.error as { code: string }).code, REDLINE_ERROR.badRequest)
+    assert.match((carrierReply.error as { message: string }).message, /worktree/i)
   })
 })

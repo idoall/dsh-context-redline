@@ -16,8 +16,17 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { BlockAssembler, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { GuardState, GuardTask, Verdict } from './schema'
-import { configureLowestReasoning } from './evaluator'
+import { configureEvaluatorReasoning, EVALUATOR_TIMEOUT_MS, resolveEvaluatorRoutes, routeLabel } from './evaluator'
+import { failureAction, isDefinitiveFailure } from './failure-policy'
 import type { GuardStore } from './store'
+
+/** Per-attempt timeout for each milestone reviewer / adjudicator call. */
+export const MILESTONE_TIMEOUT_MS = EVALUATOR_TIMEOUT_MS
+
+export interface MilestoneReviewOptions {
+  /** Override per-attempt timeout (used by tests to avoid waiting a minute). */
+  readonly timeoutMs?: number
+}
 
 export interface MilestoneVerdict {
   readonly verdict: Verdict
@@ -32,6 +41,10 @@ export interface MilestoneReview {
   /** Run-directory-relative path of the written report. */
   readonly path: string
   readonly model: string
+  /** Concise single-line reason recorded onto ledger events when verdict !== pass. */
+  readonly reason?: string
+  /** Routes tried before the final one, in order. */
+  readonly fallbacks?: readonly { readonly from: string; readonly to: string; readonly code: string }[]
 }
 
 interface EvalAgent {
@@ -115,31 +128,116 @@ interface Callable {
   }>
 }
 
-/** One reviewer/adjudicator call; `null` on any failure, never throws. */
+function timeoutLabel(ms: number): string {
+  return ms >= 1000 ? `${Math.round(ms / 1000)}s` : `${ms}ms`
+}
+
+function finishFailure(finish: unknown): { readonly message: string; readonly code?: string } | null {
+  if (finish === null || typeof finish !== 'object') return null
+  const row = finish as {
+    readonly kind?: unknown
+    readonly failure?: { readonly message?: unknown; readonly code?: unknown }
+    readonly error?: { readonly message?: unknown; readonly code?: unknown }
+  }
+  if (row.kind !== 'error' && row.kind !== 'aborted') return null
+  const message = typeof row.failure?.message === 'string' && row.failure.message.trim() !== ''
+    ? row.failure.message.trim()
+    : typeof row.error?.message === 'string' && row.error.message.trim() !== ''
+      ? row.error.message.trim()
+      : row.kind
+  const code = typeof row.failure?.code === 'string' && row.failure.code !== ''
+    ? row.failure.code
+    : typeof row.error?.code === 'string' && row.error.code !== ''
+      ? row.error.code
+      : undefined
+  return { message: message.slice(0, 200), ...(code === undefined ? {} : { code }) }
+}
+
+type CallOutcome =
+  | { readonly ok: true; readonly verdict: MilestoneVerdict }
+  | { readonly ok: false; readonly error: string; readonly code?: string }
+
+const UNPARSEABLE = '审阅返回了不可解析的结果'
+
+/**
+ * One reviewer/adjudicator call with one fresh retry; never throws.
+ *
+ * Definitive provider failures (quota, auth, unknown model) are reported after
+ * the first call: retrying them on the same route only burns time. A verdict
+ * truncated by `max-tokens` gets one larger budget, then stays labelled as a
+ * truncation instead of being reported as unparseable output.
+ */
 async function callModel(
   llm: Callable,
-  provider: string,
-  model: string,
+  route: {
+    readonly provider: string
+    readonly model: string
+    readonly reasoningEffort?: string
+  },
   system: string,
   text: string,
-  maxTokens: number,
-): Promise<string | null> {
-  const deadline = AbortSignal.timeout(30_000)
-  try {
-    const prepared = await llm.prepareCall?.({ provider, model, maxTokens, temperature: 0 }, deadline, configureLowestReasoning)
-    if (prepared === undefined) return null
-    const assembler = new BlockAssembler()
-    for await (const chunk of prepared.stream({
-      ...prepared.config,
-      signal: deadline,
-      system,
-      messages: [createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }) as never],
-      tools: [],
-    })) assembler.push(chunk as never)
-    return assembler.blocks().flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
-  } catch {
-    return null
+  keys: readonly string[],
+  timeoutMs: number,
+): Promise<CallOutcome> {
+  let failure = UNPARSEABLE
+  let failureCode: string | undefined
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const deadline = AbortSignal.timeout(timeoutMs)
+    try {
+      const prepared = await llm.prepareCall?.(
+        { provider: route.provider, model: route.model, temperature: 0 },
+        deadline,
+        configureEvaluatorReasoning(route.reasoningEffort),
+      )
+      if (prepared === undefined) return { ok: false, error: '审阅模型不可用：未挂载 llm.prepareCall 服务' }
+      const assembler = new BlockAssembler()
+      for await (const chunk of prepared.stream({
+        ...prepared.config,
+        signal: deadline,
+        system,
+        messages: [createUserMessage({ content: [{ type: 'text', text }], source: { kind: 'user' } }) as never],
+        tools: [],
+      })) assembler.push(chunk as never)
+      const terminalError = finishFailure(assembler.finish)
+      if (terminalError !== null) {
+        failure = deadline.aborted ? `调用超时（${timeoutLabel(timeoutMs)}）` : terminalError.message
+        failureCode = deadline.aborted ? 'TIMEOUT' : terminalError.code
+        if (isDefinitiveFailure(failureCode)) break
+        continue
+      }
+      if (assembler.finish.kind === 'max-tokens') {
+        failure = '输出达到模型输出上限（MAX_TOKENS）'
+        failureCode = 'MAX_TOKENS'
+        break
+      }
+      const body = assembler.blocks().flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+      if (body.trim() === '') {
+        failure = '模型未返回任何文本（EMPTY_RESPONSE）'
+        failureCode = 'EMPTY_RESPONSE'
+        continue
+      }
+      const parsed = parseVerdict(body, keys)
+      if (parsed === null) {
+        failure = UNPARSEABLE
+        failureCode = 'UNPARSEABLE'
+        continue
+      }
+      return { ok: true, verdict: parsed }
+    } catch (error) {
+      // `AbortSignal.timeout()` throws a DOMException with a NUMERIC `code`, so
+      // the string-only classifier lost the timeout and never switched routes.
+      failureCode = deadline.aborted
+        ? 'TIMEOUT'
+        : typeof (error as { code?: unknown } | null)?.code === 'string'
+          ? (error as { code: string }).code
+          : undefined
+      failure = deadline.aborted
+        ? `调用超时（${timeoutLabel(timeoutMs)}）`
+        : (error instanceof Error && error.message.trim() !== '' ? error.message.trim().slice(0, 200) : '调用失败')
+      if (isDefinitiveFailure(failureCode)) break
+    }
   }
+  return { ok: false, error: failure, ...(failureCode === undefined ? {} : { code: failureCode }) }
 }
 
 function renderReport(review: MilestoneReview, tasks: readonly GuardTask[], goal: string): string {
@@ -165,9 +263,32 @@ function renderReport(review: MilestoneReview, tasks: readonly GuardTask[], goal
   return lines.join('\n')
 }
 
+/** Adjudicator failure text; never appends a code the detail already names. */
+function adjudicatorFailure(error: string, code?: string): string {
+  return `裁决失败：${error}${code === undefined || error.includes(code) ? '' : `（${code}）`}`
+}
+
+function reviewSummaryReason(
+  verdict: Verdict,
+  reviewers: readonly MilestoneVerdict[],
+  adjudicator?: MilestoneReview['adjudicator'],
+): string | undefined {
+  if (verdict === 'pass') return undefined
+  const first = [
+    adjudicator?.why,
+    ...reviewers.filter(item => item.verdict !== 'pass').flatMap(item => item.reasons),
+  ].find(item => typeof item === 'string' && item.trim() !== '')
+  return first === undefined ? undefined : first.trim().slice(0, 300)
+}
+
 /**
- * Review one milestone batch. Returns `null` when the evaluator model is not
- * available: a milestone is never silently skipped into a pass.
+ * Review one milestone batch.
+ *
+ * Returns `null` only when no evaluator route is configured. A route that fails
+ * with a switchable code (empty reply, timeout, quota on ANOTHER provider) is
+ * replaced by the configured fallback, and the switch is reported so the
+ * ledger shows which model actually judged. Per-reviewer outages still write a
+ * diagnostic report in `review/round-<n>.md`.
  */
 export async function reviewMilestone(
   ctx: ReviewContext,
@@ -176,12 +297,12 @@ export async function reviewMilestone(
   tasks: readonly GuardTask[],
   round: number,
   store: GuardStore,
+  options: MilestoneReviewOptions = {},
 ): Promise<MilestoneReview | null> {
   const llm = ctx.get('llm') as Callable | undefined
-  const selection = agent.model?.current?.() ?? agent.options
-  const provider = selection?.provider
-  const model = selection?.model
-  if (typeof llm?.prepareCall !== 'function' || provider === undefined || model === undefined) return null
+  const routes = resolveEvaluatorRoutes(state, agent)
+  if (typeof llm?.prepareCall !== 'function' || routes.length === 0) return null
+  const timeoutMs = options.timeoutMs ?? MILESTONE_TIMEOUT_MS
   const material = await materialOf(store, tasks)
   const prompt = JSON.stringify({
     review_version: 'goal-supervisor/milestone/v1',
@@ -189,53 +310,113 @@ export async function reviewMilestone(
     goal: { hash: state.goalHash, objective: state.goal, acceptance: state.acceptance, discipline: state.discipline },
     material,
   })
-  const raw = await Promise.all([0, 1, 2].map(index => callModel(
-    llm, provider, model, `${REVIEWER_SYSTEM}\n你是第 ${index + 1} 位审阅者。`, prompt, 1200,
-  )))
-  const reviewers = raw.map(body => (body === null ? null : parseVerdict(body, ['reasons', 'defects'])))
-  // An unparseable or failed reviewer downgrades the whole review to insufficient.
-  if (reviewers.some(item => item === null)) return null
-  const resolved = reviewers as MilestoneVerdict[]
-  let verdict: Verdict = 'pass'
-  if (resolved.some(item => item.verdict === 'insufficient')) {
-    verdict = 'insufficient'
-  } else if (resolved.some(item => item.verdict === 'fail')) {
-    verdict = 'fail'
-  }
-  let adjudicator: MilestoneReview['adjudicator']
-  if (verdict === 'insufficient') {
-    // Design §11: `insufficient` keeps the batch unproven. A tie-break cannot
-    // turn missing evidence into a verdict, so no adjudicator is consulted.
-  } else if (resolved.every(item => item.verdict !== 'pass')) {
-    // Unanimous fail needs no tie-break.
-    verdict = 'fail'
-  } else if (resolved.some(item => item.verdict !== resolved[0]?.verdict)) {
-    const body = await callModel(
-      llm, provider, model, ADJUDICATOR_SYSTEM,
-      JSON.stringify({
-        goal: { hash: state.goalHash, objective: state.goal, acceptance: state.acceptance },
-        reviewers: resolved,
-        material,
-      }),
-      800,
-    )
-    const parsed = body === null ? null : parseVerdict(body, ['why', 'reasons'])
-    if (parsed === null) {
-      // A split that cannot be adjudicated is not a pass.
-      verdict = 'insufficient'
-    } else {
-      verdict = parsed.verdict
-      adjudicator = { verdict: parsed.verdict, why: parsed.reasons[0] ?? '' }
+  const fallbacks: { readonly from: string; readonly to: string; readonly code: string }[] = []
+  let review: MilestoneReview | null = null
+  for (let index = 0; index < routes.length; index += 1) {
+    const route = routes[index]
+    const outcomes = await Promise.all([0, 1, 2].map(reviewer => callModel(
+      llm, route, `${REVIEWER_SYSTEM}\n你是第 ${reviewer + 1} 位审阅者。`,
+      prompt, ['reasons', 'defects'], timeoutMs,
+    )))
+    // A partial outage still leaves the batch unproven, so the fallback route is
+    // tried whenever ANY reviewer failed for a switchable reason — not only when
+    // all three did. Looking at the FIRST coded failure was wrong: a reviewer
+    // that hit a definitive error (quota/auth) could mask a sibling's EMPTY
+    // RESPONSE and leave the configured fallback unused.
+    const failed = outcomes.filter(outcome => !outcome.ok)
+    const switchable = index + 1 < routes.length
+      ? failed.find(outcome => outcome.code !== undefined
+        && failureAction(outcome.code, route.provider, routes[index + 1].provider) === 'switch')
+      : undefined
+    if (switchable !== undefined) {
+      const next = routes[index + 1]
+      fallbacks.push({
+        from: routeLabel(route),
+        to: routeLabel(next),
+        code: switchable.code ?? 'UNKNOWN',
+      })
+      continue
     }
+    const resolved: MilestoneVerdict[] = outcomes.map(outcome => (
+      outcome.ok
+        ? outcome.verdict
+        : {
+          verdict: 'insufficient',
+          reasons: [`审阅失败：${outcome.error}${outcome.code === undefined || outcome.error.includes(outcome.code) ? '' : `（${outcome.code}）`}`],
+        }
+    ))
+    let verdict: Verdict = 'pass'
+    if (resolved.some(item => item.verdict === 'insufficient')) {
+      verdict = 'insufficient'
+    } else if (resolved.some(item => item.verdict === 'fail')) {
+      verdict = 'fail'
+    }
+    let adjudicator: MilestoneReview['adjudicator']
+    if (verdict === 'insufficient') {
+      // Design §11: `insufficient` keeps the batch unproven. A tie-break cannot
+      // turn missing evidence into a verdict, so no adjudicator is consulted.
+    } else if (resolved.every(item => item.verdict !== 'pass')) {
+      verdict = 'fail'
+    } else if (resolved.some(item => item.verdict !== resolved[0]?.verdict)) {
+      const adj = await callModel(
+        llm, route, ADJUDICATOR_SYSTEM,
+        JSON.stringify({
+          goal: { hash: state.goalHash, objective: state.goal, acceptance: state.acceptance },
+          reviewers: resolved,
+          material,
+        }),
+        ['why', 'reasons'],
+        timeoutMs,
+      )
+      if (!adj.ok) {
+        // A split that cannot be adjudicated is not a pass, and the failure must
+        // stay visible. A switchable failure may still be answered by the next
+        // configured route, so try it before giving up.
+        if (index + 1 < routes.length
+          && failureAction(adj.code, route.provider, routes[index + 1].provider) === 'switch') {
+          const nextRoute = routes[index + 1]
+          const retry = await callModel(
+            llm, nextRoute, ADJUDICATOR_SYSTEM,
+            JSON.stringify({
+              goal: { hash: state.goalHash, objective: state.goal, acceptance: state.acceptance },
+              reviewers: resolved,
+              material,
+            }),
+            ['why', 'reasons'],
+            timeoutMs,
+          )
+          fallbacks.push({ from: routeLabel(route), to: routeLabel(nextRoute), code: adj.code ?? 'UNKNOWN' })
+          if (retry.ok) {
+            verdict = retry.verdict.verdict
+            adjudicator = { verdict: retry.verdict.verdict, why: retry.verdict.reasons[0] ?? '' }
+          } else {
+            verdict = 'insufficient'
+            adjudicator = { verdict: 'insufficient', why: adjudicatorFailure(retry.error, retry.code) }
+          }
+        } else {
+          verdict = 'insufficient'
+          adjudicator = { verdict: 'insufficient', why: adjudicatorFailure(adj.error, adj.code) }
+        }
+      } else {
+        verdict = adj.verdict.verdict
+        adjudicator = { verdict: adj.verdict.verdict, why: adj.verdict.reasons[0] ?? '' }
+      }
+    }
+    const relative = `review/round-${round}.md`
+    const reason = reviewSummaryReason(verdict, resolved, adjudicator)
+    review = {
+      round, verdict, reviewers: resolved,
+      ...(adjudicator === undefined ? {} : { adjudicator }),
+      path: relative, model: routeLabel(route),
+      ...(reason === undefined ? {} : { reason }),
+      ...(fallbacks.length === 0 ? {} : { fallbacks }),
+    }
+    break
   }
-  const relative = `review/round-${round}.md`
-  const review: MilestoneReview = {
-    round, verdict, reviewers: resolved, ...(adjudicator === undefined ? {} : { adjudicator }),
-    path: relative, model: `${provider}/${model}`,
-  }
+  if (review === null) return null
   try {
     await mkdir(join(store.root, 'review'), { recursive: true })
-    await writeFile(join(store.root, relative), renderReport(review, tasks, state.goal), 'utf8')
+    await writeFile(join(store.root, review.path), renderReport(review, tasks, state.goal), 'utf8')
   } catch { /* the verdict still stands; the report is best effort */ }
   return review
 }
